@@ -17,6 +17,9 @@ model = HydrostaticFreeSurfaceModel(; grid, momentum_advection=WENO())
 uᵢ(x, y, z) = randn()
 set!(model, u=uᵢ, v=uᵢ)
 
+# First form a Reactant model
+r_model = Reactant.to_rarray(model)
+
 # What we normally do:
 simulation = Simulation(model, Δt=60, stop_iteration=2)
 run!(simulation)
@@ -25,7 +28,6 @@ run!(simulation)
 #CUDA.@device_code dir="cudajl" run!(simulation)
 
 # What we want to do with Reactant:
-r_model = Reactant.to_rarray(model)
 r_simulation = Simulation(r_model, Δt=60, stop_iteration=2)
 pop!(r_simulation.callbacks, :nan_checker)
 # @show @code_hlo optimize=:before_kernel run!(r_simulation)
