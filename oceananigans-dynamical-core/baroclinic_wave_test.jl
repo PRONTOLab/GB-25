@@ -1,14 +1,17 @@
 using Oceananigans
 using Oceananigans.Units: minutes, days
+using Oceananigans.TurbulenceClosures: CATKEVerticalDiffusivity
 using Printf
 using Reactant
 
 # Reactant.Ops.DEBUG_MODE[] = true
 
+longitude = (0, 360)
+latitude = (-80, 80)
 resolution = 1/4 # degree. eg resolution=1/4 is pronounced "quarter degree"
 arch = GPU() # CPU() to run on CPU
-Nx = Int(360 / resolution)
-Ny = Int(160 / resolution)
+Nx = Int((longitude[2] - longitude[1]) / resolution)
+Ny = Int((latitude[2] - latitude[1]) / resolution)
 Nz = 100
 Δt = 10minutes
 # stop_time = 10Δt #30days
@@ -22,11 +25,19 @@ grid = LatitudeLongitudeGrid(arch,
                              z = (-1000, 0))
 
 # A configuration for idealized global simulation:
-model = HydrostaticFreeSurfaceModel(; grid,
+
+# Eventually we want to use this:
+# closure = CATKEVerticalDiffusivity()
+# tracers = (:b, :e)
+
+# but for now:
+closure = nothing
+tracers = :b
+
+model = HydrostaticFreeSurfaceModel(; grid, closure, tracers,
                                     momentum_advection = WENOVectorInvariant(),
                                     tracer_advection = WENO(order=7),
                                     coriolis = HydrostaticSphericalCoriolis(),
-                                    tracers = :b,
                                     buoyancy = BuoyancyTracer())
 
 @info "Built a model:"
@@ -64,23 +75,23 @@ function progress(sim)
     return nothing
 end
 
-add_callback!(simulation, progress, IterationInterval(100))
+# To run things regularly
+# add_callback!(simulation, progress, IterationInterval(100))
+# run!(simulation)
 
-run!(simulation)
-
-#using CUDA
-#CUDA.@device_code dir="cudajl" run!(simulation)
-
-#=
-# What we want to do with Reactant:
+# To run with Reactant:
 r_model = Reactant.to_rarray(model)
-r_simulation = Simulation(r_model, Δt=60, stop_iteration=2)
+r_simulation = Simulation(r_model; Δt, stop_time)
 pop!(r_simulation.callbacks, :nan_checker)
-# @show @code_hlo optimize=:before_kernel run!(r_simulation)
+
+# This may not work:
+add_callback!(r_simulation, progress, IterationInterval(100))
 
 r_run! = @compile sync = true run!(r_simulation)
 r_run!(r_simulation)
 
+# Extra stuff:
+#=
 Reactant.with_profiler("./notrace4/") do
     run!(simulation)
 end
