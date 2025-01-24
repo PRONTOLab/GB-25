@@ -1,7 +1,11 @@
 using Oceananigans
 using Reactant
+using Libdl
+using Reactant_jll
 
-# Reactant.Ops.DEBUG_MODE[] = true
+Reactant.Ops.DEBUG_MODE[] = true
+ENV["JULIA_DEBUG"] = "Reactant_jll"
+@show Reactant_jll.cuDriverGetVersion(dlopen("libcuda.so"))
 
 arch = GPU() # CPU() to run on CPU
 Nx, Ny, Nz = (360, 120, 100) # number of cells
