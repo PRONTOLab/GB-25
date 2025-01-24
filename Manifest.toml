@@ -2,7 +2,7 @@
 
 julia_version = "1.10.8"
 manifest_format = "2.0"
-project_hash = "2706849d752de2910285ecdab20097858665fed4"
+project_hash = "80c8070e45d232d0ac74688abdb23c3d1a5140f0"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -653,7 +653,7 @@ version = "0.4.3"
 
 [[deps.Oceananigans]]
 deps = ["Adapt", "CUDA", "Crayons", "CubedSphere", "Dates", "Distances", "DocStringExtensions", "FFTW", "GPUArrays", "Glob", "IncompleteLU", "InteractiveUtils", "IterativeSolvers", "JLD2", "KernelAbstractions", "LinearAlgebra", "Logging", "MPI", "NCDatasets", "OffsetArrays", "OrderedCollections", "Pkg", "Printf", "Random", "Rotations", "SeawaterPolynomials", "SparseArrays", "Statistics", "StructArrays"]
-git-tree-sha1 = "6240113ca450721314aac075c275025239d2c621"
+git-tree-sha1 = "b5305f04c337d16a1ddc4350d91fa8215daef0f3"
 repo-rev = "main"
 repo-url = "https://github.com/CliMA/Oceananigans.jl.git"
 uuid = "9e8cae18-63c1-5223-a75c-80ca9d6e9a09"
@@ -776,7 +776,7 @@ version = "1.6.0"
 
 [[deps.Reactant]]
 deps = ["Adapt", "CEnum", "Downloads", "Enzyme", "EnzymeCore", "Functors", "GPUArraysCore", "Libdl", "LinearAlgebra", "OrderedCollections", "PrecompileTools", "Preferences", "Random", "ReactantCore", "Reactant_jll", "Scratch", "Sockets"]
-git-tree-sha1 = "4ffc08877d0e75f5ef5752781bd7586f6796f29c"
+git-tree-sha1 = "759fc2f5ffda31eee4f4f2bd72290f31bd1534dd"
 repo-rev = "main"
 repo-url = "https://github.com/EnzymeAD/Reactant.jl.git"
 uuid = "3c362404-f566-11ee-1572-e11a4b42c853"
@@ -814,9 +814,9 @@ version = "0.1.4"
 
 [[deps.Reactant_jll]]
 deps = ["Artifacts", "CUDA_Driver_jll", "JLLWrappers", "LazyArtifacts", "Libdl", "TOML"]
-git-tree-sha1 = "8a2e831b4246935f357db41344e02a8f68429579"
+git-tree-sha1 = "f918216b2a6fcdfbbec4a2e0cba45e44758d262f"
 uuid = "0192cb87-2b54-54ad-80e0-3be72ad8a3c0"
-version = "0.0.47+0"
+version = "0.0.48+0"
 
 [[deps.RealDot]]
 deps = ["LinearAlgebra"]
@@ -972,9 +972,9 @@ version = "1.10.0"
 
 [[deps.TaylorSeries]]
 deps = ["LinearAlgebra", "Markdown", "Requires", "SparseArrays"]
-git-tree-sha1 = "267e579c6aa0e1605bb5dc681996bb1e3a43c740"
+git-tree-sha1 = "ae73e40c647c0061697fa9708ee12cce385653e3"
 uuid = "6aa5eb33-94cf-58f4-a9d0-e4b2c4fc25ea"
-version = "0.18.2"
+version = "0.18.3"
 
     [deps.TaylorSeries.extensions]
     TaylorSeriesIAExt = "IntervalArithmetic"
