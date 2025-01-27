@@ -37,18 +37,20 @@ uuid = "56f22d72-fd6d-98f1-02f0-08ddc0907c33"
 
 [[deps.Atomix]]
 deps = ["UnsafeAtomics"]
-git-tree-sha1 = "c3b238aa28c1bebd4b5ea4988bebf27e9a01b72b"
+git-tree-sha1 = "93da6c8228993b0052e358ad592ee7c1eccaa639"
 uuid = "a9b6321e-bd34-4604-b9c9-b65b8de01458"
-version = "1.0.1"
+version = "1.1.0"
 
     [deps.Atomix.extensions]
     AtomixCUDAExt = "CUDA"
     AtomixMetalExt = "Metal"
+    AtomixOpenCLExt = "OpenCL"
     AtomixoneAPIExt = "oneAPI"
 
     [deps.Atomix.weakdeps]
     CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
     Metal = "dde4c033-4e86-420c-a63e-0dd931031962"
+    OpenCL = "08131aa3-fb12-5dee-8b74-c09406e224a2"
     oneAPI = "8f75cd03-7ff8-4ecb-9b8f-daf728133b1b"
 
 [[deps.BFloat16s]]
@@ -653,11 +655,11 @@ version = "0.4.3"
 
 [[deps.Oceananigans]]
 deps = ["Adapt", "CUDA", "Crayons", "CubedSphere", "Dates", "Distances", "DocStringExtensions", "FFTW", "GPUArrays", "Glob", "IncompleteLU", "InteractiveUtils", "IterativeSolvers", "JLD2", "KernelAbstractions", "LinearAlgebra", "Logging", "MPI", "NCDatasets", "OffsetArrays", "OrderedCollections", "Pkg", "Printf", "Random", "Rotations", "SeawaterPolynomials", "SparseArrays", "Statistics", "StructArrays"]
-git-tree-sha1 = "b5305f04c337d16a1ddc4350d91fa8215daef0f3"
+git-tree-sha1 = "863beb6566b19698cd473f9637b7721068542ac2"
 repo-rev = "main"
 repo-url = "https://github.com/CliMA/Oceananigans.jl.git"
 uuid = "9e8cae18-63c1-5223-a75c-80ca9d6e9a09"
-version = "0.95.7"
+version = "0.95.8"
 
     [deps.Oceananigans.extensions]
     OceananigansEnzymeExt = "Enzyme"
@@ -776,7 +778,7 @@ version = "1.6.0"
 
 [[deps.Reactant]]
 deps = ["Adapt", "CEnum", "Downloads", "Enzyme", "EnzymeCore", "Functors", "GPUArraysCore", "Libdl", "LinearAlgebra", "OrderedCollections", "PrecompileTools", "Preferences", "Random", "ReactantCore", "Reactant_jll", "Scratch", "Sockets"]
-git-tree-sha1 = "759fc2f5ffda31eee4f4f2bd72290f31bd1534dd"
+git-tree-sha1 = "b4a376ba5cddd611aa906a9b93d72aeb3a79552d"
 repo-rev = "main"
 repo-url = "https://github.com/EnzymeAD/Reactant.jl.git"
 uuid = "3c362404-f566-11ee-1572-e11a4b42c853"
@@ -814,9 +816,9 @@ version = "0.1.4"
 
 [[deps.Reactant_jll]]
 deps = ["Artifacts", "CUDA_Driver_jll", "JLLWrappers", "LazyArtifacts", "Libdl", "TOML"]
-git-tree-sha1 = "f918216b2a6fcdfbbec4a2e0cba45e44758d262f"
+git-tree-sha1 = "24618d1e53e50ee7e77b12529abdbc37f9e725d3"
 uuid = "0192cb87-2b54-54ad-80e0-3be72ad8a3c0"
-version = "0.0.48+0"
+version = "0.0.51+0"
 
 [[deps.RealDot]]
 deps = ["LinearAlgebra"]
@@ -1027,9 +1029,9 @@ version = "2.13.5+0"
 
 [[deps.XZ_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "beef98d5aad604d9e7d60b2ece5181f7888e2fd6"
+git-tree-sha1 = "56c6604ec8b2d82cc4cfe01aa03b00426aac7e1f"
 uuid = "ffd25f8a-64ca-5728-b0f7-c24cf3aae800"
-version = "5.6.4+0"
+version = "5.6.4+1"
 
 [[deps.Zlib_jll]]
 deps = ["Libdl"]
