@@ -11,11 +11,12 @@ using Printf
 
 make_visualization = true
 arch = CPU()
-Nx = 180
-Ny = 90
-Nz = 20
-z_faces = exponential_z_faces(; Nz, depth=6000, h=30)
+resolution = 2 # 1/4 for quarter degree
+Nx = convert(Int, 360 / resolution)
+Ny = convert(Int, 170 / resolution)
+Nz = 20 #100
 
+z_faces = exponential_z_faces(; Nz, depth=6000, h=30)
 underlying_grid = TripolarGrid(arch; size=(Nx, Ny, Nz), halo=(7, 7, 7), z=z_faces)
 bottom_height = regrid_bathymetry(underlying_grid)
 grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height))
