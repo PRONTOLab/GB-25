@@ -9,6 +9,7 @@ using CFTime
 using Dates
 using Printf
 
+make_visualization = true
 arch = CPU()
 Nx = 180
 Ny = 90
@@ -64,3 +65,18 @@ add_callback!(simulation, progress, IterationInterval(10))
 
 run!(simulation)
 
+if make_visualization
+    # A simple visualization
+    using GLMakie
+
+    fig = Figure(size=(600, 700))
+    axT = Axis(fig[1, 1])
+    axu = Axis(fig[2, 1])
+
+    T = ocean.model.tracers.T
+    u = ocean.model.velocities.u
+    Nz = size(grid, 3)
+    heatmap!(axT, interior(T, :, :, Nz))
+    heatmap!(axu, interior(u, :, :, Nz))
+    display(fig)
+end
