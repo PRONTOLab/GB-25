@@ -21,7 +21,7 @@ Nx = convert(Int, 360 / resolution)
 Ny = convert(Int, 170 / resolution)
 
 # Vertical resolution
-Nz = 20 #100
+Nz = 20 # eventually we want to increase this to between 100-600
 
 # Time step. This must be decreased as resolution is decreased.
 Δt = 20minutes
@@ -33,9 +33,9 @@ Nz = 20 #100
 stop_time = 10days
 
 # Grid setup
-z_faces = exponential_z_faces(; Nz, depth=6000, h=30)
+z_faces = exponential_z_faces(; Nz, depth=6000, h=30) # may need changing for very large Nz
 underlying_grid = TripolarGrid(arch; size=(Nx, Ny, Nz), halo=(7, 7, 7), z=z_faces)
-bottom_height = regrid_bathymetry(underlying_grid)
+bottom_height = regrid_bathymetry(underlying_grid) # adds Earth bathymetry from ETOPO1
 grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height))
 
 # Polar restoring setup
@@ -57,7 +57,7 @@ set!(ocean.model, T=ECCOMetadata(:temperature; dates=first(dates)),
 
 # Atmospheric model
 radiation  = Radiation(arch)
-atmosphere = JRA55PrescribedAtmosphere(arch; backend=JRA55NetCDFBackend(20))
+atmosphere = JRA55PrescribedAtmosphere(arch; backend=JRA55NetCDFBackend(41))
 
 # Coupled model and simulation
 coupled_model = OceanSeaIceModel(ocean; atmosphere, radiation) 
@@ -75,10 +75,12 @@ function progress(sim)
     umax = (maximum(abs, interior(u)), maximum(abs, interior(v)), maximum(abs, interior(w)))
     step_time = 1e-9 * (time_ns() - wall_time[])
 
-    @info @sprintf("Time: %s, n: %d, Δt: %s, max|u|: (%.2e, %.2e, %.2e) m s⁻¹, \
+    msg = @sprintf("Time: %s, n: %d, Δt: %s, max|u|: (%.2e, %.2e, %.2e) m s⁻¹, \
                    extrema(T): (%.2f, %.2f) ᵒC, wall time: %s \n",
                    prettytime(sim), iteration(sim), prettytime(sim.Δt),
                    umax..., Tmax, Tmin, prettytime(step_time))
+
+    ClimaOcean.@root msg
 
     wall_time[] = time_ns()
 
@@ -88,8 +90,14 @@ end
 add_callback!(simulation, progress, IterationInterval(10))
 
 # Output
+if arch isa Distributed
+    rank = arch.local_rank
+    prefix = "ocean_climate_simulation_rank$rank"
+else
+    prefix = "ocean_climate_simulation_serial"
+end
+
 Nz = size(grid, 3)
-prefix = "ocean_climate_simulation"
 outputs = merge(ocean.model.velocities, ocean.model.tracers)
 surface_writer = JLD2OutputWriter(ocean.model, outputs,
                                   filename = prefix * "_surface.jld2",
