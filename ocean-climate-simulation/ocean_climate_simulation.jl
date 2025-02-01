@@ -9,8 +9,8 @@ using CFTime
 using Dates
 using Printf
 
-# Turn this off if you can't make plots with GLMakie
-make_visualization = true
+# See visualize_ocean_climate_simulation.jl for information about how to 
+# visualize the results of this run.
 
 # Architecture
 arch = CPU()
@@ -95,27 +95,10 @@ surface_writer = JLD2OutputWriter(ocean.model, outputs,
                                   filename = prefix * "_surface.jld2",
                                   indices = (:, :, Nz),
                                   schedule = TimeInterval(3days),
-                                  overwrite_existing=true)
+                                  overwrite_existing = true)
 
 simulation.output_writers[:surface] = surface_writer
 
 # Run the simulation
 run!(simulation)
-
-# Optional visualization of the final state
-if make_visualization
-    # A simple visualization
-    using GLMakie
-
-    fig = Figure(size=(600, 700))
-    axT = Axis(fig[1, 1])
-    axu = Axis(fig[2, 1])
-
-    T = ocean.model.tracers.T
-    u = ocean.model.velocities.u
-    Nz = size(grid, 3)
-    heatmap!(axT, interior(T, :, :, Nz))
-    heatmap!(axu, interior(u, :, :, Nz))
-    display(fig)
-end
 
