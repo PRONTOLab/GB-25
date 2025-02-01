@@ -14,8 +14,7 @@ arch = CPU()
 Nx = 180
 Ny = 90
 Nz = 20
-
-z_faces = exponential_z_faces(Nz=10, depth=6000, h=30)
+z_faces = exponential_z_faces(; Nz, depth=6000, h=30)
 
 underlying_grid = TripolarGrid(arch; size=(Nx, Ny, Nz), halo=(7, 7, 7), z=z_faces)
 bottom_height = regrid_bathymetry(underlying_grid)
@@ -25,7 +24,7 @@ dates = DateTimeProlepticGregorian(1993, 1, 1) : Month(1) : DateTimeProlepticGre
 temperature = ECCOMetadata(:temperature, dates, ECCO4Monthly())
 salinity = ECCOMetadata(:salinity, dates, ECCO4Monthly())
 
-restoring_rate  = 1/10days
+restoring_rate  = 1/7days
 mask = LinearlyTaperedPolarMask(southern=(-80, -70), northern=(70, 90))
 FT = ECCORestoring(temperature, grid; mask, rate=restoring_rate)
 FS = ECCORestoring(salinity, grid; mask, rate=restoring_rate)
@@ -38,7 +37,7 @@ set!(ocean.model, T=ECCOMetadata(:temperature; dates=first(dates)),
 radiation  = Radiation(arch)
 atmosphere = JRA55PrescribedAtmosphere(arch; backend=JRA55NetCDFBackend(20))
 coupled_model = OceanSeaIceModel(ocean; atmosphere, radiation) 
-simulation = Simulation(coupled_model; Δt=20minutes, stop_iteration=100) #stop_time=30days)
+simulation = Simulation(coupled_model; Δt=20minutes, stop_time=10days)
 
 wall_time = Ref(time_ns())
 
@@ -63,6 +62,17 @@ end
 
 add_callback!(simulation, progress, IterationInterval(10))
 
+Nz = size(grid, 3)
+prefix = "ocean_climate_simulation"
+outputs = merge(model.velocities, model.tracers)
+surface_writer = JLD2OutputWriter(ocean.model, outputs,
+                                  filename = prefix * "_surface.jld2",
+                                  indices = (:, :, Nz),
+                                  schedule = TimeInterval(3days),
+                                  overwrite_existing=true)
+
+simulation.output_writers[:surface] = surface_writer
+
 run!(simulation)
 
 if make_visualization
@@ -80,3 +90,4 @@ if make_visualization
     heatmap!(axu, interior(u, :, :, Nz))
     display(fig)
 end
+
