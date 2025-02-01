@@ -90,7 +90,7 @@ add_callback!(simulation, progress, IterationInterval(10))
 # Output
 Nz = size(grid, 3)
 prefix = "ocean_climate_simulation"
-outputs = merge(model.velocities, model.tracers)
+outputs = merge(ocean.model.velocities, ocean.model.tracers)
 surface_writer = JLD2OutputWriter(ocean.model, outputs,
                                   filename = prefix * "_surface.jld2",
                                   indices = (:, :, Nz),
