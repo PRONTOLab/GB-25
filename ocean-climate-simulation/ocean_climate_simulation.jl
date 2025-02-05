@@ -13,7 +13,11 @@ using Printf
 # visualize the results of this run.
 
 # Architecture
-arch = CPU()
+if get(ENV, "use-reactant", false)
+    arch = ReactantState()
+else
+    arch = CPU() # change this to use GPU
+end
 
 # Horizontal resolution
 resolution = 2 # 1/4 for quarter degree
@@ -108,5 +112,7 @@ surface_writer = JLD2OutputWriter(ocean.model, outputs,
 simulation.output_writers[:surface] = surface_writer
 
 # Run the simulation
-run!(simulation)
+if get(ENV, "dont-run", true)
+    run!(simulation)
+end
 
