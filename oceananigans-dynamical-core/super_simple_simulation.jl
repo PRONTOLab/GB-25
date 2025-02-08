@@ -2,6 +2,7 @@ using Oceananigans
 using Reactant
 using Libdl
 using Reactant_jll
+using Random
 
 Reactant.Ops.DEBUG_MODE[] = true
 # ENV["JULIA_DEBUG"] = "Reactant_jll"
@@ -23,8 +24,10 @@ r_model = HydrostaticFreeSurfaceModel(; grid=r_grid, momentum_advection=WENO())
 @assert model.free_surface isa SplitExplicitFreeSurface
 @assert r_model.free_surface isa SplitExplicitFreeSurface
 
+Random.seed!(123)
 uᵢ(x, y, z) = randn()
 set!(model, u=uᵢ, v=uᵢ)
+Random.seed!(123)
 set!(r_model, u=uᵢ, v=uᵢ)
 
 # What we normally do:
