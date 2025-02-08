@@ -8,6 +8,7 @@ Reactant.Ops.DEBUG_MODE[] = true
 # ENV["JULIA_DEBUG"] = "Reactant_jll"
 # @show Reactant_jll.cuDriverGetVersion(dlopen("libcuda.so"))
 
+# Try to automatically guess whether we have a GPU available
 arch = isempty(find_library(["libcuda.so.1", "libcuda.so"])) ? CPU() : GPU()
 r_arch = Oceananigans.ReactantState()
 Nx, Ny, Nz = (360, 120, 100) # number of cells
@@ -17,9 +18,17 @@ grid = LatitudeLongitudeGrid(arch, size=(Nx, Ny, Nz), halo=(7, 7, 7),
 r_grid = LatitudeLongitudeGrid(r_arch, size=(Nx, Ny, Nz), halo=(7, 7, 7),
                                longitude=(0, 360), latitude=(-60, 60), z=(-1000, 0))
 
+FT = Float64
+t = ConcreteRNumber(zero(FT))
+iter = ConcreteRNumber(0)
+stage = ConcreteRNumber(0)
+last_Δt = ConcreteRNumber(zero(FT))
+last_stage_Δt = ConcreteRNumber(zero(FT))
+r_clock = Clock(; time=t, iteration=iter, stage, last_Δt, last_stage_Δt)
+
 # One of the implest configurations we might consider:
 model = HydrostaticFreeSurfaceModel(; grid, momentum_advection=WENO())
-r_model = HydrostaticFreeSurfaceModel(; grid=r_grid, momentum_advection=WENO())
+r_model = HydrostaticFreeSurfaceModel(; grid=r_grid, clock=r_clock, momentum_advection=WENO())
 
 @assert model.free_surface isa SplitExplicitFreeSurface
 @assert r_model.free_surface isa SplitExplicitFreeSurface
