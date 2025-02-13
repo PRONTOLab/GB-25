@@ -1,6 +1,7 @@
 using Oceananigans
 using Oceananigans.Units
 using Oceananigans.Architectures
+using Reactant
 
 using ClimaOcean
 using ClimaOcean.DataWrangling: ECCO4Monthly
