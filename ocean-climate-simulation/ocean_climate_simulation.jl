@@ -13,10 +13,27 @@ using Printf
 # visualize the results of this run.
 
 # Architecture
-if get(ENV, "use-reactant", false)
+use_reactant = get(ENV, "use-reactant", false)
+if use_reactant == "true" || use_reactant=="1"
+    use_reactant = true
+elseif use_reactant == "false" || use_reactant=="0"
+    use_reactant = false
+end
+
+
+raise = get(ENV, "raise", false)
+if raise == "true" || raise=="1"
+    raise = true
+elseif raise == "false" || raise=="0"
+    raise = false
+end
+if use_reactant
     arch = ReactantState()
 else
     arch = CPU() # change this to use GPU
+end
+if raise
+    Reactant.Compiler.Raise[] = true
 end
 
 # Horizontal resolution
