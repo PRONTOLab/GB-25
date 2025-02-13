@@ -1,5 +1,6 @@
 using Oceananigans
 using Oceananigans.Units
+using Oceananigans.Architectures
 
 using ClimaOcean
 using ClimaOcean.DataWrangling: ECCO4Monthly
@@ -28,7 +29,7 @@ elseif raise == "false" || raise=="0"
     raise = false
 end
 if use_reactant
-    arch = ReactantState()
+    arch = Oceananigans.Architectures.ReactantState()
 else
     arch = CPU() # change this to use GPU
 end
