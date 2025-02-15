@@ -41,10 +41,7 @@ Ny = convert(Int, 170 / resolution)
 Nz = 20 # eventually we want to increase this to between 100-600
 
 # Time step. This must be decreased as resolution is decreased.
-Δt = 20minutes
-# Δt = 4minutes # resolution = 1/4
-# Δt = 2minutes # resolution = 1/8
-# Δt = 1minutes # resolution = 1/16, and so on
+Δt = 1minutes
 
 # Stop time
 stop_time = 10days
@@ -57,11 +54,11 @@ underlying_grid = TripolarGrid(arch; size=(Nx, Ny, Nz), halo=(7, 7, 7), z=z_face
 λ₁ = 70
 λ₂ = λ₁ + 180
 dφ = 10
-island₁(φ, λ) = exp(-((λ - λ₁)^2 + (φ - φ₁)^2) / 2dφ^2)
-island₂(φ, λ) = exp(-((λ - λ₂)^2 + (φ - φ₂)^2) / 2dφ^2)
+mtn₁(φ, λ) = exp(-((λ - λ₁)^2 + (φ - φ₁)^2) / 2dφ^2)
+mtn₂(φ, λ) = exp(-((λ - λ₂)^2 + (φ - φ₂)^2) / 2dφ^2)
 zb = z_faces[1]
 h = -zb + 1000
-gaussian_islands(λ, φ) = zb + h * (island₁(λ, φ) + island₂(λ, φ))
+gaussian_islands(λ, φ) = zb + h * (mtn₁(λ, φ) + mtn₂(λ, φ))
 grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(gaussian_islands))
 
 ocean = ocean_simulation(grid)
@@ -77,25 +74,32 @@ Sᵢ(λ, φ, z) = dSdz * z + rand()
 set!(ocean.model, T=Tᵢ, S=Sᵢ)
 
 # Set up an atmosphere
-atmos_times = range(0, 1day, length=24)
-atmosphere = PrescribedAtmosphere(grid, atmos_times)
+atmos_times = range(0, 1days, length=24)
+
+atmos_grid = LatitudeLongitudeGrid(arch,
+                                   size = (360, 180),
+                                   longitude = (0, 360),
+                                   latitude = (-90, 90),
+                                   topology = (Periodic, Bounded, Flat))
+
+atmosphere = PrescribedAtmosphere(atmos_grid, atmos_times)
+
+Ta = Field{Center, Center, Nothing}(atmos_grid)
+ua = Field{Center, Center, Nothing}(atmos_grid)
+Qs = Field{Center, Center, Nothing}(atmos_grid)
 
 zonal_wind(λ, φ) = 4 * sind(2φ)^2 - 2 * exp(-(abs(φ) - 12)^2 / 72)
 sunlight(λ, φ) = -200 - 600 * cosd(φ)^2
-
-Ta = CenterField(atmos_grid)
-ua = CenterField(atmos_grid)
-Qsw = CenterField(atmos_grid)
-
 Tatm(λ, φ, z=0) = 30 * cosd(φ)
+
 set!(Ta, Tatm)
 set!(ua, zonal_wind)
-set!(Qsw, sunlight)
+set!(Qs, sunlight)
 
 parent(atmosphere.tracers.T) .= parent(Ta) .+ 273.15
 parent(atmosphere.velocities.u) .= parent(ua)
 parent(atmosphere.tracers.q) .= 0
-parent(atmosphere.downwelling_radiation.shortwave) .= parent(Qsw)
+parent(atmosphere.downwelling_radiation.shortwave) .= parent(Qs)
 
 # Atmospheric model
 radiation  = Radiation(arch)
