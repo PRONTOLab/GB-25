@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/CI.yml'
+      - '**/*.jl'
+      - 'Project.toml'
+  push:
+    branches:
+      - main
+      - release-*
+    tags: '*'
+    paths:
+      - '.github/workflows/CI.yml'
+      - '**/*.jl'
+      - 'Project.toml'
+
+concurrency:
+  # Skip intermediate builds: always.
+  # Cancel intermediate builds: only if it is a pull request build.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ startsWith(github.ref, 'refs/pull/') }}
+
+jobs:
+  ocean_climate_simulation_mlir:
+    name: Julia ${{ matrix.version }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        version:
+          - '1.10'
+          - '1.11'
+        os:
+          - ubuntu-24.04
+          - ubuntu-22.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: ${{ matrix.version }}
+      - uses: julia-actions/cache@v2
+      - name: Instantiate environment
+        shell: julia --color=yes --project {0}
+        run: |
+          using Pkg
+          Pkg.instantiate()
+      - name: Get MLIR of ocean climate simulation
+        run: |
+          julia --color=yes --project ocean-climate-simulation/ocean_climate_simulation_mlir.jl
