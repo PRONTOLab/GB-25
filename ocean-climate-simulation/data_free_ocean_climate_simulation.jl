@@ -43,12 +43,12 @@ Nz = 20 # eventually we want to increase this to between 100-600
 # Time step. This must be decreased as resolution is decreased.
 Δt = 1minutes
 
-# Stop time
-stop_time = 10days
-
 # Grid setup
-z_faces = exponential_z_faces(; Nz, depth=6000, h=30) # may need changing for very large Nz
+z_faces = exponential_z_faces(; Nz, depth=4000, h=30) # may need changing for very large Nz
 underlying_grid = TripolarGrid(arch; size=(Nx, Ny, Nz), halo=(7, 7, 7), z=z_faces)
+
+#underlying_grid = LatitudeLongitudeGrid(arch; size=(Nx, Ny, Nz), halo=(7, 7, 7), z=z_faces,
+#                                        longitude=(0, 360), latitude=(-80, 80))
 
 φ₁ = φ₂ = 55
 λ₁ = 70
@@ -60,7 +60,6 @@ zb = z_faces[1]
 h = -zb + 1000
 gaussian_islands(λ, φ) = zb + h * (mtn₁(λ, φ) + mtn₂(λ, φ))
 grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(gaussian_islands))
-
 ocean = ocean_simulation(grid)
 
 # Simple initial condition for producing pretty pictures
@@ -106,7 +105,7 @@ radiation  = Radiation(arch)
 
 # Coupled model and simulation
 coupled_model = OceanSeaIceModel(ocean; atmosphere, radiation) 
-simulation = Simulation(coupled_model; Δt, stop_time)
+simulation = Simulation(coupled_model; Δt=1e-3, stop_iteration=100)
 
 # Utility for printing progress to the terminal
 wall_time = Ref(time_ns())
@@ -132,7 +131,7 @@ function progress(sim)
     return nothing
 end
 
-add_callback!(simulation, progress, IterationInterval(10))
+add_callback!(simulation, progress, IterationInterval(1))
 
 # Output
 if arch isa Distributed
