@@ -2,7 +2,7 @@ ENV["dont-run"] = true
 ENV["raise"] = true
 ENV["use-reactant"] = true
 
-include("ocean_climate_simulation.jl")
+include("data_free_ocean_climate_simulation.jl")
 
 unopt = @code_hlo optimize=false run!(simulation) 
 
