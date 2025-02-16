@@ -53,9 +53,9 @@ underlying_grid = TripolarGrid(arch; size=(Nx, Ny, Nz), halo=(7, 7, 7), z=z_face
 φ₁ = φ₂ = 55
 λ₁ = 70
 λ₂ = λ₁ + 180
-dφ = 10
-mtn₁(φ, λ) = exp(-((λ - λ₁)^2 + (φ - φ₁)^2) / 2dφ^2)
-mtn₂(φ, λ) = exp(-((λ - λ₂)^2 + (φ - φ₂)^2) / 2dφ^2)
+dφ = 5
+mtn₁(λ, φ) = exp(-((λ - λ₁)^2 + (φ - φ₁)^2) / 2dφ^2)
+mtn₂(λ, φ) = exp(-((λ - λ₂)^2 + (φ - φ₂)^2) / 2dφ^2)
 zb = z_faces[1]
 h = -zb + 1000
 gaussian_islands(λ, φ) = zb + h * (mtn₁(λ, φ) + mtn₂(λ, φ))
@@ -105,7 +105,7 @@ radiation  = Radiation(arch)
 
 # Coupled model and simulation
 coupled_model = OceanSeaIceModel(ocean; atmosphere, radiation) 
-simulation = Simulation(coupled_model; Δt=1e-3, stop_iteration=100)
+simulation = Simulation(coupled_model; Δt=20minutes, stop_iteration=100)
 
 # Utility for printing progress to the terminal
 wall_time = Ref(time_ns())
@@ -131,7 +131,7 @@ function progress(sim)
     return nothing
 end
 
-add_callback!(simulation, progress, IterationInterval(1))
+add_callback!(simulation, progress, IterationInterval(10))
 
 # Output
 if arch isa Distributed
