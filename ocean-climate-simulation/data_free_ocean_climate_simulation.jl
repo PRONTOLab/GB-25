@@ -139,7 +139,7 @@ function progress(sim)
     return nothing
 end
 
-add_callback!(simulation, progress, IterationInterval(10))
+# add_callback!(simulation, progress, IterationInterval(10))
 
 # Output
 if arch isa Distributed
