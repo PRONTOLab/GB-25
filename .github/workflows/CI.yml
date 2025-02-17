@@ -43,12 +43,22 @@ jobs:
           version: ${{ matrix.version }}
       - uses: julia-actions/cache@v2
       - name: Instantiate environment
+        timeout-minutes: 60
         shell: julia --color=yes --project {0}
         run: |
           using Pkg
           Pkg.Registry.update()
           Pkg.instantiate()
       - name: Get MLIR of ocean climate simulation
+        timeout-minutes: 120
         run: |
           julia --color=yes --project ocean-climate-simulation/ocean_climate_simulation_mlir.jl
         continue-on-error: true
+      - uses: actions/upload-artifact@v4
+        timeout-minutes: 10
+        if: ${{ always() }}
+        with:
+          name: 'ocean-simulation-mlir-${{ matrix.version }}-${{ matrix.os }}'
+          path: '**/*.mlir'
+          retention-days: 90
+          overwrite: false
