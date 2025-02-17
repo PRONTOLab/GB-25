@@ -113,6 +113,7 @@ radiation  = Radiation(arch)
 # Coupled model and simulation
 coupled_model = OceanSeaIceModel(ocean; atmosphere, radiation) 
 simulation = Simulation(coupled_model; Δt=20minutes, stop_iteration=40)
+pop!(simulation.callbacks, :nan_checker)
 
 # Utility for printing progress to the terminal
 wall_time = Ref(time_ns())
