@@ -1,4 +1,4 @@
-ENV["dont-run"] = true
+ENV["run"] = false
 ENV["raise"] = true
 ENV["use-reactant"] = true
 

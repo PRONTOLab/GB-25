@@ -32,6 +32,13 @@ elseif raise == "false" || raise=="0"
     raise = false
 end
 
+run = get(ENV, "run", true)
+if run == "true" || run == "1"
+    run = true
+elseif run == "false" || run=="0"
+    run = false
+end
+
 # Horizontal resolution
 resolution = 2 # 1/4 for quarter degree
 Nx = convert(Int, 360 / resolution)
@@ -152,7 +159,7 @@ surface_writer = JLD2OutputWriter(ocean.model, outputs,
 simulation.output_writers[:surface] = surface_writer
 
 # Run the simulation
-if get(ENV, "dont-run", true)
+if run
     run!(simulation)
 end
 
