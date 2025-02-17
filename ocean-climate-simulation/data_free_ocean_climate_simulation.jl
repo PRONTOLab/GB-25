@@ -139,7 +139,9 @@ function progress(sim)
     return nothing
 end
 
-# add_callback!(simulation, progress, IterationInterval(10))
+if !use_reactant
+  add_callback!(simulation, progress, IterationInterval(10))
+end
 
 # Output
 if arch isa Distributed
@@ -151,13 +153,15 @@ end
 
 Nz = size(grid, 3)
 outputs = merge(ocean.model.velocities, ocean.model.tracers)
-surface_writer = JLD2OutputWriter(ocean.model, outputs,
-                                  filename = prefix * "_surface.jld2",
-                                  indices = (:, :, Nz),
-                                  schedule = TimeInterval(3days),
-                                  overwrite_existing = true)
+if !use_reactant
+	surface_writer = JLD2OutputWriter(ocean.model, outputs,
+					  filename = prefix * "_surface.jld2",
+					  indices = (:, :, Nz),
+					  schedule = TimeInterval(3days),
+					  overwrite_existing = true)
 
-simulation.output_writers[:surface] = surface_writer
+	simulation.output_writers[:surface] = surface_writer
+end
 
 # Run the simulation
 if run
