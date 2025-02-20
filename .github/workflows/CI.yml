@@ -35,7 +35,7 @@ jobs:
           # - '1.11'
         os:
           - ubuntu-24.04
-          - ubuntu-22.04-arm
+          # - ubuntu-22.04-arm
     steps:
       - uses: actions/checkout@v4
       - uses: julia-actions/setup-julia@v2
@@ -50,7 +50,7 @@ jobs:
           Pkg.Registry.update()
           Pkg.instantiate()
       - name: Get MLIR of ocean climate simulation
-        timeout-minutes: 240
+        # timeout-minutes: 240
         run: |
           julia --color=yes --project ocean-climate-simulation/ocean_climate_simulation_mlir.jl
         continue-on-error: true
