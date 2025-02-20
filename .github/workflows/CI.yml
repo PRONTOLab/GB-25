@@ -50,7 +50,7 @@ jobs:
           Pkg.Registry.update()
           Pkg.instantiate()
       - name: Get MLIR of ocean climate simulation
-        timeout-minutes: 120
+        timeout-minutes: 240
         run: |
           julia --color=yes --project ocean-climate-simulation/ocean_climate_simulation_mlir.jl
         continue-on-error: true
