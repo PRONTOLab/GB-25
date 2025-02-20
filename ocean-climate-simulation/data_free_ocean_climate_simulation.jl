@@ -10,8 +10,21 @@ using OrthogonalSphericalShellGrids: TripolarGrid
 using CFTime
 using Dates
 using Printf
+using Profile
 
-# See visualize_ocean_climate_simulation.jl for information about how to 
+macro gbprofile(name::String, expr::Expr)
+    return quote
+        $(Profile.clear)()
+        $(Profile.init)(; delay=0.1)
+        out = $(Profile).@profile $(esc(expr))
+        open(string("profile_", $(esc(name)), ".txt"), "w") do s
+            $(Profile.print)(IOContext(s, :displaysize => (48, 1000)))
+        end
+        out
+    end
+end
+
+# See visualize_ocean_climate_simulation.jl for information about how to
 # visualize the results of this run.
 
 # Architecture
@@ -66,8 +79,8 @@ mtn₂(λ, φ) = exp(-((λ - λ₂)^2 + (φ - φ₂)^2) / 2dφ^2)
 zb = z_faces[1]
 h = -zb + 100
 gaussian_islands(λ, φ) = zb + h * (mtn₁(λ, φ) + mtn₂(λ, φ))
-grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(gaussian_islands))
-ocean = ocean_simulation(grid)
+grid = @gbprofile "ImmersedBoundaryGrid" ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(gaussian_islands))
+ocean = @gbprofile "ocean_simulation" ocean_simulation(grid)
 
 # Simple initial condition for producing pretty pictures
 φ₀ = 40
@@ -77,7 +90,7 @@ dSdz = - 5e-3
 smooth_step(φ) = (1 - tanh((abs(φ) - φ₀) / dφ)) / 2
 Tᵢ(λ, φ, z) = (30 + dTdz * z) * smooth_step(φ) + rand()
 Sᵢ(λ, φ, z) = dSdz * z + rand()
-set!(ocean.model, T=Tᵢ, S=Sᵢ)
+@gbprofile "set_ocean_model" set!(ocean.model, T=Tᵢ, S=Sᵢ)
 
 # Set up an atmosphere
 atmos_times = range(0, 1days, length=24)
@@ -111,8 +124,8 @@ parent(atmosphere.downwelling_radiation.shortwave) .= parent(Qs)
 radiation  = Radiation(arch)
 
 # Coupled model and simulation
-coupled_model = OceanSeaIceModel(ocean; atmosphere, radiation) 
-simulation = Simulation(coupled_model; Δt=20minutes, stop_iteration=40)
+coupled_model = @gbprofile "OceanSeaIceModel" OceanSeaIceModel(ocean; atmosphere, radiation)
+simulation = @gbprofile "Simulation" Simulation(coupled_model; Δt=20minutes, stop_iteration=40)
 pop!(simulation.callbacks, :nan_checker)
 
 # Utility for printing progress to the terminal
@@ -167,4 +180,3 @@ end
 if run
     run!(simulation)
 end
-
