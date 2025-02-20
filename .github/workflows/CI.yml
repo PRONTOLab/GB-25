@@ -33,8 +33,7 @@ jobs:
       matrix:
         version:
           - '1.10'
-          # Waiting for https://github.com/CliMA/Oceananigans.jl/pull/4093 to be merged.
-          # - '1.11'
+          - '1.11'
         os:
           - ubuntu-24.04
           # - ubuntu-22.04-arm
@@ -55,7 +54,8 @@ jobs:
         # timeout-minutes: 240
         run: |
           julia --color=yes --project ocean-climate-simulation/ocean_climate_simulation_mlir.jl
-      - uses: actions/upload-artifact@v4
+      - name: Upload MLIR code
+        uses: actions/upload-artifact@v4
         timeout-minutes: 10
         if: ${{ always() }}
         with:
@@ -63,7 +63,8 @@ jobs:
           path: '**/*.mlir'
           retention-days: 90
           overwrite: false
-      - uses: actions/upload-artifact@v4
+      - name: Upload profile traces
+        uses: actions/upload-artifact@v4
         timeout-minutes: 10
         if: ${{ always() }}
         with:
