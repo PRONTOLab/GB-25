@@ -4,7 +4,8 @@ on:
   pull_request:
     paths:
       - '.github/workflows/CI.yml'
-      - '**/*.jl'
+      - 'ocean-climate-simulation/ocean_climate_simulation_mlir.jl'
+      - 'ocean-climate-simulation/data_free_ocean_climate_simulation.jl'
       - 'Project.toml'
   push:
     branches:
@@ -13,7 +14,8 @@ on:
     tags: '*'
     paths:
       - '.github/workflows/CI.yml'
-      - '**/*.jl'
+      - 'ocean-climate-simulation/ocean_climate_simulation_mlir.jl'
+      - 'ocean-climate-simulation/data_free_ocean_climate_simulation.jl'
       - 'Project.toml'
 
 concurrency:
@@ -31,8 +33,7 @@ jobs:
       matrix:
         version:
           - '1.10'
-          # Waiting for https://github.com/CliMA/Oceananigans.jl/pull/4093 to be merged.
-          # - '1.11'
+          - '1.11'
         os:
           - ubuntu-24.04
           # - ubuntu-22.04-arm
@@ -49,16 +50,25 @@ jobs:
           using Pkg
           Pkg.Registry.update()
           Pkg.instantiate()
-      - name: Get MLIR of ocean climate simulation
+      - name: Run ocean climate simulation, generate MLIR code and profile traces
         # timeout-minutes: 240
         run: |
           julia --color=yes --project ocean-climate-simulation/ocean_climate_simulation_mlir.jl
-        continue-on-error: true
-      - uses: actions/upload-artifact@v4
+      - name: Upload MLIR code
+        uses: actions/upload-artifact@v4
         timeout-minutes: 10
         if: ${{ always() }}
         with:
           name: 'ocean-simulation-mlir-${{ matrix.version }}-${{ matrix.os }}'
           path: '**/*.mlir'
+          retention-days: 90
+          overwrite: false
+      - name: Upload profile traces
+        uses: actions/upload-artifact@v4
+        timeout-minutes: 10
+        if: ${{ always() }}
+        with:
+          name: 'ocean-simulation-profile-${{ matrix.version }}-${{ matrix.os }}'
+          path: '**/profile_*.txt'
           retention-days: 90
           overwrite: false
