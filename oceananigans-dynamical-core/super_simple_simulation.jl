@@ -7,16 +7,17 @@ Reactant.Ops.DEBUG_MODE[] = true
 ENV["JULIA_DEBUG"] = "Reactant_jll"
 @show Reactant_jll.cuDriverGetVersion(dlopen("libcuda.so"))
 
-arch = GPU() # CPU() to run on CPU
+# arch = CPU()
+# arch = Distributed(GPU(), partition=Partition(2, 2)) # distributed on 4 GPUs
+arch = GPU()
 Nx, Ny, Nz = (360, 120, 100) # number of cells
 
 grid = LatitudeLongitudeGrid(arch, size=(Nx, Ny, Nz), halo=(7, 7, 7),
                              longitude=(0, 360), latitude=(-60, 60), z=(-1000, 0))
 
 # One of the implest configurations we might consider:
-model = HydrostaticFreeSurfaceModel(; grid, momentum_advection=WENO())
-
-@assert model.free_surface isa SplitExplicitFreeSurface
+free_surface = SplitExplicitFreeSurface(substeps=30)
+model = HydrostaticFreeSurfaceModel(; grid, free_surface, momentum_advection=WENO())
 
 uᵢ(x, y, z) = randn()
 set!(model, u=uᵢ, v=uᵢ)
