@@ -10,7 +10,7 @@ ENV["JULIA_DEBUG"] = "Reactant_jll"
 Reactant.set_default_backend("cpu") # or "gpu"
 
 # Set up a very simple Oceananigans simulation:
-arch = Oceananigans.Architectures.ReactantState() # CPU() to run on CPU
+arch = CPU() #Oceananigans.Architectures.ReactantState() # CPU() to run on CPU
 
 grid = LatitudeLongitudeGrid(arch,
                              size = (360, 160, 100), # number of cells, can certainly increase
@@ -28,11 +28,15 @@ set!(model, u=uᵢ, v=uᵢ)
 simulation = Simulation(model, Δt=60, stop_iteration=10)
 pop!(simulation.callbacks, :nan_checker)
 
-r_run! = @compile sync=true run!(simulation)
+if arch isa Oceananigans.Architectures.ReactantState
+    _run! = @compile sync=true run!(simulation)
+else
+    _run! = run!
+end
 
-r_run!(simulation)
+_run!(simulation)
 
-@time r_run!(simulation)
-@time r_run!(simulation)
-@time r_run!(simulation)
+@time _run!(simulation)
+@time _run!(simulation)
+@time _run!(simulation)
 
