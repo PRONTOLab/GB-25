@@ -25,7 +25,7 @@ model = HydrostaticFreeSurfaceModel(; grid, momentum_advection=WENOVectorInvaria
 uᵢ(x, y, z) = randn()
 set!(model, u=uᵢ, v=uᵢ)
 
-simulation = Simulation(model, Δt=60, stop_iteration=10)
+simulation = Simulation(model, Δt=60, stop_iteration=10, verbose=false)
 pop!(simulation.callbacks, :nan_checker)
 
 if arch isa Oceananigans.Architectures.ReactantState
