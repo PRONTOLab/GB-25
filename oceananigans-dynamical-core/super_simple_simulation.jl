@@ -10,7 +10,7 @@ ENV["JULIA_DEBUG"] = "Reactant_jll"
 Reactant.set_default_backend("cpu") # or "gpu"
 
 # Set up a very simple Oceananigans simulation:
-arch = CPU() #Oceananigans.Architectures.ReactantState() # CPU() to run on CPU
+arch = Oceananigans.Architectures.ReactantState() # CPU() to run on CPU
 
 grid = LatitudeLongitudeGrid(arch,
                              size = (360, 160, 100), # number of cells, can certainly increase
