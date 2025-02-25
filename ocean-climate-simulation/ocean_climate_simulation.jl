@@ -5,6 +5,7 @@ using Reactant
 
 using ClimaOcean
 using ClimaOcean.DataWrangling: ECCO4Monthly
+using ClimaOcean.OceanSeaIceModels.InterfaceComputations: FixedIterations, ComponentInterfaces
 using OrthogonalSphericalShellGrids: TripolarGrid
 
 using CFTime
@@ -83,7 +84,10 @@ radiation  = Radiation(arch)
 atmosphere = JRA55PrescribedAtmosphere(arch; backend=JRA55NetCDFBackend(41))
 
 # Coupled model and simulation
-coupled_model = OceanSeaIceModel(ocean; atmosphere, radiation) 
+solver_stop_criteria = FixedIterations(5) # note: more iterations = more accurate
+atmosphere_ocean_flux_formulation = SimilarityTheoryFluxes(; solver_stop_criteria)
+interfaces = ComponentInterfaces(atmosphere, ocean; radiation, atmosphere_ocean_flux_formulation)
+coupled_model = OceanSeaIceModel(ocean; atmosphere, radiation, interfaces)
 simulation = Simulation(coupled_model; Δt, stop_time)
 
 # Utility for printing progress to the terminal
