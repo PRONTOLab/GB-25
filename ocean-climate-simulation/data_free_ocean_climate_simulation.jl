@@ -5,6 +5,7 @@ using Reactant
 
 using ClimaOcean
 using ClimaOcean.DataWrangling: ECCO4Monthly
+using ClimaOcean.OceanSeaIceModels.InterfaceComputations: FixedIterations, ComponentInterfaces
 using OrthogonalSphericalShellGrids: TripolarGrid
 
 using CFTime
@@ -116,7 +117,10 @@ parent(atmosphere.downwelling_radiation.shortwave) .= parent(Qs)
 radiation  = Radiation(arch)
 
 # Coupled model and simulation
-coupled_model = @gbprofile "OceanSeaIceModel" OceanSeaIceModel(ocean; atmosphere, radiation)
+solver_stop_criteria = FixedIterations(5) # note: more iterations = more accurate
+atmosphere_ocean_flux_formulation = SimilarityTheoryFluxes(; solver_stop_criteria)
+interfaces = ComponentInterfaces(atmosphere, ocean; radiation, atmosphere_ocean_flux_formulation)
+coupled_model = @gbprofile "OceanSeaIceModel" OceanSeaIceModel(ocean; atmosphere, radiation, interfaces)
 simulation = @gbprofile "Simulation" Simulation(coupled_model; Δt=20minutes, stop_iteration=40)
 pop!(simulation.callbacks, :nan_checker)
 
