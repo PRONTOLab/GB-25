@@ -37,14 +37,6 @@ elseif use_reactant == "false" || use_reactant=="0"
     use_reactant = false
 end
 
-raise = get(ENV, "raise", false)
-if raise == "true" || raise=="1"
-    raise = true
-    Reactant.Compiler.Raise[] = true
-elseif raise == "false" || raise=="0"
-    raise = false
-end
-
 run = get(ENV, "run", true)
 if run == "true" || run == "1"
     run = true
