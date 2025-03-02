@@ -73,7 +73,8 @@ zb = z_faces[1]
 h = -zb + 100
 gaussian_islands(λ, φ) = zb + h * (mtn₁(λ, φ) + mtn₂(λ, φ))
 grid = @gbprofile "ImmersedBoundaryGrid" ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(gaussian_islands))
-ocean = @gbprofile "ocean_simulation" ocean_simulation(grid)
+free_surface = SplitExplicitFreeSurface(grid, fixed_Δt=Δt, cfl=0.7)
+ocean = @gbprofile "ocean_simulation" ocean_simulation(grid; free_surface)
 
 # Simple initial condition for producing pretty pictures
 φ₀ = 40
