@@ -1,6 +1,6 @@
 ENV["run"] = false
 ENV["use-reactant"] = true
-
+using Reactant
 Reactant.Compiler.DUMP_LLVMIR[] = true
 
 include("data_free_ocean_climate_simulation.jl")
