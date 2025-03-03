@@ -4,15 +4,20 @@ using Oceananigans.Units
 using Oceananigans.Architectures: ReactantState
 using Random
 using Printf
+using JSON
+
+params = open(JSON.parse, joinpath(@__DIR__, "params.json"))
+in_precis = eval(Meta.parse(params["precis"]))
+in_arch = eval(Meta.parse(params["arch"]))
+in_resol = eval(Meta.parse(params["resol"]))
 
 # Set default floating point type
-FT = Float32
+FT = in_precis
 Oceananigans.defaults.FloatType = FT
 
 # Architecture
-# arch = CPU() 
-arch = ReactantState() 
-resolution = 1/4
+arch = in_arch
+resolution = in_resol
 Lz = 1kilometers     # depth [m]
 Ny = Base.Int(20 / resolution)
 Nz = 50
@@ -21,12 +26,14 @@ N² = 4e-6  # [s⁻²] buoyancy frequency / stratification
 Δt = 2minutes
 φ₀ = 50
 closure = VerticalScalarDiffusivity(FT; κ=1e-5, ν=1e-4)
-prefix = "baroclinic_adjustment_$FT"
+prefix = joinpath(@__DIR__, "baroclinic_adjustment_$FT")
 stop_time = 100days
+
+@info "Nx, Ny, Nz = $Ny, $Ny, $Nz"
 
 grid = LatitudeLongitudeGrid(arch,
                              topology = (Periodic, Bounded, Bounded),
-                             size = (Ny, Ny, Nz), 
+                             size = (Ny, Ny, Nz),
                              longitude = (-10, 10),
                              latitude = (φ₀ - 10, φ₀ + 10),
                              z = (-Lz, 0),
@@ -42,7 +49,7 @@ model = HydrostaticFreeSurfaceModel(; grid, closure,
 # Parameters
 parameters = (; N², Δb, φ₀, Δφ = 20)
 
-@inline function bᵢ(λ, φ, z, p) 
+@inline function bᵢ(λ, φ, z, p)
     γ = π/2 - 2π * (p.φ₀ - φ) / p.Δφ
     b = ifelse(γ < 0, 0, ifelse(γ > π, 1, 1 - (π - γ - sin(π - γ) * cos(π - γ)) / π))
     return p.N² * z + p.Δb * b
@@ -53,7 +60,8 @@ Random.seed!(1234)
 bᵢ(x, y, z) = bᵢ(x, y, z, parameters) + ϵb * randn()
 set!(model, b=bᵢ)
 
-simulation = Simulation(model; Δt, stop_iteration=100)
+# simulation = Simulation(model; Δt, stop_iteration=100)
+simulation = Simulation(model; Δt, stop_time)
 
 wall_clock = Ref(time_ns())
 
@@ -105,4 +113,3 @@ else
 end
 
 _run!(simulation)
-
