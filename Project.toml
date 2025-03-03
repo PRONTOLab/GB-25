@@ -8,5 +8,6 @@ Reactant = "3c362404-f566-11ee-1572-e11a4b42c853"
 Reactant_jll = "0192cb87-2b54-54ad-80e0-3be72ad8a3c0"
 
 [compat]
+ClimaOcean = "0.4.2"
 Oceananigans = "=0.95.12"
-Reactant = "0.2.32"
+Reactant = "0.2.35"
