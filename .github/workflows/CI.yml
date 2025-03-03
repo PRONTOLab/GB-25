@@ -18,6 +18,8 @@ on:
       - 'ocean-climate-simulation/data_free_ocean_climate_simulation.jl'
       - 'Project.toml'
   workflow_dispatch:
+  schedule:
+    - cron: '12 07 * * *'
 
 concurrency:
   # Skip intermediate builds: always.
