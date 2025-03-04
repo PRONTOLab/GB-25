@@ -116,7 +116,8 @@ function gaussian_islands_tripolar_grid(arch::Architectures.AbstractArchitecture
     h = -zb + 100
     gaussian_islands(λ, φ) = zb + h * (mtn₁(λ, φ) + mtn₂(λ, φ))
 
-    return @gbprofile "ImmersedBoundaryGrid" ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(gaussian_islands))
+    return @gbprofile "ImmersedBoundaryGrid" ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(gaussian_islands);
+                                                                  active_cells_map=false)
 end
 
 function data_free_ocean_climate_simulation_init(arch::Architectures.AbstractArchitecture=Architectures.ReactantState())
@@ -154,7 +155,7 @@ function data_free_ocean_climate_simulation_init(arch::Architectures.AbstractArc
     parent(atmosphere.downwelling_radiation.shortwave) .= parent(Qs)
 
     # Atmospheric model
-    radiation  = Radiation(arch)
+    radiation = Radiation(arch)
 
     # Coupled model and simulation
     solver_stop_criteria = FixedIterations(5) # note: more iterations = more accurate
