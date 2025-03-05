@@ -2,12 +2,13 @@
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 CFTime = "179af706-886a-5703-950a-314cd64e0468"
 ClimaOcean = "0376089a-ecfe-4b0e-a64f-9c555d74d754"
+ClimaSeaIce = "6ba0ff68-24e6-4315-936c-2e99227c95a4"
 Oceananigans = "9e8cae18-63c1-5223-a75c-80ca9d6e9a09"
 OrthogonalSphericalShellGrids = "c2be9673-fb75-4747-82dc-aa2bb9f4aed0"
 Reactant = "3c362404-f566-11ee-1572-e11a4b42c853"
 Reactant_jll = "0192cb87-2b54-54ad-80e0-3be72ad8a3c0"
 
 [compat]
-ClimaOcean = "0.4.2"
-Oceananigans = "=0.95.12"
+ClimaOcean = "0.4.3"
+Oceananigans = "0.95.17"
 Reactant = "0.2.35"
