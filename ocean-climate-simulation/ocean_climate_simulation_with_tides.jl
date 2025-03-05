@@ -92,18 +92,32 @@ interfaces = ComponentInterfaces(atmosphere, ocean; radiation, atmosphere_ocean_
 coupled_model = OceanSeaIceModel(ocean; atmosphere, radiation, interfaces)
 simulation = Simulation(coupled_model; Δt, stop_iteration=2) #stop_time)
 
-# filename = "tidal_potential_jra55.jld2"
-# tidal_potential = FieldTimeSeries(filename, "Φ", backend=InMemory(41))
+filename = "tidal_potential_jra55.jld2"
+Φt = FieldTimeSeries(filename, "Φ", backend=InMemory(41))
+Φ = Field{Center, Center, Nothing}(grid)
 
 function update_barotropic_potential!(sim)
     coupled_model = sim.model
     ocean = coupled_model.ocean
     barotropic_potential = ClimaOcean.OceanSeaIceModels.forcing_barotropic_potential(ocean)
-    ρₒ = coupled_model.interfaces.ocean_properties.reference_density
-    parent(barotropic_potential) .= 0
+
+    # For testing that this code is the last to run prior to taking a 
+    # time step:
+    # parent(barotropic_potential) .= 0
+    
+    # Interpolate tidal potential time series to current time
+    t = time(simulation)
+    Oceananigans.Fields.interpolate!(Φ, Φt[Oceananigans.Utils.Time(t)])
+
+    # Add tidal potential to barotropic potential
+    # assuming that it has already been computed for the present time
+    # using JRA55 sea level pressure.
+    parent(barotropic_potential) .+= parent(Φ)
+
     return nothing
 end
 
+# Add callback that runs every iteration
 add_callback!(simulation, update_barotropic_potential!)
 
 #=
