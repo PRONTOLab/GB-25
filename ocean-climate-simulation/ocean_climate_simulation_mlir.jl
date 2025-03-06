@@ -1,9 +1,10 @@
-using Reactant
-using Oceananigans.Architectures: Architectures
+using GordonBell25: data_free_ocean_climate_simulation_init, PROFILE
+using Reactant: @code_hlo
+using Oceananigans: run!
+using Oceananigans.Architectures: ReactantState
 
-include("data_free_ocean_climate_simulation.jl")
 PROFILE[] = true
-simulation = data_free_ocean_climate_simulation_init(Architectures.ReactantState())
+simulation = data_free_ocean_climate_simulation_init(ReactantState())
 
 GC.gc(true); GC.gc(false); GC.gc(true)
 
