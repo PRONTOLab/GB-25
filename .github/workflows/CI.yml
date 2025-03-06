@@ -5,8 +5,8 @@ on:
     paths:
       - '.github/workflows/CI.yml'
       - 'ocean-climate-simulation/ocean_climate_simulation_mlir.jl'
-      - 'ocean-climate-simulation/data_free_ocean_climate_simulation.jl'
       - 'Project.toml'
+      - 'src/**'
   push:
     branches:
       - main
@@ -15,8 +15,8 @@ on:
     paths:
       - '.github/workflows/CI.yml'
       - 'ocean-climate-simulation/ocean_climate_simulation_mlir.jl'
-      - 'ocean-climate-simulation/data_free_ocean_climate_simulation.jl'
       - 'Project.toml'
+      - 'src/**'
   workflow_dispatch:
   schedule:
     - cron: '12 07,19 * * *'
