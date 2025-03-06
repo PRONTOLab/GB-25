@@ -1,7 +1,9 @@
-ENV["run"] = false
-ENV["use-reactant"] = true
+using GordonBell25: data_free_ocean_climate_simulation_init
+using Reactant: @code_hlo
+using Oceananigans: run!
 
-include("data_free_ocean_climate_simulation.jl")
+
+simulation = data_free_ocean_climate_simulation_init()
 
 unopt = @code_hlo optimize=false raise=true run!(simulation)
 

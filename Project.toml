@@ -1,13 +1,29 @@
+name = "GordonBell25"
+uuid = "01bae11a-8c86-47ea-956a-4644a8dd5e5e"
+authors = ["William Moses and contributors"]
+version = "0.1.0"
+
 [deps]
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 CFTime = "179af706-886a-5703-950a-314cd64e0468"
 ClimaOcean = "0376089a-ecfe-4b0e-a64f-9c555d74d754"
+Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
 Oceananigans = "9e8cae18-63c1-5223-a75c-80ca9d6e9a09"
 OrthogonalSphericalShellGrids = "c2be9673-fb75-4747-82dc-aa2bb9f4aed0"
+PrecompileTools = "aea7be01-6a6a-4083-8856-8a6e6704d82a"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+Profile = "9abbd945-dff8-562f-b5e8-e1ebf5ef1b79"
 Reactant = "3c362404-f566-11ee-1572-e11a4b42c853"
 Reactant_jll = "0192cb87-2b54-54ad-80e0-3be72ad8a3c0"
 
 [compat]
+BenchmarkTools = "1.6.0"
+CFTime = "0.1.4"
 ClimaOcean = "0.4.2"
+Dates = "1"
 Oceananigans = "=0.95.12"
+OrthogonalSphericalShellGrids = "0.2.1"
+PrecompileTools = "1.2.1"
+Printf = "1"
+Profile = "1"
 Reactant = "0.2.35"

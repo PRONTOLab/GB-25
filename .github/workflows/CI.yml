@@ -5,8 +5,8 @@ on:
     paths:
       - '.github/workflows/CI.yml'
       - 'ocean-climate-simulation/ocean_climate_simulation_mlir.jl'
-      - 'ocean-climate-simulation/data_free_ocean_climate_simulation.jl'
       - 'Project.toml'
+      - 'src/**'
   push:
     branches:
       - main
@@ -15,8 +15,8 @@ on:
     paths:
       - '.github/workflows/CI.yml'
       - 'ocean-climate-simulation/ocean_climate_simulation_mlir.jl'
-      - 'ocean-climate-simulation/data_free_ocean_climate_simulation.jl'
       - 'Project.toml'
+      - 'src/**'
   workflow_dispatch:
   schedule:
     - cron: '12 07 * * *'
@@ -53,8 +53,16 @@ jobs:
           using Pkg
           Pkg.Registry.update()
           Pkg.instantiate()
-      - name: Run ocean climate simulation, generate MLIR code and profile traces
-        # timeout-minutes: 240
+      - name: Run ocean climate simulation, generate profile traces
+        timeout-minutes: 180
+        shell: julia --color=yes --project {0}
+        run: |
+          using GordonBell25
+          GordonBell25.PROFILE[] = true
+          simulation = GordonBell25.data_free_ocean_climate_simulation_init()
+          run!(simulation)
+      - name: Generate MLIR code
+        timeout-minutes: 30
         run: |
           julia --color=yes --project ocean-climate-simulation/ocean_climate_simulation_mlir.jl
       - name: Upload MLIR code
