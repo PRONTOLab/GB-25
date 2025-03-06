@@ -1,6 +1,6 @@
 using Oceananigans
 using Oceananigans.Units
-using Oceananigans.Architectures
+using Oceananigans.Architectures: Architectures
 using Reactant
 
 using ClimaOcean
@@ -55,15 +55,10 @@ function progress(sim)
     return nothing
 end
 
-function data_free_ocean_climate_simulation_init()
-
-    use_reactant = true
+function data_free_ocean_climate_simulation_init(arch::Architectures.AbstractArchitecture=Architectures.ReactantState())
 
     # See visualize_ocean_climate_simulation.jl for information about how to
     # visualize the results of this run.
-
-    # Architecture
-    arch = use_reactant ? Oceananigans.Architectures.ReactantState() : CPU() # change this to use GPU
 
     # Horizontal resolution
     resolution = 2 # 1/4 for quarter degree
@@ -147,28 +142,27 @@ function data_free_ocean_climate_simulation_init()
 
     wall_time[] = time_ns()
 
-    if !use_reactant
+    if !(arch isa Oceananigans.Architectures.ReactantState)
         add_callback!(simulation, progress, IterationInterval(10))
     end
 
     # Output
-    if arch isa Distributed
-        rank = arch.local_rank
-        prefix = "ocean_climate_simulation_rank$rank"
+    prefix = if arch isa Distributed
+        "ocean_climate_simulation_rank$(arch.local_rank)"
     else
-        prefix = "ocean_climate_simulation_serial"
+        "ocean_climate_simulation_serial"
     end
 
     Nz = size(grid, 3)
     outputs = merge(ocean.model.velocities, ocean.model.tracers)
-    if !use_reactant
-	surface_writer = JLD2OutputWriter(ocean.model, outputs,
-					  filename = prefix * "_surface.jld2",
-					  indices = (:, :, Nz),
-					  schedule = TimeInterval(3days),
-					  overwrite_existing = true)
+    if !(arch isa Oceananigans.Architectures.ReactantState)
+        surface_writer = JLD2OutputWriter(ocean.model, outputs,
+        				  filename = prefix * "_surface.jld2",
+        				  indices = (:, :, Nz),
+        				  schedule = TimeInterval(3days),
+        				  overwrite_existing = true)
 
-	simulation.output_writers[:surface] = surface_writer
+        simulation.output_writers[:surface] = surface_writer
     end
 
     return simulation
