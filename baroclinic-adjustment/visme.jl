@@ -2,6 +2,9 @@ using CairoMakie
 using Oceananigans
 using Printf
 
+# User-defined prefix for filtering
+prefix = "r_oa_Mar6"
+
 # Function to extract label from directory name
 function extract_label(dir_name)
     m = match(r"GPU_(F\d+)_([\d_]+)", dir_name)
@@ -18,7 +21,8 @@ end
 all_dirs = filter(isdir, readdir())
 
 # Keep only directories that match the naming pattern (adjust regex if needed)
-matching_dirs = filter(d -> occursin(r"GPU_(F\d+)_\d+__\d+", d), all_dirs)
+# matching_dirs = filter(d -> occursin(r"GPU_(F\d+)_\d+__\d+", d), all_dirs)
+matching_dirs = filter(d -> startswith(d, prefix) && occursin(r"GPU_(F\d+)_\d+__\d+", d), all_dirs)
 
 # Sort directories for consistent plotting order
 sort!(matching_dirs)
@@ -42,10 +46,9 @@ for dir in matching_dirs
 end
 
 # Add legend
-# axislegend(ax)
-axislegend(ax, position = :lt)
+axislegend(ax, position = :rb)
 
 # Display figure
 display(fig)
 
-save("numerics.png", fig)
+save("numerics4.png", fig)
