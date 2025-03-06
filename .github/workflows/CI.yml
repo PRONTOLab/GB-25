@@ -57,7 +57,8 @@ jobs:
         timeout-minutes: 180
         shell: julia --color=yes --project {0}
         run: |
-          using GordonBell25
+          using GordonBell25: GordonBell25
+          using Oceananigans: run!
           GordonBell25.PROFILE[] = true
           simulation = GordonBell25.data_free_ocean_climate_simulation_init()
           run!(simulation)
