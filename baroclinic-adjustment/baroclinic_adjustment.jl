@@ -23,11 +23,10 @@ Ny = Base.Int(20 / resolution)
 Nz = 50
 N² = 4e-6  # [s⁻²] buoyancy frequency / stratification
 Δb = 0.005 # [m/s²] buoyancy difference
-Δt = 2minutes
 φ₀ = 50
 closure = VerticalScalarDiffusivity(FT; κ=1e-5, ν=1e-4)
 prefix = joinpath(@__DIR__, "baroclinic_adjustment_$FT")
-stop_time = 100days
+stop_time = 800days
 
 @info "Nx, Ny, Nz = $Ny, $Ny, $Nz"
 
@@ -59,6 +58,10 @@ end
 Random.seed!(1234)
 bᵢ(x, y, z) = bᵢ(x, y, z, parameters) + ϵb * randn()
 set!(model, b=bᵢ)
+
+# time step
+dx = minimum_xspacing(grid)
+Δt = 0.1 * dx / 2 # c * dx / max(U)
 
 # simulation = Simulation(model; Δt, stop_iteration=100)
 simulation = Simulation(model; Δt, stop_time)
