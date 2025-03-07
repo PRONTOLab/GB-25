@@ -3,6 +3,9 @@ using Oceananigans.Units
 using Oceananigans.Architectures: Architectures
 using Reactant
 
+using CUDA
+using KernelAbstractions
+
 using ClimaOcean: exponential_z_faces
 using OrthogonalSphericalShellGrids: TripolarGrid
 
@@ -35,13 +38,14 @@ function _grid(arch::Architectures.AbstractArchitecture)
 
     # Grid setup
     z_faces = exponential_z_faces(; Nz, depth=4000, h=30) # may need changing for very large Nz
-    underlying_grid = TripolarGrid(arch; size=(Nx, Ny, Nz), halo=(7, 7, 7), z=z_faces)
+    grid = TripolarGrid(arch; size=(Nx, Ny, Nz), halo=(7, 7, 7), z=z_faces)
 
-    #underlying_grid = LatitudeLongitudeGrid(arch; size=(Nx, Ny, Nz), halo=(7, 7, 7), z=z_faces,
-    #                                        longitude=(0, 360), latitude=(-80, 80))
     zb = z_faces[1]
     h = -zb + 100
     gaussian_islands(λ, φ) = zb + h * (mtn₁(λ, φ) + mtn₂(λ, φ))
+    ib = GridFittedBottom(gaussian_islands)
 
-    return ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(gaussian_islands))
+    bottom_field = Field{Center, Center, Nothing}(grid)
+    set!(bottom_field, ib.bottom_height)
+    Oceananigans.Utils.launch!(Oceananigans.Architectures.architecture(grid), grid, :xy, Oceananigans.ImmersedBoundaries._compute_numerical_bottom_height!, bottom_field, grid, ib)
 end
