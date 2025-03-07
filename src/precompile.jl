@@ -6,5 +6,6 @@ if VERSION != v"1.11.3"
         @compile_workload begin
             data_free_ocean_climate_simulation_init()
         end
+        Reactant.clear_oc_cache()
     end
 end
