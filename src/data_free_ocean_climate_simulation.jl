@@ -22,6 +22,9 @@ macro gbprofile(name::String, expr::Expr)
             $(Profile.init)(; delay=0.1)
             out = $(Profile).@profile $(esc(expr))
             open(string("profile_", $(esc(name)), ".txt"), "w") do s
+                println(s, "# Showing profile of")
+                println(s, "#     ", $(esc(expr)))
+                println(s, "# at ", $(string(__source__)))
                 $(Profile.print)(IOContext(s, :displaysize => (48, 1000)))
             end
             out
@@ -55,11 +58,43 @@ function progress(sim)
     return nothing
 end
 
-function data_free_ocean_climate_simulation_init(arch::Architectures.AbstractArchitecture=Architectures.ReactantState())
+function mtn₁(λ, φ)
+    λ₁ = 70
+    φ₁ = 55
+    dφ = 5
+    return exp(-((λ - λ₁)^2 + (φ - φ₁)^2) / 2dφ^2)
+end
 
-    # See visualize_ocean_climate_simulation.jl for information about how to
-    # visualize the results of this run.
+function mtn₂(λ, φ)
+    λ₁ = 70
+    λ₂ = λ₁ + 180
+    φ₂ = 55
+    dφ = 5
+    return exp(-((λ - λ₂)^2 + (φ - φ₂)^2) / 2dφ^2)
+end
 
+# Simple initial condition for producing pretty pictures
+function smooth_step(φ)
+    φ₀ = 40
+    dφ = 5
+    return (1 - tanh((abs(φ) - φ₀) / dφ)) / 2
+end
+
+function Tᵢ(λ, φ, z)
+    dTdz = 1e-3
+    return (30 + dTdz * z) * smooth_step(φ) + rand()
+end
+
+function Sᵢ(λ, φ, z)
+    dSdz = - 5e-3
+    return dSdz * z + rand()
+end
+
+zonal_wind(λ, φ) = 4 * sind(2φ)^2 - 2 * exp(-(abs(φ) - 12)^2 / 72)
+sunlight(λ, φ) = -200 - 600 * cosd(φ)^2
+Tatm(λ, φ, z=0) = 30 * cosd(φ)
+
+function _grid(arch::Architectures.AbstractArchitecture)
     # Horizontal resolution
     resolution = 2 # 1/4 for quarter degree
     Nx = convert(Int, 360 / resolution)
@@ -77,28 +112,21 @@ function data_free_ocean_climate_simulation_init(arch::Architectures.AbstractArc
 
     #underlying_grid = LatitudeLongitudeGrid(arch; size=(Nx, Ny, Nz), halo=(7, 7, 7), z=z_faces,
     #                                        longitude=(0, 360), latitude=(-80, 80))
-
-    φ₁ = φ₂ = 55
-    λ₁ = 70
-    λ₂ = λ₁ + 180
-    dφ = 5
-    mtn₁(λ, φ) = exp(-((λ - λ₁)^2 + (φ - φ₁)^2) / 2dφ^2)
-    mtn₂(λ, φ) = exp(-((λ - λ₂)^2 + (φ - φ₂)^2) / 2dφ^2)
     zb = z_faces[1]
     h = -zb + 100
     gaussian_islands(λ, φ) = zb + h * (mtn₁(λ, φ) + mtn₂(λ, φ))
 
-    grid = @gbprofile "ImmersedBoundaryGrid" ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(gaussian_islands))
+    return @gbprofile "ImmersedBoundaryGrid" ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(gaussian_islands))
+end
+
+function data_free_ocean_climate_simulation_init(arch::Architectures.AbstractArchitecture=Architectures.ReactantState())
+
+    grid = _grid(arch)
+
+    # See visualize_ocean_climate_simulation.jl for information about how to
+    # visualize the results of this run.
     ocean = @gbprofile "ocean_simulation" ocean_simulation(grid)
 
-    # Simple initial condition for producing pretty pictures
-    φ₀ = 40
-    dφ = 5
-    dTdz = 1e-3
-    dSdz = - 5e-3
-    smooth_step(φ) = (1 - tanh((abs(φ) - φ₀) / dφ)) / 2
-    Tᵢ(λ, φ, z) = (30 + dTdz * z) * smooth_step(φ) + rand()
-    Sᵢ(λ, φ, z) = dSdz * z + rand()
     @gbprofile "set_ocean_model" set!(ocean.model, T=Tᵢ, S=Sᵢ)
 
     # Set up an atmosphere
@@ -115,10 +143,6 @@ function data_free_ocean_climate_simulation_init(arch::Architectures.AbstractArc
     Ta = Field{Center, Center, Nothing}(atmos_grid)
     ua = Field{Center, Center, Nothing}(atmos_grid)
     Qs = Field{Center, Center, Nothing}(atmos_grid)
-
-    zonal_wind(λ, φ) = 4 * sind(2φ)^2 - 2 * exp(-(abs(φ) - 12)^2 / 72)
-    sunlight(λ, φ) = -200 - 600 * cosd(φ)^2
-    Tatm(λ, φ, z=0) = 30 * cosd(φ)
 
     set!(Ta, Tatm)
     set!(ua, zonal_wind)
