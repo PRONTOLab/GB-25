@@ -1,4 +1,4 @@
-using KernelAbstractions, Reactant, Oceananigans
+using KernelAbstractions, Reactant, CUDA
 
 @kernel kernel!() = nothing
 function launch_kernel()

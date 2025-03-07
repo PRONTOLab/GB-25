@@ -4,13 +4,13 @@ authors = ["William Moses and contributors"]
 version = "0.1.0"
 
 [deps]
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
-Oceananigans = "9e8cae18-63c1-5223-a75c-80ca9d6e9a09"
 PrecompileTools = "aea7be01-6a6a-4083-8856-8a6e6704d82a"
 Reactant = "3c362404-f566-11ee-1572-e11a4b42c853"
 
 [compat]
+CUDA = "5.6.1"
 KernelAbstractions = "0.9.34"
-Oceananigans = "=0.95.12"
 PrecompileTools = "1.2.1"
 Reactant = "0.2.35"
