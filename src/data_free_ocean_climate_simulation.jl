@@ -6,6 +6,7 @@ using Reactant
 using ClimaOcean
 using ClimaOcean.OceanSeaIceModels.InterfaceComputations: FixedIterations, ComponentInterfaces
 using OrthogonalSphericalShellGrids: TripolarGrid
+using KernelAbstractions: @kernel
 
 using CFTime
 using Dates
@@ -13,6 +14,10 @@ using Printf
 using Profile
 
 const PROFILE = Ref(false)
+
+# 🚨 HACK 🚨
+# Work around <https://github.com/PRONTOLab/GB-25/issues/31>.
+@kernel dummy() = nothing
 
 macro gbprofile(name::String, expr::Expr)
     return quote
