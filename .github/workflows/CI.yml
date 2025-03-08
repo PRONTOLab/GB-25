@@ -42,10 +42,15 @@ jobs:
           # - ubuntu-22.04-arm
     steps:
       - uses: actions/checkout@v4
+      - name: Install earlyoom
+        run: |
+          sudo apt-get install -y earlyoom
       - uses: julia-actions/setup-julia@v2
         with:
           version: ${{ matrix.version }}
       - uses: julia-actions/cache@v2
+      - name: Collect Workflow Telemetry
+        uses: catchpoint/workflow-telemetry-action@v2
       - name: Instantiate environment
         timeout-minutes: 60
         shell: julia --color=yes --project {0}
@@ -54,8 +59,9 @@ jobs:
           Pkg.Registry.update()
           Pkg.instantiate()
       - name: Run ocean climate simulation, generate MLIR code and profile traces
-        # timeout-minutes: 240
+        timeout-minutes: 180
         run: |
+          earlyoom -m 5 -s 100 -r 120 --prefer 'julia' &
           julia --color=yes --project ocean-climate-simulation/ocean_climate_simulation_mlir.jl
       - name: Upload MLIR code
         uses: actions/upload-artifact@v4
