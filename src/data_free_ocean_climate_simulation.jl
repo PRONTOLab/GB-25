@@ -3,9 +3,6 @@ using Oceananigans.Units
 using Oceananigans.Architectures: Architectures
 using Reactant
 
-using CUDA
-using KernelAbstractions
-
 using ClimaOcean: exponential_z_faces
 using OrthogonalSphericalShellGrids: TripolarGrid
 
@@ -23,6 +20,9 @@ function mtn₂(λ, φ)
     dφ = 5
     return exp(-((λ - λ₂)^2 + (φ - φ₂)^2) / 2dφ^2)
 end
+
+# Uncomment the line below and the segfault is gone.  WAT
+# @kernel dummy() = nothing
 
 function _grid(arch::Architectures.AbstractArchitecture)
     # Horizontal resolution
