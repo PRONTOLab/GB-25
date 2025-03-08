@@ -6,18 +6,20 @@ using Random
 using Printf
 using JSON
 
+#=
 params = open(JSON.parse, joinpath(@__DIR__, "params.json"))
 in_precis = eval(Meta.parse(params["precis"]))
 in_arch = eval(Meta.parse(params["arch"]))
 in_resol = eval(Meta.parse(params["resol"]))
+=#
 
 # Set default floating point type
-FT = in_precis
+FT = Float32 #in_precis
 Oceananigans.defaults.FloatType = FT
 
 # Architecture
-arch = in_arch
-resolution = in_resol
+arch = ReactantState() #in_arch
+resolution = 1/4 #in_resol
 Lz = 1kilometers     # depth [m]
 Ny = Base.Int(20 / resolution)
 Nz = 50
@@ -28,7 +30,7 @@ closure = VerticalScalarDiffusivity(FT; κ=1e-5, ν=1e-4)
 prefix = joinpath(@__DIR__, "baroclinic_adjustment_$FT")
 stop_time = 800days
 
-@info "Nx, Ny, Nz = $Ny, $Ny, $Nz"
+# @info "Nx, Ny, Nz = $Ny, $Ny, $Nz"
 
 grid = LatitudeLongitudeGrid(arch,
                              topology = (Periodic, Bounded, Bounded),
@@ -44,6 +46,8 @@ model = HydrostaticFreeSurfaceModel(; grid, closure,
                                     tracers = :b,
                                     momentum_advection = WENOVectorInvariant(),
                                     tracer_advection = WENO(order=7))
+
+@info model
 
 # Parameters
 parameters = (; N², Δb, φ₀, Δφ = 20)
@@ -64,7 +68,10 @@ dx = minimum_xspacing(grid)
 Δt = 0.1 * dx / 2 # c * dx / max(U)
 
 # simulation = Simulation(model; Δt, stop_iteration=100)
-simulation = Simulation(model; Δt, stop_time)
+#simulation = Simulation(model; Δt, stop_time)
+
+stop_iteration = ceil(Int, stop_time / Δt)
+simulation = Simulation(model; Δt, stop_iteration)
 
 wall_clock = Ref(time_ns())
 
@@ -85,7 +92,7 @@ function progress(sim)
     return nothing
 end
 
-add_callback!(simulation, progress, IterationInterval(10))
+# add_callback!(simulation, progress, IterationInterval(10))
 
 u, v, w = model.velocities
 e = @at (Center, Center, Center) (u^2 + v^2) / 2
@@ -95,7 +102,7 @@ ke_ow = JLD2OutputWriter(model, (; E),
                          schedule = TimeInterval(1days),
                          overwrite_existing = true)
 
-simulation.output_writers[:ke] = ke_ow
+# simulation.output_writers[:ke] = ke_ow
 
 Nz = size(grid, 3)
 b = model.tracers.b
@@ -107,12 +114,62 @@ f_ow = JLD2OutputWriter(model, fields,
                         schedule = TimeInterval(10days),
                         overwrite_existing = true)
 
-simulation.output_writers[:fields] = f_ow
+# simulation.output_writers[:fields] = f_ow
 
 if arch isa ReactantState
-    _run! = @compile run!(simulation)
+    @time "Compiling first time step" begin
+        compiled_first_time_step! = @compile time_step!(model, Δt, euler=true)
+    end
+
+    @time "Compiling time step" begin
+        compiled_time_step! = @compile time_step!(model, Δt)
+    end
+
 else
-    _run! = run!
+    compiled_first_time_step!(model, Δt) = time_step!(model, Δt, euler=true)
+    compiled_time_step! = time_step!
 end
 
-_run!(simulation)
+progress_interval = 10
+fast_output_interval = 200
+slow_output_interval = 10 * fast_output_interval
+
+Ninner = progress_interval= 10
+Nfast = Int(fast_output_interval / Ninner)
+Nslow = Int(slow_output_interval / Nfast)
+
+Nt = ceil(Int, stop_time / Δt)
+Nouter = ceil(Int, Nt / Nslow)
+
+@info """
+
+    Approximate total number of iterations:   $Nt
+    Number of inner iterations:               $Ninner
+    "Fast output" loop over inner iterations: $Nfast ($(Nfast * Ninner))
+    "Slow output" loop over inner iterations: $Nslow ($(Nslow * Nfast * Ninner))
+    Outer iterations over slow output:        $Nouter ($(Nouter * Nslow * Nfast * Ninner))
+"""
+
+@time "Running $Nt time steps..." begin
+    for outer = 1:Nouter
+        for slow = 1:Nslow
+            for fast = 1:Nfast
+                for inner = 1:Ninner
+                    if iteration(simulation) == 1
+                        compiled_first_time_step!(model, Δt)
+                    else
+                        compiled_time_step!(model, Δt)
+                    end
+                end
+                progress(simulation)
+            end
+            @time "Writing fast output..." begin
+                Oceananigans.OutputWriters.write_output!(ke_ow, simulation.model)
+            end
+        end
+        @time "Writing slow output..." begin
+            Oceananigans.OutputWriters.write_output!(f_ow, simulation.model)
+        end
+    end
+end
+
