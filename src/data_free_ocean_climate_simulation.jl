@@ -6,13 +6,18 @@ using Reactant
 using ClimaOcean
 using ClimaOcean.OceanSeaIceModels.InterfaceComputations: FixedIterations, ComponentInterfaces
 using OrthogonalSphericalShellGrids: TripolarGrid
+using KernelAbstractions: @kernel
 
 using CFTime
 using Dates
 using Printf
 using Profile
 
-PROFILE::Base.RefValue{Bool} = Ref(false)
+const PROFILE = Ref(false)
+
+# 🚨 HACK 🚨
+# Work around <https://github.com/PRONTOLab/GB-25/issues/31>.
+@kernel dummy() = nothing
 
 macro gbprofile(name::String, expr::Expr)
     return quote
@@ -35,7 +40,7 @@ macro gbprofile(name::String, expr::Expr)
 end
 
 # Utility for printing progress to the terminal
-wall_time::UInt64 = UInt64(0)
+const wall_time = Ref(UInt64(0))
 
 function progress(sim)
     ocean = sim.model.ocean
@@ -44,7 +49,7 @@ function progress(sim)
     Tmax = maximum(interior(T))
     Tmin = minimum(interior(T))
     umax = (maximum(abs, interior(u)), maximum(abs, interior(v)), maximum(abs, interior(w)))
-    step_time = 1e-9 * (time_ns() - wall_time)
+    step_time = 1e-9 * (time_ns() - wall_time[])
 
     msg = @sprintf("Time: %s, n: %d, Δt: %s, max|u|: (%.2e, %.2e, %.2e) m s⁻¹, \
                    extrema(T): (%.2f, %.2f) ᵒC, wall time: %s \n",
@@ -53,7 +58,7 @@ function progress(sim)
 
     ClimaOcean.@root @info(msg)
 
-    wall_time = time_ns()
+    wall_time[] = time_ns()
 
     return nothing
 end
@@ -165,7 +170,7 @@ function data_free_ocean_climate_simulation_init(arch::Architectures.AbstractArc
     simulation = @gbprofile "Simulation" Simulation(coupled_model; Δt=20minutes, stop_iteration=40)
     pop!(simulation.callbacks, :nan_checker)
 
-    wall_time = time_ns()
+    wall_time[] = time_ns()
 
     if !(arch isa Architectures.ReactantState)
         add_callback!(simulation, progress, IterationInterval(10))
