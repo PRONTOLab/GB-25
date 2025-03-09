@@ -116,25 +116,18 @@ f_ow = JLD2OutputWriter(model, fields,
 
 # simulation.output_writers[:fields] = f_ow
 
-if arch isa ReactantState
-    @time "Compiling first time step" begin
-        compiled_first_time_step! = @compile time_step!(model, Δt, euler=true)
-    end
+Ninner = 10
 
-    @time "Compiling time step" begin
-        compiled_time_step! = @compile time_step!(model, Δt)
+function inner_loop!(model)
+    for _ = 1:Ninner
+        time_step!(model, Δt)
     end
-
-else
-    compiled_first_time_step!(model, Δt) = time_step!(model, Δt, euler=true)
-    compiled_time_step! = time_step!
+    return nothing
 end
 
-progress_interval = 10
 fast_output_interval = 200
 slow_output_interval = 10 * fast_output_interval
 
-Ninner = progress_interval= 10
 Nfast = Int(fast_output_interval / Ninner)
 Nslow = Int(slow_output_interval / Nfast)
 
@@ -150,26 +143,36 @@ Nouter = ceil(Int, Nt / Nslow)
     Outer iterations over slow output:        $Nouter ($(Nouter * Nslow * Nfast * Ninner))
 """
 
+if arch isa ReactantState
+    @time "Compiling first time step" begin
+        compiled_first_time_step! = @compile time_step!(model, Δt, euler=true)
+    end
+
+    @time "Compiling time step loop" begin
+        compiled_inner_loop! = @compile inner_loop!(model)
+    end
+
+else
+    compiled_first_time_step!(model, Δt) = time_step!(model, Δt, euler=true)
+    compiled_inner_loop!(model) = inner_loop!(model)
+end
+
+using Oceananigans.OutputWriters: write_output!
+
 @time "Running $Nt time steps..." begin
+    if iteration(simulation) == 1
+        compiled_first_time_step!(model, Δt)
+    end
+
     for outer = 1:Nouter
         for slow = 1:Nslow
             for fast = 1:Nfast
-                for inner = 1:Ninner
-                    if iteration(simulation) == 1
-                        compiled_first_time_step!(model, Δt)
-                    else
-                        compiled_time_step!(model, Δt)
-                    end
-                end
+                compiled_inner_loop!(model)
                 progress(simulation)
             end
-            @time "Writing fast output..." begin
-                Oceananigans.OutputWriters.write_output!(ke_ow, simulation.model)
-            end
+            @time "Writing fast output..." write_output!(ke_ow, simulation.model)
         end
-        @time "Writing slow output..." begin
-            Oceananigans.OutputWriters.write_output!(f_ow, simulation.model)
-        end
+        @time "Writing slow output..." write_output!(f_ow, simulation.model)
     end
 end
 
