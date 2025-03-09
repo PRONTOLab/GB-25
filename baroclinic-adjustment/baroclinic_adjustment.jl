@@ -18,7 +18,7 @@ FT = Float32 #in_precis
 Oceananigans.defaults.FloatType = FT
 
 # Architecture
-arch = ReactantState() #in_arch
+arch = CPU() #ReactantState() #in_arch
 resolution = 1/4 #in_resol
 Lz = 1kilometers     # depth [m]
 Ny = Base.Int(20 / resolution)
@@ -119,7 +119,7 @@ f_ow = JLD2OutputWriter(model, fields,
 Ninner = 10
 
 function inner_loop!(model)
-    for _ = 1:Ninner
+    @trace for _ = 1:Ninner
         time_step!(model, Δt)
     end
     return nothing
@@ -148,7 +148,7 @@ if arch isa ReactantState
         compiled_first_time_step! = @compile time_step!(model, Δt, euler=true)
     end
 
-    @time "Compiling time step loop" begin
+    @time "Compiling inner loop" begin
         compiled_inner_loop! = @compile inner_loop!(model)
     end
 

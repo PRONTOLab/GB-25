@@ -60,7 +60,9 @@ zb = z_faces[1]
 h = -zb + 100
 gaussian_islands(λ, φ) = zb + h * (mtn₁(λ, φ) + mtn₂(λ, φ))
 grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(gaussian_islands))
-ocean = ocean_simulation(grid)
+
+@info "Building ocean simulation..."
+@time ocean = ocean_simulation(grid)
 
 # Simple initial condition for producing pretty pictures
 φ₀ = 40
@@ -104,8 +106,10 @@ parent(atmosphere.downwelling_radiation.shortwave) .= parent(Qs)
 radiation  = Radiation(arch)
 
 # Coupled model and simulation
-coupled_model = OceanSeaIceModel(ocean; atmosphere, radiation) 
+@info "Building OceanSeaIceModel..."
+@time coupled_model = OceanSeaIceModel(ocean; atmosphere, radiation) 
 simulation = Simulation(coupled_model; Δt=20minutes, stop_iteration=40)
+stop_time = simulation.Δt * 100
 
 # Utility for printing progress to the terminal
 wall_time = Ref(time_ns())
@@ -131,8 +135,6 @@ function progress(sim)
     return nothing
 end
 
-add_callback!(simulation, progress, IterationInterval(10))
-
 # Output
 if arch isa Distributed
     rank = arch.local_rank
@@ -149,10 +151,70 @@ surface_writer = JLD2OutputWriter(ocean.model, outputs,
                                   schedule = TimeInterval(3days),
                                   overwrite_existing = true)
 
-simulation.output_writers[:surface] = surface_writer
+# add_callback!(simulation, progress, IterationInterval(10))
+# simulation.output_writers[:surface] = surface_writer
+
+Ninner = 10
+function inner_loop!(model)
+    # Should this be @trace for?
+    for _ = 1:Ninner
+        time_step!(model, Δt)
+    end
+    return nothing
+end
+
+fast_output_interval = 100
+slow_output_interval = fast_output_interval
+
+Nfast = Int(fast_output_interval / Ninner)
+Nslow = Int(slow_output_interval / Nfast)
+
+Nt = ceil(Int, stop_time / Δt)
+Nouter = ceil(Int, Nt / Nslow)
+
+@info """
+
+    Approximate total number of iterations:   $Nt
+    Number of inner iterations:               $Ninner
+    "Fast output" loop over inner iterations: $Nfast ($(Nfast * Ninner))
+    "Slow output" loop over inner iterations: $Nslow ($(Nslow * Nfast * Ninner))
+    Outer iterations over slow output:        $Nouter ($(Nouter * Nslow * Nfast * Ninner))
+"""
+
+if arch isa ReactantState
+    @time "Compiling first time step" begin
+        compiled_first_time_step! = @compile time_step!(coupled_model, Δt, euler=true)
+    end
+
+    @time "Compiling inner loop" begin
+        compiled_inner_loop! = @compile inner_loop!(coupled_model)
+    end
+
+else
+    compiled_first_time_step!(model, Δt) = time_step!(model, Δt, euler=true)
+    compiled_inner_loop!(model) = inner_loop!(model)
+end
+
+using Oceananigans.OutputWriters: write_output!
+
+function gbrun!(sim)
+    @time "Running $Nt time steps..." begin
+        iteration(sim) == 1 && compiled_first_time_step!(sim.model, Δt)
+
+        for outer = 1:Nouter
+            for slow = 1:Nslow
+                for fast = 1:Nfast
+                    compiled_inner_loop!(sim.model)
+                    progress(sim)
+                end
+                @time "Writing fast output..." write_output!(surface_writer, sim.model)
+            end
+        end
+    end
+end
 
 # Run the simulation
 if get(ENV, "dont-run", true)
-    run!(simulation)
+    gbrun!(simulation)
 end
 
