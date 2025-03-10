@@ -120,7 +120,7 @@ function gaussian_islands_tripolar_grid(arch::Architectures.AbstractArchitecture
                                                                   active_cells_map=false)
 end
 
-function data_free_ocean_climate_simulation_init(arch::Architectures.AbstractArchitecture=Architectures.ReactantState())
+function data_free_ocean_climate_model_init(arch::Architectures.AbstractArchitecture=Architectures.ReactantState())
 
     grid = gaussian_islands_tripolar_grid(arch)
 
@@ -157,39 +157,12 @@ function data_free_ocean_climate_simulation_init(arch::Architectures.AbstractArc
     # Atmospheric model
     radiation = Radiation(arch)
 
-    # Coupled model and simulation
+    # Coupled model
     solver_stop_criteria = FixedIterations(5) # note: more iterations = more accurate
     atmosphere_ocean_flux_formulation = SimilarityTheoryFluxes(; solver_stop_criteria)
     interfaces = ComponentInterfaces(atmosphere, ocean; radiation, atmosphere_ocean_flux_formulation)
     coupled_model = @gbprofile "OceanSeaIceModel" OceanSeaIceModel(ocean; atmosphere, radiation, interfaces)
-    simulation = @gbprofile "Simulation" Simulation(coupled_model; Δt=20minutes, stop_iteration=40)
-    pop!(simulation.callbacks, :nan_checker)
 
-    wall_time = time_ns()
+    return coupled_model
+end
 
-    if !(arch isa Architectures.ReactantState)
-        add_callback!(simulation, progress, IterationInterval(10))
-    end
-
-    # Output
-    prefix = if arch isa Distributed
-        "ocean_climate_simulation_rank$(arch.local_rank)"
-    else
-        "ocean_climate_simulation_serial"
-    end
-
-    Nz = size(grid, 3)
-    outputs = merge(ocean.model.velocities, ocean.model.tracers)
-    if !(arch isa Architectures.ReactantState)
-        surface_writer = JLD2OutputWriter(ocean.model, outputs,
-        				  filename = prefix * "_surface.jld2",
-        				  indices = (:, :, Nz),
-        				  schedule = TimeInterval(3days),
-        				  overwrite_existing = true)
-
-        simulation.output_writers[:surface] = surface_writer
-    end
-
-    return simulation
-
-end # data_free_ocean_climate_simulation_init
