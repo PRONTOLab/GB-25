@@ -6,7 +6,7 @@ using Oceananigans.Architectures: ReactantState
 PROFILE[] = true
 
 @info "Generating model..."
-model = data_free_ocean_climate_model_init(Architectures.ReactantState())
+model = data_free_ocean_climate_model_init(ReactantState())
 
 GC.gc(true); GC.gc(false); GC.gc(true)
 
