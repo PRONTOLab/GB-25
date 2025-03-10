@@ -5,7 +5,6 @@ using Oceananigans
 using Oceananigans.Units
 using Oceananigans.Grids
 using Oceananigans.Architectures
-using Reactant
 
 using ClimaOcean
 using ClimaOcean.DataWrangling: ECCO4Monthly
@@ -13,10 +12,10 @@ using ClimaOcean.OceanSeaIceModels.InterfaceComputations: FixedIterations, Compo
 using OrthogonalSphericalShellGrids: TripolarGrid
 
 using Dates
-using Printfs
+using Printf
 
 ranks = MPI.Comm_size(MPI.COMM_WORLD)
-arch = Distributed(GPU(), partition = Partition(y = ranks))
+arch = Distributed(GPU(), partition = Partition(y = ranks), synchronized_communication=true)
 
 # Grid size
 Nx = 4320
@@ -28,7 +27,9 @@ r_faces = exponential_z_faces(; Nz, depth=6000, h=30) # may need changing for ve
 z_faces = MutableVerticalDiscretization(r_faces)
 underlying_grid = TripolarGrid(arch; size=(Nx, Ny, Nz), halo=(7, 7, 7), z=z_faces)
 bottom_height = regrid_bathymetry(underlying_grid) # adds Earth bathymetry from ETOPO1
-grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height))
+grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height); active_cells_map=true)
+
+@info "bottom_grid is defined"
 
 # Polar restoring setup
 dates = DateTime(1993, 1, 1) : Month(1) : DateTime(1993, 12, 1)
@@ -75,13 +76,14 @@ tidal_potential = FieldTimeSeries("tidal_potential.jld2", "Φ"; architecture=GPU
 tidal_potential = FieldTimeSeries("tidal_potential.jld2", "Φ"; architecture=GPU(), backend=InMemory(41), boundary_conditions=FieldBoundaryConditions(tidal_potential.grid, (Center, Center, Nothing)))
 
 atmosphere = JRA55PrescribedAtmosphere(arch; tidal_potential, backend=JRA55NetCDFBackend(41))
+Δt=1minutes
 
 # Coupled model and simulation
 solver_stop_criteria = FixedIterations(10) # note: more iterations = more accurate
 atmosphere_ocean_flux_formulation = SimilarityTheoryFluxes(; solver_stop_criteria)
 interfaces = ComponentInterfaces(atmosphere, ocean; radiation, atmosphere_ocean_flux_formulation)
 coupled_model = OceanSeaIceModel(ocean; atmosphere, radiation, interfaces)
-simulation = Simulation(coupled_model; Δt, stop_time)
+simulation = Simulation(coupled_model; Δt, stop_time=30days)
 
 # Utility for printing progress to the terminal
 wall_time = Ref(time_ns())
@@ -136,3 +138,7 @@ checkpointer = Checkpointer(ocean.model,
 # Run the simulation
 run!(simulation)
 
+simulation.stop_time=7200days
+simulation.Δt = 3minutes
+
+run!(simulation)
