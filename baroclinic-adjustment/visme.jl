@@ -3,12 +3,11 @@ using Oceananigans
 using Printf
 
 # User-defined prefix for filtering
-prefix = "r_oa_Mar6"
+prefix = "r_oa_Mar3"
 
 # Function to extract label from directory name
 function extract_label(dir_name)
     m = match(r"GPU_(F\d+)_([\d_]+)", dir_name)
-    @show m.captures[2]
     if m !== nothing
         fp_type = replace(m.captures[1], "F" => "FP") # Convert "F32" to "FP32"
         resolution = replace(m.captures[2], "__" => "/", "_" => "") # Convert "1__8" to "1/8"
@@ -35,8 +34,8 @@ ax = Axis(fig[1, 1], xlabel="Time", ylabel="Kinetic Energy", title="Kinetic Ener
 # Iterate over directories and plot data
 for dir in matching_dirs
     m = match(r"GPU_(F\d+)", dir)
-    prefix = "baroclinic_adjustment_" * replace(m.captures[1], "F" => "Float") # Extract FP type
-    filename = joinpath(dir, prefix * "_kinetic_energy.jld2")
+    pre = "baroclinic_adjustment_" * replace(m.captures[1], "F" => "Float") # Extract FP type
+    @show filename = joinpath(dir, pre * "_kinetic_energy.jld2")
 
     if isfile(filename)
         Et = FieldTimeSeries(filename, "E")
@@ -49,6 +48,6 @@ end
 axislegend(ax, position = :rb)
 
 # Display figure
-display(fig)
+# display(fig)
 
-save("numerics4.png", fig)
+save("numerics_" * prefix * ".png", fig)
