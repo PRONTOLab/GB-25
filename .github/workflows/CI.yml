@@ -57,6 +57,7 @@ jobs:
         run: |
           using Pkg
           Pkg.Registry.update()
+          Pkg.add(; url="https://github.com/CliMA/Oceananigans.jl", rev="ss/euler-fix")
           Pkg.instantiate()
       - name: Run ocean climate simulation, generate MLIR code and profile traces
         timeout-minutes: 180
