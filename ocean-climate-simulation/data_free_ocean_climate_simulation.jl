@@ -108,8 +108,13 @@ radiation  = Radiation(arch)
 # Coupled model and simulation
 @info "Building OceanSeaIceModel..."
 @time coupled_model = OceanSeaIceModel(ocean; atmosphere, radiation) 
-simulation = Simulation(coupled_model; Δt=20minutes, stop_iteration=40)
-stop_time = simulation.Δt * 100
+
+Δt = 20minutes
+simulation = Simulation(coupled_model; Δt)
+
+stop_iterations = 10 #ceil(Int, stop_time / Δt)
+# stop_time = simulation.Δt * 100
+# stop_iterations = ceil(Int, stop_time / Δt)
 
 # Utility for printing progress to the terminal
 wall_time = Ref(time_ns())
@@ -154,8 +159,7 @@ surface_writer = JLD2OutputWriter(ocean.model, outputs,
 # add_callback!(simulation, progress, IterationInterval(10))
 # simulation.output_writers[:surface] = surface_writer
 
-Ninner = 10
-function inner_loop!(model)
+function inner_loop!(model, Ninner)
     # Should this be @trace for?
     for _ = 1:Ninner
         time_step!(model, Δt)
@@ -163,52 +167,42 @@ function inner_loop!(model)
     return nothing
 end
 
-fast_output_interval = 100
-slow_output_interval = fast_output_interval
-
-Nfast = Int(fast_output_interval / Ninner)
-Nslow = Int(slow_output_interval / Nfast)
-
-Nt = ceil(Int, stop_time / Δt)
-Nouter = ceil(Int, Nt / Nslow)
+Ninner = 10
+output_interval = 100
+Noutput = Int(output_interval / Ninner)
+Nouter = ceil(Int, stop_iterations / Noutput)
 
 @info """
 
-    Approximate total number of iterations:   $Nt
-    Number of inner iterations:               $Ninner
-    "Fast output" loop over inner iterations: $Nfast ($(Nfast * Ninner))
-    "Slow output" loop over inner iterations: $Nslow ($(Nslow * Nfast * Ninner))
-    Outer iterations over slow output:        $Nouter ($(Nouter * Nslow * Nfast * Ninner))
+    Total number of iterations:             $stop_iterations
+    Number of inner iterations:             $Ninner
+    Output loop over inner iterations:      $output ($(Noutput * Ninner))
+    Outer iterations over output loop:      $Nouter ($(Nouter * Noutput * Ninner))
 """
 
 if arch isa ReactantState
-    @time "Compiling first time step" begin
-        compiled_first_time_step! = @compile time_step!(coupled_model, Δt, euler=true)
-    end
+    @info "Compiling first time step..."
+    @time compiled_first_time_step! = @compile Oceananigans.TimeSteppers.first_time_step!(coupled_model, Δt)
 
-    @time "Compiling inner loop" begin
-        compiled_inner_loop! = @compile inner_loop!(coupled_model)
-    end
-
+    @info "Compiling inner loop..."
+    @time compiled_inner_loop! = @compile inner_loop!(coupled_model, ConcretePJRTNumber(Ninner))
 else
-    compiled_first_time_step!(model, Δt) = time_step!(model, Δt, euler=true)
-    compiled_inner_loop!(model) = inner_loop!(model)
+    compiled_first_time_step!(model, Δt) = first_time_step!(model, Δt)
+    compiled_inner_loop!(model) = inner_loop!(model, Ninner)
 end
 
 using Oceananigans.OutputWriters: write_output!
 
 function gbrun!(sim)
-    @time "Running $Nt time steps..." begin
+    @time "Running $stop_iterations time steps..." begin
         iteration(sim) == 1 && compiled_first_time_step!(sim.model, Δt)
 
         for outer = 1:Nouter
-            for slow = 1:Nslow
-                for fast = 1:Nfast
-                    compiled_inner_loop!(sim.model)
-                    progress(sim)
-                end
-                @time "Writing fast output..." write_output!(surface_writer, sim.model)
+            for write = 1:Noutput
+                compiled_inner_loop!(sim.model)
+                progress(sim)
             end
+            @time "Writing fast output..." write_output!(surface_writer, sim.model)
         end
     end
 end
