@@ -165,7 +165,7 @@ function set_tracers(T, Ta, u, ua, shortwave, Qs)
     nothing
 end
 
-function data_free_ocean_climate_simulation_init(
+function data_free_ocean_climate_model_init(
     arch::Architectures.AbstractArchitecture=Architectures.ReactantState();
     # Horizontal resolution
     resolution::Real = 2, # 1/4 for quarter degree
@@ -220,35 +220,11 @@ function data_free_ocean_climate_simulation_init(
     # Atmospheric model
     radiation = Radiation(arch)
 
-    # Coupled model and simulation
+    # Coupled model
     solver_stop_criteria = FixedIterations(5) # note: more iterations = more accurate
     atmosphere_ocean_flux_formulation = SimilarityTheoryFluxes(; solver_stop_criteria)
     interfaces = ComponentInterfaces(atmosphere, ocean; radiation, atmosphere_ocean_flux_formulation)
     coupled_model = @gbprofile "OceanSeaIceModel" OceanSeaIceModel(ocean; atmosphere, radiation, interfaces)
-    simulation = @gbprofile "Simulation" Simulation(coupled_model; Δt=20minutes, stop_iteration=2)
-    pop!(simulation.callbacks, :nan_checker)
 
-    wall_time[] = time_ns()
-
-    # Output
-    prefix = if arch isa Distributed
-        "ocean_climate_simulation_rank$(arch.local_rank)"
-    else
-        "ocean_climate_simulation_serial"
-    end
-
-    Nz = size(grid, 3)
-    outputs = merge(ocean.model.velocities, ocean.model.tracers)
-    if output && !(arch isa Architectures.ReactantState)
-        surface_writer = JLD2OutputWriter(ocean.model, outputs,
-        				  filename = prefix * "_surface.jld2",
-        				  indices = (:, :, Nz),
-        				  schedule = TimeInterval(3days),
-        				  overwrite_existing = true)
-
-        simulation.output_writers[:surface] = surface_writer
-    end
-
-    return simulation
-
-end # data_free_ocean_climate_simulation_init
+    return coupled_model
+end # data_free_ocean_climate_model_init
