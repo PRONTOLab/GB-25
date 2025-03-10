@@ -176,7 +176,7 @@ Nouter = ceil(Int, stop_iterations / Noutput)
 
     Total number of iterations:             $stop_iterations
     Number of inner iterations:             $Ninner
-    Output loop over inner iterations:      $output ($(Noutput * Ninner))
+    Output loop over inner iterations:      $Noutput ($(Noutput * Ninner))
     Outer iterations over output loop:      $Nouter ($(Nouter * Noutput * Ninner))
 """
 
