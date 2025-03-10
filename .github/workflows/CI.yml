@@ -5,8 +5,8 @@ on:
     paths:
       - '.github/workflows/CI.yml'
       - 'ocean-climate-simulation/ocean_climate_simulation_mlir.jl'
-      - 'ocean-climate-simulation/data_free_ocean_climate_simulation.jl'
       - 'Project.toml'
+      - 'src/**'
   push:
     branches:
       - main
@@ -15,8 +15,8 @@ on:
     paths:
       - '.github/workflows/CI.yml'
       - 'ocean-climate-simulation/ocean_climate_simulation_mlir.jl'
-      - 'ocean-climate-simulation/data_free_ocean_climate_simulation.jl'
       - 'Project.toml'
+      - 'src/**'
   workflow_dispatch:
   schedule:
     - cron: '12 07 * * *'
@@ -36,7 +36,7 @@ jobs:
       matrix:
         version:
           - '1.10'
-          - '1.11'
+          - '1.11-nightly'
         os:
           - ubuntu-24.04
           # - ubuntu-22.04-arm
@@ -57,6 +57,7 @@ jobs:
         run: |
           using Pkg
           Pkg.Registry.update()
+          Pkg.add(; url="https://github.com/EnzymeAD/Reactant.jl", rev="main")
           Pkg.instantiate()
       - name: Run ocean climate simulation, generate MLIR code and profile traces
         timeout-minutes: 180
