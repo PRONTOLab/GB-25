@@ -163,7 +163,6 @@ function data_free_ocean_climate_simulation_init(arch::Architectures.AbstractArc
     interfaces = ComponentInterfaces(atmosphere, ocean; radiation, atmosphere_ocean_flux_formulation)
     coupled_model = @gbprofile "OceanSeaIceModel" OceanSeaIceModel(ocean; atmosphere, radiation, interfaces)
     simulation = @gbprofile "Simulation" Simulation(coupled_model; Δt=20minutes, stop_iteration=40)
-    pop!(simulation.callbacks, :nan_checker)
 
     wall_time = time_ns()
 
