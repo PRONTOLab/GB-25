@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/CI.yml'
+      - 'ocean-climate-simulation/ocean_climate_simulation_mlir.jl'
+      - 'ocean-climate-simulation/data_free_ocean_climate_simulation.jl'
+      - 'Project.toml'
+  push:
+    branches:
+      - main
+      - release-*
+    tags: '*'
+    paths:
+      - '.github/workflows/CI.yml'
+      - 'ocean-climate-simulation/ocean_climate_simulation_mlir.jl'
+      - 'ocean-climate-simulation/data_free_ocean_climate_simulation.jl'
+      - 'Project.toml'
+  workflow_dispatch:
+  schedule:
+    - cron: '12 07 * * *'
+
+concurrency:
+  # Skip intermediate builds: always.
+  # Cancel intermediate builds: only if it is a pull request build.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ startsWith(github.ref, 'refs/pull/') }}
+
+jobs:
+  ocean_climate_simulation_mlir:
+    name: Julia ${{ matrix.version }} - ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        version:
+          - '1.10'
+          - '1.11'
+        os:
+          - ubuntu-24.04
+          # - ubuntu-22.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install earlyoom
+        run: |
+          sudo apt-get install -y earlyoom
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: ${{ matrix.version }}
+      - uses: julia-actions/cache@v2
+      - name: Collect Workflow Telemetry
+        uses: catchpoint/workflow-telemetry-action@v2
+      - name: Instantiate environment
+        timeout-minutes: 60
+        shell: julia --color=yes --project {0}
+        run: |
+          using Pkg
+          Pkg.Registry.update()
+          Pkg.instantiate()
+      - name: Run ocean climate simulation, generate MLIR code and profile traces
+        timeout-minutes: 180
+        run: |
+          earlyoom -m 4 -s 100 -r 120 --prefer 'julia' &
+          julia --color=yes --project ocean-climate-simulation/ocean_climate_simulation_mlir.jl
+      - name: Upload MLIR code
+        uses: actions/upload-artifact@v4
+        timeout-minutes: 10
+        if: ${{ always() }}
+        with:
+          name: 'ocean-simulation-mlir-${{ matrix.version }}-${{ matrix.os }}'
+          path: '**/*.mlir'
+          retention-days: 90
+          overwrite: false
+      - name: Upload profile traces
+        uses: actions/upload-artifact@v4
+        timeout-minutes: 10
+        if: ${{ always() }}
+        with:
+          name: 'ocean-simulation-profile-${{ matrix.version }}-${{ matrix.os }}'
+          path: '**/profile_*.txt'
+          retention-days: 90
+          overwrite: false
