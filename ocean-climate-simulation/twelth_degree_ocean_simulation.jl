@@ -13,8 +13,7 @@ using ClimaOcean.OceanSeaIceModels.InterfaceComputations: FixedIterations, Compo
 using OrthogonalSphericalShellGrids: TripolarGrid
 
 using Dates
-using Printf
-
+using Printfs
 
 ranks = MPI.Comm_size(MPI.COMM_WORLD)
 arch = Distributed(GPU(), partition = Partition(y = ranks))
