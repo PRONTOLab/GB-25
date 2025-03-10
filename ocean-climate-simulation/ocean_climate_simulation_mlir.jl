@@ -4,6 +4,8 @@ using Oceananigans: run!
 using Oceananigans.Architectures: ReactantState
 
 PROFILE[] = true
+
+@info "Generating model..."
 model = data_free_ocean_climate_model_init(Architectures.ReactantState())
 
 GC.gc(true); GC.gc(false); GC.gc(true)
@@ -17,9 +19,12 @@ function loop!(model)
     return nothing
 end
 
+# Unoptimized HLO
+@info "Compiling unoptimised kernel..."
 unopt = @code_hlo optimize=false raise=true loop!(model)
 
 # Optimized HLO
+@info "Compiling optimised kernel..."
 opt = @code_hlo optimize=:before_jit raise=true loop!(model)
 
 for debug in (true, false)
