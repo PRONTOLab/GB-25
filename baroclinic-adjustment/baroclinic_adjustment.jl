@@ -61,7 +61,7 @@ set!(model, b=bᵢ)
 
 # time step
 dx = minimum_xspacing(grid)
-Δt = 0.1 * dx / 2 # c * dx / max(U)
+Δt = 0.15 * dx / 2 # c * dx / max(U)
 
 # simulation = Simulation(model; Δt, stop_iteration=100)
 simulation = Simulation(model; Δt, stop_time)
