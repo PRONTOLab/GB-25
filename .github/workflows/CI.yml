@@ -19,7 +19,7 @@ on:
       - 'Project.toml'
   workflow_dispatch:
   schedule:
-    - cron: '12 07 * * *'
+    - cron: '12 07,19 * * *'
 
 concurrency:
   # Skip intermediate builds: always.
