@@ -19,7 +19,7 @@ Serialization = "9e88b42a-f829-5b0c-bbe9-9e923198166b"
 [compat]
 BenchmarkTools = "1.6.0"
 CFTime = "0.1.4"
-ClimaOcean = "0.4.7"
+ClimaOcean = "0.5"
 Dates = "1"
 Oceananigans = "0.95.22"
 PrecompileTools = "1.2.1"
