@@ -94,15 +94,7 @@ zonal_wind(λ, φ) = 4 * sind(2φ)^2 - 2 * exp(-(abs(φ) - 12)^2 / 72)
 sunlight(λ, φ) = -200 - 600 * cosd(φ)^2
 Tatm(λ, φ, z=0) = 30 * cosd(φ)
 
-function gaussian_islands_tripolar_grid(arch::Architectures.AbstractArchitecture)
-    # Horizontal resolution
-    resolution = 2 # 1/4 for quarter degree
-    Nx = convert(Int, 360 / resolution)
-    Ny = convert(Int, 170 / resolution)
-
-    # Vertical resolution
-    Nz = 20 # eventually we want to increase this to between 100-600
-
+function gaussian_islands_tripolar_grid(arch::Architectures.AbstractArchitecture, resolution, Nx, Ny, Nz)
     # Time step. This must be decreased as resolution is decreased.
     Δt = 1minutes
 
@@ -120,9 +112,17 @@ function gaussian_islands_tripolar_grid(arch::Architectures.AbstractArchitecture
                                                                   active_cells_map=false)
 end
 
-function data_free_ocean_climate_simulation_init(arch::Architectures.AbstractArchitecture=Architectures.ReactantState())
+function data_free_ocean_climate_simulation_init(
+    arch::Architectures.AbstractArchitecture=Architectures.ReactantState();
+    # Horizontal resolution
+    resolution::Real = 2, # 1/4 for quarter degree
+    Nx::Int = convert(Int, 360 / resolution),
+    Ny::Int = convert(Int, 170 / resolution),
+    # Vertical resolution
+    Nz::Int = 20, # eventually we want to increase this to between 100-600
+    )
 
-    grid = gaussian_islands_tripolar_grid(arch)
+    grid = gaussian_islands_tripolar_grid(arch, resolution, Nx, Ny, Nz)
 
     # See visualize_ocean_climate_simulation.jl for information about how to
     # visualize the results of this run.
