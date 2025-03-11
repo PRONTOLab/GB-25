@@ -4,7 +4,8 @@ using PrecompileTools: @setup_workload, @compile_workload
 if VERSION != v"1.11.3"
     @setup_workload begin
         @compile_workload begin
-            data_free_ocean_climate_simulation_init()
+            data_free_ocean_climate_simulation_init(Architectures.ReactantState();
+                                                    resolution=5, Nz=4)
         end
         Reactant.clear_oc_cache()
     end
