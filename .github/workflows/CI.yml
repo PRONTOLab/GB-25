@@ -58,6 +58,17 @@ jobs:
           using Pkg
           Pkg.Registry.update()
           Pkg.instantiate()
+      - name: Upload project environment
+        uses: actions/upload-artifact@v4
+        timeout-minutes: 10
+        if: ${{ always() }}
+        with:
+          name: 'environment-${{ matrix.version }}-${{ matrix.os }}'
+          path: |
+            Manifest.toml
+            Project.toml
+          retention-days: 90
+          overwrite: false
       - name: Run ocean climate simulation, generate MLIR code and profile traces
         timeout-minutes: 180
         run: |
