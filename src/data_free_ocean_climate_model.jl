@@ -5,7 +5,6 @@ using Reactant
 
 using ClimaOcean
 using ClimaOcean.OceanSeaIceModels.InterfaceComputations: FixedIterations, ComponentInterfaces
-using OrthogonalSphericalShellGrids: TripolarGrid
 
 using CFTime
 using Dates
