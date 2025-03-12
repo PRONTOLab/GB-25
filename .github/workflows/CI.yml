@@ -57,6 +57,7 @@ jobs:
         run: |
           using Pkg
           Pkg.Registry.update()
+          Pkg.add(; url="https://github.com/EnzymeAD/Reactant.jl", rev="wsmoses-patch-1")
           Pkg.instantiate()
       - name: Run ocean climate simulation, generate MLIR code and profile traces
         timeout-minutes: 180
