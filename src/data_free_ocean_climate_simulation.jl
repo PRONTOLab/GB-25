@@ -4,8 +4,10 @@ using Oceananigans.Architectures: Architectures
 using Reactant
 
 using ClimaOcean
-using ClimaOcean.OceanSeaIceModels.InterfaceComputations: FixedIterations, ComponentInterfaces, CoefficientBasedFluxes, BulkTemperature, default_ao_specific_humidity, default_ai_temperature, reference_density, heat_capacity, DegreesCelsius, thermodynamics_parameters, atmosphere_ocean_interface, sea_ice_ocean_interface, atmosphere_sea_ice_interface, SeaIceSimulation, surface_flux, StateExchanger, atmosphere_exchanger
+using ClimaOcean.OceanSeaIceModels.InterfaceComputations: atmosphere_exchanger
 using OrthogonalSphericalShellGrids: TripolarGrid
+
+using KernelAbstractions
 
 function mtn₁(λ, φ)
     λ₁ = 70
@@ -40,21 +42,6 @@ function gaussian_islands_tripolar_grid(arch::Architectures.AbstractArchitecture
                                 active_cells_map=false)
 end
 
-function MyStateExchanger(exchange_grid, atmosphere)
-    exchange_atmosphere_state = (u  = Field{Center, Center, Nothing}(exchange_grid),
-                                 v  = Field{Center, Center, Nothing}(exchange_grid),
-                                 T  = Field{Center, Center, Nothing}(exchange_grid),
-                                 q  = Field{Center, Center, Nothing}(exchange_grid),
-                                 p  = Field{Center, Center, Nothing}(exchange_grid),
-                                 Qs = Field{Center, Center, Nothing}(exchange_grid),
-                                 Qℓ = Field{Center, Center, Nothing}(exchange_grid),
-                                 Mp = Field{Center, Center, Nothing}(exchange_grid))
-
-    exchanger = atmosphere_exchanger(atmosphere, exchange_grid)
-
-    return StateExchanger(exchange_grid, exchange_atmosphere_state, exchanger)
-end
-
 function data_free_ocean_climate_simulation_init(
     arch::Architectures.AbstractArchitecture=Architectures.ReactantState();
     # Horizontal resolution
@@ -74,5 +61,5 @@ function data_free_ocean_climate_simulation_init(
                                        topology = (Periodic, Bounded, Flat))
 
     atmosphere = PrescribedAtmosphere(atmos_grid, atmos_times)
-    MyStateExchanger(grid, atmosphere)
+    atmosphere_exchanger(atmosphere, grid)
 end # data_free_ocean_climate_simulation_init
