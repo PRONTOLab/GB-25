@@ -56,6 +56,7 @@ jobs:
         shell: julia --color=yes --project {0}
         run: |
           using Pkg
+          Pkg.add(; url="https://github.com/EnzymeAD/Reactant.jl", rev="ap/gb-scalar3")
           Pkg.Registry.update()
           Pkg.instantiate()
       - name: Upload project environment
