@@ -1,23 +1,16 @@
 using GordonBell25: data_free_ocean_climate_model_init, PROFILE
-using Reactant: @code_hlo, @trace
+using Reactant
 using Oceananigans
 using Oceananigans.Architectures: ReactantState
 
 PROFILE[] = true
 
+include("common.jl")
+
 @info "Generating model..."
 model = data_free_ocean_climate_model_init(ReactantState())
 
 GC.gc(true); GC.gc(false); GC.gc(true)
-
-function loop!(model, Ninner)
-    Δt = 1200 # 20 minutes
-    Oceananigans.TimeSteppers.first_time_step!(model, Δt)
-    @trace for _ = 2:Ninner
-        Oceananigans.TimeSteppers.time_step!(model, Δt)
-    end
-    return nothing
-end
 
 failed = false
 

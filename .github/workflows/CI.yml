@@ -4,7 +4,9 @@ on:
   pull_request:
     paths:
       - '.github/workflows/CI.yml'
+      - 'ocean-climate-simulation/common.jl'
       - 'ocean-climate-simulation/ocean_climate_simulation_mlir.jl'
+      - 'ocean-climate-simulation/ocean_climate_simulation_run.jl'
       - 'Project.toml'
       - 'src/**'
   push:
@@ -14,7 +16,9 @@ on:
     tags: '*'
     paths:
       - '.github/workflows/CI.yml'
+      - 'ocean-climate-simulation/common.jl'
       - 'ocean-climate-simulation/ocean_climate_simulation_mlir.jl'
+      - 'ocean-climate-simulation/ocean_climate_simulation_run.jl'
       - 'Project.toml'
       - 'src/**'
   workflow_dispatch:
@@ -29,7 +33,7 @@ concurrency:
 
 jobs:
   ocean_climate_simulation_mlir:
-    name: Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.xla_runtime }}
+    name: Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.xla_runtime }} - ${{ matrix.type }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -43,6 +47,12 @@ jobs:
         xla_runtime:
           - 'PJRT'
           - 'IFRT'
+        type:
+          - 'mlir'
+          - 'run'
+        exclude:
+          - type: 'run'
+            version: '1.10'
     steps:
       - uses: actions/checkout@v4
       - name: Install earlyoom
@@ -80,7 +90,7 @@ jobs:
         timeout-minutes: 10
         if: ${{ always() }}
         with:
-          name: 'environment-${{ matrix.version }}-${{ matrix.os }}-${{ matrix.xla_runtime }}'
+          name: 'environment-${{ matrix.version }}-${{ matrix.os }}-${{ matrix.xla_runtime }}-${{ matrix.type }}'
           path: |
             Manifest.toml
             Project.toml
@@ -90,7 +100,9 @@ jobs:
         timeout-minutes: 180
         run: |
           earlyoom -m 4 -s 100 -r 120 --prefer 'julia' &
-          julia --color=yes --project ocean-climate-simulation/ocean_climate_simulation_mlir.jl
+          julia --color=yes --project ocean-climate-simulation/ocean_climate_simulation_${{ matrix.type }}.jl
+        env:
+          XLA_FLAGS: "--xla_dump_to=xla_dump"
       - name: Show remaining jit calls
         timeout-minutes: 10
         run: |
@@ -114,14 +126,32 @@ jobs:
           path: '**/*.mlir'
           retention-days: 90
           overwrite: false
-      - name: Upload profile traces
+      - name: Upload XLA dump
         uses: actions/upload-artifact@v4
         timeout-minutes: 10
         if: ${{ always() }}
         with:
-          name: 'ocean-simulation-profile-${{ matrix.version }}-${{ matrix.os }}-${{ matrix.xla_runtime }}'
+          name: 'ocean-simulation-xla-dump-${{ matrix.version }}-${{ matrix.os }}'
+          path: '**/xla_dump'
+          retention-days: 90
+          overwrite: false
+      - name: Upload Julia profiler traces
+        uses: actions/upload-artifact@v4
+        timeout-minutes: 10
+        if: ${{ always() && matrix.type == 'mlir' }}
+        with:
+          name: 'ocean-simulation-julia-profile-${{ matrix.version }}-${{ matrix.os }}-${{ matrix.xla_runtime }}'
           path: |
             **/profile_*.txt
             **/profile_*.dat
+          retention-days: 90
+          overwrite: false
+      - name: Upload XLA profiler traces
+        uses: actions/upload-artifact@v4
+        timeout-minutes: 10
+        if: ${{ always() && matrix.type == 'run' }}
+        with:
+          name: 'ocean-simulation-xla-profile-${{ matrix.version }}-${{ matrix.os }}'
+          path: '**/plugins'
           retention-days: 90
           overwrite: false
