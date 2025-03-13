@@ -137,11 +137,13 @@ surface_writer = JLD2OutputWriter(ocean.model, outputs,
 
 simulation.output_writers[:surface] = surface_writer
 
-
 checkpointer = Checkpointer(ocean.model,
                             prefix = prefix,
                             schedule = TimeInterval(30days),
                             overwrite_existing = true)
+
+simulation.output_writers[:checkpointer] = checkpointer
+
 
 # Run the simulation
 run!(simulation)
