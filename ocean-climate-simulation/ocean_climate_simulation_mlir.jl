@@ -1,6 +1,6 @@
 using GordonBell25: data_free_ocean_climate_model_init, PROFILE
-using Reactant: @code_hlo
-using Oceananigans: run!
+using Reactant: @code_hlo, @trace
+using Oceananigans
 using Oceananigans.Architectures: ReactantState
 
 PROFILE[] = true
