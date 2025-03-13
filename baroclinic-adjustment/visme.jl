@@ -3,7 +3,7 @@ using Oceananigans
 using Printf
 
 # User-defined prefix for filtering
-prefix = "r_oa_Mar3"
+prefix = "r_oa_Mar10"
 
 # Function to extract label from directory name
 function extract_label(dir_name)
@@ -35,7 +35,7 @@ ax = Axis(fig[1, 1], xlabel="Time", ylabel="Kinetic Energy", title="Kinetic Ener
 for dir in matching_dirs
     m = match(r"GPU_(F\d+)", dir)
     pre = "baroclinic_adjustment_" * replace(m.captures[1], "F" => "Float") # Extract FP type
-    @show filename = joinpath(dir, pre * "_kinetic_energy.jld2")
+    filename = joinpath(dir, pre * "_kinetic_energy.jld2")
 
     if isfile(filename)
         Et = FieldTimeSeries(filename, "E")
@@ -48,6 +48,37 @@ end
 axislegend(ax, position = :rb)
 
 # Display figure
+display(fig)
+
+# Save figure
+save("numerics_" * prefix * ".png", fig)
+
+
+########################
+# Fields visu
+dir = "baroclinic-adjustment"
+rundir = "r_oa_Mar10_GPU_F64_1__8_ngpu1_F7Eq_oa12_OK"
+filename = joinpath(dir, rundir, "baroclinic_adjustment_Float64" * "_fields.jld2")
+
+ζ_timeseries = FieldTimeSeries(filename, "ζ")
+n = Observable(1)
+ζ_top = @lift interior(ζ_timeseries[$n], :, :, 1)
+
+xζ, yζ, zζ = nodes(ζ_timeseries)
+xζ = xζ ./ 1e3 # convert m -> km
+yζ = yζ ./ 1e3 # convert m -> km
+
+set_theme!(Theme(fontsize=24))
+fig = Figure(size=(1300, 1000))
+axζ = Axis(fig[1, 1], xlabel="x", ylabel="y", aspect=1)
+hm = heatmap!(axζ, xζ, yζ, ζ_top, colorrange=(-5e-5, 5e-5), colormap=:balance)
+Colorbar(fig[1, 2], hm, label="Surface ζ(x, y) (s⁻¹)")
+
 # display(fig)
 
-save("numerics_" * prefix * ".png", fig)
+nframes = size(ζ_timeseries.data)[4]
+frames = 1:nframes
+
+record(fig, "movie_" * prefix * ".mp4", frames, framerate=8) do i
+    n[] = i
+end
