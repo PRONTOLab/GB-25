@@ -115,12 +115,19 @@ function gaussian_islands_tripolar_grid(arch::Architectures.AbstractArchitecture
                                                                   active_cells_map=false)
 end
 
+function set_tracers(T, Ta, u, ua)
+    T .= Ta .+ 273.15
+    u .= ua
+    nothing
+end
+
 function data_free_ocean_climate_simulation_init(
     arch::Architectures.AbstractArchitecture=Architectures.ReactantState();
     # Horizontal resolution
     resolution::Real = 2, # 1/4 for quarter degree
     # Vertical resolution
     Nz::Int = 20, # eventually we want to increase this to between 100-600
+    output::Bool = false
     )
 
     grid = gaussian_islands_tripolar_grid(arch, resolution, Nz)
@@ -150,8 +157,12 @@ function data_free_ocean_climate_simulation_init(
     set!(ua, zonal_wind)
     set!(Qs, sunlight)
 
-    parent(atmosphere.tracers.T) .= parent(Ta) .+ 273.15
-    parent(atmosphere.velocities.u) .= parent(ua)
+    if arch isa Architectures.ReactantState
+        @jit set_tracers(parent(atmosphere.tracers.T), parent(Ta), parent(atmosphere.velocities.u), parent(ua))
+    else
+        set_tracers(parent(atmosphere.tracers.T), parent(Ta), parent(atmosphere.velocities.u), parent(ua))
+    end
+
     parent(atmosphere.tracers.q) .= 0
     parent(atmosphere.downwelling_radiation.shortwave) .= parent(Qs)
 
@@ -168,10 +179,6 @@ function data_free_ocean_climate_simulation_init(
 
     wall_time[] = time_ns()
 
-    if !(arch isa Architectures.ReactantState)
-        add_callback!(simulation, progress, IterationInterval(10))
-    end
-
     # Output
     prefix = if arch isa Distributed
         "ocean_climate_simulation_rank$(arch.local_rank)"
@@ -181,7 +188,7 @@ function data_free_ocean_climate_simulation_init(
 
     Nz = size(grid, 3)
     outputs = merge(ocean.model.velocities, ocean.model.tracers)
-    if !(arch isa Architectures.ReactantState)
+    if output && !(arch isa Architectures.ReactantState)
         surface_writer = JLD2OutputWriter(ocean.model, outputs,
         				  filename = prefix * "_surface.jld2",
         				  indices = (:, :, Nz),
