@@ -26,6 +26,12 @@ macro gbprofile(name::String, expr::Expr)
                 println(s, "# at ", $(string(__source__)))
                 $(Profile.print)(IOContext(s, :displaysize => (48, 1000)))
             end
+            open(string("profile_with_c_", $(esc(name)), ".txt"), "w") do s
+                println(s, "# Showing profile of")
+                println(s, "#     ", $(string(expr)))
+                println(s, "# at ", $(string(__source__)))
+                $(Profile.print)(IOContext(s, :displaysize => (48, 1000)); C=true)
+            end
             $(Profile.clear)()
             out
         else
