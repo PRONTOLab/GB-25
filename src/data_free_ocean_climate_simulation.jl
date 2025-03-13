@@ -156,9 +156,10 @@ function gaussian_islands_tripolar_grid(arch::Architectures.AbstractArchitecture
                                                                   active_cells_map=false)
 end
 
-function set_tracers(T, Ta, u, ua)
+function set_tracers(T, Ta, u, ua, shortwave, Qs)
     T .= Ta .+ 273.15
     u .= ua
+    shortwave .= Qs
     nothing
 end
 
@@ -203,13 +204,12 @@ function data_free_ocean_climate_simulation_init(
     set!(Qs, sunlight)
 
     if arch isa Architectures.ReactantState
-        @jit set_tracers(parent(atmosphere.tracers.T), parent(Ta), parent(atmosphere.velocities.u), parent(ua))
+        @jit set_tracers(parent(atmosphere.tracers.T), parent(Ta), parent(atmosphere.velocities.u), parent(ua), parent(atmosphere.downwelling_radiation.shortwave), parent(Qs))
     else
-        set_tracers(parent(atmosphere.tracers.T), parent(Ta), parent(atmosphere.velocities.u), parent(ua))
+        set_tracers(parent(atmosphere.tracers.T), parent(Ta), parent(atmosphere.velocities.u), parent(ua), parent(atmosphere.downwelling_radiation.shortwave), parent(Qs))
     end
 
     parent(atmosphere.tracers.q) .= 0
-    parent(atmosphere.downwelling_radiation.shortwave) .= parent(Qs)
 
     # Atmospheric model
     radiation = Radiation(arch)
