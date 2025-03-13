@@ -76,8 +76,6 @@ radiation  = Radiation(arch)
 
 # Adding a tidal potential
 tidal_potential = FieldTimeSeries("tidal_potential.jld2", "Φ"; architecture=GPU(), backend=InMemory(41))
-tidal_potential = FieldTimeSeries("tidal_potential.jld2", "Φ"; architecture=GPU(), backend=InMemory(41), boundary_conditions=FieldBoundaryConditions(tidal_potential.grid, (Center, Center, Nothing)))
-
 atmosphere = JRA55PrescribedAtmosphere(arch; tidal_potential, backend=JRA55NetCDFBackend(41))
 Δt=1minutes
 
