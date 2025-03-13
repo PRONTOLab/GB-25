@@ -12,6 +12,47 @@ using Dates
 using Printf
 using Profile
 
+# https://github.com/CliMA/Oceananigans.jl/blob/da9959f3e5d8ee7cf2fb42b74ecc892874ec1687/src/AbstractOperations/conditional_operations.jl#L8
+Base.@nospecializeinfer function Reactant.traced_type_inner(
+    @nospecialize(OA::Type{Oceananigans.AbstractOperations.ConditionalOperation{LX, LY, LZ, O, F, G, C, M, T}}),
+    seen,
+    mode::Reactant.TraceMode,
+    @nospecialize(track_numbers::Type),
+    @nospecialize(sharding),
+    @nospecialize(runtime)
+) where {LX, LY, LZ, O, F, G, C, M, T}
+    LX2 = Reactant.traced_type_inner(LX, seen, mode, track_numbers, sharding, runtime)
+    LY2 = Reactant.traced_type_inner(LY, seen, mode, track_numbers, sharding, runtime)
+    LZ2 = Reactant.traced_type_inner(LZ, seen, mode, track_numbers, sharding, runtime)
+    O2 = Reactant.traced_type_inner(O, seen, mode, track_numbers, sharding, runtime)
+    F2 = Reactant.traced_type_inner(F, seen, mode, track_numbers, sharding, runtime)
+    G2 = Reactant.traced_type_inner(G, seen, mode, track_numbers, sharding, runtime)
+    C2 = Reactant.traced_type_inner(C, seen, mode, track_numbers, sharding, runtime)
+    M2 = Reactant.traced_type_inner(M, seen, mode, track_numbers, sharding, runtime)
+    T2 = eltype(O2)
+    return Oceananigans.AbstractOperations.ConditionalOperation{LX2, LY2, LZ2, O2, F2, G2, C2, M2, T2}
+end
+
+# https://github.com/CliMA/Oceananigans.jl/blob/da9959f3e5d8ee7cf2fb42b74ecc892874ec1687/src/AbstractOperations/kernel_function_operation.jl#L3
+# struct KernelFunctionOperation{LX, LY, LZ, G, T, K, D} <: AbstractOperation{LX, LY, LZ, G, T}
+Base.@nospecializeinfer function Reactant.traced_type_inner(
+        @nospecialize(OA::Type{Oceananigans.AbstractOperations.KernelFunctionOperation{LX, LY, LZ, G, T, K, D}}),
+    seen,
+    mode::Reactant.TraceMode,
+    @nospecialize(track_numbers::Type),
+    @nospecialize(sharding),
+    @nospecialize(runtime)
+) where {LX, LY, LZ, G, T, K, D}
+    LX2 = Reactant.traced_type_inner(LX, seen, mode, track_numbers, sharding, runtime)
+    LY2 = Reactant.traced_type_inner(LY, seen, mode, track_numbers, sharding, runtime)
+    LZ2 = Reactant.traced_type_inner(LZ, seen, mode, track_numbers, sharding, runtime)
+    G2 = Reactant.traced_type_inner(G, seen, mode, track_numbers, sharding, runtime)
+    K2 = Reactant.traced_type_inner(K, seen, mode, track_numbers, sharding, runtime)
+    D2 = Reactant.traced_type_inner(D, seen, mode, track_numbers, sharding, runtime)
+    T2 = eltype(G2)
+    return Oceananigans.AbstractOperations.KernelFunctionOperation{LX2, LY2, LZ2, G2, T2, K2, D2}
+end
+
 const PROFILE = Ref(false)
 
 macro gbprofile(name::String, expr::Expr)
@@ -121,19 +162,31 @@ function gaussian_islands_tripolar_grid(arch::Architectures.AbstractArchitecture
                                                                   active_cells_map=false)
 end
 
+function set_tracers(T, Ta, u, ua, shortwave, Qs)
+    T .= Ta .+ 273.15
+    u .= ua
+    shortwave .= Qs
+    nothing
+end
+
 function data_free_ocean_climate_simulation_init(
     arch::Architectures.AbstractArchitecture=Architectures.ReactantState();
     # Horizontal resolution
     resolution::Real = 2, # 1/4 for quarter degree
     # Vertical resolution
     Nz::Int = 20, # eventually we want to increase this to between 100-600
+    output::Bool = false
     )
 
     grid = gaussian_islands_tripolar_grid(arch, resolution, Nz)
 
     # See visualize_ocean_climate_simulation.jl for information about how to
     # visualize the results of this run.
-    ocean = @gbprofile "ocean_simulation" ocean_simulation(grid)
+    Δt=30seconds
+    ocean = @gbprofile "ocean_simulation" ocean_simulation(grid;
+                                                           Δt,
+                                                           free_surface=ClimaOcean.OceanSimulations.default_free_surface(grid, fixed_Δt=Δt)
+                                                          )
 
     @gbprofile "set_ocean_model" set!(ocean.model, T=Tᵢ, S=Sᵢ)
 
@@ -156,10 +209,13 @@ function data_free_ocean_climate_simulation_init(
     set!(ua, zonal_wind)
     set!(Qs, sunlight)
 
-    parent(atmosphere.tracers.T) .= parent(Ta) .+ 273.15
-    parent(atmosphere.velocities.u) .= parent(ua)
+    if arch isa Architectures.ReactantState
+        @jit set_tracers(parent(atmosphere.tracers.T), parent(Ta), parent(atmosphere.velocities.u), parent(ua), parent(atmosphere.downwelling_radiation.shortwave), parent(Qs))
+    else
+        set_tracers(parent(atmosphere.tracers.T), parent(Ta), parent(atmosphere.velocities.u), parent(ua), parent(atmosphere.downwelling_radiation.shortwave), parent(Qs))
+    end
+
     parent(atmosphere.tracers.q) .= 0
-    parent(atmosphere.downwelling_radiation.shortwave) .= parent(Qs)
 
     # Atmospheric model
     radiation = Radiation(arch)
@@ -174,10 +230,6 @@ function data_free_ocean_climate_simulation_init(
 
     wall_time[] = time_ns()
 
-    if !(arch isa Architectures.ReactantState)
-        add_callback!(simulation, progress, IterationInterval(10))
-    end
-
     # Output
     prefix = if arch isa Distributed
         "ocean_climate_simulation_rank$(arch.local_rank)"
@@ -187,7 +239,7 @@ function data_free_ocean_climate_simulation_init(
 
     Nz = size(grid, 3)
     outputs = merge(ocean.model.velocities, ocean.model.tracers)
-    if !(arch isa Architectures.ReactantState)
+    if output && !(arch isa Architectures.ReactantState)
         surface_writer = JLD2OutputWriter(ocean.model, outputs,
         				  filename = prefix * "_surface.jld2",
         				  indices = (:, :, Nz),
