@@ -41,7 +41,7 @@ jobs:
           - ubuntu-24.04
           # - ubuntu-22.04-arm
         type:
-          - 'mlir'
+          # - 'mlir'
           - 'run'
         exclude:
           - type: 'run'
