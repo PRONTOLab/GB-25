@@ -7,6 +7,11 @@ simulation = data_free_ocean_climate_simulation_init(ReactantState())
 
 GC.gc(true); GC.gc(false); GC.gc(true)
 
+@info "compiling..."
+rrun! = @compile raise=true run!(simulation)
+
+@info "running..."
 Reactant.with_profiler("./") do
-    @jit raise=true run!(simulation)
+    rrun!(simulation)
 end
+@info "done!"
