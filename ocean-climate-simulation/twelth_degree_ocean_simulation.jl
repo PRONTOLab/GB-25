@@ -9,7 +9,6 @@ using Oceananigans.Architectures
 using ClimaOcean
 using ClimaOcean.DataWrangling: ECCO4Monthly
 using ClimaOcean.OceanSeaIceModels.InterfaceComputations: FixedIterations, ComponentInterfaces
-using OrthogonalSphericalShellGrids: TripolarGrid
 
 using Dates
 using Printf
@@ -19,8 +18,8 @@ arch = Distributed(GPU(), partition = Partition(y = ranks), synchronized_communi
 
 # Grid size
 Nx = 4320
-Ny = 2160
-Nz = 100
+Ny = 2000
+Nz = 70
 
 # Grid setup
 r_faces = exponential_z_faces(; Nz, depth=6000, h=30) # may need changing for very large Nz
@@ -58,10 +57,14 @@ Fv = Forcing(damp_v_velocity, discrete_form=true, parameters=mask)
 momentum_advection = WENOVectorInvariant()
 tracer_advection = WENO(order=7)
 
+# Free surface
+free_surface = SplitExplicitFreeSurface(grid; substeps=70)
+
 # Ocean simulation with defaults from ClimaOcean
-ocean = ocean_simulation(grid; 
+ocean = ocean_simulation(grid; Δt = 10,
                          forcing=(T=FT, S=FT, u=Fu, v=Fv), 
-                         momentum_advection, 
+                         momentum_advection,
+			 free_surface,
                          tracer_advection)
 
 # Initial ocean state from ECCO state estimate
@@ -90,6 +93,7 @@ wall_time = Ref(time_ns())
 
 function progress(sim)
     ocean = sim.model.ocean
+    arch  = architecture(ocean.model.grid)
     u, v, w = ocean.model.velocities
     T = ocean.model.tracers.T
     Tmax = maximum(interior(T))
@@ -97,12 +101,18 @@ function progress(sim)
     umax = (maximum(abs, interior(u)), maximum(abs, interior(v)), maximum(abs, interior(w)))
     step_time = 1e-9 * (time_ns() - wall_time[])
 
+    umax = Oceananigans.DistributedComputations.all_reduce(Tmax, max, arch)
+    vmax = Oceananigans.DistributedComputations.all_reduce(Tmax, max, arch)
+    wmax = Oceananigans.DistributedComputations.all_reduce(Tmax, max, arch)
+    Tmax = Oceananigans.DistributedComputations.all_reduce(Tmax, max, arch)
+    Tmin = Oceananigans.DistributedComputations.all_reduce(Tmin, min, arch)
+    
     msg = @sprintf("Time: %s, n: %d, Δt: %s, max|u|: (%.2e, %.2e, %.2e) m s⁻¹, \
                    extrema(T): (%.2f, %.2f) ᵒC, wall time: %s \n",
                    prettytime(sim), iteration(sim), prettytime(sim.Δt),
                    umax..., Tmax, Tmin, prettytime(step_time))
 
-    ClimaOcean.@root @info(msg)
+    Oceananigans.DistributedComputations.@root @info(msg)
 
     wall_time[] = time_ns()
 
@@ -138,7 +148,7 @@ checkpointer = Checkpointer(ocean.model,
 # Run the simulation
 run!(simulation)
 
-simulation.stop_time=7200days
+simulation.stop_time=1080days
 simulation.Δt = 3minutes
 
 run!(simulation)
