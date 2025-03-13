@@ -63,7 +63,6 @@ set!(model, b=bᵢ)
 dx = minimum_xspacing(grid)
 Δt = 0.15 * dx / 2 # c * dx / max(U)
 
-# simulation = Simulation(model; Δt, stop_iteration=100)
 simulation = Simulation(model; Δt, stop_time)
 
 wall_clock = Ref(time_ns())
