@@ -76,30 +76,6 @@ macro gbprofile(name::String, expr::Expr)
     end
 end
 
-# Utility for printing progress to the terminal
-const wall_time = Ref(UInt64(0))
-
-function progress(sim)
-    ocean = sim.model.ocean
-    u, v, w = ocean.model.velocities
-    T = ocean.model.tracers.T
-    Tmax = maximum(interior(T))
-    Tmin = minimum(interior(T))
-    umax = (maximum(abs, interior(u)), maximum(abs, interior(v)), maximum(abs, interior(w)))
-    step_time = 1e-9 * (time_ns() - wall_time[])
-
-    msg = @sprintf("Time: %s, n: %d, Δt: %s, max|u|: (%.2e, %.2e, %.2e) m s⁻¹, \
-                   extrema(T): (%.2f, %.2f) ᵒC, wall time: %s \n",
-                   prettytime(sim), iteration(sim), prettytime(sim.Δt),
-                   umax..., Tmax, Tmin, prettytime(step_time))
-
-    ClimaOcean.@root @info(msg)
-
-    wall_time[] = time_ns()
-
-    return nothing
-end
-
 function mtn₁(λ, φ)
     λ₁ = 70
     φ₁ = 55
