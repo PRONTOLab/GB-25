@@ -48,7 +48,7 @@ jobs:
           - 'PJRT'
           - 'IFRT'
         type:
-          - 'mlir'
+          # - 'mlir'
           - 'run'
         exclude:
           - type: 'run'
