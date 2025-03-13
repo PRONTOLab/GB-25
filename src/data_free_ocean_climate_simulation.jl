@@ -12,7 +12,7 @@ using Dates
 using Printf
 using Profile
 
-PROFILE::Base.RefValue{Bool} = Ref(false)
+const PROFILE = Ref(false)
 
 macro gbprofile(name::String, expr::Expr)
     return quote
@@ -35,7 +35,7 @@ macro gbprofile(name::String, expr::Expr)
 end
 
 # Utility for printing progress to the terminal
-wall_time::UInt64 = UInt64(0)
+const wall_time = Ref(UInt64(0))
 
 function progress(sim)
     ocean = sim.model.ocean
@@ -44,7 +44,7 @@ function progress(sim)
     Tmax = maximum(interior(T))
     Tmin = minimum(interior(T))
     umax = (maximum(abs, interior(u)), maximum(abs, interior(v)), maximum(abs, interior(w)))
-    step_time = 1e-9 * (time_ns() - wall_time)
+    step_time = 1e-9 * (time_ns() - wall_time[])
 
     msg = @sprintf("Time: %s, n: %d, Δt: %s, max|u|: (%.2e, %.2e, %.2e) m s⁻¹, \
                    extrema(T): (%.2f, %.2f) ᵒC, wall time: %s \n",
@@ -53,7 +53,7 @@ function progress(sim)
 
     ClimaOcean.@root @info(msg)
 
-    wall_time = time_ns()
+    wall_time[] = time_ns()
 
     return nothing
 end
@@ -94,14 +94,9 @@ zonal_wind(λ, φ) = 4 * sind(2φ)^2 - 2 * exp(-(abs(φ) - 12)^2 / 72)
 sunlight(λ, φ) = -200 - 600 * cosd(φ)^2
 Tatm(λ, φ, z=0) = 30 * cosd(φ)
 
-function gaussian_islands_tripolar_grid(arch::Architectures.AbstractArchitecture)
-    # Horizontal resolution
-    resolution = 2 # 1/4 for quarter degree
+function gaussian_islands_tripolar_grid(arch::Architectures.AbstractArchitecture, resolution, Nz)
     Nx = convert(Int, 360 / resolution)
-    Ny = convert(Int, 170 / resolution)
-
-    # Vertical resolution
-    Nz = 20 # eventually we want to increase this to between 100-600
+    Ny = convert(Int, 180 / resolution)
 
     # Time step. This must be decreased as resolution is decreased.
     Δt = 1minutes
@@ -120,9 +115,15 @@ function gaussian_islands_tripolar_grid(arch::Architectures.AbstractArchitecture
                                                                   active_cells_map=false)
 end
 
-function data_free_ocean_climate_simulation_init(arch::Architectures.AbstractArchitecture=Architectures.ReactantState())
+function data_free_ocean_climate_simulation_init(
+    arch::Architectures.AbstractArchitecture=Architectures.ReactantState();
+    # Horizontal resolution
+    resolution::Real = 2, # 1/4 for quarter degree
+    # Vertical resolution
+    Nz::Int = 20, # eventually we want to increase this to between 100-600
+    )
 
-    grid = gaussian_islands_tripolar_grid(arch)
+    grid = gaussian_islands_tripolar_grid(arch, resolution, Nz)
 
     # See visualize_ocean_climate_simulation.jl for information about how to
     # visualize the results of this run.
@@ -165,7 +166,7 @@ function data_free_ocean_climate_simulation_init(arch::Architectures.AbstractArc
     simulation = @gbprofile "Simulation" Simulation(coupled_model; Δt=20minutes, stop_iteration=40)
     pop!(simulation.callbacks, :nan_checker)
 
-    wall_time = time_ns()
+    wall_time[] = time_ns()
 
     if !(arch isa Architectures.ReactantState)
         add_callback!(simulation, progress, IterationInterval(10))
