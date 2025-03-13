@@ -29,7 +29,7 @@ concurrency:
 
 jobs:
   ocean_climate_simulation_mlir:
-    name: Julia ${{ matrix.version }} - ${{ matrix.os }}
+    name: Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.xla_runtime }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -40,6 +40,9 @@ jobs:
         os:
           - ubuntu-24.04
           # - ubuntu-22.04-arm
+        xla_runtime:
+          - 'PJRT'
+          - 'IFRT'
     steps:
       - uses: actions/checkout@v4
       - name: Install earlyoom
@@ -51,19 +54,27 @@ jobs:
       - uses: julia-actions/cache@v2
       - name: Collect Workflow Telemetry
         uses: catchpoint/workflow-telemetry-action@v2
+      - name: Set XLA runtime
+        run: |
+          cat <<EOF > LocalPreferences.toml
+          [Reactant]
+          xla_runtime = "${{ matrix.xla_runtime }}"
+          EOF
       - name: Instantiate environment
         timeout-minutes: 60
         shell: julia --color=yes --project {0}
         run: |
           using Pkg
           Pkg.Registry.update()
+          # Pkg.add(; url="https://github.com/EnzymeAD/Reactant.jl", rev="main")
+          # Pkg.add(; url="https://github.com/CliMA/Oceananigans.jl", rev="main")
           Pkg.instantiate()
       - name: Upload project environment
         uses: actions/upload-artifact@v4
         timeout-minutes: 10
         if: ${{ always() }}
         with:
-          name: 'environment-${{ matrix.version }}-${{ matrix.os }}'
+          name: 'environment-${{ matrix.version }}-${{ matrix.os }}-${{ matrix.xla_runtime }}'
           path: |
             Manifest.toml
             Project.toml
@@ -79,7 +90,7 @@ jobs:
         timeout-minutes: 10
         if: ${{ always() }}
         with:
-          name: 'ocean-simulation-mlir-${{ matrix.version }}-${{ matrix.os }}'
+          name: 'ocean-simulation-mlir-${{ matrix.version }}-${{ matrix.os }}-${{ matrix.xla_runtime }}'
           path: '**/*.mlir'
           retention-days: 90
           overwrite: false
@@ -88,7 +99,7 @@ jobs:
         timeout-minutes: 10
         if: ${{ always() }}
         with:
-          name: 'ocean-simulation-profile-${{ matrix.version }}-${{ matrix.os }}'
+          name: 'ocean-simulation-profile-${{ matrix.version }}-${{ matrix.os }}-${{ matrix.xla_runtime }}'
           path: '**/profile_*.txt'
           retention-days: 90
           overwrite: false
