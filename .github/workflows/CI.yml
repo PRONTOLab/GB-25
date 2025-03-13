@@ -99,7 +99,7 @@ jobs:
       - name: Run ocean climate simulation, generate MLIR code and profile traces
         timeout-minutes: 180
         run: |
-          earlyoom -m 4 -s 100 -r 120 --prefer 'julia' &
+          earlyoom -m 30 -s 100 -r 120 --prefer 'julia' &
           julia --color=yes --project ocean-climate-simulation/ocean_climate_simulation_${{ matrix.type }}.jl
         env:
           XLA_FLAGS: "--xla_dump_to=xla_dump"
