@@ -11,6 +11,7 @@ using CFTime
 using Dates
 using Printf
 using Profile
+using Serialization
 
 # https://github.com/CliMA/Oceananigans.jl/blob/da9959f3e5d8ee7cf2fb42b74ecc892874ec1687/src/AbstractOperations/conditional_operations.jl#L8
 Base.@nospecializeinfer function Reactant.traced_type_inner(
@@ -67,7 +68,7 @@ macro gbprofile(name::String, expr::Expr)
                 println(s, "# at ", $(string(__source__)))
                 $(Profile.print)(IOContext(s, :displaysize => (48, 1000)))
             end
-            write(string("profile_", $(esc(name)), ".dat"), $(Profile).fetch())
+            $(Serialization.serialize)(string("profile_", $(esc(name)), ".dat"), $(Profile).retrieve())
             $(Profile.clear)()
             out
         else
