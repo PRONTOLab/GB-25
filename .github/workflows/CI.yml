@@ -73,7 +73,7 @@ jobs:
         timeout-minutes: 180
         run: |
           earlyoom -m 4 -s 100 -r 120 --prefer 'julia' &
-          julia --color=yes --project ocean-climate-simulation/ocean_climate_simulation_mlir.jl
+          julia --color=yes --project -O1 ocean-climate-simulation/ocean_climate_simulation_mlir.jl
       - name: Upload MLIR code
         uses: actions/upload-artifact@v4
         timeout-minutes: 10
