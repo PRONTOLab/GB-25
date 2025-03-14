@@ -57,6 +57,7 @@ jobs:
         run: |
           using Pkg
           Pkg.Registry.update()
+          Pkg.add(; url="https://github.com/CliMA/Oceananigans.jl", rev="glw/nothing-callbacks")
           Pkg.instantiate()
       - name: Upload project environment
         uses: actions/upload-artifact@v4
