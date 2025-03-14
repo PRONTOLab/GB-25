@@ -81,7 +81,7 @@ jobs:
         timeout-minutes: 180
         run: |
           earlyoom -m 4 -s 100 -r 120 --prefer 'julia' &
-          julia --color=yes --project ocean-climate-simulation/ocean_climate_simulation_mlir.jl
+          julia --color=yes --project -O0 ocean-climate-simulation/ocean_climate_simulation_mlir.jl
       - name: Show remaining jit calls
         timeout-minutes: 10
         run: |
