@@ -7,6 +7,8 @@ using Oceananigans.Grids
 using Oceananigans.Architectures
 
 using ClimaOcean
+using ClimaOcean.DataWrangling
+using ClimaOcean.ECCO
 using ClimaOcean.DataWrangling: ECCO4Monthly
 using ClimaOcean.OceanSeaIceModels.InterfaceComputations: FixedIterations, ComponentInterfaces
 
@@ -31,14 +33,14 @@ grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height); ac
 @info "bottom_grid is defined"
 
 # Polar restoring setup
-dates = DateTime(1993, 1, 1) : Month(1) : DateTime(1993, 12, 1)
-temperature = ECCOMetadata(:temperature, dates, ECCO4Monthly())
-salinity = ECCOMetadata(:salinity, dates, ECCO4Monthly())
+dates = DateTime(1993, 1, 1) : Month(1) : DateTime(1996, 12, 1)
+temperature = Metadata(:temperature; dates, dataset=ECCO4Monthly())
+salinity =    Metadata(:salinity; dates, dataset=ECCO4Monthly())
 
 restoring_rate  = 1/7days
 mask = LinearlyTaperedPolarMask(southern=(-80, -70), northern=(70, 90), z=(-10000, 0))
-FT = ECCORestoring(temperature, grid; mask, rate=restoring_rate)
-FS = ECCORestoring(salinity, grid; mask, rate=restoring_rate)
+FT = ECCORestoring(temperature, GPU(); mask, rate=restoring_rate)
+FS = ECCORestoring(salinity, GPU(); mask, rate=restoring_rate)
 
 @inline function damp_u_velocity(i, j, k, grid, clock, fields, mask)
     λ, φ, z = node(i, j, k, grid, Face(), Center(), Center())
@@ -68,15 +70,15 @@ ocean = ocean_simulation(grid; Δt = 10,
                          tracer_advection)
 
 # Initial ocean state from ECCO state estimate
-set!(ocean.model, T=ECCOMetadata(:temperature; dates=first(dates)),
-                  S=ECCOMetadata(:salinity; dates=first(dates)))
+set!(ocean.model, T=Metadata(:temperature; dataset=ECCO4Monthly(), dates=first(dates)),
+                  S=Metadata(:salinity;    dataset=ECCO4Monthly(), dates=first(dates)))
 
 # Atmospheric model
 radiation  = Radiation(arch)
 
 # Adding a tidal potential
-tidal_potential = FieldTimeSeries("tidal_potential.jld2", "Φ"; architecture=GPU(), backend=InMemory(41))
-atmosphere = JRA55PrescribedAtmosphere(arch; tidal_potential, backend=JRA55NetCDFBackend(41))
+# tidal_potential = FieldTimeSeries("tidal_potential.jld2", "Φ"; architecture=GPU(), backend=InMemory(41))
+atmosphere = JRA55PrescribedAtmosphere(arch; backend=JRA55NetCDFBackend(41))
 Δt=1minutes
 
 # Coupled model and simulation

@@ -1,0 +1,9 @@
+[deps]
+ClimaOcean = "0376089a-ecfe-4b0e-a64f-9c555d74d754"
+MPI = "da04e1cc-30fd-572f-bb4f-1f8673147195"
+MPIPreferences = "3da0fdf6-3ccc-4f1b-acd9-58baa6c99267"
+Oceananigans = "9e8cae18-63c1-5223-a75c-80ca9d6e9a09"
+OffsetArrays = "6fe1bfb0-de20-5000-8ca7-80f57d26f881"
+
+[extras]
+CUDA_Runtime_jll = "76a88914-d11a-5bdc-97e0-2f5a05c973a2"

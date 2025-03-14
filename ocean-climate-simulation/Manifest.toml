@@ -2,7 +2,7 @@
 
 julia_version = "1.10.8"
 manifest_format = "2.0"
-project_hash = "07a3471aef94d52b96b3919177899ac97e804f97"
+project_hash = "c44d0fc31442c7ba3f4e6567f1ce89edebaf5884"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -195,9 +195,11 @@ version = "0.16.0+0"
 
 [[deps.ClimaOcean]]
 deps = ["Adapt", "CFTime", "CUDA", "ClimaSeaIce", "CubicSplines", "DataDeps", "Dates", "Downloads", "ImageMorphology", "JLD2", "KernelAbstractions", "MPI", "NCDatasets", "Oceananigans", "OffsetArrays", "Printf", "Scratch", "SeawaterPolynomials", "StaticArrays", "Statistics", "SurfaceFluxes", "Thermodynamics"]
-git-tree-sha1 = "fd00232dee836ea2aacd10514c7a95e6d94fbe20"
+git-tree-sha1 = "edcfe415f3165cdede715d349b8e74fb59ef5337"
+repo-rev = "ss/bugfix-forcing"
+repo-url = "https://github.com/CliMA/ClimaOcean.jl.git"
 uuid = "0376089a-ecfe-4b0e-a64f-9c555d74d754"
-version = "0.5.0"
+version = "0.5.1"
 
 [[deps.ClimaSeaIce]]
 deps = ["Adapt", "KernelAbstractions", "Oceananigans", "RootSolvers", "Roots", "SeawaterPolynomials"]
@@ -907,7 +909,7 @@ version = "1.2.0"
 
 [[deps.Oceananigans]]
 deps = ["Adapt", "CUDA", "Crayons", "CubedSphere", "Dates", "Distances", "DocStringExtensions", "FFTW", "GPUArrays", "Glob", "IncompleteLU", "InteractiveUtils", "IterativeSolvers", "JLD2", "KernelAbstractions", "LinearAlgebra", "Logging", "MPI", "NCDatasets", "OffsetArrays", "OrderedCollections", "Pkg", "Printf", "Random", "Rotations", "SeawaterPolynomials", "SparseArrays", "StaticArrays", "Statistics", "StructArrays", "TimesDates"]
-git-tree-sha1 = "2b6d5ee92ef9e1f1f52b97f3e2fc3d17289771d2"
+git-tree-sha1 = "089f707355b6f4aeb9c777ba47978a770df80970"
 repo-rev = "ss/reduce-precision"
 repo-url = "https://github.com/CliMA/Oceananigans.jl.git"
 uuid = "9e8cae18-63c1-5223-a75c-80ca9d6e9a09"
@@ -928,7 +930,9 @@ version = "0.95.26"
     Reactant = "3c362404-f566-11ee-1572-e11a4b42c853"
 
 [[deps.OffsetArrays]]
-git-tree-sha1 = "5e1897147d1ff8d98883cda2be2187dcf57d8f0c"
+git-tree-sha1 = "8892e70e377799d359a2b7ce78de43c4a3fac937"
+repo-rev = "master"
+repo-url = "https://github.com/simone-silvestri/OffsetArrays.jl"
 uuid = "6fe1bfb0-de20-5000-8ca7-80f57d26f881"
 version = "1.15.0"
 weakdeps = ["Adapt"]
