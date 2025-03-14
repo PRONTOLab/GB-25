@@ -89,6 +89,8 @@ jobs:
         if: ${{ always() }}
         with:
           name: 'ocean-simulation-profile-${{ matrix.version }}-${{ matrix.os }}'
-          path: '**/profile_*.txt'
+          path: |
+            **/profile_*.txt
+            **/profile_*.dat
           retention-days: 90
           overwrite: false
