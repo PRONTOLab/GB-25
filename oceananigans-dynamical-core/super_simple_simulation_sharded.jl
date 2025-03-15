@@ -59,7 +59,7 @@ simulation = Simulation(model, Δt=60, stop_iteration=10, verbose=false)
 pop!(simulation.callbacks, :nan_checker)
 
 if arch isa Oceananigans.Architectures.ReactantState
-    _run! = @compile sync=true raise=true run!(simulation)
+    _run! = @compile sync=true run!(simulation)
 else
     _run! = run!
 end

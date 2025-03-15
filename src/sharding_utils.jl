@@ -16,7 +16,7 @@ function Base.getproperty(t::TreeSharding, x::Symbol)
 end
 
 function (sharding::TreeSharding)(
-    client::Reactant.XLA.AbstractClient, device::Nothing, x::Union{AbstractArray,Number}
+    client::Reactant.XLA.AbstractClient, device, x::Union{AbstractArray,Number}
 )
     return sharding.sharding(client, device, x)
 end
