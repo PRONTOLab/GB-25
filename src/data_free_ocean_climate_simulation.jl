@@ -225,7 +225,7 @@ function data_free_ocean_climate_simulation_init(
     atmosphere_ocean_flux_formulation = SimilarityTheoryFluxes(; solver_stop_criteria)
     interfaces = ComponentInterfaces(atmosphere, ocean; radiation, atmosphere_ocean_flux_formulation)
     coupled_model = @gbprofile "OceanSeaIceModel" OceanSeaIceModel(ocean; atmosphere, radiation, interfaces)
-    simulation = @gbprofile "Simulation" Simulation(coupled_model; Δt=20minutes, stop_iteration=40)
+    simulation = @gbprofile "Simulation" Simulation(coupled_model; Δt=20minutes, stop_iteration=2)
     pop!(simulation.callbacks, :nan_checker)
 
     wall_time[] = time_ns()
