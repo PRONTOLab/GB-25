@@ -1,7 +1,7 @@
 using Oceananigans
 
 # simulating multiple devices on host
-ENV["XLA_FLAGS"] = "--xla_force_host_platform_device_count=8"
+ENV["XLA_FLAGS"] = "--xla_force_host_platform_device_count=8 --xla_dump_to=xla_dumps/super_simple_simulation_sharded_2/"
 
 using Reactant
 using Libdl
@@ -10,7 +10,7 @@ using GordonBell25
 using Setfield
 
 Reactant.Ops.DEBUG_MODE[] = true
-ENV["JULIA_DEBUG"] = "Reactant_jll"
+ENV["JULIA_DEBUG"] = "Reactant_jll,Reactant"
 
 Reactant.set_default_backend("cpu") # or "gpu"
 
@@ -58,14 +58,17 @@ w_sharded = Reactant.to_rarray(
 simulation = Simulation(model, Δt=60, stop_iteration=10, verbose=false)
 pop!(simulation.callbacks, :nan_checker)
 
-if arch isa Oceananigans.Architectures.ReactantState
-    _run! = @compile sync=true run!(simulation)
+@time if arch isa Oceananigans.Architectures.ReactantState
+    _run_1! = @compile sync=true shardy_passes=:default run!(simulation);
 else
-    _run! = run!
+    _run_1! = run!;
 end
 
-_run!(simulation)
+@time if arch isa Oceananigans.Architectures.ReactantState
+    _run_2! = @compile sync=true shardy_passes=:to_mhlo_shardings run!(simulation);
+else
+    _run_2! = run!;
+end
 
-@time _run!(simulation)
-@time _run!(simulation)
-@time _run!(simulation)
+_run_1!(simulation)
+_run_2!(simulation)
