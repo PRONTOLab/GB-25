@@ -51,6 +51,9 @@ jobs:
       - uses: julia-actions/cache@v2
       - name: Collect Workflow Telemetry
         uses: catchpoint/workflow-telemetry-action@v2
+        with:
+          comment_on_pr: false
+          job_summary: true
       - name: Instantiate environment
         timeout-minutes: 60
         shell: julia --color=yes --project {0}
