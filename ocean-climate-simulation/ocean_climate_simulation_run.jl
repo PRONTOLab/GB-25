@@ -2,7 +2,7 @@ using GordonBell25: data_free_ocean_climate_model_init
 using Oceananigans.Architectures: ReactantState
 using Reactant
 
-Reactant.Compiler.SROA_ATTRIBUTOR[] = false
+# Reactant.Compiler.SROA_ATTRIBUTOR[] = false
 
 include("common.jl")
 
