@@ -51,12 +51,20 @@ jobs:
       - uses: julia-actions/cache@v2
       - name: Collect Workflow Telemetry
         uses: catchpoint/workflow-telemetry-action@v2
+        with:
+          comment_on_pr: false
+          job_summary: true
       - name: Instantiate environment
         timeout-minutes: 60
         shell: julia --color=yes --project {0}
         run: |
           using Pkg
           Pkg.Registry.update()
+          # Pkg.add([
+          #     PackageSpec(; name="Reactant", rev="main"),
+          #     PackageSpec(; name="Oceananigans", rev="main"),
+          #     PackageSpec(; name="ClimaOcean", rev="main"),
+          # ])
           Pkg.instantiate()
       - name: Upload project environment
         uses: actions/upload-artifact@v4
@@ -74,6 +82,20 @@ jobs:
         run: |
           earlyoom -m 4 -s 100 -r 120 --prefer 'julia' &
           julia --color=yes --project ocean-climate-simulation/ocean_climate_simulation_mlir.jl
+      - name: Show remaining jit calls
+        timeout-minutes: 10
+        run: |
+          JIT_CALLS=$(find . -name 'opt_ocean_climate_simulation.mlir' -exec grep 'enzymexla\.jit_call' '{}' \;)
+          NUM_JIT_CALLS=$(echo "${JIT_CALLS}" | wc -l | xargs)
+          if [[ -n "${JIT_CALLS}" ]]; then
+              MSG="There are ${NUM_JIT_CALLS} remaining jit calls"
+              echo  "${MSG}:"
+              echo "::warning title=Remaining JIT Calls:: ${MSG}"
+              echo
+              echo "----------"
+              echo "${JIT_CALLS}"
+              echo "----------"
+          fi
       - name: Upload MLIR code
         uses: actions/upload-artifact@v4
         timeout-minutes: 10
