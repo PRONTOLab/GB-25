@@ -13,11 +13,12 @@ model = data_free_ocean_climate_model_init(ReactantState())
 GC.gc(true); GC.gc(false); GC.gc(true)
 
 failed = false
+Ninner = ConcreteRNumber(2)
 
 # Pre-raise IR
 @info "Compiling before raise kernel..."
 before_raise = try
-    @code_hlo optimize=:before_raise raise=true loop!(model, 2)
+    @code_hlo optimize=:before_raise raise=true loop!(model, Ninner)
 catch e
     @error "Failed to compile" exception=(e, catch_backtrace())
     global failed = true
@@ -30,7 +31,7 @@ end
 # Unoptimized HLO
 @info "Compiling unoptimised kernel..."
 unopt = try
-    @code_hlo optimize=false raise=true loop!(model, 2)
+    @code_hlo optimize=false raise=true loop!(model, Ninner)
 catch e
     @error "Failed to compile" exception=(e, catch_backtrace())
     global failed = true
@@ -43,7 +44,7 @@ end
 # Optimized HLO
 @info "Compiling optimised kernel..."
 opt = try
-    @code_hlo optimize=:before_jit raise=true loop!(model, 2)
+    @code_hlo optimize=:before_jit raise=true loop!(model, Ninner)
 catch e
     @error "Failed to compile" exception=(e, catch_backtrace())
     global failed = true
