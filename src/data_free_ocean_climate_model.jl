@@ -5,12 +5,12 @@ using Reactant
 
 using ClimaOcean
 using ClimaOcean.OceanSeaIceModels.InterfaceComputations: FixedIterations, ComponentInterfaces
-using OrthogonalSphericalShellGrids: TripolarGrid
 
 using CFTime
 using Dates
 using Printf
 using Profile
+using Serialization
 
 const PROFILE = Ref(false)
 
@@ -26,36 +26,13 @@ macro gbprofile(name::String, expr::Expr)
                 println(s, "# at ", $(string(__source__)))
                 $(Profile.print)(IOContext(s, :displaysize => (48, 1000)))
             end
+            $(Serialization.serialize)(string("profile_", $(esc(name)), ".dat"), $(Profile).retrieve())
             $(Profile.clear)()
             out
         else
             $(esc(expr))
         end
     end
-end
-
-# Utility for printing progress to the terminal
-const wall_time = Ref(UInt64(0))
-
-function progress(sim)
-    ocean = sim.model.ocean
-    u, v, w = ocean.model.velocities
-    T = ocean.model.tracers.T
-    Tmax = maximum(interior(T))
-    Tmin = minimum(interior(T))
-    umax = (maximum(abs, interior(u)), maximum(abs, interior(v)), maximum(abs, interior(w)))
-    step_time = 1e-9 * (time_ns() - wall_time[])
-
-    msg = @sprintf("Time: %s, n: %d, Δt: %s, max|u|: (%.2e, %.2e, %.2e) m s⁻¹, \
-                   extrema(T): (%.2f, %.2f) ᵒC, wall time: %s \n",
-                   prettytime(sim), iteration(sim), prettytime(sim.Δt),
-                   umax..., Tmax, Tmin, prettytime(step_time))
-
-    ClimaOcean.@root @info(msg)
-
-    wall_time[] = time_ns()
-
-    return nothing
 end
 
 function mtn₁(λ, φ)
@@ -115,7 +92,14 @@ function gaussian_islands_tripolar_grid(arch::Architectures.AbstractArchitecture
                                                                   active_cells_map=false)
 end
 
-function data_free_ocean_climate_simulation_init(
+function set_tracers(T, Ta, u, ua, shortwave, Qs)
+    T .= Ta .+ 273.15
+    u .= ua
+    shortwave .= Qs
+    nothing
+end
+
+function data_free_ocean_climate_model_init(
     arch::Architectures.AbstractArchitecture=Architectures.ReactantState();
     # Horizontal resolution
     resolution::Real = 2, # 1/4 for quarter degree
@@ -127,7 +111,11 @@ function data_free_ocean_climate_simulation_init(
 
     # See visualize_ocean_climate_simulation.jl for information about how to
     # visualize the results of this run.
-    ocean = @gbprofile "ocean_simulation" ocean_simulation(grid)
+    Δt=30seconds
+    ocean = @gbprofile "ocean_simulation" ocean_simulation(grid;
+                                                           Δt,
+                                                           free_surface=ClimaOcean.OceanSimulations.default_free_surface(grid, fixed_Δt=Δt)
+                                                          )
 
     @gbprofile "set_ocean_model" set!(ocean.model, T=Tᵢ, S=Sᵢ)
 
@@ -150,47 +138,26 @@ function data_free_ocean_climate_simulation_init(
     set!(ua, zonal_wind)
     set!(Qs, sunlight)
 
-    parent(atmosphere.tracers.T) .= parent(Ta) .+ 273.15
-    parent(atmosphere.velocities.u) .= parent(ua)
+    if arch isa Architectures.ReactantState
+        if Reactant.precompiling()
+            @code_hlo set_tracers(parent(atmosphere.tracers.T), parent(Ta), parent(atmosphere.velocities.u), parent(ua), parent(atmosphere.downwelling_radiation.shortwave), parent(Qs))
+        else
+            @jit set_tracers(parent(atmosphere.tracers.T), parent(Ta), parent(atmosphere.velocities.u), parent(ua), parent(atmosphere.downwelling_radiation.shortwave), parent(Qs))
+        end
+    else
+        set_tracers(parent(atmosphere.tracers.T), parent(Ta), parent(atmosphere.velocities.u), parent(ua), parent(atmosphere.downwelling_radiation.shortwave), parent(Qs))
+    end
+
     parent(atmosphere.tracers.q) .= 0
-    parent(atmosphere.downwelling_radiation.shortwave) .= parent(Qs)
 
     # Atmospheric model
     radiation = Radiation(arch)
 
-    # Coupled model and simulation
+    # Coupled model
     solver_stop_criteria = FixedIterations(5) # note: more iterations = more accurate
     atmosphere_ocean_flux_formulation = SimilarityTheoryFluxes(; solver_stop_criteria)
     interfaces = ComponentInterfaces(atmosphere, ocean; radiation, atmosphere_ocean_flux_formulation)
     coupled_model = @gbprofile "OceanSeaIceModel" OceanSeaIceModel(ocean; atmosphere, radiation, interfaces)
-    simulation = @gbprofile "Simulation" Simulation(coupled_model; Δt=20minutes, stop_iteration=40)
-    pop!(simulation.callbacks, :nan_checker)
 
-    wall_time[] = time_ns()
-
-    if !(arch isa Architectures.ReactantState)
-        add_callback!(simulation, progress, IterationInterval(10))
-    end
-
-    # Output
-    prefix = if arch isa Distributed
-        "ocean_climate_simulation_rank$(arch.local_rank)"
-    else
-        "ocean_climate_simulation_serial"
-    end
-
-    Nz = size(grid, 3)
-    outputs = merge(ocean.model.velocities, ocean.model.tracers)
-    if !(arch isa Architectures.ReactantState)
-        surface_writer = JLD2OutputWriter(ocean.model, outputs,
-        				  filename = prefix * "_surface.jld2",
-        				  indices = (:, :, Nz),
-        				  schedule = TimeInterval(3days),
-        				  overwrite_existing = true)
-
-        simulation.output_writers[:surface] = surface_writer
-    end
-
-    return simulation
-
-end # data_free_ocean_climate_simulation_init
+    return coupled_model
+end # data_free_ocean_climate_model_init
