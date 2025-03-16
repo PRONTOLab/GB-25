@@ -68,11 +68,11 @@ jobs:
         run: |
           using Pkg
           Pkg.Registry.update()
-          # Pkg.add([
-          #     PackageSpec(; name="Reactant", rev="main"),
+          Pkg.add([
+              PackageSpec(; name="Reactant", rev="jm/is_traced_structs"),
           #     PackageSpec(; name="Oceananigans", rev="main"),
           #     PackageSpec(; name="ClimaOcean", rev="main"),
-          # ])
+          ])
           Pkg.instantiate()
       - name: Upload project environment
         uses: actions/upload-artifact@v4
