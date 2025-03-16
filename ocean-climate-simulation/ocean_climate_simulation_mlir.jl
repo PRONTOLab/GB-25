@@ -19,15 +19,47 @@ function loop!(model, Ninner)
     return nothing
 end
 
+# Pre-raise IR
+@info "Compiling before raise kernel..."
+before_raise = try
+    @code_hlo optimize=:before_raise raise=true loop!(model, 3)
+catch e
+    @error "Failed to compile" exception=(e, catch_backtrace())
+    Text("""
+    // Failed to compile
+    //$e
+    """)
+end
+
 # Unoptimized HLO
 @info "Compiling unoptimised kernel..."
-unopt = @code_hlo optimize=false raise=true loop!(model, 10)
+unopt = try
+    @code_hlo optimize=false raise=true loop!(model, 10)
+catch e
+    @error "Failed to compile" exception=(e, catch_backtrace())
+    Text("""
+    // Failed to compile
+    //$e
+    """)
+end
 
 # Optimized HLO
 @info "Compiling optimised kernel..."
-opt = @code_hlo optimize=:before_jit raise=true loop!(model, 10)
+opt = try
+    @code_hlo optimize=:before_jit raise=true loop!(model, 10)
+catch e
+    @error "Failed to compile" exception=(e, catch_backtrace())
+    Text("""
+    // Failed to compile
+    //$e
+    """)
+end
 
 for debug in (true, false)
+    open("before_raise_ocean_climate_simulation$(debug ? "_debug" : "").mlir", "w") do io
+        show(IOContext(io, :debug => debug), unopt)
+    end
+
     # Unoptimized HLO
     open("unopt_ocean_climate_simulation$(debug ? "_debug" : "").mlir", "w") do io
         show(IOContext(io, :debug => debug), unopt)
