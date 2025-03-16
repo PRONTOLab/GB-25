@@ -1,5 +1,5 @@
 using GordonBell25: data_free_ocean_climate_model_init, PROFILE
-using Reactant: @code_hlo, @trace
+using Reactant
 using Oceananigans
 using Oceananigans.Architectures: ReactantState
 
@@ -21,11 +21,11 @@ end
 
 # Unoptimized HLO
 @info "Compiling unoptimised kernel..."
-unopt = @code_hlo optimize=false raise=true loop!(model, 2)
+unopt = @code_hlo optimize=false raise=true loop!(model, ConcreteRNumber(2))
 
 # Optimized HLO
 @info "Compiling optimised kernel..."
-opt = @code_hlo optimize=:before_jit raise=true loop!(model, 2)
+opt = @code_hlo optimize=:before_jit raise=true loop!(model, ConcreteRNumber(2))
 
 for debug in (true, false)
     # Unoptimized HLO
