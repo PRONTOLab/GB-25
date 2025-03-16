@@ -22,7 +22,7 @@ end
 # Pre-raise IR
 @info "Compiling before raise kernel..."
 before_raise = try
-    @code_hlo optimize=:before_raise raise=true loop!(model, ConcreteRNumber(2))
+    @code_hlo optimize=:before_raise raise=true loop!(model, 2)
 catch e
     @error "Failed to compile" exception=(e, catch_backtrace())
     Text("""
@@ -34,7 +34,7 @@ end
 # Unoptimized HLO
 @info "Compiling unoptimised kernel..."
 unopt = try
-    @code_hlo optimize=false raise=true loop!(model, ConcreteRNumber(2))
+    @code_hlo optimize=false raise=true loop!(model, 2)
 catch e
     @error "Failed to compile" exception=(e, catch_backtrace())
     Text("""
@@ -46,7 +46,7 @@ end
 # Optimized HLO
 @info "Compiling optimised kernel..."
 opt = try
-    @code_hlo optimize=:before_jit raise=true loop!(model, ConcreteRNumber(2))
+    @code_hlo optimize=:before_jit raise=true loop!(model, 2)
 catch e
     @error "Failed to compile" exception=(e, catch_backtrace())
     Text("""
