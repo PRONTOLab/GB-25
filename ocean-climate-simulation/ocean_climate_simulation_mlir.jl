@@ -21,11 +21,11 @@ end
 
 # Unoptimized HLO
 @info "Compiling unoptimised kernel..."
-unopt = @code_hlo optimize=false raise=true loop!(model, 10)
+unopt = @code_hlo optimize=false raise=true loop!(model, 2)
 
 # Optimized HLO
 @info "Compiling optimised kernel..."
-opt = @code_hlo optimize=:before_jit raise=true loop!(model, 10)
+opt = @code_hlo optimize=:before_jit raise=true loop!(model, 2)
 
 for debug in (true, false)
     # Unoptimized HLO
