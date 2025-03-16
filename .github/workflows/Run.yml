@@ -1,0 +1,54 @@
+name: "Run"
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/Run.yml'
+      - '.github/workflows/CompileOrRun.yml'
+      - 'ocean-climate-simulation/common.jl'
+      - 'ocean-climate-simulation/ocean_climate_simulation_run.jl'
+      - 'Project.toml'
+      - 'src/**'
+  push:
+    branches:
+      - main
+      - release-*
+    tags: '*'
+    paths:
+      - '.github/workflows/Run.yml'
+      - '.github/workflows/CompileOrRun.yml'
+      - 'ocean-climate-simulation/common.jl'
+      - 'ocean-climate-simulation/ocean_climate_simulation_run.jl'
+      - 'Project.toml'
+      - 'src/**'
+  workflow_dispatch:
+  schedule:
+    - cron: '12 07,19 * * *'
+
+concurrency:
+  # Skip intermediate builds: always.
+  # Cancel intermediate builds: only if it is a pull request build.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ startsWith(github.ref, 'refs/pull/') }}
+
+jobs:
+  run_ocean_climate_simulation:
+    name: Julia ${{ matrix.julia_version }} - ${{ matrix.os }} - ${{ matrix.xla_runtime }}
+    strategy:
+      fail-fast: false
+      matrix:
+        julia_version:
+          - '1.11'
+        os:
+          - ubuntu-24.04
+        xla_runtime:
+          - 'PJRT'
+          - 'IFRT'
+    uses: ./.github/workflows/CompileOrRun.yml
+    with:
+      julia_version: ${{ matrix.julia_version }}
+      os: ${{ matrix.os }}
+      xla_runtime: ${{ matrix.xla_runtime }}
+      compile_or_run: 'run'
+      earlyoom_threshold: 4
+      julia_optlevel: 0
