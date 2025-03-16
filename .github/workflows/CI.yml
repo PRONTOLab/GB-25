@@ -58,9 +58,9 @@ jobs:
           using Pkg
           Pkg.Registry.update()
           Pkg.add([
-              PackageSpec(; name="Reactant", rev="main"),
-              PackageSpec(; name="Oceananigans", rev="glw/nothing-callbacks"),
-              PackageSpec(; name="ClimaOcean", rev="glw/compute-titp"),
+              PackageSpec(; name="Reactant", rev="isless"),
+              # PackageSpec(; name="Oceananigans", rev="main"),
+              # PackageSpec(; name="ClimaOcean", rev="main"),
           ])
           Pkg.instantiate()
       - name: Upload project environment
