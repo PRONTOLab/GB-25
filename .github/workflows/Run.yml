@@ -37,6 +37,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        simulation_type:
+          - 'data_free'
+          - 'ocean_climate'
         julia_version:
           - '1.11'
         os:
@@ -52,3 +55,4 @@ jobs:
       compile_or_run: 'run'
       earlyoom_threshold: 4
       julia_optlevel: 0
+      simulation_type: ${{ matrix.simulation_type }}
