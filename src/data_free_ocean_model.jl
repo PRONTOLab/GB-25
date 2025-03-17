@@ -163,7 +163,7 @@ function earth_tripolar_grid(arch::Architectures.AbstractArchitecture, resolutio
     underlying_grid = TripolarGrid(arch; size=(Nx, Ny, Nz), halo=(7, 7, 7), z=z_faces)
 
     # Bathymetry based on ETOPO1: https://www.ncei.noaa.gov/products/etopo-global-relief-model
-    bathymetry = ClimaOcean.regrid_bathymetry(grid, interpolation_passes=10, major_basins=1)
+    bathymetry = ClimaOcean.regrid_bathymetry(underlying_grid, interpolation_passes=10, major_basins=1)
 
     return @gbprofile "ImmersedBoundaryGrid" ImmersedBoundaryGrid(underlying_grid,
                                                                   GridFittedBottom(bathymetry);
