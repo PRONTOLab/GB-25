@@ -10,4 +10,4 @@ function loop!(model, Ninner)
     return nothing
 end
 
-Ninner = ConcreteRNumber(2)
+Ninner = ConcreteRNumber(10)
