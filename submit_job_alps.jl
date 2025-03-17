@@ -25,7 +25,7 @@ details = replace(params["arch"] * "_" * params["precis"] * "_" * params["resol"
 # run params
 submit   = true
 run_name = "r_react_"
-time     = "00:20:00"
+time     = "00:40:00"
 # num_gpus = 4 * 2 # 1 | 2, 16, 128, 480, 600, 1024, 2000, 2662, 3456, 4394, 5488
 num_gpus_vec = 4 .* (2, 16, 128)
 

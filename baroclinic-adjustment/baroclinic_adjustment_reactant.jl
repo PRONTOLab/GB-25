@@ -6,34 +6,10 @@ using Random
 using Printf
 using JSON
 
-# Architecture
-# use_reactant = get(ENV, "use-reactant", false)
-# if use_reactant == "true" || use_reactant=="1"
-#     use_reactant = true
-# elseif use_reactant == "false" || use_reactant=="0"
-#     use_reactant = false
-# end
-
-# raise = get(ENV, "raise", false)
-# if raise == "true" || raise=="1"
-#     raise = true
-# elseif raise == "false" || raise=="0"
-#     raise = false
-# end
-
-# if use_reactant
-#     arch = Oceananigans.Architectures.ReactantState()
-# else
-#     arch = GPU() # change this to use CPU
-# end
-# if raise
-    Reactant.Compiler.Raise[] = true
-# end
+Reactant.Compiler.Raise[] = true
 
 function loop!(model, Δt, Ninner)
-    # Δt = 1200 # 20 minutes
-    Oceananigans.TimeSteppers.first_time_step!(model, Δt)
-    @trace for _ = 2:Ninner
+    @trace for _ = 1:Ninner
         Oceananigans.TimeSteppers.time_step!(model, Δt)
     end
     return nothing
@@ -96,69 +72,62 @@ set!(model, b=bᵢ)
 dx = minimum_xspacing(grid)
 Δt = 0.15 * dx / 2 # c * dx / max(U)
 
-simulation = Simulation(model; Δt, stop_time)
+# u, v, w = model.velocities
+# e = @at (Center, Center, Center) (u^2 + v^2) / 2
+# E = Average(e, dims=(1, 2, 3))
+# ke_ow = JLD2OutputWriter(model, (; E),
+#                          filename = prefix * "_kinetic_energy.jld2",
+#                          schedule = TimeInterval(1days),
+#                          overwrite_existing = true)
+
+# output_writers[:ke] = ke_ow
+
+# Nz = size(grid, 3)
+# b = model.tracers.b
+# ζ = ∂x(v) - ∂y(u)
+# fields = (; u, v, w, b, ζ)
+# f_ow = JLD2OutputWriter(model, fields,
+#                         filename = prefix * "_fields.jld2",
+#                         indices = (:, :, Nz),
+#                         schedule = TimeInterval(10days),
+#                         overwrite_existing = true)
+
+# output_writers[:fields] = f_ow
+
+@info "Compiling..."
+Ninner = ConcreteRNumber(10) # this must be traced, so that we can change it later.
+r_loop! = @compile loop!(model, Δt, Ninner)
+r_first_time_step! = @compile Oceananigans.TimeSteppers.first_time_step!(model, Δt)
+
+# Do one initial loop
+@info "Running initial loop..."
+Nprint = 10
+r_first_time_step!(model, Δt)
+r_loop!(model, Δt, ConcreteRNumber(Nprint-1))
+
+# Now set an outer loop in motion
+Ntotal = ceil(Int, stop_time / Δt) # 1000 # or, compute this with a stop_time + Δt
+Nouter = ceil(Int, (Ntotal - 1) / Nprint)
 
 wall_clock = Ref(time_ns())
 
-function progress(sim)
+@info "Running..."
+for outer = 1:Nouter
+
+    r_loop!(model, Δt, ConcreteRNumber(Nprint))
 
     elapsed = 1e-9 * (time_ns() - wall_clock[])
-
-    msg = @sprintf("Iter: %d, time: %s, wall time: %s, max(u): (%6.3e, %6.3e, %6.3e) m/s",
-                   iteration(sim), prettytime(sim), prettytime(elapsed),
-                   maximum(abs, sim.model.velocities.u),
-                   maximum(abs, sim.model.velocities.v),
-                   maximum(abs, sim.model.velocities.w))
+    msg = @sprintf("Iter: %d, wall time: %s, max(u): (%6.3e, %6.3e, %6.3e) m/s",
+                   Nouter * Nprint, prettytime(elapsed),
+                   maximum(abs, model.velocities.u),
+                   maximum(abs, model.velocities.v),
+                   maximum(abs, model.velocities.w))
 
     @info msg
 
     wall_clock[] = time_ns()
 
-    return nothing
+    # Oceananigans.OutputWriters.write_output!(output_writer, model)
 end
 
-add_callback!(simulation, progress, IterationInterval(10))
-
-u, v, w = model.velocities
-e = @at (Center, Center, Center) (u^2 + v^2) / 2
-E = Average(e, dims=(1, 2, 3))
-ke_ow = JLD2OutputWriter(model, (; E),
-                         filename = prefix * "_kinetic_energy.jld2",
-                         schedule = TimeInterval(1days),
-                         overwrite_existing = true)
-
-simulation.output_writers[:ke] = ke_ow
-
-Nz = size(grid, 3)
-b = model.tracers.b
-ζ = ∂x(v) - ∂y(u)
-fields = (; u, v, w, b, ζ)
-f_ow = JLD2OutputWriter(model, fields,
-                        filename = prefix * "_fields.jld2",
-                        indices = (:, :, Nz),
-                        schedule = TimeInterval(10days),
-                        overwrite_existing = true)
-
-simulation.output_writers[:fields] = f_ow
-
-# if arch isa ReactantState
-    # _run! = @compile run!(simulation)
-    @info "Compiling..."
-    rloop! = @compile raise=true loop!(model, Δt, 2)
-
-    @info "Running..."
-    rloop!(model, Δt, 2)
-
-    @info "Done!"
-# else
-#     run!(simulation)
-# end
-
-# @info "Compiling..."
-# rloop! = @compile raise=true loop!(model, 2)
-
-# @info "Running..."
-# Reactant.with_profiler("./") do
-#     rloop!(model, 2)
-# end
-# @info "Done!"
+@info "Done!"
