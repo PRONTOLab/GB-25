@@ -6,7 +6,7 @@ using Random
 using Printf
 using JSON
 
-Reactant.Compiler.Raise[] = true
+# Reactant.Compiler.Raise[] = true
 
 function loop!(model, Δt, Ninner)
     @trace for _ = 1:Ninner
@@ -35,7 +35,7 @@ N² = 4e-6  # [s⁻²] buoyancy frequency / stratification
 φ₀ = 50
 closure = VerticalScalarDiffusivity(FT; κ=1e-5, ν=1e-4)
 prefix = joinpath(@__DIR__, "baroclinic_adjustment_$FT")
-stop_time = 800days
+stop_time = 20days # 800days
 
 @info "Nx, Ny, Nz = $Ny, $Ny, $Nz"
 
