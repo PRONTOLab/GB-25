@@ -1,6 +1,11 @@
+Manifest.toml
+LocalPreferences.toml
+
 *.jld2
 *.nc
 *.png
 *.pdf
 *.mp4
 *.swp
+
+r_*
