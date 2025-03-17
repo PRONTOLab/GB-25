@@ -1,3 +1,5 @@
+# This file implements ocean_climate_model_init
+
 function earth_tripolar_grid(arch::Architectures.AbstractArchitecture, resolution, Nz)
     Nx = convert(Int, 360 / resolution)
     Ny = convert(Int, 180 / resolution)
