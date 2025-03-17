@@ -49,6 +49,8 @@ jobs:
         with:
           version: ${{ inputs.julia_version }}
       - uses: julia-actions/cache@v2
+        with:
+          cache-name: julia-cache;workflow=${{ inputs.julia_version }}-${{ inputs.os }}-${{ inputs.xla_runtime }}-${{ inputs.compile_or_run }};job=${{ github.job }}
       - name: Collect Workflow Telemetry
         uses: catchpoint/workflow-telemetry-action@v2
         with:
