@@ -71,7 +71,7 @@ jobs:
           # Pkg.add([
           #     PackageSpec(; name="Reactant", rev="main"),
           #     PackageSpec(; name="Oceananigans", rev="main"),
-          #     PackageSpec(; name="ClimaOcean", rev="main"),
+              PackageSpec(; name="ClimaOcean", rev="glw/try-this"),
           # ])
           Pkg.instantiate()
       - name: Upload project environment
