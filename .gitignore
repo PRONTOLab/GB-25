@@ -1,4 +1,5 @@
 Manifest.toml
+LocalPreferences.toml
 
 *.jld2
 *.nc
@@ -7,4 +8,4 @@ Manifest.toml
 *.mp4
 *.swp
 
-r_oa*
+r_*

@@ -15,7 +15,7 @@ exe_subdir = "baroclinic-adjustment"
 
 # input params
 params = Dict(
-    "precis" => "Float64", # Float64, Float32
+    "precis" => "Float32", # Float64, Float32
     "arch"   => "GPU()",   # CPU(), GPU(), ReactantState()
     "resol"  => "1//16"     # 1//8, 1//16
 )
@@ -24,8 +24,8 @@ details = replace(params["arch"] * "_" * params["precis"] * "_" * params["resol"
 
 # run params
 submit   = true
-run_name = "r_oa"
-time     = "00:20:00"
+run_name = "r_O5_"
+time     = "01:00:00"
 # num_gpus = 4 * 2 # 1 | 2, 16, 128, 480, 600, 1024, 2000, 2662, 3456, 4394, 5488
 num_gpus_vec = 4 .* (2, 16, 128)
 
