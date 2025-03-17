@@ -1,4 +1,4 @@
-using GordonBell25: ocean_climate_simulation_run
+using GordonBell25: data_free_ocean_model_init
 using Oceananigans.Architectures: ReactantState
 using Reactant
 
@@ -7,7 +7,7 @@ using Reactant
 include("common.jl")
 
 @info "Generating model..."
-model = ocean_climate_simulation_run(ReactantState())
+model = data_free_ocean_model_init(ReactantState())
 
 GC.gc(true); GC.gc(false); GC.gc(true)
 

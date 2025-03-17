@@ -1,4 +1,4 @@
-using GordonBell25: ocean_climate_model_init, PROFILE
+using GordonBell25: data_free_ocean_model_init, PROFILE
 using Reactant
 using Oceananigans
 using Oceananigans.Architectures: ReactantState
@@ -8,7 +8,7 @@ PROFILE[] = true
 include("common.jl")
 
 @info "Generating model..."
-model = ocean_climate_model_init(ReactantState())
+model = data_free_ocean_model_init(ReactantState())
 
 GC.gc(true); GC.gc(false); GC.gc(true)
 
