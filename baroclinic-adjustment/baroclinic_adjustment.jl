@@ -42,8 +42,8 @@ model = HydrostaticFreeSurfaceModel(; grid, closure,
                                     coriolis = HydrostaticSphericalCoriolis(),
                                     buoyancy = BuoyancyTracer(),
                                     tracers = :b,
-                                    momentum_advection = WENOVectorInvariant(),
-                                    tracer_advection = WENO(order=7))
+                                    momentum_advection = WENOVectorInvariant(order=5),
+                                    tracer_advection = WENO(order=5))
 
 # Parameters
 parameters = (; N², Δb, φ₀, Δφ = 20)
