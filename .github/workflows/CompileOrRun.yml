@@ -97,6 +97,8 @@ jobs:
           julia --color=yes --project -O${{ inputs.julia_optlevel }} simulations/${{ inputs.simulation_type }}_simulation_${{ inputs.compile_or_run }}.jl
         env:
           XLA_FLAGS: "--xla_dump_to=xla_dump"
+          ECCO_PASSWORD: ${{ secrets.ECCO_PASSWORD }}
+          ECCO_USERNAME: ${{ secrets.ECCO_USERNAME }}
       - name: Show remaining jit calls
         if: ${{ inputs.compile_or_run == 'compile' }}
         timeout-minutes: 10
