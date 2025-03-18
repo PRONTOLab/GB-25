@@ -1,12 +1,14 @@
 using Reactant
 using Oceananigans
- 
-const Δt = 30 # seconds
     
-first_time_step!(model) = Oceananigans.TimeSteppers.first_time_step!(model, Δt)
+function first_time_step!(model)
+    Δt = model.clock.last_Δt # note: fixed on initialization
+    Oceananigans.TimeSteppers.first_time_step!(model, Δt)
+    return nothing
+end
 
 function loop!(model, Ninner)
-    Δt = 30 # seconds
+    Δt = model.clock.last_Δt # note: fixed on initialization
     @trace for _ = 1:Ninner
         Oceananigans.TimeSteppers.time_step!(model, Δt)
     end

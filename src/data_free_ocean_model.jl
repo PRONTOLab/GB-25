@@ -114,6 +114,10 @@ function data_free_ocean_model_init(
     interfaces = ComponentInterfaces(atmosphere, ocean; radiation, atmosphere_ocean_flux_formulation)
     coupled_model = @gbprofile "OceanSeaIceModel" OceanSeaIceModel(ocean; atmosphere, radiation, interfaces)
 
+    coupled_model.clock.last_Δt = Δt
+    ocean.model.clock.last_Δt = Δt
+    atmosphere.clock.last_Δt = Δt
+
     return coupled_model
 end # data_free_ocean_model_init
 

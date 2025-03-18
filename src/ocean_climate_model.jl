@@ -22,6 +22,9 @@ function ocean_climate_model_init(
     # Horizontal resolution
     resolution::Real = 2, # 1/4 for quarter degree
 
+    # Time step, cannot be changed
+    Δt = 30seconds,
+
     # Vertical resolution
     Nz::Int = 20, # eventually we want to increase this to between 100-600
 
@@ -46,7 +49,6 @@ function ocean_climate_model_init(
         forcing = NamedTuple()
     end
 
-    Δt = 30seconds
     free_surface = ClimaOcean.OceanSimulations.default_free_surface(grid, fixed_Δt=Δt)
     ocean = @gbprofile "ocean_simulation" ocean_simulation(grid; Δt, free_surface)
 
@@ -63,6 +65,10 @@ function ocean_climate_model_init(
     atmosphere_ocean_flux_formulation = SimilarityTheoryFluxes(; solver_stop_criteria)
     interfaces = ComponentInterfaces(atmosphere, ocean; radiation, atmosphere_ocean_flux_formulation)
     coupled_model = @gbprofile "OceanSeaIceModel" OceanSeaIceModel(ocean; atmosphere, radiation, interfaces)
+
+    coupled_model.clock.last_Δt = Δt
+    ocean.model.clock.last_Δt = Δt
+    atmosphere.clock.last_Δt = Δt
 
     return coupled_model
 end # ocean_climate_model_init
