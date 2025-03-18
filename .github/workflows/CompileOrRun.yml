@@ -69,8 +69,8 @@ jobs:
           using Pkg
           Pkg.Registry.update()
           Pkg.add([
-              PackageSpec(; name="Reactant", rev="fastsplat"),
-          #     PackageSpec(; name="Oceananigans", rev="main"),
+              PackageSpec(; name="Reactant", rev="main"),
+              PackageSpec(; name="Oceananigans", rev="glw/concrete-grid"),
           #     PackageSpec(; name="ClimaOcean", rev="main"),
           ])
           Pkg.instantiate()
