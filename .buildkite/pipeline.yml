@@ -22,3 +22,5 @@ steps:
           cuda: "*"
         if: build.message !~ /\[skip tests\]/
         timeout_in_minutes: 120
+        artifact_paths:
+          - "plugins/*"
