@@ -17,6 +17,7 @@ failed = false
 # Pre-raise IR
 @info "Compiling before raise kernel..."
 before_raise = try
+    @code_hlo optimize=:before_raise raise=true first_time_step!(model)
     @code_hlo optimize=:before_raise raise=true loop!(model, 2)
 catch e
     @error "Failed to compile" exception=(e, catch_backtrace())
@@ -30,6 +31,7 @@ end
 # Unoptimized HLO
 @info "Compiling unoptimised kernel..."
 unopt = try
+    @code_hlo optimize=false raise=true first_time_step!(model)
     @code_hlo optimize=false raise=true loop!(model, 2)
 catch e
     @error "Failed to compile" exception=(e, catch_backtrace())
@@ -43,6 +45,7 @@ end
 # Optimized HLO
 @info "Compiling optimised kernel..."
 opt = try
+    @code_hlo optimize=:before_jit raise=true first_time_step!(model)
     @code_hlo optimize=:before_jit raise=true loop!(model, 2)
 catch e
     @error "Failed to compile" exception=(e, catch_backtrace())
