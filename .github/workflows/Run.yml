@@ -44,6 +44,10 @@ jobs:
         xla_runtime:
           - 'PJRT'
           - 'IFRT'
+        include:
+          - os: ubuntu-22.04-arm
+            julia_version: '1.11'
+            xla_runtime: 'IFRT'
     uses: ./.github/workflows/CompileOrRun.yml
     with:
       julia_version: ${{ matrix.julia_version }}
