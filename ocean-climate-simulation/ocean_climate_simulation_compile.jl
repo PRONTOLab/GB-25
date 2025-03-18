@@ -14,60 +14,52 @@ GC.gc(true); GC.gc(false); GC.gc(true)
 
 failed = false
 
+function try_code_hlo(f)
+    try
+        f()
+    catch e
+        @error "Failed to compile" exception=(e, catch_backtrace())
+        global failed = true
+        Text("""
+        // Failed to compile
+        //$e
+        """)
+    end
+end
+
 # Pre-raise IR
-@info "Compiling before raise kernel..."
-before_raise = try
+@info "Compiling before raise kernels..."
+before_raise_first = try_code_hlo() do
     @code_hlo optimize=:before_raise raise=true first_time_step!(model)
+end
+
+before_raise_loop = try_code_hlo() do
     @code_hlo optimize=:before_raise raise=true loop!(model, Ninner)
-catch e
-    @error "Failed to compile" exception=(e, catch_backtrace())
-    global failed = true
-    Text("""
-    // Failed to compile
-    //$e
-    """)
 end
 
 # Unoptimized HLO
-@info "Compiling unoptimised kernel..."
-unopt = try
+@info "Compiling unoptimised kernels..."
+unopt_first = try_code_hlo() do
     @code_hlo optimize=false raise=true first_time_step!(model)
+end
+
+unopt_loop = try_code_hlo() do
     @code_hlo optimize=false raise=true loop!(model, Ninner)
-catch e
-    @error "Failed to compile" exception=(e, catch_backtrace())
-    global failed = true
-    Text("""
-    // Failed to compile
-    //$e
-    """)
 end
 
 # Optimized HLO
-@info "Compiling optimised kernel..."
-opt = try
+@info "Compiling optimised kernels..."
+opt_first = try_code_hlo() do
     @code_hlo optimize=:before_jit raise=true first_time_step!(model)
-    @code_hlo optimize=:before_jit raise=true loop!(model, Ninner)
-catch e
-    @error "Failed to compile" exception=(e, catch_backtrace())
-    global failed = true
-    Text("""
-    // Failed to compile
-    //$e
-    """)
 end
 
-for debug in (true, false)
-    open("before_raise_ocean_climate_simulation$(debug ? "_debug" : "").mlir", "w") do io
-        show(IOContext(io, :debug => debug), before_raise)
-    end
+opt_loop = try_code_hlo() do
+    @code_hlo optimize=:before_jit raise=true loop!(model, Ninner)
+end
 
-    # Unoptimized HLO
-    open("unopt_ocean_climate_simulation$(debug ? "_debug" : "").mlir", "w") do io
-        show(IOContext(io, :debug => debug), unopt)
-    end
-
-    open("opt_ocean_climate_simulation$(debug ? "_debug" : "").mlir", "w") do io
-        show(IOContext(io, :debug => debug), opt)
+for type in ("before_raise", "unopt", "opt"), name in ("first", "loop"), debug in (true, false)
+    open("$(type)_ocean_climate_simulation_$(name)$(debug ? "_debug" : "").mlir", "w") do io
+        show(IOContext(io, :debug => debug), getfield(Main, @eval Symbol($type, "_", $name)))
     end
 end
 
