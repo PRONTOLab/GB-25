@@ -69,9 +69,9 @@ jobs:
           using Pkg
           Pkg.Registry.update()
           Pkg.add([
-              # PackageSpec(; name="Reactant", rev="jm/is_traced_structs"),
-              # PackageSpec(; name="ReactantCore", rev="jm/is_traced_structs"),
-              PackageSpec(; url="https://github.com/jumerckx/Oceananigans.jl", rev="jm/clock_stage"),
+              PackageSpec(; name="Reactant", rev="jm/is_traced_structs"),
+              PackageSpec(; name="ReactantCore", rev="jm/is_traced_structs"),
+              # PackageSpec(; url="https://github.com/jumerckx/Oceananigans.jl", rev="jm/clock_stage"),
           #     PackageSpec(; name="ClimaOcean", rev="main"),
           ])
           Pkg.instantiate()
