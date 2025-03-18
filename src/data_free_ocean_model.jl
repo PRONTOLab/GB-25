@@ -63,13 +63,13 @@ function data_free_ocean_model_init(
     arch::Architectures.AbstractArchitecture=Architectures.ReactantState();
     # Horizontal resolution
     resolution::Real = 2, # 1/4 for quarter degree
+    # Time step, cannot be changed after initialization
+    Δt = 30seconds,
     # Vertical resolution
     Nz::Int = 20, # eventually we want to increase this to between 100-600
     )
 
     grid = gaussian_islands_tripolar_grid(arch, resolution, Nz)
-
-    Δt = 30seconds
     free_surface = ClimaOcean.OceanSimulations.default_free_surface(grid, fixed_Δt=Δt)
     ocean = @gbprofile "ocean_simulation" ocean_simulation(grid; Δt, free_surface)
     @gbprofile "set_ocean_model" set!(ocean.model, T=Tᵢ, S=Sᵢ)
