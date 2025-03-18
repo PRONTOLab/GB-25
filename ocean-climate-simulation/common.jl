@@ -2,6 +2,8 @@ using Reactant
 Reactant.Ops.LARGE_CONSTANT_THRESHOLD[] = 100
 using Oceananigans
 
+Base.eltype(::Type{<:Oceananigans.Grids.AbstractGrid{FT}}) where FT = FT
+
 # https://github.com/CliMA/Oceananigans.jl/blob/d9b3b142d8252e8e11382d1b3118ac2a092b38a2/src/Grids/orthogonal_spherical_shell_grid.jl#L14
 Base.@nospecializeinfer function Reactant.traced_type_inner(
     @nospecialize(OA::Type{Oceananigans.Grids.OrthogonalSphericalShellGrid{FT, TX, TY, TZ, Z, Map, CC, FC, CF, FF, Arch}}),
