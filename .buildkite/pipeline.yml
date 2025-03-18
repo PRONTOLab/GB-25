@@ -1,12 +1,18 @@
 steps:
-  - label: "Julia v1"
+  - label: "Julia v1.11 - Run job"
     plugins:
       - JuliaCI/julia#v1:
-          version: "1"
+          version: "1.11"
     commands: |
-      true
+      cat <<EOF > LocalPreferences.toml
+      [Reactant]
+      xla_runtime = "IFRT"
+      EOF
+      export JULIA_DEBUG="Reactant,Reactant_jll"
+      julia --project --color=yes -e 'using Pkg; Pkg.instantiate()'
+      julia --project --color=yes -O0 ocean-climate-simulation/ocean_climate_simulation_run.jl
     agents:
       queue: "juliagpu"
       cuda: "*"
     if: build.message !~ /\[skip tests\]/
-    timeout_in_minutes: 10
+    timeout_in_minutes: 120
