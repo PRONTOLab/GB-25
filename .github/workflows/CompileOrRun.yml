@@ -69,7 +69,7 @@ jobs:
           using Pkg
           Pkg.Registry.update()
           Pkg.add([
-              PackageSpec(; name="Reactant", rev="ss/debug-on-big-constant"),
+              PackageSpec(; name="Reactant", rev="fastsplat"),
           #     PackageSpec(; name="Oceananigans", rev="main"),
           #     PackageSpec(; name="ClimaOcean", rev="main"),
           ])
