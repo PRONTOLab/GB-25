@@ -22,7 +22,7 @@ function ocean_climate_model_init(
     # Horizontal resolution
     resolution::Real = 2, # 1/4 for quarter degree
 
-    # Time step, cannot be changed
+    # Time step, cannot be changed after initialization
     Δt = 30seconds,
 
     # Vertical resolution
