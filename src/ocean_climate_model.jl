@@ -5,7 +5,7 @@ function earth_tripolar_grid(arch::Architectures.AbstractArchitecture, resolutio
     Ny = convert(Int, 180 / resolution)
 
     # Grid setup
-    z_faces = exponential_z_faces(; Nz, depth=4000, h=30) # may need changing for very large Nz
+    z_faces = exponential_z_faces(; Nz, depth=6000, h=30) # may need changing for very large Nz
     underlying_grid = TripolarGrid(arch; size=(Nx, Ny, Nz), halo=(7, 7, 7), z=z_faces)
 
     # Bathymetry based on ETOPO1: https://www.ncei.noaa.gov/products/etopo-global-relief-model
