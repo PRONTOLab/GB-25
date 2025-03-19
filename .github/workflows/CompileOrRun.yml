@@ -97,6 +97,8 @@ jobs:
           julia --color=yes --project -O${{ inputs.julia_optlevel }} simulations/${{ inputs.simulation_type }}_simulation_${{ inputs.compile_or_run }}.jl
         env:
           XLA_FLAGS: "--xla_dump_to=xla_dump"
+          ECCO_PASSWORD: ${{ secrets.ECCO_PASSWORD }}
+          ECCO_USERNAME: ${{ secrets.ECCO_USERNAME }}
       - name: Show remaining jit calls
         if: ${{ inputs.compile_or_run == 'compile' }}
         timeout-minutes: 10
@@ -105,12 +107,12 @@ jobs:
           NUM_JIT_CALLS=$(echo "${JIT_CALLS}" | wc -l | xargs)
           if [[ -n "${JIT_CALLS}" ]]; then
               MSG="There are ${NUM_JIT_CALLS} remaining jit calls"
-              echo  "${MSG}:"
-              echo "::warning title=Remaining JIT Calls:: ${MSG}"
+              echo "::error title=Remaining JIT Calls:: ${MSG}"
               echo
               echo "----------"
               echo "${JIT_CALLS}"
               echo "----------"
+              exit 1
           fi
       - name: Upload MLIR modules
         uses: actions/upload-artifact@v4
