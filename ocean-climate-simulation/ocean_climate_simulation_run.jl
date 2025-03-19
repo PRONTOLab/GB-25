@@ -12,7 +12,7 @@ model = data_free_ocean_climate_model_init(ReactantState())
 GC.gc(true); GC.gc(false); GC.gc(true)
 
 @info "Compiling..."
-rfirst! = @compile raise=true first_time_step!(model)
+#rfirst! = @compile raise=true first_time_step!(model)
 rloop! = @compile raise=true loop!(model, 2)
 
 @info "Running..."
@@ -21,3 +21,4 @@ Reactant.with_profiler("./") do
     rloop!(model, 2)
 end
 @info "Done!"
+

@@ -29,29 +29,79 @@ end
 
 # Pre-raise IR
 @info "Compiling before raise kernels..."
-before_raise_first = try_code_hlo() do
+before_raise_first = try
     @code_hlo optimize=:before_raise raise=true first_time_step!(model)
+catch e
+    @error "Failed to compile" exception=(e, catch_backtrace())
+    global failed = true
+    Text("""
+    // Failed to compile
+    //$e
+    """)
 end
 
-before_raise_loop = try_code_hlo() do
-    @code_hlo optimize=:before_raise raise=true loop!(model, 2)
+before_raise_loop = try
+    @code_hlo optimize=:before_raise raise=true loop!(model, Ninner)
+catch e
+    @error "Failed to compile" exception=(e, catch_backtrace())
+    global failed = true
+    Text("""
+    // Failed to compile
+    //$e
+    """)
 end
 
 # Unoptimized HLO
 @info "Compiling unoptimised kernels..."
-unopt_first = try_code_hlo() do
+unopt_first = try
     @code_hlo optimize=false raise=true first_time_step!(model)
+catch e
+    @error "Failed to compile" exception=(e, catch_backtrace())
+    global failed = true
+    Text("""
+    // Failed to compile
+    //$e
+    """)
 end
 
-unopt_loop = try_code_hlo() do
-    @code_hlo optimize=false raise=true loop!(model, 2)
+unopt_loop = try
+    @code_hlo optimize=false raise=true loop!(model, Ninner)
+catch e
+    @error "Failed to compile" exception=(e, catch_backtrace())
+    global failed = true
+    Text("""
+    // Failed to compile
+    //$e
+    """)
 end
 
 # Optimized HLO
 @info "Compiling optimised kernels..."
-opt_first = try_code_hlo() do
+opt_first = try
     @code_hlo optimize=:before_jit raise=true first_time_step!(model)
+catch e
+    @error "Failed to compile" exception=(e, catch_backtrace())
+    global failed = true
+    Text("""
+    // Failed to compile
+    //$e
+    """)
 end
+
+opt_loop = try
+    @code_hlo optimize=:before_jit raise=true loop!(model, Ninner)
+catch e
+    @error "Failed to compile" exception=(e, catch_backtrace())
+    global failed = true
+    Text("""
+    // Failed to compile
+    //$e
+    """)
+end
+
+
+
+
 
 opt_loop = try_code_hlo() do
     @code_hlo optimize=:before_jit raise=true loop!(model, 2)
