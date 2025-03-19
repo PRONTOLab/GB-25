@@ -4,3 +4,7 @@
 *.pdf
 *.mp4
 *.swp
+*.dat
+*.txt
+
+Manifest.toml
