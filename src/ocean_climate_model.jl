@@ -31,6 +31,11 @@ function ocean_climate_model_init(
     # Date range used for 1) the initial condition at 2) the polar relaxation
     dates = DateTime(1993, 1, 1) : Month(1) : DateTime(1993, 12, 1),
 
+    # Use these to fiddle with the order of the advection scheme:
+    momentum_advection_order = 5,
+    tracer_advection_order = 5,
+    vorticity_order = nothing, # if this is provided, momentum_advection_order is ignored
+
     # Whether or not to restore the model state in polar regions, to correct
     # for the fact that we are running without a sea ice model.
     polar_restoring = false,
@@ -50,7 +55,17 @@ function ocean_climate_model_init(
     end
 
     free_surface = ClimaOcean.OceanSimulations.default_free_surface(grid, fixed_Δt=Δt)
-    ocean = @gbprofile "ocean_simulation" ocean_simulation(grid; Δt, free_surface)
+    if isnothing(vorticity_order)
+        momentum_advection = WENOVectorInvariant(; order=momentum_advection_order)
+    else
+        momentum_advection = WENOVectorInvariant(; vorticity_order)
+    end
+
+    tracer_advection = WENO(order=tracer_advection_order)
+    ocean = @gbprofile "ocean_simulation" ocean_simulation(grid; Δt,
+                                                           free_surface,
+                                                           tracer_advection,
+                                                           momentum_advection)
 
     T_init_meta = ClimaOcean.Metadata(:temperature; dates=first(dates), dataset=ClimaOcean.ECCO4Monthly())
     S_init_meta = ClimaOcean.Metadata(:salinity;    dates=first(dates), dataset=ClimaOcean.ECCO4Monthly())

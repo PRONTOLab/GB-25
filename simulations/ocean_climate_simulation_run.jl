@@ -1,24 +1,26 @@
 using GordonBell25: ocean_climate_model_init
-using Oceananigans.Architectures: ReactantState
-using Reactant
+using Oceananigans
 
-# Reactant.Compiler.SROA_ATTRIBUTOR[] = false
+FT = Float64
+Oceananigans.defaults.FloatType = FT
 
-include("common.jl")
+arch = CPU()
+resolution = 2 # degree
+Nz = 20 # vertical levels
+Δt = 60 # seconds, note this must be provided at initialization for Reactant
+momentum_advection_order = 5
+tracer_advection_order = 5
 
-@info "Generating model..."
-model = ocean_climate_model_init(ReactantState())
+# Set this to eg vorticity_order=7, which additionally ignores `momentum_advection_order`
+vorticity_order = nothing
+model = ocean_climate_model_init(arch; resolution, Nz, Δt,
+                                 tracer_advection_order,
+                                 vorticity_order,
+                                 momentum_advection_order)
 
-GC.gc(true); GC.gc(false); GC.gc(true)
+simulation = Simulation(model; Δt, stop_iteration=10)
 
-@info "Compiling..."
-rfirst! = @compile raise=true Oceananigans.TimeSteppers.first_time_step!(model)
-rloop! = @compile raise=true loop!(model, 2)
+# Add diagnostics and callbacks here
 
-@info "Running 1+2=3 steps..."
-Reactant.with_profiler("./") do
-    rfirst!(model)
-    rloop!(model, 2)
-end
-@info "Done!"
+run!(simulation)
 
