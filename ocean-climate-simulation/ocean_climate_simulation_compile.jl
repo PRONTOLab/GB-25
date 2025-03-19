@@ -53,7 +53,7 @@ opt_first = try_code_hlo() do
     @code_hlo optimize=:before_jit raise=true first_time_step!(model)
 end
 
-opt_first = try_code_hlo() do
+opt_loop = try_code_hlo() do
     @code_hlo optimize=:before_jit raise=true loop!(model, 2)
 end
 
@@ -66,3 +66,4 @@ end
 if failed
     error("compilation failed")
 end
+
