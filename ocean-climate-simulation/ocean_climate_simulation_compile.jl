@@ -29,82 +29,31 @@ end
 
 # Pre-raise IR
 @info "Compiling before raise kernels..."
-before_raise_first = try
+before_raise_first = try_code_hlo() do
     @code_hlo optimize=:before_raise raise=true first_time_step!(model)
-catch e
-    @error "Failed to compile" exception=(e, catch_backtrace())
-    global failed = true
-    Text("""
-    // Failed to compile
-    //$e
-    """)
 end
 
-before_raise_loop = try
+before_raise_loop = try_code_hlo() do
     @code_hlo optimize=:before_raise raise=true loop!(model, Ninner)
-catch e
-    @error "Failed to compile" exception=(e, catch_backtrace())
-    global failed = true
-    Text("""
-    // Failed to compile
-    //$e
-    """)
 end
 
 # Unoptimized HLO
-@info "Compiling unoptimised kernels..."
-unopt_first = try
+unopt_first = try_code_hlo() do
     @code_hlo optimize=false raise=true first_time_step!(model)
-catch e
-    @error "Failed to compile" exception=(e, catch_backtrace())
-    global failed = true
-    Text("""
-    // Failed to compile
-    //$e
-    """)
 end
 
-unopt_loop = try
+unopt_loop = try_code_hlo() do
     @code_hlo optimize=false raise=true loop!(model, Ninner)
-catch e
-    @error "Failed to compile" exception=(e, catch_backtrace())
-    global failed = true
-    Text("""
-    // Failed to compile
-    //$e
-    """)
 end
 
 # Optimized HLO
 @info "Compiling optimised kernels..."
-opt_first = try
+opt_first = try_code_hlo() do
     @code_hlo optimize=:before_jit raise=true first_time_step!(model)
-catch e
-    @error "Failed to compile" exception=(e, catch_backtrace())
-    global failed = true
-    Text("""
-    // Failed to compile
-    //$e
-    """)
 end
-
-opt_loop = try
-    @code_hlo optimize=:before_jit raise=true loop!(model, Ninner)
-catch e
-    @error "Failed to compile" exception=(e, catch_backtrace())
-    global failed = true
-    Text("""
-    // Failed to compile
-    //$e
-    """)
-end
-
-
-
-
 
 opt_loop = try_code_hlo() do
-    @code_hlo optimize=:before_jit raise=true loop!(model, 2)
+    @code_hlo optimize=:before_jit raise=true loop!(model, Ninner)
 end
 
 for type in ("before_raise", "unopt", "opt"), name in ("first", "loop"), debug in (true, false)
