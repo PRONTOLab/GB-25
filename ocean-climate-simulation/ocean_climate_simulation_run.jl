@@ -16,6 +16,6 @@ rloop! = @compile raise=true loop!(model, Ninner)
 
 @info "Running..."
 Reactant.with_profiler("./") do
-    rloop!(model, ConcreteRNumber(200))
+    rloop!(model, Ninner)
 end
 @info "Done!"
