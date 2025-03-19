@@ -46,11 +46,11 @@ jobs:
           - 'IFRT'
         earlyoom_threshold:
           - 4
-        include:
-          - os: mg
-            julia_version: '1.11'
-            xla_runtime: 'IFRT'
-            earlyoom_threshold: 20
+        # include:
+        #   - os: mg
+        #     julia_version: '1.11'
+        #     xla_runtime: 'IFRT'
+        #     earlyoom_threshold: 20
     uses: ./.github/workflows/CompileOrRun.yml
     with:
       julia_version: ${{ matrix.julia_version }}
