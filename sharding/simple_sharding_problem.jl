@@ -1,10 +1,17 @@
+ENV["CUDA_VISIBLE_DEVICES"] = ""
+ENV["XLA_FLAGS"] = "--xla_force_host_platform_device_count=8 --xla_dump_to=xla_dumps/super_simple_simulation_sharded_2/"
+ENV["JULIA_DEBUG"] = "Reactant_jll,Reactant"
+
 using Oceananigans
 using Reactant
 
-arch = Oceananigans.Architectures.ReactantState()
+arch = Oceananigans.Distributed(
+    Oceananigans.ReactantState();
+    partition=Partition(2, 2, 1)
+)
 Nx = Ny = Nz = 128
 Nz = 16
-grid = TripolarGrid(arch; size=(Nx, Ny, Nz), halo=(7, 7, 7), z=(0, 1))
+grid = TripolarGrid(arch; size=(Nx, Ny, Nz), halo=(7, 7, 7), z=(0, 1));
 
 function mtn₁(λ, φ)
     λ₁ = 70
@@ -32,4 +39,3 @@ set!(c, cᵢ)
 Oceananigans.BoundaryConditions.fill_halo_regions!(c)
 compute!(∇²c)
 parent(∇²c)
-
