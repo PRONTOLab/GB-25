@@ -15,3 +15,4 @@ function loop!(model, Ninner)
     return nothing
 end
 
+Ninner = ConcreteRNumber(2)

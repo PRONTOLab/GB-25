@@ -48,12 +48,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install earlyoom
+        if: ${{ startsWith(inputs.os, 'ubuntu') }}
         run: |
           sudo apt-get install -y earlyoom
       - uses: julia-actions/setup-julia@v2
+        if: ${{ startsWith(inputs.os, 'ubuntu') }}
         with:
           version: ${{ inputs.julia_version }}
       - uses: julia-actions/cache@v2
+        if: ${{ startsWith(inputs.os, 'ubuntu') }}
         with:
           cache-name: julia-cache;workflow=${{ inputs.julia_version }}-${{ inputs.simulation_type }}-${{ inputs.os }}-${{ inputs.xla_runtime }}-${{ inputs.compile_or_run }};job=${{ github.job }}
       - name: Collect Workflow Telemetry
@@ -75,6 +78,7 @@ jobs:
           Pkg.Registry.update()
           # Pkg.add([
           #     PackageSpec(; name="Reactant", rev="main"),
+          #     PackageSpec(; name="ReactantCore", rev="main"),
           #     PackageSpec(; name="Oceananigans", rev="main"),
           #     PackageSpec(; name="ClimaOcean", rev="main"),
           # ])
