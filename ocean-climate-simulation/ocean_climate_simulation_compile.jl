@@ -55,7 +55,7 @@ end
 
 for debug in (true, false)
     open("before_raise_ocean_climate_simulation$(debug ? "_debug" : "").mlir", "w") do io
-        show(IOContext(io, :debug => debug), unopt)
+        show(IOContext(io, :debug => debug), before_raise)
     end
 
     # Unoptimized HLO
