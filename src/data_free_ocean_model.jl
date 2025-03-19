@@ -1,39 +1,4 @@
-using Oceananigans
-using Oceananigans.Units
-using Oceananigans.Architectures: Architectures
-using Reactant
-
-using ClimaOcean
-using ClimaOcean.OceanSeaIceModels.InterfaceComputations: FixedIterations, ComponentInterfaces
-
-using CFTime
-using Dates
-using Printf
-using Profile
-using Serialization
-
-const PROFILE = Ref(false)
-
-macro gbprofile(name::String, expr::Expr)
-    return quote
-        if $(PROFILE)[]
-            $(Profile.clear)()
-            $(Profile.init)(; delay=0.1)
-            out = $(Profile).@profile $(esc(expr))
-            open(string("profile_", $(esc(name)), ".txt"), "w") do s
-                println(s, "# Showing profile of")
-                println(s, "#     ", $(string(expr)))
-                println(s, "# at ", $(string(__source__)))
-                $(Profile.print)(IOContext(s, :displaysize => (48, 1000)))
-            end
-            $(Serialization.serialize)(string("profile_", $(esc(name)), ".dat"), $(Profile).retrieve())
-            $(Profile.clear)()
-            out
-        else
-            $(esc(expr))
-        end
-    end
-end
+# This file implements data_free_ocean_model_init
 
 function mtn₁(λ, φ)
     λ₁ = 70
@@ -75,15 +40,10 @@ function gaussian_islands_tripolar_grid(arch::Architectures.AbstractArchitecture
     Nx = convert(Int, 360 / resolution)
     Ny = convert(Int, 180 / resolution)
 
-    # Time step. This must be decreased as resolution is decreased.
-    Δt = 1minutes
-
     # Grid setup
     z_faces = exponential_z_faces(; Nz, depth=4000, h=30) # may need changing for very large Nz
     underlying_grid = TripolarGrid(arch; size=(Nx, Ny, Nz), halo=(7, 7, 7), z=z_faces)
 
-    #underlying_grid = LatitudeLongitudeGrid(arch; size=(Nx, Ny, Nz), halo=(7, 7, 7), z=z_faces,
-    #                                        longitude=(0, 360), latitude=(-80, 80))
     zb = z_faces[1]
     h = -zb + 100
     gaussian_islands(λ, φ) = zb + h * (mtn₁(λ, φ) + mtn₂(λ, φ))
@@ -99,24 +59,19 @@ function set_tracers(T, Ta, u, ua, shortwave, Qs)
     nothing
 end
 
-function data_free_ocean_climate_model_init(
+function data_free_ocean_model_init(
     arch::Architectures.AbstractArchitecture=Architectures.ReactantState();
     # Horizontal resolution
     resolution::Real = 2, # 1/4 for quarter degree
+    # Time step, cannot be changed after initialization
+    Δt = 30seconds,
     # Vertical resolution
     Nz::Int = 20, # eventually we want to increase this to between 100-600
     )
 
     grid = gaussian_islands_tripolar_grid(arch, resolution, Nz)
-
-    # See visualize_ocean_climate_simulation.jl for information about how to
-    # visualize the results of this run.
-    Δt=30seconds
-    ocean = @gbprofile "ocean_simulation" ocean_simulation(grid;
-                                                           Δt,
-                                                           free_surface=ClimaOcean.OceanSimulations.default_free_surface(grid, fixed_Δt=Δt)
-                                                          )
-
+    free_surface = ClimaOcean.OceanSimulations.default_free_surface(grid, fixed_Δt=Δt)
+    ocean = @gbprofile "ocean_simulation" ocean_simulation(grid; Δt, free_surface)
     @gbprofile "set_ocean_model" set!(ocean.model, T=Tᵢ, S=Sᵢ)
 
     # Set up an atmosphere
@@ -159,5 +114,10 @@ function data_free_ocean_climate_model_init(
     interfaces = ComponentInterfaces(atmosphere, ocean; radiation, atmosphere_ocean_flux_formulation)
     coupled_model = @gbprofile "OceanSeaIceModel" OceanSeaIceModel(ocean; atmosphere, radiation, interfaces)
 
+    coupled_model.clock.last_Δt = Δt
+    ocean.model.clock.last_Δt = Δt
+    atmosphere.clock.last_Δt = Δt
+
     return coupled_model
-end # data_free_ocean_climate_model_init
+end # data_free_ocean_model_init
+

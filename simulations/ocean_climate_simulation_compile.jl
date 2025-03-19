@@ -1,4 +1,4 @@
-using GordonBell25: data_free_ocean_climate_model_init, PROFILE
+using GordonBell25: ocean_climate_model_init, PROFILE
 using Reactant
 using Oceananigans
 using Oceananigans.Architectures: ReactantState
@@ -8,7 +8,7 @@ PROFILE[] = true
 include("common.jl")
 
 @info "Generating model..."
-model = data_free_ocean_climate_model_init(ReactantState())
+model = ocean_climate_model_init(ReactantState())
 
 GC.gc(true); GC.gc(false); GC.gc(true)
 
@@ -54,16 +54,16 @@ catch e
 end
 
 for debug in (true, false)
-    open("before_raise_ocean_climate_simulation$(debug ? "_debug" : "").mlir", "w") do io
+    open("before_raise_ocean_climate$(debug ? "_debug" : "").mlir", "w") do io
         show(IOContext(io, :debug => debug), before_raise)
     end
 
     # Unoptimized HLO
-    open("unopt_ocean_climate_simulation$(debug ? "_debug" : "").mlir", "w") do io
+    open("unopt_ocean_climate$(debug ? "_debug" : "").mlir", "w") do io
         show(IOContext(io, :debug => debug), unopt)
     end
 
-    open("opt_ocean_climate_simulation$(debug ? "_debug" : "").mlir", "w") do io
+    open("opt_ocean_climate$(debug ? "_debug" : "").mlir", "w") do io
         show(IOContext(io, :debug => debug), opt)
     end
 end
@@ -71,3 +71,4 @@ end
 if failed
     error("compilation failed")
 end
+
