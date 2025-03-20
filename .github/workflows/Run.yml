@@ -23,7 +23,7 @@ on:
       - 'src/**'
   workflow_dispatch:
   schedule:
-    - cron: '12 07,19 * * *'
+    - cron: '12 * * * *'
 
 concurrency:
   # Skip intermediate builds: always.
@@ -47,10 +47,15 @@ jobs:
         earlyoom_threshold:
           - 4
         include:
-          - os: mg
+          - os: ubuntu-22.04-arm
             julia_version: '1.11'
             xla_runtime: 'IFRT'
-            earlyoom_threshold: 20
+            earlyoom_threshold: 4
+        # include:
+        #   - os: mg
+        #     julia_version: '1.11'
+        #     xla_runtime: 'IFRT'
+        #     earlyoom_threshold: 20
     uses: ./.github/workflows/CompileOrRun.yml
     with:
       julia_version: ${{ matrix.julia_version }}

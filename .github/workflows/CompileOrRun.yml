@@ -115,7 +115,7 @@ jobs:
       - name: Upload MLIR modules
         uses: actions/upload-artifact@v4
         timeout-minutes: 10
-        if: ${{ always() && inputs.compile_or_run == 'compile' }}
+        if: ${{ always() }}
         with:
           name: 'ocean-simulation-mlir-${{ inputs.julia_version }}-${{ inputs.os }}-${{ inputs.xla_runtime }}'
           path: '**/*.mlir'
