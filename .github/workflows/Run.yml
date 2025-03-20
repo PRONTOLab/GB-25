@@ -23,7 +23,7 @@ on:
       - 'src/**'
   workflow_dispatch:
   schedule:
-    - cron: '12 07,19 * * *'
+    - cron: '12 * * * *'
 
 concurrency:
   # Skip intermediate builds: always.
