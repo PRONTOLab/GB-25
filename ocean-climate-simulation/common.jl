@@ -12,8 +12,8 @@ function loop!(model, Ninner)
     @trace for _ = 1:Ninner
         Oceananigans.TimeSteppers.time_step!(model, Δt)
     end
+
+    #Oceananigans.TimeSteppers.time_step!(model, Δt)
     return nothing
 end
-
-Ninner = ConcreteRNumber(2)
 
