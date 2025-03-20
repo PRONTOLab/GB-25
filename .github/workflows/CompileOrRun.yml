@@ -75,6 +75,7 @@ jobs:
               PackageSpec(; name="Reactant", rev="jm/tracedsteprangelen"),
               PackageSpec(; name="ReactantCore", rev="jm/tracedsteprangelen"),
               PackageSpec(; url="https://github.com/jumerckx/ClimaOcean.jl", rev="jm/removeassertion"),
+              PackageSpec(; url="https://github.com/jumerckx/Oceananigans.jl", rev="jm/tracedsteprangelen"),
           #     PackageSpec(; name="ClimaOcean", rev="main"),
           ])
           Pkg.instantiate()
