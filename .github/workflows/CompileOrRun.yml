@@ -72,8 +72,8 @@ jobs:
           using Pkg
           Pkg.Registry.update()
           Pkg.add([
-              PackageSpec(; name="Reactant", rev="jm/tracedsteprangelen"),
-              PackageSpec(; name="ReactantCore", rev="jm/tracedsteprangelen"),
+              PackageSpec(; name="Reactant", rev="mg/print-debug"),
+              PackageSpec(; name="ReactantCore", rev="mg/print-debug"),
               PackageSpec(; url="https://github.com/jumerckx/ClimaOcean.jl", rev="jm/removeassertion"),
               PackageSpec(; url="https://github.com/jumerckx/Oceananigans.jl", rev="jm/tracedsteprangelen"),
           #     PackageSpec(; name="ClimaOcean", rev="main"),
