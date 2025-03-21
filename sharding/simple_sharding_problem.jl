@@ -1,17 +1,32 @@
+# /home/avik-pal/.julia/bin/mpiexecjl -np 4 --project=. julia --threads=32 --color=yes --startup=no GB-25/sharding/simple_sharding_problem.jl
+
 ENV["CUDA_VISIBLE_DEVICES"] = ""
-ENV["XLA_FLAGS"] = "--xla_force_host_platform_device_count=4"
+# ENV["XLA_FLAGS"] = "--xla_force_host_platform_device_count=4"
 ENV["JULIA_DEBUG"] = "Reactant_jll,Reactant"
+
+using MPI
+MPI.Init()  # Only needed if using MPI to detect the coordinator
 
 using Oceananigans
 using Reactant
 
+Reactant.Distributed.initialize()
+
+ndevices = length(Reactant.devices())
+nxdevices = floor(Int, sqrt(ndevices))
+nydevices = ndevices ÷ nxdevices
+
 arch = Oceananigans.Distributed(
     Oceananigans.ReactantState();
-    partition=Partition(2, 2, 1)
+    partition=Partition(nxdevices, nydevices, 1)
 )
-Nx = Ny = Nz = 128
-Nz = 16
+Nx = Ny = 16
+Nz = 4
 grid = TripolarGrid(arch; size=(Nx, Ny, Nz), halo=(7, 7, 7), z=(0, 1))
+
+# display(grid)
+
+# exit(0)
 
 # function mtn₁(λ, φ)
 #     λ₁ = 70
@@ -39,51 +54,59 @@ c = CenterField(grid);
 
 # Oceananigans.BoundaryConditions.fill_halo_regions!(c)
 
-res = @jit compute!(∇²c);
+# res = @jit compute!(∇²c);
 
-parent(∇²c)
+# if Reactant.Distributed.local_rank() == 0
+hlo = @code_hlo compute!(∇²c);
+# end
 
-
-#### Run on CPU
-
-cpu_arch = CPU()
-grid_cpu = TripolarGrid(cpu_arch; size=(Nx, Ny, Nz), halo=(7, 7, 7), z=(0, 1))
-
-c_cpu = CenterField(grid_cpu);
-∇²c_cpu = Field(∂x(∂x(c_cpu)) + ∂y(∂y(c_cpu)));
-
-res_cpu = compute!(∇²c_cpu);
-
-
-#### Run with ReactantState
-using Reactant, Oceananigans
-
-Nx = Ny = Nz = 128
-
-r_arch = Oceananigans.ReactantState()
-grid_r = TripolarGrid(r_arch; size=(Nx, Ny, Nz), halo=(7, 7, 7), z=(0, 1))
-
-c_r = CenterField(grid_r);
-∇²c_r = Field(∂x(∂x(c_r)) + ∂y(∂y(c_r)));
-
-res_r = @jit compute!(∇²c_r);
-
-
-# Resharding Problem
-using Reactant
-
-struct MyStruct{A}
-    a::A
+if Reactant.Distributed.local_rank() == 0
+    println(hlo)
 end
 
-mesh = Sharding.Mesh(reshape(Reactant.devices(), 2, :), (:x, :y))
+# parent(∇²c)
 
-x = Reactant.to_rarray(MyStruct(rand(2, 2)))
-y = Reactant.to_rarray(
-    rand(2, 2); sharding=Sharding.NamedSharding(mesh, (:x, :y))
-)
 
-function fn(a::MyStruct, b)
-    a.a .= a.a .+ b
-    return a
-end
+# #### Run on CPU
+
+# cpu_arch = CPU()
+# grid_cpu = TripolarGrid(cpu_arch; size=(Nx, Ny, Nz), halo=(7, 7, 7), z=(0, 1))
+
+# c_cpu = CenterField(grid_cpu);
+# ∇²c_cpu = Field(∂x(∂x(c_cpu)) + ∂y(∂y(c_cpu)));
+
+# res_cpu = compute!(∇²c_cpu);
+
+
+# #### Run with ReactantState
+# using Reactant, Oceananigans
+
+# Nx = Ny = Nz = 128
+
+# r_arch = Oceananigans.ReactantState()
+# grid_r = TripolarGrid(r_arch; size=(Nx, Ny, Nz), halo=(7, 7, 7), z=(0, 1))
+
+# c_r = CenterField(grid_r);
+# ∇²c_r = Field(∂x(∂x(c_r)) + ∂y(∂y(c_r)));
+
+# res_r = @jit compute!(∇²c_r);
+
+
+# # Resharding Problem
+# using Reactant
+
+# struct MyStruct{A}
+#     a::A
+# end
+
+# mesh = Sharding.Mesh(reshape(Reactant.devices(), 2, :), (:x, :y))
+
+# x = Reactant.to_rarray(MyStruct(rand(2, 2)))
+# y = Reactant.to_rarray(
+#     rand(2, 2); sharding=Sharding.NamedSharding(mesh, (:x, :y))
+# )
+
+# function fn(a::MyStruct, b)
+#     a.a .= a.a .+ b
+#     return a
+# end
