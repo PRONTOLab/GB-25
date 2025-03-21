@@ -46,8 +46,13 @@ grid = TripolarGrid(arch; size=(Nx, Ny, Nz), halo=(7, 7, 7), z=(0, 1))
 # gaussian_islands(λ, φ) = 2 * (mtn₁(λ, φ) + mtn₂(λ, φ))
 # grid = ImmersedBoundaryGrid(grid, GridFittedBottom(gaussian_islands)) # xxx?
 
-c = CenterField(grid);
-∇²c = Field(∂x(∂x(c)) + ∂y(∂y(c)));
+model = HydrostaticFreeSurfaceModel(; grid)
+model.clock.last_Δt = 60
+compiled_first_time_step! = @compile optimize=true raise=true Oceananigans.TimeSteppers.first_time_step!(model)
+compiled_first_time_step!(model)
+
+# c = CenterField(grid);
+# ∇²c = Field(∂x(∂x(c)) + ∂y(∂y(c)));
 
 # cᵢ(λ, φ, z) = exp(-(λ^2 + φ^2) / 200)
 # set!(c, cᵢ)
