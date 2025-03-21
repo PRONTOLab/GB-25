@@ -1,11 +1,15 @@
 # This file implements ocean_climate_model_init
 
-function earth_tripolar_grid(arch::Architectures.AbstractArchitecture, resolution, Nz)
+function earth_tripolar_grid(arch::Architectures.AbstractArchitecture, resolution, Nz, zstar_vertical_coordinate)
     Nx = convert(Int, 360 / resolution)
     Ny = convert(Int, 180 / resolution)
 
     # Grid setup
     z_faces = exponential_z_faces(; Nz, depth=6000, h=30) # may need changing for very large Nz
+    if zstar_vertical_coordinate
+        z_faces = Oceananigans.Grids.MutableVerticalDiscretization(z_faces)
+    end
+
     underlying_grid = TripolarGrid(arch; size=(Nx, Ny, Nz), halo=(7, 7, 7), z=z_faces)
 
     # Bathymetry based on ETOPO1: https://www.ncei.noaa.gov/products/etopo-global-relief-model
@@ -28,6 +32,9 @@ function ocean_climate_model_init(
     # Vertical resolution
     Nz::Int = 20, # eventually we want to increase this to between 100-600
 
+    # Vertical coordinate
+    zstar_vertical_coordinate = false,
+
     # Date range used for 1) the initial condition at 2) the polar relaxation
     dates = DateTime(1993, 1, 1) : Month(1) : DateTime(1993, 12, 1),
 
@@ -42,7 +49,13 @@ function ocean_climate_model_init(
     polar_restoring_rate = 1 / 10days,
     )
 
-    grid = earth_tripolar_grid(arch, resolution, Nz)
+    grid = earth_tripolar_grid(arch, resolution, Nz, zstar_vertical_coordinate)
+
+    if zstar_vertical_coordinate
+        vertical_coordinate = Oceananigans.Models.HydrostaticFreeSurfaceModels.ZStar()
+    else
+	vertical_coordinate = Oceananigans.Models.HydrostaticFreeSurfaceModels.ZCoordinate()
+    end
 
     if polar_restoring
         T_meta_series = ECCOMetadata(:temperature; dates, version=ECCO4Monthly())
@@ -62,10 +75,14 @@ function ocean_climate_model_init(
     end
 
     tracer_advection = WENO(order=tracer_advection_order)
-    ocean = @gbprofile "ocean_simulation" ocean_simulation(grid; Δt,
-                                                           free_surface,
-                                                           tracer_advection,
-                                                           momentum_advection)
+    ocean = @gbprofile "ocean_simulation" ocean_simulation(
+        grid;
+        Δt,
+        free_surface,
+        tracer_advection,
+        momentum_advection,
+        vertical_coordinate
+    )
 
     T_init_meta = ClimaOcean.Metadata(:temperature; dates=first(dates), dataset=ClimaOcean.ECCO4Monthly())
     S_init_meta = ClimaOcean.Metadata(:salinity;    dates=first(dates), dataset=ClimaOcean.ECCO4Monthly())
