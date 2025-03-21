@@ -1,16 +1,16 @@
 # /home/avik-pal/.julia/bin/mpiexecjl -np 4 --project=. julia --threads=32 --color=yes --startup=no GB-25/sharding/simple_sharding_problem.jl
 
 ENV["CUDA_VISIBLE_DEVICES"] = ""
-# ENV["XLA_FLAGS"] = "--xla_force_host_platform_device_count=4"
+ENV["XLA_FLAGS"] = "--xla_force_host_platform_device_count=4"
 ENV["JULIA_DEBUG"] = "Reactant_jll,Reactant"
 
-using MPI
-MPI.Init()  # Only needed if using MPI to detect the coordinator
+# using MPI
+# MPI.Init()  # Only needed if using MPI to detect the coordinator
 
 using Oceananigans
 using Reactant
 
-Reactant.Distributed.initialize()
+# Reactant.Distributed.initialize()
 
 ndevices = length(Reactant.devices())
 nxdevices = floor(Int, sqrt(ndevices))
@@ -20,47 +20,57 @@ arch = Oceananigans.Distributed(
     Oceananigans.ReactantState();
     partition=Partition(nxdevices, nydevices, 1)
 )
+
 Nx = Ny = 16
 Nz = 4
+
+@info "creating tripolar grid"
 grid = TripolarGrid(arch; size=(Nx, Ny, Nz), halo=(7, 7, 7), z=(0, 1))
 
-# display(grid)
+function mtn₁(λ, φ)
+    λ₁ = 70
+    φ₁ = 55
+    dφ = 5
+    return exp(-((λ - λ₁)^2 + (φ - φ₁)^2) / 2dφ^2)
+end
 
-# exit(0)
+function mtn₂(λ, φ)
+    λ₁ = 70
+    λ₂ = λ₁ + 180
+    φ₂ = 55
+    dφ = 5
+    return exp(-((λ - λ₂)^2 + (φ - φ₂)^2) / 2dφ^2)
+end
 
-# function mtn₁(λ, φ)
-#     λ₁ = 70
-#     φ₁ = 55
-#     dφ = 5
-#     return exp(-((λ - λ₁)^2 + (φ - φ₁)^2) / 2dφ^2)
-# end
+gaussian_islands(λ, φ) = 2 * (mtn₁(λ, φ) + mtn₂(λ, φ))
 
-# function mtn₂(λ, φ)
-#     λ₁ = 70
-#     λ₂ = λ₁ + 180
-#     φ₂ = 55
-#     dφ = 5
-#     return exp(-((λ - λ₂)^2 + (φ - φ₂)^2) / 2dφ^2)
-# end
-
-# gaussian_islands(λ, φ) = 2 * (mtn₁(λ, φ) + mtn₂(λ, φ))
-# grid = ImmersedBoundaryGrid(grid, GridFittedBottom(gaussian_islands)) # xxx?
+@info "creating immersed boundary grid"
+grid = ImmersedBoundaryGrid(grid, GridFittedBottom(gaussian_islands)) # xxx?
 
 model = HydrostaticFreeSurfaceModel(; grid)
 model.clock.last_Δt = 60
+
+@info "compiling first time step"
 compiled_first_time_step! = @compile optimize=true raise=true Oceananigans.TimeSteppers.first_time_step!(model)
+
+@info "running first time step"
 compiled_first_time_step!(model)
+
+exit(0)
 
 # c = CenterField(grid);
 # ∇²c = Field(∂x(∂x(c)) + ∂y(∂y(c)));
 
-# cᵢ(λ, φ, z) = exp(-(λ^2 + φ^2) / 200)
-# set!(c, cᵢ)
+@info "setting"
+cᵢ(λ, φ, z) = exp(-(λ^2 + φ^2) / 200)
+set!(c, cᵢ)
 
-# Oceananigans.BoundaryConditions.fill_halo_regions!(c)
+@info "filling halo regions"
+@jit Oceananigans.BoundaryConditions.fill_halo_regions!(c)
 
 # res = @jit compute!(∇²c);
 
+@info "compiling"
 # if Reactant.Distributed.local_rank() == 0
 hlo = @code_hlo compute!(∇²c);
 # end
