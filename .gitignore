@@ -8,3 +8,4 @@
 *.txt
 
 Manifest.toml
+LocalPreferences.toml
