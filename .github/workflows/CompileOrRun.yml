@@ -72,9 +72,10 @@ jobs:
           using Pkg
           Pkg.Registry.update()
           Pkg.add([
-              PackageSpec(; name="Reactant", rev="jm/readd_track_numbers"),
+          #     PackageSpec(; name="Reactant", rev="main"),
           #     PackageSpec(; name="ReactantCore", rev="main"),
           #     PackageSpec(; name="Oceananigans", rev="main"),
+              PackageSpec(; url="https://github.com/jumerckx/Oceananigans.jl", rev="jm/tracedsteprangelen")
           #     PackageSpec(; name="ClimaOcean", rev="main"),
           ])
           Pkg.instantiate()
