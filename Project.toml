@@ -24,10 +24,15 @@ CFTime = "0.1.4"
 ClimaOcean = "0.5.4"
 Dates = "1"
 HDF5_jll = "=1.14.3"
-Oceananigans = "0.95.29,0.96.0"
+Oceananigans = "0.96"
 PrecompileTools = "1.2.1"
 Printf = "1"
 Profile = "1"
-Reactant = "=0.2.46"
+Reactant = "0.2.48"
 Serialization = "1"
 Setfield = "1.1.2"
+
+[sources]
+# XXX: Remove before merging
+Reactant = {url = "https://github.com/EnzymeAD/Reactant.jl", rev = "ap/more_sharding_niceties"}
+Oceananigans = {url = "https://github.com/avik-pal/Oceananigans.jl", rev = "ap/reactant_sharding"}
