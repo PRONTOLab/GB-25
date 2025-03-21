@@ -6,8 +6,7 @@ using Random
 using Printf
 
 @inline function initial_buoyancy(λ, φ, z, p)
-    #γ = π/2 - 2π * (p.φ₀ - φ) / p.Δφ
-    γ = π/2 + 2π * λ / p.Δφ
+    γ = π/2 - 2π * (p.φ₀ - φ) / p.Δφ
     b = ifelse(γ < 0, 0, ifelse(γ > π, 1, 1 - (π - γ - sin(π - γ) * cos(π - γ)) / π))
     return p.N² * z + p.Δb * b
 end
@@ -42,11 +41,10 @@ function baroclinic_instability_model_init(arch; resolution, Δt)
 
     # Parameters
     parameters = (; N², Δb, φ₀, Δφ = 20)
-
     
     ϵb = 1e-2 * Δb # noise amplitude
     Random.seed!(1234)
-    bᵢ(x, y, z) = initial_buoyancy(x, y, z, parameters) #+ ϵb * randn()
+    bᵢ(x, y, z) = initial_buoyancy(x, y, z, parameters) + ϵb * randn()
     set!(model, b=bᵢ)
 
     model.clock.last_Δt = Δt

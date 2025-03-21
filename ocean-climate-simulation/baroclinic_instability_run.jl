@@ -35,11 +35,15 @@ r_loop! = @compile sync=true raise=true loop!(r_model, Ninner)
 
 r_update_state!(r_model)
 
-# first_time_step!(c_model)
-# r_first_time_step!(r_model)
+first_time_step!(c_model)
+r_first_time_step!(r_model)
 
-# @time loop!(c_model, 3)
-# @time r_loop!(r_model, ConcreteRNumber(3))
+@time loop!(c_model, 10)
+@time r_loop!(r_model, ConcreteRNumber(10))
+
+Nt = 100
+@time loop!(c_model, Nt)
+@time r_loop!(r_model, ConcreteRNumber(Nt))
 
 rb = r_model.tracers.b
 cb = c_model.tracers.b
