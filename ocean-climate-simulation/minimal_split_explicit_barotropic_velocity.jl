@@ -5,14 +5,9 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces
     calculate_substeps,
     calculate_adaptive_settings
 
-using Random
-Random.seed!(123)
-Nx = Ny = Nz = 16
-u₀ = rand(Nx, Ny, Nz)
-η₀ = rand(Nx, Ny)
-
 function simple_model(arch)
 
+    Nx = Ny = Nz = 16
     grid = LatitudeLongitudeGrid(arch,
                                  topology = (Periodic, Bounded, Bounded),
                                  size = (Nx, Ny, Nz),
@@ -22,23 +17,22 @@ function simple_model(arch)
                                  halo = (6, 6, 6))
 
     free_surface = SplitExplicitFreeSurface(substeps=10)
-
-    model = HydrostaticFreeSurfaceModel(; grid, free_surface,
-        buoyancy = BuoyancyTracer(),
-        tracers = :b,
-        momentum_advection = nothing,
-        tracer_advection = nothing,
-    )
-
+    model = HydrostaticFreeSurfaceModel(; grid, free_surface)
     model.clock.last_Δt = 60
-
-    set!(model, η=η₀)
 
     return model
 end
 
 c_model = simple_model(CPU())
 r_model = simple_model(Oceananigans.Architectures.ReactantState())
+
+using Random
+Random.seed!(123)
+pηc = parent(c_model.free_surface.η)
+pηr = parent(r_model.free_surface.η)
+η₀ = rand(size(pηc)...)
+copyto!(pηc, η₀)
+copyto!(pηr, Reactant.to_rarray(η₀))
 
 function launch_problem_kernel!(model)
     free_surface = model.free_surface
@@ -74,16 +68,8 @@ function launch_problem_kernel!(model)
     return nothing
 end
 
-r_update! = @compile sync=true raise=true Oceananigans.TimeSteppers.update_state!(r_model)
-r_initialize! = @compile sync=true raise=true Oceananigans.initialize!(r_model)
 r_problem! = @compile sync=true raise=true launch_problem_kernel!(r_model)
-
-@time r_initialize!(r_model)
-@time r_update!(r_model)
 @time r_problem!(r_model)
-
-@time Oceananigans.initialize!(c_model)
-@time Oceananigans.TimeSteppers.update_state!(c_model)
 @time launch_problem_kernel!(c_model)
 
 function compare(c, r, name="")
