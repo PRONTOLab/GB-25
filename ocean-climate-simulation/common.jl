@@ -1,10 +1,15 @@
 using Reactant
 using Oceananigans
 
-function loop!(model, Ninner)
-    Δt = 1200 # 20 minutes
+function first_time_step!(model)
+    Δt = model.clock.last_Δt
     Oceananigans.TimeSteppers.first_time_step!(model, Δt)
-    @trace for _ = 2:Ninner
+    return nothing
+end
+
+function loop!(model, Ninner)
+    Δt = model.clock.last_Δt
+    @trace for _ = 1:Ninner
         Oceananigans.TimeSteppers.time_step!(model, Δt)
     end
     return nothing
@@ -17,3 +22,4 @@ Ninner = ConcreteRNumber(2)
 if get(ENV, "GITHUB_ACTIONS", "false") == "true"
     ENV["TMPDIR"] = mkpath(joinpath(@__DIR__, "tmp"))
 end
+

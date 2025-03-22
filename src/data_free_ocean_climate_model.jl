@@ -88,8 +88,9 @@ function gaussian_islands_tripolar_grid(arch::Architectures.AbstractArchitecture
     h = -zb + 100
     gaussian_islands(λ, φ) = zb + h * (mtn₁(λ, φ) + mtn₂(λ, φ))
 
-    return @gbprofile "ImmersedBoundaryGrid" ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(gaussian_islands);
-                                                                  active_cells_map=false)
+    return @gbprofile "ImmersedBoundaryGrid" ImmersedBoundaryGrid(underlying_grid,
+                                                                  GridFittedBottom(gaussian_islands);
+                                                                  active_cells_map = false)
 end
 
 function set_tracers(T, Ta, u, ua, shortwave, Qs)
@@ -105,18 +106,16 @@ function data_free_ocean_climate_model_init(
     resolution::Real = 2, # 1/4 for quarter degree
     # Vertical resolution
     Nz::Int = 20, # eventually we want to increase this to between 100-600
+    free_surface = SplitExplicitFreeSurface(substeps=10),
+    Δt = 30seconds,
     )
 
     grid = gaussian_islands_tripolar_grid(arch, resolution, Nz)
 
     # See visualize_ocean_climate_simulation.jl for information about how to
     # visualize the results of this run.
-    Δt=30seconds
-    ocean = @gbprofile "ocean_simulation" ocean_simulation(grid;
-                                                           Δt,
-                                                           free_surface=ClimaOcean.OceanSimulations.default_free_surface(grid, fixed_Δt=Δt)
-                                                          )
 
+    ocean = @gbprofile "ocean_simulation" ocean_simulation(grid; Δt, free_surface)
     @gbprofile "set_ocean_model" set!(ocean.model, T=Tᵢ, S=Sᵢ)
 
     # Set up an atmosphere
@@ -158,6 +157,10 @@ function data_free_ocean_climate_model_init(
     atmosphere_ocean_flux_formulation = SimilarityTheoryFluxes(; solver_stop_criteria)
     interfaces = ComponentInterfaces(atmosphere, ocean; radiation, atmosphere_ocean_flux_formulation)
     coupled_model = @gbprofile "OceanSeaIceModel" OceanSeaIceModel(ocean; atmosphere, radiation, interfaces)
+
+    coupled_model.clock.last_Δt = Δt
+    ocean.model.clock.last_Δt = Δt
+    atmosphere.clock.last_Δt = Δt
 
     return coupled_model
 end # data_free_ocean_climate_model_init
