@@ -106,14 +106,15 @@ function data_free_ocean_climate_model_init(
     resolution::Real = 2, # 1/4 for quarter degree
     # Vertical resolution
     Nz::Int = 20, # eventually we want to increase this to between 100-600
+    free_surface = SplitExplicitFreeSurface(substeps=10),
+    Δt = 30seconds,
     )
 
     grid = gaussian_islands_tripolar_grid(arch, resolution, Nz)
 
     # See visualize_ocean_climate_simulation.jl for information about how to
     # visualize the results of this run.
-    Δt = 30seconds
-    free_surface = SplitExplicitFreeSurface(substeps=70)
+
     ocean = @gbprofile "ocean_simulation" ocean_simulation(grid; Δt, free_surface)
     @gbprofile "set_ocean_model" set!(ocean.model, T=Tᵢ, S=Sᵢ)
 
