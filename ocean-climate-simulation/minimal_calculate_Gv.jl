@@ -114,7 +114,10 @@ function launch_problem_kernel!(model)
     return nothing
 end
 
-r_problem! = @compile sync=true raise=true launch_problem_kernel!(r_model)
+passes = "canonicalize,llvm-to-memref-access,canonicalize,convert-llvm-to-cf,canonicalize,enzyme-lift-cf-to-scf,canonicalize,func.func(canonicalize-loops),canonicalize-scf-for" #,canonicalize,affine-cfg" #,canonicalize,func.func(canonicalize-loops),canonicalize,llvm-to-affine-access,canonicalize,delinearize-indexing,canonicalize,simplify-affine-exprs,affine-cfg,canonicalize,func.func(affine-loop-invariant-code-motion,affine-loop-unroll{unroll-full}),canonicalize,raise-affine-to-stablehlo,arith-raise{stablehlo=true}"
+
+r_problem! = @compile sync=true raise=passes2 launch_problem_kernel!(r_model)
+#r_problem! = @compile sync=true raise=false launch_problem_kernel!(r_model)
 @time r_problem!(r_model)
 @time launch_problem_kernel!(c_model)
 
