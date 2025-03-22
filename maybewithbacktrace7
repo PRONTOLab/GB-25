@@ -1,0 +1,8 @@
+ERROR: SystemError: opening file "/home/wmoses/git/GB-25/ocean-climate-simulation/ocean_climate_simulation_mlir.jl": No such file or directory
+Stacktrace:
+ [1] include(mod::Module, _path::String)
+   @ Base ./Base.jl:557
+ [2] exec_options(opts::Base.JLOptions)
+   @ Base ./client.jl:323
+ [3] _start()
+   @ Base ./client.jl:531
