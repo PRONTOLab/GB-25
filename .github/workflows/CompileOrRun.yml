@@ -66,17 +66,17 @@ jobs:
           xla_runtime = "${{ inputs.xla_runtime }}"
           EOF
       - name: Instantiate environment
-        timeout-minutes: 60
+        timeout-minutes: 90
         shell: julia --color=yes --project {0}
         run: |
           using Pkg
           Pkg.Registry.update()
-          Pkg.add([
-              PackageSpec(; name="Reactant", rev="mg/jll"),
+          # Pkg.add([
+          #     PackageSpec(; name="Reactant", rev="main"),
           #     PackageSpec(; name="ReactantCore", rev="main"),
-              PackageSpec(; name="Oceananigans", rev="main"),
+          #     PackageSpec(; name="Oceananigans", rev="main"),
           #     PackageSpec(; name="ClimaOcean", rev="main"),
-          ])
+          # ])
           Pkg.instantiate()
       - name: Upload project environment
         uses: actions/upload-artifact@v4
