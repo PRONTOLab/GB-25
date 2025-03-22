@@ -61,62 +61,39 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels:
     compute_hydrostatic_free_surface_Gv!
 
 using Oceananigans.Utils: launch!
-
+using Oceananigans.Operators: ℑzᵃᵃᶜ, Azᶜᶠᶜ, δzᵃᵃᶜ
+using Oceananigans.Advection: Vᶜᶠᶜ
 using KernelAbstractions: @index, @kernel
+
+@inline function fake_vertical_advection_V(i, j, k, grid, scheme::VectorInvariant, U)
+    𝒜ᶻ = δzᵃᵃᶜ(i, j, k, grid, Oceananigans.Advection._advective_momentum_flux_Wv, scheme.vertical_scheme, U.w, U.v)
+    return 𝒜ᶻ
+end
 
 @kernel function _problem_kernel!(Gv, grid, advection, velocities)
     i, j, k = @index(Global, NTuple)
     #@inbounds Gv[i, j, k] = - Oceananigans.Advection.U_dot_∇v(i, j, k, grid, advection, velocities)
-    @inbounds Gv[i, j, k] = - Oceananigans.Advection.vertical_advection_V(i, j, k, grid, advection, velocities)
+    #@inbounds Gv[i, j, k] = - Oceananigans.Advection.vertical_advection_V(i, j, k, grid, advection, velocities)
+    @inbounds Gv[i, j, k] = - fake_vertical_advection_V(i, j, k, grid, advection, velocities)
 end
 
 function launch_problem_kernel!(model)
-    active_cells_map = get_active_cells_map(model.grid, Val(:interior))
-    velocities = model.velocities
     grid = model.grid
     arch = Oceananigans.Architectures.architecture(grid)
     kernel_parameters = interior_tendency_kernel_parameters(arch, grid)
-
-    u_immersed_bc = immersed_boundary_condition(velocities.u)
-    v_immersed_bc = immersed_boundary_condition(velocities.v)
-
-    u_forcing = model.forcing.u
-    v_forcing = model.forcing.v
-
-    start_momentum_kernel_args = (model.advection.momentum,
-                                  model.coriolis,
-                                  model.closure)
-
-    end_momentum_kernel_args = (velocities,
-                                model.free_surface,
-                                model.tracers,
-                                model.buoyancy,
-                                model.diffusivity_fields,
-                                model.pressure.pHY′,
-                                model.auxiliary_fields,
-                                model.vertical_coordinate,
-                                model.clock)
-
-    u_kernel_args = tuple(start_momentum_kernel_args..., u_immersed_bc, end_momentum_kernel_args..., u_forcing)
-    v_kernel_args = tuple(start_momentum_kernel_args..., v_immersed_bc, end_momentum_kernel_args..., v_forcing)
-
-    #=
-    launch!(arch, grid, kernel_parameters,
-            compute_hydrostatic_free_surface_Gv!, model.timestepper.Gⁿ.v, grid, 
-            active_cells_map, v_kernel_args;
-            active_cells_map)
-    =#
-
     launch!(arch, grid, kernel_parameters,
             _problem_kernel!,
             model.timestepper.Gⁿ.v, grid, model.advection.momentum, model.velocities)
 
+    # U = velocities
+    # i = j = k = 1
+    # @which Oceananigans.Advection._advective_momentum_flux_Wv(i, j, k, grid, advection.momentum.vertical_scheme, U.w, U.v)
     return nothing
 end
 
 passes = "canonicalize,llvm-to-memref-access,canonicalize,convert-llvm-to-cf,canonicalize,enzyme-lift-cf-to-scf,canonicalize,func.func(canonicalize-loops),canonicalize-scf-for" #,canonicalize,affine-cfg" #,canonicalize,func.func(canonicalize-loops),canonicalize,llvm-to-affine-access,canonicalize,delinearize-indexing,canonicalize,simplify-affine-exprs,affine-cfg,canonicalize,func.func(affine-loop-invariant-code-motion,affine-loop-unroll{unroll-full}),canonicalize,raise-affine-to-stablehlo,arith-raise{stablehlo=true}"
 
-r_problem! = @compile sync=true raise=passes2 launch_problem_kernel!(r_model)
+r_problem! = @compile sync=true raise=true launch_problem_kernel!(r_model)
 #r_problem! = @compile sync=true raise=false launch_problem_kernel!(r_model)
 @time r_problem!(r_model)
 @time launch_problem_kernel!(c_model)
