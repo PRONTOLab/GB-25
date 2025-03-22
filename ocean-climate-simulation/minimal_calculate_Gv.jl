@@ -74,8 +74,8 @@ end
 
 @inline function fake_momentum_flux_Wv_biased(i, j, k, grid, scheme, W, v)
     #w̃ = -1 #@inbounds W[i, j, k]
-    #w̃  = Oceananigans.Advection._symmetric_interpolate_yᵃᶠᵃ(i, j, k, grid, scheme, W)
-    w̃  = ℑyᵃᶠᵃ(i, j, k, grid, W)
+    w̃  = Oceananigans.Advection._symmetric_interpolate_yᵃᶠᵃ(i, j, k, grid, scheme, W)
+    #w̃  = ℑyᵃᶠᵃ(i, j, k, grid, W)
     vᴿ = Oceananigans.Advection._biased_interpolate_zᵃᵃᶠ(i, j, k, grid, scheme, bias(w̃), v)
     return vᴿ
 end
