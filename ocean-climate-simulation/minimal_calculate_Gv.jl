@@ -62,6 +62,14 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels:
 
 using Oceananigans.Utils: launch!
 
+using KernelAbstractions: @index, @kernel
+
+@kernel function _problem_kernel!(Gv, grid, advection, velocities)
+    i, j, k = @index(Global, NTuple)
+    #@inbounds Gv[i, j, k] = - Oceananigans.Advection.U_dot_∇v(i, j, k, grid, advection, velocities)
+    @inbounds Gv[i, j, k] = - Oceananigans.Advection.vertical_advection_V(i, j, k, grid, advection, velocities)
+end
+
 function launch_problem_kernel!(model)
     active_cells_map = get_active_cells_map(model.grid, Val(:interior))
     velocities = model.velocities
@@ -92,10 +100,16 @@ function launch_problem_kernel!(model)
     u_kernel_args = tuple(start_momentum_kernel_args..., u_immersed_bc, end_momentum_kernel_args..., u_forcing)
     v_kernel_args = tuple(start_momentum_kernel_args..., v_immersed_bc, end_momentum_kernel_args..., v_forcing)
 
+    #=
     launch!(arch, grid, kernel_parameters,
             compute_hydrostatic_free_surface_Gv!, model.timestepper.Gⁿ.v, grid, 
             active_cells_map, v_kernel_args;
             active_cells_map)
+    =#
+
+    launch!(arch, grid, kernel_parameters,
+            _problem_kernel!,
+            model.timestepper.Gⁿ.v, grid, model.advection.momentum, model.velocities)
 
     return nothing
 end
