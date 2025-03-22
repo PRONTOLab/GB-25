@@ -61,12 +61,25 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels:
     compute_hydrostatic_free_surface_Gv!
 
 using Oceananigans.Utils: launch!
-using Oceananigans.Operators: ℑzᵃᵃᶜ, Azᶜᶠᶜ, δzᵃᵃᶜ
-using Oceananigans.Advection: Vᶜᶠᶜ
+using Oceananigans.Operators: ℑzᵃᵃᶜ, Azᶜᶠᶜ, δzᵃᵃᶜ, Az_qᶜᶜᶠ
+using Oceananigans.Advection: Vᶜᶠᶜ, bias
 using KernelAbstractions: @index, @kernel
 
+@inline function fake_momentum_flux_Wv_symmetric(i, j, k, grid, scheme, W, v)
+    w̃  = Oceananigans.Advection._symmetric_interpolate_yᵃᶠᵃ(i, j, k, grid, scheme, Az_qᶜᶜᶠ, W)
+    #return w̃ * vᴿ
+    return w̃
+end
+
+@inline function fake_momentum_flux_Wv_biased(i, j, k, grid, scheme, W, v)
+    w̃ = @inbounds W[i, j, k]
+    vᴿ = Oceananigans.Advection._biased_interpolate_zᵃᵃᶠ(i, j, k, grid, scheme, bias(w̃), v)
+    return vᴿ
+end
+
 @inline function fake_vertical_advection_V(i, j, k, grid, scheme::VectorInvariant, U)
-    𝒜ᶻ = δzᵃᵃᶜ(i, j, k, grid, Oceananigans.Advection._advective_momentum_flux_Wv, scheme.vertical_scheme, U.w, U.v)
+    𝒜ᶻ = δzᵃᵃᶜ(i, j, k, grid, fake_momentum_flux_Wv_biased, scheme.vertical_scheme, U.w, U.v)
+    #𝒜ᶻ = δzᵃᵃᶜ(i, j, k, grid, fake_momentum_flux_Wv_symmetric, scheme.vertical_scheme, U.w, U.v)
     return 𝒜ᶻ
 end
 
@@ -85,9 +98,6 @@ function launch_problem_kernel!(model)
             _problem_kernel!,
             model.timestepper.Gⁿ.v, grid, model.advection.momentum, model.velocities)
 
-    # U = velocities
-    # i = j = k = 1
-    # @which Oceananigans.Advection._advective_momentum_flux_Wv(i, j, k, grid, advection.momentum.vertical_scheme, U.w, U.v)
     return nothing
 end
 
