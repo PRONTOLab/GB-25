@@ -1,21 +1,13 @@
-using GordonBell25: data_free_ocean_climate_model_init
-using Oceananigans.Architectures: ReactantState
-using Reactant
-
-# Reactant.Compiler.SROA_ATTRIBUTOR[] = false
-
 include("common.jl")
 
-@info "Generating model..."
-model = data_free_ocean_climate_model_init(ReactantState())
-
-GC.gc(true); GC.gc(false); GC.gc(true)
-
-@info "Compiling..."
-rloop! = @compile raise=true sync=true loop!(model, Ninner)
-
-@info "Running..."
-Reactant.with_profiler("./") do
-    rloop!(model, Ninner)
-end
-@info "Done!"
+write(@show(joinpath(mktempdir(), "module.mlir")), """
+#loc = loc(unknown)
+module @reactant_Base.Br... attributes {mhlo.num_partitions = 1 : i64, mhlo.num_replicas = 1 : i64} {
+  func.func @main(%arg0: tensor<1xf32> {reactant.donated} loc(unknown)) -> tensor<1xf32> {
+    %0 = stablehlo.sine %arg0 : tensor<1xf32> loc(#loc2)
+    return %0 : tensor<1xf32> loc(#loc)
+  } loc(#loc)
+} loc(#loc)
+#loc1 = loc("/home/giordano/.julia/dev/Reactant/src/Ops.jl":283:0)
+#loc2 = loc("sine"(#loc1))
+""")
