@@ -74,7 +74,7 @@ jobs:
           Pkg.add([
               PackageSpec(; name="Reactant", rev="jm/readd_track_numbers"),
           #     PackageSpec(; name="ReactantCore", rev="main"),
-          #     PackageSpec(; name="Oceananigans", rev="main"),
+              PackageSpec(; name="Oceananigans", rev="glw/traceable-grids"),
           #     PackageSpec(; name="ClimaOcean", rev="main"),
           ])
           Pkg.instantiate()
