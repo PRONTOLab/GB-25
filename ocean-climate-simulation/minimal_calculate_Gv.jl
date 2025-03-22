@@ -16,10 +16,12 @@ function simple_model(arch)
                                  z = (-1000, 0),
                                  halo = (6, 6, 6))
 
-    #momentum_advection = WENOVectorInvariant(order=5)
-    #momentum_advection = WENO(order=5)
-    momentum_advection = VectorInvariant()
-    free_surface = ExplicitFreeSurface(gravitational_acceleration=1)
+    momentum_advection = WENOVectorInvariant() # doesn't work
+    #momentum_advection = VectorInvariant() # works
+    
+    #free_surface = SplitExplicitFreeSurface(substeps=10)
+    free_surface = ExplicitFreeSurface()
+
     model = HydrostaticFreeSurfaceModel(; grid, free_surface, momentum_advection)
     model.clock.last_Δt = 60
 
