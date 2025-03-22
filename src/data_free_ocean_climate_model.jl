@@ -88,8 +88,9 @@ function gaussian_islands_tripolar_grid(arch::Architectures.AbstractArchitecture
     h = -zb + 100
     gaussian_islands(λ, φ) = zb + h * (mtn₁(λ, φ) + mtn₂(λ, φ))
 
-    return @gbprofile "ImmersedBoundaryGrid" ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(gaussian_islands);
-                                                                  active_cells_map=false)
+    return @gbprofile "ImmersedBoundaryGrid" ImmersedBoundaryGrid(underlying_grid,
+                                                                  GridFittedBottom(gaussian_islands);
+                                                                  active_cells_map = false)
 end
 
 function set_tracers(T, Ta, u, ua, shortwave, Qs)
@@ -111,12 +112,9 @@ function data_free_ocean_climate_model_init(
 
     # See visualize_ocean_climate_simulation.jl for information about how to
     # visualize the results of this run.
-    Δt=30seconds
-    ocean = @gbprofile "ocean_simulation" ocean_simulation(grid;
-                                                           Δt,
-                                                           free_surface=ClimaOcean.OceanSimulations.default_free_surface(grid, fixed_Δt=Δt)
-                                                          )
-
+    Δt = 30seconds
+    free_surface = SplitExplicitFreeSurface(substeps=70)
+    ocean = @gbprofile "ocean_simulation" ocean_simulation(grid; Δt, free_surface)
     @gbprofile "set_ocean_model" set!(ocean.model, T=Tᵢ, S=Sᵢ)
 
     # Set up an atmosphere

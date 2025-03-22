@@ -1,3 +1,4 @@
+using GordonBell25
 using GordonBell25: baroclinic_instability_model_init
 using Oceananigans.Architectures: ReactantState
 using Oceananigans.Units
@@ -11,37 +12,26 @@ Ninner = ConcreteRNumber(3)
 @info "Generating model..."
 r_model = baroclinic_instability_model_init(ReactantState(), Δt=2minutes, resolution=1/4)
 c_model = baroclinic_instability_model_init(CPU(), Δt=2minutes, resolution=1/4)
-
-#=
-c_u = c_model.velocities.u
-c_v = c_model.velocities.v
-c_b = c_model.tracers.b
-
-r_u = r_model.velocities.u
-r_v = r_model.velocities.v
-r_b = r_model.tracers.b
-
-copyto!(parent(r_u), Reactant.to_rarray(parent(c_u)))
-copyto!(parent(r_v), Reactant.to_rarray(parent(c_v)))
-copyto!(parent(r_b), Reactant.to_rarray(parent(c_b)))
-=#
+GordonBell25.sync_states!(r_model, c_model)
 
 GC.gc(true); GC.gc(false); GC.gc(true)
 
 @info "Compiling..."
-r_update_state! = @compile sync=true raise=true Oceananigans.TimeSteppers.update_state!(r_model)
+r_update_state!    = @compile sync=true raise=true Oceananigans.TimeSteppers.update_state!(r_model)
 r_first_time_step! = @compile sync=true raise=true first_time_step!(r_model)
-r_loop! = @compile sync=true raise=true loop!(r_model, Ninner)
+r_loop!            = @compile sync=true raise=true loop!(r_model, Ninner)
 
 r_update_state!(r_model)
-
 first_time_step!(c_model)
 r_first_time_step!(r_model)
 
-@time loop!(c_model, 10)
-@time r_loop!(r_model, ConcreteRNumber(10))
+@time loop!(c_model, 1)
+@time r_loop!(r_model, ConcreteRNumber(1))
 
-Nt = 100
+@time loop!(c_model, 1)
+@time r_loop!(r_model, ConcreteRNumber(1))
+
+Nt = 1000
 @time loop!(c_model, Nt)
 @time r_loop!(r_model, ConcreteRNumber(Nt))
 
@@ -65,7 +55,7 @@ cp = c_model.pressure.pHY′
 
 using GLMakie
 
-fig = Figure()
+fig = Figure(size=(700, 1400))
 
 axc = Axis(fig[1, 1], title="Regular Oceananigans")
 axr = Axis(fig[1, 2], title="With Reactant")
@@ -171,21 +161,4 @@ heatmap!(axpr, rpk, colormap=:balance, colorrange=extrema(cpp))
 heatmap!(axpd, Δpk, colormap=:balance, colorrange=extrema(cpp))
 
 display(current_figure())
-
-#=
-for n = 1:100
-    @time r_loop!(r_model, ConcreteRNumber(100))
-    heatmap(view(rb, :, :, 1))
-    display(current_figure())
-    sleep(0.1)
-end
-=#
-
-#=
-Nt = 100
-r_Nt = ConcreteRNumber(Nt)
-@info "Running $_Ninner time-steps..."
-r_loop!(model, r_Nt)
-loop!(model, Nt)
-=#
 

@@ -15,10 +15,17 @@ GC.gc(true); GC.gc(false); GC.gc(true)
 rfirst! = @compile raise=true first_time_step!(model)
 rloop! = @compile raise=true loop!(model, Ninner)
 
+Ninner = ConcreteRNumber(3)
+rfirst!(model)
+rloop!(model, Ninner)
+
+#=
 @info "Running..."
+Ninner = ConcreteRNumber(3)
 Reactant.with_profiler("./") do
     rfirst!(model)
     rloop!(model, Ninner)
 end
 @info "Done!"
+=#
 
