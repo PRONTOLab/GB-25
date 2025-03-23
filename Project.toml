@@ -34,5 +34,5 @@ Setfield = "1.1.2"
 
 [sources]
 # XXX: Remove before merging
-Reactant = {url = "https://github.com/EnzymeAD/Reactant.jl", rev = "ap/more_sharding_niceties"}
+Reactant = {url = "https://github.com/simone-silvestri/Reactant.jl", rev = "main"}
 Oceananigans = {url = "https://github.com/avik-pal/Oceananigans.jl", rev = "ap/reactant_sharding"}
