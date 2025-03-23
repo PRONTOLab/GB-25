@@ -66,7 +66,7 @@ jobs:
           xla_runtime = "${{ inputs.xla_runtime }}"
           EOF
       - name: Instantiate environment
-        timeout-minutes: 60
+        timeout-minutes: 90
         shell: julia --color=yes --project {0}
         run: |
           using Pkg
@@ -74,7 +74,7 @@ jobs:
           Pkg.add([
               PackageSpec(; name="Reactant", rev="main"),
           #     PackageSpec(; name="ReactantCore", rev="main"),
-          #     PackageSpec(; name="Oceananigans", rev="main"),
+              PackageSpec(; name="Oceananigans", rev="glw/traceable-grids"),
           #     PackageSpec(; name="ClimaOcean", rev="main"),
           ])
           Pkg.instantiate()
