@@ -72,7 +72,7 @@ jobs:
           using Pkg
           Pkg.Registry.update()
           Pkg.add([
-              PackageSpec(; name="Reactant", rev="jm/readd_track_numbers"),
+              PackageSpec(; name="Reactant", rev="main"),
           #     PackageSpec(; name="ReactantCore", rev="main"),
               PackageSpec(; name="Oceananigans", rev="glw/traceable-grids"),
           #     PackageSpec(; name="ClimaOcean", rev="main"),
