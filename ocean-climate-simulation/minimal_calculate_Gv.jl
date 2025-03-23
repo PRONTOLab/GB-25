@@ -69,39 +69,8 @@ using InteractiveUtils
 
 
 @inline function fake_momentum_flux_Wv_biased(i, j, k, grid, scheme, W, v)
-
-#	g2 = Oceananigans.Advection.topology(grid, 2)
-     g3 = Oceananigans.Advection.topology(grid, 3)
-
-   w̃ = ifelse(
-	      (i >= Oceananigans.Advection.required_halo_size_y(scheme) + 1) & (i <= grid.Ny + 1 - Oceananigans.Advection.required_halo_size_y(scheme)),
-		  Oceananigans.Advection.symmetric_interpolate_yᵃᶠᵃ(i, j, k, grid, scheme, W),
-		  Oceananigans.Advection._____symmetric_interpolate_yᵃᶠᵃ(i, j, k, grid, scheme.buffer_scheme, W)
-		 )
-   # return w̃
-   
-   # w̃  = Oceananigans.Advection._symmetric_interpolate_yᵃᶠᵃ(i, j, k, grid, scheme, W)
-    #w̃  = ℑyᵃᶠᵃ(i, j, k, grid, W)
-    # @show @code_lowered Oceananigans.Advection._biased_interpolate_zᵃᵃᶠ(i, j, k, grid, scheme, bias(w̃), v)
-    # return Oceananigans.Advection._biased_interpolate_zᵃᵃᶠ(i, j, k, grid, scheme, bias(w̃), v)
-	#@show @which Oceananigans.Advection._____biased_interpolate_zᵃᵃᶠ(i, j, k, grid, scheme.buffer_scheme, bias(w̃), v)
-   b = bias(w̃)
-     #@show k, Oceananigans.Advection.outside_biased_halo_zᶠ(k, Oceananigans.Grids.topology(grid, 3), grid.Nz, scheme),
-
-     # @show i, b
-
-     @show @which Oceananigans.Advection.inner_biased_interpolate_zᵃᵃᶠ(i, j, k, grid, scheme, b, v, k, Face),
-     @show @code_typed Oceananigans.Advection.inner_biased_interpolate_zᵃᵃᶠ(i, j, k, grid, scheme, b, v, k, Face),
-
-    return ifelse(
-
-		  (k >= Oceananigans.Advection.required_halo_size_z(scheme) + 1) & (k <= grid.Nz + 1 - (Oceananigans.Advection.required_halo_size_z(scheme) - 1)) &  # Left bias
-                                                                    (k >= Oceananigans.Advection.required_halo_size_z(scheme))     & (k <= grid.Nz + 1 - Oceananigans.Advection.required_halo_size_z(scheme))          # Right bias
-								    ,
-		  # Oceananigans.Advection.outside_biased_halo_zᶠ(k, g3, grid.Nz, scheme),
-		  Oceananigans.Advection.inner_biased_interpolate_zᵃᵃᶠ(i, j, k, grid, scheme, b, v, k, Face),
-		  Oceananigans.Advection._____biased_interpolate_zᵃᵃᶠ(i, j, k, grid, scheme.buffer_scheme, b, v)
-		  )
+    b = bias(Oceananigans.Advection.symmetric_interpolate_yᵃᶠᵃ(i, j, k, grid, scheme, W))
+    return Oceananigans.Advection._____biased_interpolate_zᵃᵃᶠ(i, j, k, grid, scheme.buffer_scheme, b, v)
 end
 
 
