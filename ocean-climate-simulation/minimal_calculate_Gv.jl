@@ -65,32 +65,50 @@ using Oceananigans.Operators: ℑzᵃᵃᶜ, Azᶜᶠᶜ, δzᵃᵃᶜ, Az_qᶜ�
 using Oceananigans.Advection: Vᶜᶠᶜ, bias
 using KernelAbstractions: @index, @kernel
 
-@inline function fake_momentum_flux_Wv_symmetric(i, j, k, grid, scheme, W, v)
-    #w̃  = Oceananigans.Advection._symmetric_interpolate_yᵃᶠᵃ(i, j, k, grid, scheme, Az_qᶜᶜᶠ, W)
-    w̃  = Oceananigans.Advection._symmetric_interpolate_yᵃᶠᵃ(i, j, k, grid, scheme, W)
-    #return w̃ * vᴿ
-    return w̃
-end
+using InteractiveUtils
+
 
 @inline function fake_momentum_flux_Wv_biased(i, j, k, grid, scheme, W, v)
-    #w̃ = -1 #@inbounds W[i, j, k]
-    w̃  = Oceananigans.Advection._symmetric_interpolate_yᵃᶠᵃ(i, j, k, grid, scheme, W)
+
+#	g2 = Oceananigans.Advection.topology(grid, 2)
+     g3 = Oceananigans.Advection.topology(grid, 3)
+
+   w̃ = ifelse(
+	      (i >= Oceananigans.Advection.required_halo_size_y(scheme) + 1) & (i <= grid.Ny + 1 - Oceananigans.Advection.required_halo_size_y(scheme)),
+		  Oceananigans.Advection.symmetric_interpolate_yᵃᶠᵃ(i, j, k, grid, scheme, W),
+		  Oceananigans.Advection._____symmetric_interpolate_yᵃᶠᵃ(i, j, k, grid, scheme.buffer_scheme, W)
+		 )
+   # return w̃
+   
+   # w̃  = Oceananigans.Advection._symmetric_interpolate_yᵃᶠᵃ(i, j, k, grid, scheme, W)
     #w̃  = ℑyᵃᶠᵃ(i, j, k, grid, W)
-    vᴿ = Oceananigans.Advection._biased_interpolate_zᵃᵃᶠ(i, j, k, grid, scheme, bias(w̃), v)
-    return vᴿ
+    # @show @code_lowered Oceananigans.Advection._biased_interpolate_zᵃᵃᶠ(i, j, k, grid, scheme, bias(w̃), v)
+    # return Oceananigans.Advection._biased_interpolate_zᵃᵃᶠ(i, j, k, grid, scheme, bias(w̃), v)
+	#@show @which Oceananigans.Advection._____biased_interpolate_zᵃᵃᶠ(i, j, k, grid, scheme.buffer_scheme, bias(w̃), v)
+   b = bias(w̃)
+     #@show k, Oceananigans.Advection.outside_biased_halo_zᶠ(k, Oceananigans.Grids.topology(grid, 3), grid.Nz, scheme),
+
+     # @show i, b
+
+     @show @which Oceananigans.Advection.inner_biased_interpolate_zᵃᵃᶠ(i, j, k, grid, scheme, b, v, k, Face),
+     @show @code_typed Oceananigans.Advection.inner_biased_interpolate_zᵃᵃᶠ(i, j, k, grid, scheme, b, v, k, Face),
+
+    return ifelse(
+
+		  (k >= Oceananigans.Advection.required_halo_size_z(scheme) + 1) & (k <= grid.Nz + 1 - (Oceananigans.Advection.required_halo_size_z(scheme) - 1)) &  # Left bias
+                                                                    (k >= Oceananigans.Advection.required_halo_size_z(scheme))     & (k <= grid.Nz + 1 - Oceananigans.Advection.required_halo_size_z(scheme))          # Right bias
+								    ,
+		  # Oceananigans.Advection.outside_biased_halo_zᶠ(k, g3, grid.Nz, scheme),
+		  Oceananigans.Advection.inner_biased_interpolate_zᵃᵃᶠ(i, j, k, grid, scheme, b, v, k, Face),
+		  Oceananigans.Advection._____biased_interpolate_zᵃᵃᶠ(i, j, k, grid, scheme.buffer_scheme, b, v)
+		  )
 end
 
-@inline function fake_vertical_advection_V(i, j, k, grid, scheme::VectorInvariant, U)
-    𝒜ᶻ = δzᵃᵃᶜ(i, j, k, grid, fake_momentum_flux_Wv_biased, scheme.vertical_scheme, U.w, U.v)
-    #𝒜ᶻ = δzᵃᵃᶜ(i, j, k, grid, fake_momentum_flux_Wv_symmetric, scheme.vertical_scheme, U.w, U.v)
-    return 𝒜ᶻ
-end
 
 @kernel function _problem_kernel!(Gv, grid, advection, velocities)
     i, j, k = @index(Global, NTuple)
-    #@inbounds Gv[i, j, k] = - Oceananigans.Advection.U_dot_∇v(i, j, k, grid, advection, velocities)
-    #@inbounds Gv[i, j, k] = - Oceananigans.Advection.vertical_advection_V(i, j, k, grid, advection, velocities)
-    @inbounds Gv[i, j, k] = - fake_vertical_advection_V(i, j, k, grid, advection, velocities)
+    a = fake_momentum_flux_Wv_biased(i, j, k, grid, advection.vertical_scheme, velocities.w, velocities.v)
+    @inbounds Gv[i, j, k] = a
 end
 
 function launch_problem_kernel!(model)
@@ -104,12 +122,15 @@ function launch_problem_kernel!(model)
     return nothing
 end
 
-passes = "canonicalize,llvm-to-memref-access,canonicalize,convert-llvm-to-cf,canonicalize,enzyme-lift-cf-to-scf,canonicalize,func.func(canonicalize-loops),canonicalize-scf-for" #,canonicalize,affine-cfg" #,canonicalize,func.func(canonicalize-loops),canonicalize,llvm-to-affine-access,canonicalize,delinearize-indexing,canonicalize,simplify-affine-exprs,affine-cfg,canonicalize,func.func(affine-loop-invariant-code-motion,affine-loop-unroll{unroll-full}),canonicalize,raise-affine-to-stablehlo,arith-raise{stablehlo=true}"
+passes2 = "canonicalize,llvm-to-memref-access,canonicalize,convert-llvm-to-cf,canonicalize,enzyme-lift-cf-to-scf,canonicalize,func.func(canonicalize-loops),canonicalize-scf-for" 
+
+# passes2 = "canonicalize,llvm-to-memref-access,canonicalize,convert-llvm-to-cf,canonicalize,enzyme-lift-cf-to-scf,canonicalize,func.func(canonicalize-loops)" 
+
+@time launch_problem_kernel!(c_model)
 
 r_problem! = @compile sync=true raise=true launch_problem_kernel!(r_model)
 #r_problem! = @compile sync=true raise=false launch_problem_kernel!(r_model)
 @time r_problem!(r_model)
-@time launch_problem_kernel!(c_model)
 
 function compare(c, r, name="")
     pc = Array(parent(c))
