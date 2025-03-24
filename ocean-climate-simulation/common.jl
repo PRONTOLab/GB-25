@@ -1,4 +1,5 @@
 using Reactant
+Reactant.Ops.LARGE_CONSTANT_THRESHOLD[] = 100
 using Oceananigans
 
 function loop!(model, Ninner)
