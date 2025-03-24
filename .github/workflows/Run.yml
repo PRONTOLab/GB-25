@@ -44,11 +44,23 @@ jobs:
         xla_runtime:
           - 'PJRT'
           - 'IFRT'
+        earlyoom_threshold:
+          - 4
+        include:
+          - os: ubuntu-22.04-arm
+            julia_version: '1.11'
+            xla_runtime: 'IFRT'
+            earlyoom_threshold: 4
+        # include:
+        #   - os: mg
+        #     julia_version: '1.11'
+        #     xla_runtime: 'IFRT'
+        #     earlyoom_threshold: 20
     uses: ./.github/workflows/CompileOrRun.yml
     with:
       julia_version: ${{ matrix.julia_version }}
       os: ${{ matrix.os }}
       xla_runtime: ${{ matrix.xla_runtime }}
       compile_or_run: 'run'
-      earlyoom_threshold: 4
+      earlyoom_threshold: ${{ matrix.earlyoom_threshold }}
       julia_optlevel: 0
