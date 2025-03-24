@@ -16,6 +16,8 @@ sbatch_params = Dict(
     # "view"        => "julia",
 )
 
+##SBATCH --ntasks=$Nnodes
+
 for Ngpu in Ngpus
     MPICH_GPU_SUPPORT_ENABLED = 1
     run_id   = string(run_name, "_", Dates.format(now(), "ud"), "_ngpu", Ngpu)
@@ -46,10 +48,9 @@ for Ngpu in Ngpus
 #SBATCH --output=slurm.%j.o
 #SBATCH --error=slurm.%j.e
 #SBATCH --time=$time
-#SBATCH --nodes=$Nnodes
-#SBATCH --ntasks=$Ngpu
 #SBATCH --gpus-per-node=$gpus_per_node
-#SBATCH --ntasks-per-node=$gpus_per_node
+#SBATCH --nodes=$Nnodes
+#SBATCH --ntasks-per-node=1
 #SBATCH --constraint=gpu
 #SBATCH --exclusive""")
 
