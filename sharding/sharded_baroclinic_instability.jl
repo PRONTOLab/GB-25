@@ -86,7 +86,7 @@ elseif Ngpu == 2
 
     arch = Oceananigans.Distributed(
         Oceananigans.ReactantState();
-        partition = Partition(2, 1, 1)
+        partition = Partition(1, 2, 1)
     )
 else
     Rx = floor(Int, sqrt(Ngpu))
