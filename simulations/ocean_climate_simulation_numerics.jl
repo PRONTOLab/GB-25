@@ -43,7 +43,7 @@ model = ocean_climate_model_init(arch; resolution, Nz, Δt,
                                  momentum_advection_order,
                                  zstar_vertical_coordinate)
 
-simulation = Simulation(model; Δt, stop_iteration=10days)
+simulation = Simulation(model; Δt, stop_time=10days)
 
 # Callbacks
 wall_clock = Ref(time_ns())
