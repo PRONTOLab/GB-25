@@ -34,5 +34,6 @@ Setfield = "1.1.2"
 
 [sources]
 # XXX: Remove before merging
-Reactant = {url = "https://github.com/simone-silvestri/Reactant.jl", rev = "main"}
-Oceananigans = {url = "https://github.com/avik-pal/Oceananigans.jl", rev = "ap/reactant_sharding"}
+Reactant = {url = "https://github.com/EnzymeAD/Reactant.jl.git", rev = "e6178b8a73573f3a36a6952c3937816ca4bb44d7"}
+Oceananigans = {url = "https://github.com/CliMA/Oceananigans.jl.git", rev = "glw/concrete-grid"}
+
