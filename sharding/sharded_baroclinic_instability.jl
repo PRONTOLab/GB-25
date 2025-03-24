@@ -37,18 +37,18 @@ function baroclinic_instability_model(arch; resolution, Nz=100, Δt=1)
     dz = Lz / Nz
     z = -Lz:dz:0
 
+    #=
     underlying_grid = TripolarGrid(arch; size=(Nx, Ny, Nz), halo=(7, 7, 7), z)
     gaussian_islands(λ, φ) = -Lz + (Lz + 100) * (mtn₁(λ, φ) + mtn₂(λ, φ))
     grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(gaussian_islands))
+    =#
 
-    #=
     grid = LatitudeLongitudeGrid(arch; z,
                                  topology = (Periodic, Bounded, Bounded),
                                  size = (Ny, Ny, Nz),
                                  longitude = (0, 360),
                                  latitude = (-80, 80),
                                  halo = (6, 6, 6))
-    =#
 
     free_surface = SplitExplicitFreeSurface(substeps=30)
     model = HydrostaticFreeSurfaceModel(; grid, free_surface,
