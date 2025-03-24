@@ -6,7 +6,7 @@ using Random
 using Printf
 
 using Reactant
-#Reactant.Distributed.initialize(; single_gpu_per_process=false)
+Reactant.Distributed.initialize(; single_gpu_per_process=false)
 
 function initial_buoyancy(λ, φ, z, p)
     γ = π/2 - 2π * (p.φ₀ - φ) / p.Δφ
@@ -28,8 +28,6 @@ function mtn₂(λ, φ)
     dφ = 5
     return exp(-((λ - λ₂)^2 + (φ - φ₂)^2) / 2dφ^2)
 end
-
-
 
 function baroclinic_instability_model(arch; resolution, Nz=100, Δt=1)
 
@@ -78,11 +76,7 @@ end
 
 include("../ocean-climate-simulation/common.jl")
 
-# Ngpu_str = get(ENV, "Ngpu", "1")
-# Ngpu = parse(Int, Ngpu_str)
 @show Ngpu = length(Reactant.devices())
-
-Ngpu = 1
 
 if Ngpu == 1
     rank = 0
@@ -129,5 +123,4 @@ rstep!(model)
         rstep!(model)
     end
 end
-
 
