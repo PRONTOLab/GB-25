@@ -3,15 +3,15 @@
 # mkpath("xla_dumps")
 # tmpname = tempname("xla_dumps")
 
-ENV["CUDA_VISIBLE_DEVICES"] = ""
+# ENV["CUDA_VISIBLE_DEVICES"] = ""
 # ENV["XLA_FLAGS"] = "--xla_force_host_platform_device_count=4"
 # ENV["XLA_FLAGS"] = " --xla_dump_to=xla_dumps/$(tmpname)/"
 ENV["JULIA_DEBUG"] = "Reactant_jll,Reactant"
 
 # @info ENV["XLA_FLAGS"]
 
-using MPI
-MPI.Init()  # Only needed if using MPI to detect the coordinator
+# using MPI
+# MPI.Init()  # Only needed if using MPI to detect the coordinator
 
 using Oceananigans
 using Reactant
@@ -73,3 +73,4 @@ compiled_first_time_step! = @compile Oceananigans.TimeSteppers.first_time_step!(
 @time compiled_first_time_step!(model, model.clock.last_Δt)
 
 # exit(0)
+

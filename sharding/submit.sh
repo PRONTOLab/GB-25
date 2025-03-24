@@ -16,12 +16,10 @@
 
 export JULIA_DEBUG="Reactant,Reactant_jll"
 alias julia='/capstor/scratch/cscs/gwagner/daint/juliaup/bin/julia'
+ulimit -s unlimited
 
 # Important else XLA might hang indefinitely
 unset no_proxy http_proxy https_proxy NO_PROXY HTTP_PROXY HTTPS_PROXY
 
-ulimit -s unlimited
-export Ngpu=4
-srun --preserve-env --gpu-bind=per_task:1 --cpu_bind=sockets \
-    julia --project --threads=auto -O0 ${HOME}/GB-25/sharding/sharded_baroclinic_instability.jl
+srun --preserve-env --gpu-bind=per_task:1 --cpu_bind=sockets bash unset_then_launch.sh
 

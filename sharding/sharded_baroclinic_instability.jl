@@ -6,13 +6,30 @@ using Random
 using Printf
 
 using Reactant
-Reactant.Distributed.initialize(; single_gpu_per_process=false)
+#Reactant.Distributed.initialize(; single_gpu_per_process=false)
 
 function initial_buoyancy(λ, φ, z, p)
     γ = π/2 - 2π * (p.φ₀ - φ) / p.Δφ
     b = ifelse(γ < 0, 0, ifelse(γ > π, 1, 1 - (π - γ - sin(π - γ) * cos(π - γ)) / π))
     return p.N² * z + p.Δb * b
 end
+
+function mtn₁(λ, φ)
+    λ₁ = 70
+    φ₁ = 55
+    dφ = 5
+    return exp(-((λ - λ₁)^2 + (φ - φ₁)^2) / 2dφ^2)
+end
+
+function mtn₂(λ, φ)
+    λ₁ = 70
+    λ₂ = λ₁ + 180
+    φ₂ = 55
+    dφ = 5
+    return exp(-((λ - λ₂)^2 + (φ - φ₂)^2) / 2dφ^2)
+end
+
+
 
 function baroclinic_instability_model(arch; resolution, Nz=100, Δt=1)
 
@@ -22,12 +39,18 @@ function baroclinic_instability_model(arch; resolution, Nz=100, Δt=1)
     dz = Lz / Nz
     z = -Lz:dz:0
 
+    underlying_grid = TripolarGrid(arch; size=(Nx, Ny, Nz), halo=(7, 7, 7), z)
+    gaussian_islands(λ, φ) = -Lz + (Lz + 100) * (mtn₁(λ, φ) + mtn₂(λ, φ))
+    grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(gaussian_islands))
+
+    #=
     grid = LatitudeLongitudeGrid(arch; z,
                                  topology = (Periodic, Bounded, Bounded),
                                  size = (Ny, Ny, Nz),
                                  longitude = (0, 360),
                                  latitude = (-80, 80),
                                  halo = (6, 6, 6))
+    =#
 
     free_surface = SplitExplicitFreeSurface(substeps=30)
     model = HydrostaticFreeSurfaceModel(; grid, free_surface,
@@ -59,6 +82,8 @@ include("../ocean-climate-simulation/common.jl")
 # Ngpu = parse(Int, Ngpu_str)
 @show Ngpu = length(Reactant.devices())
 
+Ngpu = 1
+
 if Ngpu == 1
     rank = 0
     arch = Oceananigans.ReactantState()
@@ -77,7 +102,6 @@ else
     arch = Oceananigans.Distributed(
         Oceananigans.ReactantState();
         partition = Partition(Rx, Ry, 1)
-        #partition = Partition(1, 1, 1)
     )
 end
 
