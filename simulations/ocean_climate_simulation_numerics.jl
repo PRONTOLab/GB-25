@@ -54,9 +54,9 @@ function progress(sim)
 
     msg = @sprintf("Iter: %d, time: %s, wall time: %s, max(u): (%6.3e, %6.3e, %6.3e) m/s",
                    iteration(sim), prettytime(sim), prettytime(elapsed),
-                   maximum(abs, sim.model.velocities.u),
-                   maximum(abs, sim.model.velocities.v),
-                   maximum(abs, sim.model.velocities.w))
+                   maximum(abs, sim.model.ocean.model.velocities.u),
+                   maximum(abs, sim.model.ocean.model.velocities.v),
+                   maximum(abs, sim.model.ocean.model.velocities.w))
 
     @info msg
 
