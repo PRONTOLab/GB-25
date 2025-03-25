@@ -47,13 +47,10 @@ for Ngpu in Ngpus
 #SBATCH -c 32
 #SBATCH --gpu-bind=none
 #SBATCH --job-name="$job_name"
-#SBATCH --output=slurm.%j.o
-#SBATCH --error=slurm.%j.e
 #SBATCH --time=$time
 #SBATCH --nodes=$Nnodes
-#SBATCH --ntasks=$Ngpu
 #SBATCH --gpus-per-node=$gpus_per_node
-#SBATCH --ntasks-per-node=$gpus_per_node
+#SBATCH --ntasks-per-node=1
 #SBATCH --account=$account
 module load cray-mpich
 
@@ -67,6 +64,7 @@ export CRAY_ACCEL_TARGET="nvidia80"
 cat > launch.sh << EoF_s
 #! /bin/sh
 export CUDA_VISIBLE_DEVICES=0,1,2,3
+unset no_proxy http_proxy https_proxy NO_PROXY HTTP_PROXY HTTPS_PROXY
 exec \$*
 EoF_s
 chmod +x launch.sh
@@ -84,7 +82,7 @@ export MPICH_GPU_SUPPORT_ENABLED=$(MPICH_GPU_SUPPORT_ENABLED)
 
 alias julia='/global/homes/s/ssilvest/julia-1.10.9/bin/julia'
 
-srun --preserve-env --gpu-bind=per_task:1 --cpu_bind=sockets ./launch.sh julia --project -O0 $runfile 
+srun ./launch.sh julia --project -O0 $runfile 
                 """)
     end
 
