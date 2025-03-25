@@ -17,6 +17,7 @@ using Oceananigans
 using Reactant
 
 # using Cthulhu
+using Dates
 
 Reactant.Distributed.initialize()
 
@@ -36,7 +37,7 @@ arch = Oceananigans.Distributed(
 Nx = Ny = 16
 Nz = 4
 
-@info "[$(process_id)] creating tripolar grid"
+@info "[$(process_id)] creating tripolar grid" now(UTC)
 grid = TripolarGrid(arch; size=(Nx, Ny, Nz), halo=(7, 7, 7), z=(0, 1))
 
 function mtn₁(λ, φ)
@@ -56,7 +57,7 @@ end
 
 gaussian_islands(λ, φ) = 2 * (mtn₁(λ, φ) + mtn₂(λ, φ))
 
-@info "[$(process_id)] creating immersed boundary grid"
+@info "[$(process_id)] creating immersed boundary grid" now(UTC)
 grid = ImmersedBoundaryGrid(grid, GridFittedBottom(gaussian_islands))
 
 free_surface = SplitExplicitFreeSurface(substeps=3)
@@ -65,12 +66,11 @@ model = HydrostaticFreeSurfaceModel(; grid, free_surface)
 
 model.clock.last_Δt = ConcreteRNumber(60.0)
 
-@info "[$(process_id)] compiling first time step"
+@info "[$(process_id)] compiling first time step" now(UTC)
 compiled_first_time_step! = @compile Oceananigans.TimeSteppers.first_time_step!(model, model.clock.last_Δt)
 
-@info "[$(process_id)] running first time step"
-@time compiled_first_time_step!(model, model.clock.last_Δt)
-@time compiled_first_time_step!(model, model.clock.last_Δt)
-
-# exit(0)
+@info "[$(process_id)] running first time step" now(UTC)
+@time "[$(process_id)] first time step" compiled_first_time_step!(model, model.clock.last_Δt)
+@info "[$(process_id)] running second time step" now(UTC)
+@time "[$(process_id)] second time step" compiled_first_time_step!(model, model.clock.last_Δt)
 
