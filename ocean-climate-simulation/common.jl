@@ -21,16 +21,6 @@ function time_step!(model)
     return nothing
 end
 
-function ten_steps!(model)
-    Δt = model.clock.last_Δt
-    Nt = ConcreteRNumber(10)
-    #@trace for _ = 1:Nt
-    for _ = 1:10
-        Oceananigans.TimeSteppers.time_step!(model, Δt)
-    end
-    return nothing
-end
-
 Ninner = ConcreteRNumber(2)
 
 # If we are in GitHub Actions, make `TMPDIR` be a local directory from which we
