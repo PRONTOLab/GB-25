@@ -54,7 +54,7 @@ rstep!(model)
 
 @time "[$rank] Running loop" begin
     for n = 1:10
-        @time "Time step $n" rstep!(model)
+        @time "[$rank] Time step $n" rstep!(model)
     end
 end
 
