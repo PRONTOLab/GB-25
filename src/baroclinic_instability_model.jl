@@ -20,23 +20,22 @@ function baroclinic_instability_model_init(arch; resolution, Δt)
     Δb = 0.005 # [m/s²] buoyancy difference
     φ₀ = 50
     closure = VerticalScalarDiffusivity(κ=1e-5, ν=1e-4)
+    dz = Lz / Nz
+    z = collect(-Lz:dz:0)
 
-    grid = LatitudeLongitudeGrid(arch,
+    grid = LatitudeLongitudeGrid(arch; z,
                                  topology = (Periodic, Bounded, Bounded),
                                  size = (Ny, Ny, Nz),
                                  longitude = (-10, 10),
                                  latitude = (φ₀ - 10, φ₀ + 10),
-                                 z = (-Lz, 0),
                                  halo = (6, 6, 6))
 
     free_surface = SplitExplicitFreeSurface(substeps=30)
-    #free_surface = ExplicitFreeSurface(gravitational_acceleration=1)
-    #closure = Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity()
-    closure = nothing
+    closure = Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity()
     model = HydrostaticFreeSurfaceModel(; grid, free_surface, closure,
         coriolis = HydrostaticSphericalCoriolis(),
         buoyancy = BuoyancyTracer(),
-        tracers = :b,
+        tracers = (:b, :e),
         momentum_advection = WENOVectorInvariant(order=5),
         tracer_advection = WENO(order=5),
     )

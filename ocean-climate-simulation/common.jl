@@ -7,10 +7,11 @@ function first_time_step!(model)
     return nothing
 end
 
-function loop!(model, Ninner)
-    Δt = model.clock.last_Δt
-    @trace for _ = 1:Ninner
-        Oceananigans.TimeSteppers.time_step!(model, Δt)
+time_step!(model) = Oceananigans.TimeSteppers.time_step!(model, model.clock.last_Δt)
+
+function loop!(model, Nt)
+    @trace for n = 1:Nt
+        Oceananigans.TimeSteppers.time_step!(model, model.clock.last_Δt)
     end
     return nothing
 end
