@@ -6,6 +6,8 @@ using SeawaterPolynomials
 using Reactant
 using Random
 
+Reactant.Distributed.initialize(; single_gpu_per_process=false)
+
 include("../ocean-climate-simulation/common.jl")
 
 @show Ngpu = length(Reactant.devices())
@@ -50,9 +52,9 @@ rstep!(model)
 rstep!(model)
 rstep!(model)
 
-@time "[$rank] Running loop..." begin
+@time "[$rank] Running loop" begin
     for n = 1:10
-        rstep!(model)
+        @time "Time step $n" rstep!(model)
     end
 end
 
