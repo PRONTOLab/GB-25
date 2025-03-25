@@ -9,7 +9,7 @@ end
 
 function loop!(model, Ninner)
     Δt = model.clock.last_Δt
-    @trace for _ = 1:Ninner
+    @trace track_numbers=false for _ = 1:Ninner
         Oceananigans.TimeSteppers.time_step!(model, Δt)
     end
     return nothing
