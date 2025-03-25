@@ -1,6 +1,6 @@
 using Dates
 
-username = "ssilvest"
+username = "blaschke"
 account = "m4672"
 
 exe_path = "sharded_baroclinic_instability.jl"
@@ -43,23 +43,19 @@ for Ngpu in Ngpus
 #!/bin/bash -l
 
 #SBATCH -C gpu
-#SBATCH -q regular
-#SBATCH -c 32
+#SBATCH -q interactive
 #SBATCH --gpu-bind=none
 #SBATCH --job-name="$job_name"
 #SBATCH --time=$time
 #SBATCH --nodes=$Nnodes
-#SBATCH --gpus-per-node=$gpus_per_node
-#SBATCH --ntasks-per-node=1
 #SBATCH --account=$account
-module load cray-mpich
+
+source /global/common/software/nersc9/julia/scripts/activate_beta.sh
+ml load julia/1.10.8
 
 export SBATCH_ACCOUNT=$account 
 export SALLOC_ACCOUNT=$account
 export JULIA_CUDA_MEMORY_POOL=none
-
-export SLURM_CPU_BIND="cores"
-export CRAY_ACCEL_TARGET="nvidia80"
 
 cat > launch.sh << EoF_s
 #! /bin/sh
@@ -68,21 +64,18 @@ unset no_proxy http_proxy https_proxy NO_PROXY HTTP_PROXY HTTPS_PROXY
 exec \$*
 EoF_s
 chmod +x launch.sh
-
 """)
 
-        runfile="/pscratch/sd/s/ssilvest/GB-25/sharding/sharded_baroclinic_instability.jl"
+        runfile="~/NESAP/GB-25/sharding/sharded_baroclinic_instability.jl"
 
         println(io,
                 """
 export Ngpu=$Ngpu
 export resolution_fraction=$resolution_fraction
 export JULIA_DEBUG="Reactant,Reactant_jll"
-export MPICH_GPU_SUPPORT_ENABLED=$(MPICH_GPU_SUPPORT_ENABLED)
+export JULIA_DEPOT_PATH=\$SCRATCH/julia
 
-alias julia='/global/homes/s/ssilvest/julia-1.10.9/bin/julia'
-
-srun ./launch.sh julia --project -O0 $runfile 
+srun -n $Nnodes -c 32 -G $Ngpu --cpu-bind=cores ./launch.sh julia --project -O0 $runfile 
                 """)
     end
 
