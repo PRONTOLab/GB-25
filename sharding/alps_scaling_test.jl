@@ -1,6 +1,13 @@
 using Dates
 
-username = "gwagner"
+submit        = false
+username      = "gwagner"
+run_name      = "reactant_"
+time          = "00:40:00"
+Ngpus         = [4, 8] #[4, 8, 12, 16]
+type          = "weak"
+sbatch_prefix = "submit"
+gpus_per_node = 4
 
 sbatch_params = Dict(
     "account"     => "g191",
@@ -9,24 +16,11 @@ sbatch_params = Dict(
     # "view"        => "julia",
 )
 
-exe_path = "sharded_baroclinic_instability.jl"
-
-# run params
-submit   = true
-run_name = "r_react_"
-time     = "00:40:00"
-Ngpus    = [4, 8] #[4, 8, 12, 16]
-type     = "weak"
-
-gpus_per_node = 4
+##SBATCH --ntasks=$Nnodes
 
 for Ngpu in Ngpus
     MPICH_GPU_SUPPORT_ENABLED = 1
-
-    run_id   = string(run_name, "_",
-                      Dates.format(now(), "ud"), "_",
-                      details * "_ngpu", Ngpu)
-
+    run_id   = string(run_name, "_", Dates.format(now(), "ud"), "_ngpu", Ngpu)
     job_name = "scaling_test_$Ngpu"
 
     !isinteger(cbrt(Ngpu)) && (@warn "problem size is not cubic")
@@ -39,30 +33,26 @@ for Ngpu in Ngpus
         resolution_fraction = 4 * Ngpus[1]
     end
 
-    @info "executable name: $(exe_name)"
     @info "number of GPUs: $(Ngpu)"
     @info "number of nodes: $(Nnodes)"
     @info "number of GPUs per node: $(gpus_per_node)"
 
-    sbatch_name = joinpath(run_dir, "submit.sh")
-    proj_dir    = joinpath(run_dir, "../")
+    sbatch_name = string(sbatch_prefix, "_", Ngpu, ".sh")
 
     open(sbatch_name, "w") do io
         println(io,
                 """
-                #!/bin/bash -l
+#!/bin/bash -l
 
-                #SBATCH --job-name="$job_name"
-                #SBATCH --output=$run_dir/slurm.%j.o
-                #SBATCH --error=$run_dir/slurm.%j.e
-                #SBATCH --time=$time
-                #SBATCH --nodes=$Nnodes
-                #SBATCH --ntasks=$Ngpu
-                #SBATCH --gpus-per-node=$gpus_per_node
-                #SBATCH --ntasks-per-node=$gpus_per_node
-                #SBATCH --constraint=gpu
-                #SBATCH --exclusive
-                """)
+#SBATCH --job-name="$job_name"
+#SBATCH --output=slurm.%j.o
+#SBATCH --error=slurm.%j.e
+#SBATCH --time=$time
+#SBATCH --gpus-per-node=$gpus_per_node
+#SBATCH --nodes=$Nnodes
+#SBATCH --ntasks-per-node=1
+#SBATCH --constraint=gpu
+#SBATCH --exclusive""")
 
         for (k, v) in sbatch_params
             println(io, "#SBATCH --$k=$v")
@@ -70,16 +60,25 @@ for Ngpu in Ngpus
 
         println(io,
                 """
-                export Ngpu=$Ngpu
-                export resolution_fraction=$resolution_fraction
-                export JULIA_DEBUG="Reactant,Reactant_jll"
-                export MPICH_GPU_SUPPORT_ENABLED=$(MPICH_GPU_SUPPORT_ENABLED)
 
-                ulimit -s unlimited
+export Ngpu=$Ngpu
+export resolution_fraction=$resolution_fraction
+export JULIA_DEBUG="Reactant,Reactant_jll"
+export MPICH_GPU_SUPPORT_ENABLED=$MPICH_GPU_SUPPORT_ENABLED
 
-                alias julia='/capstor/scratch/cscs/gwagner/daint/juliaup/bin/julia'
+cat > launch.sh << EoF_s
+#! /bin/sh
+export CUDA_VISIBLE_DEVICES=0,1,2,3
+# Important else XLA might hang indefinitely
+unset no_proxy http_proxy https_proxy NO_PROXY HTTP_PROXY HTTPS_PROXY
+exec \$*
+EoF_s
+chmod +x launch.sh
 
-                srun --preserve-env --gpu-bind=per_task:1 --cpu_bind=sockets bash unset_then_launch.sh
+ulimit -s unlimited
+alias julia='/capstor/scratch/cscs/gwagner/daint/juliaup/bin/julia'
+srun --preserve-env --gpu-bind=per_task:1 --cpu_bind=sockets ./launch.sh \\
+    julia --project --threads=auto -O0 \${HOME}/GB-25/sharding/sharded_baroclinic_instability.jl
                 """)
     end
 
