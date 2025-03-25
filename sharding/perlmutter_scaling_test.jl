@@ -1,14 +1,16 @@
 using Dates
 
-username = "blaschke"
+username = ENV["USER"]
 account = "m4672"
 
 exe_path = "sharded_baroclinic_instability.jl"
+run_path = @__DIR__
+
 
 # run params
 submit   = true
 run_name = "r_react_"
-time     = "00:40:00"
+time     = "00:30:00"
 Ngpus    = [4, 8, 16, 32, 64]
 type     = "weak"
 
@@ -43,7 +45,7 @@ for Ngpu in Ngpus
 #!/bin/bash -l
 
 #SBATCH -C gpu
-#SBATCH -q interactive
+#SBATCH -q debug
 #SBATCH --gpu-bind=none
 #SBATCH --job-name="$job_name"
 #SBATCH --time=$time
@@ -56,14 +58,6 @@ ml load julia/1.10.8
 export SBATCH_ACCOUNT=$account 
 export SALLOC_ACCOUNT=$account
 export JULIA_CUDA_MEMORY_POOL=none
-
-cat > launch.sh << EoF_s
-#! /bin/sh
-export CUDA_VISIBLE_DEVICES=0,1,2,3
-unset no_proxy http_proxy https_proxy NO_PROXY HTTP_PROXY HTTPS_PROXY
-exec \$*
-EoF_s
-chmod +x launch.sh
 """)
 
         runfile="~/NESAP/GB-25/sharding/sharded_baroclinic_instability.jl"
@@ -75,7 +69,7 @@ export resolution_fraction=$resolution_fraction
 export JULIA_DEBUG="Reactant,Reactant_jll"
 export JULIA_DEPOT_PATH=\$SCRATCH/julia
 
-srun -n $Nnodes -c 32 -G $Ngpu --cpu-bind=cores ./launch.sh julia --project -O0 $runfile 
+srun -n $Nnodes -c 32 -G $Ngpu --cpu-bind=cores ./launcher.sh julia --project -O0 $runfile 
                 """)
     end
 
