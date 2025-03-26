@@ -45,18 +45,6 @@ function sync_states!(m1, m2)
         ψ2p = parent(Ψ2[name])
         copyto!(ψ1p, Reactant.to_rarray(ψ2p))
     end
-
-    if m1.closure isa Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity
-        names = (:κu, :κc, :κe, :Le, :Jᵇ)
-        Φ1 = NamedTuple(name => getproperty(m1.diffusivity_fields, name) for name in names)
-        Φ2 = NamedTuple(name => getproperty(m2.diffusivity_fields, name) for name in names)
-        for name in keys(Φ1)
-            ϕ1p = parent(Φ1[name])
-            ϕ2p = parent(Φ2[name])
-            copyto!(ϕ1p, Reactant.to_rarray(ϕ2p))
-        end
-    end
-
     return nothing
 end
 
