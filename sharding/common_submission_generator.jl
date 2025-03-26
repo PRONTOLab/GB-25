@@ -34,7 +34,9 @@ function generate_and_submit(submit_job_writer, cfg::JobConfig; input_file_name:
     if !isfile(run_file)
         error("File $(run_file) does not exist")
     end
-    out_path = joinpath(cfg.out_dir, "runs", "$(string(now(UTC)))_$(randstring(4))")
+    # Some filesystems don't like colons in directory names
+    timestamp = replace(string(now(UTC)), ':' => '-')
+    out_path = joinpath(cfg.out_dir, "runs", "$(timestamp)_$(randstring(4))")
     project_path = dirname(@__DIR__)
 
     mkpath(out_path)
@@ -78,8 +80,8 @@ export CUDA_VISIBLE_DEVICES=$(join(0:(min(Ngpu, gpus_per_node) - 1), ','))
 # Important else XLA might hang indefinitely
 unset no_proxy http_proxy https_proxy NO_PROXY HTTP_PROXY HTTPS_PROXY
 
-exec "${@}"
-echo "[${SLURM_JOB_ID}.${SLURM_PROCID}] Process exited with code ${?}"
+exec "\${@}"
+echo "[\${SLURM_JOB_ID}.\${SLURM_PROCID}] Process exited with code \${?}"
 """)
         end
 
