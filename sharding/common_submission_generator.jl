@@ -71,7 +71,8 @@ function generate_and_submit(submit_job_writer, cfg::JobConfig; input_file_name:
 
         sbatch_name = joinpath(job_dir, "submit.sh")
 
-        open(joinpath(job_dir, "launcher.sh"), "w") do io
+        launcher = joinpath(job_dir, "launcher.sh")
+        open(launcher, "w") do io
             print(io, """
 #!/usr/bin/env sh
 
@@ -84,6 +85,7 @@ exec "\${@}"
 echo "[\${SLURM_JOB_ID}.\${SLURM_PROCID}] Process exited with code \${?}"
 """)
         end
+        chmod(launcher, 0o755)
 
         open(sbatch_name, "w") do io
             print(io, submit_job_writer(cfg::JobConfig, job_name::String,
