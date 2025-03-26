@@ -36,13 +36,22 @@ function baroclinic_instability_model(arch; resolution, Δt, Nz,
     # Simple momentum advection schemes. May need to be reconsidered
     # due to Float32.
     momentum_advection = WENOVectorInvariant(order=5),
-    tracer_advection = WENO(order=5))
+    tracer_advection = WENO(order=5),
+    )
+
+    if buoyancy isa BuoyancyTracer
+        tracers = [:b]
+    elseif buoyancy isa SeawaterBuoyancy
+        tracers = [:T, :S]
+    else
+        tracers = []
+    end
 
     if closure isa Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity
-        tracers = (:T, :S, :e)
-    else
-        tracers = (:T, :S)
+        push!(tracers, :e)
     end
+
+    tracers = tuple(tracers...)
 
     if grid === :gaussian_islands
         grid = gaussian_islands_tripolar_grid(arch, resolution, Nz)
@@ -59,7 +68,7 @@ function baroclinic_instability_model(arch; resolution, Δt, Nz,
 
     if buoyancy isa SeawaterBuoyancy
         set!(model, T=Tᵢ, S=Sᵢ)
-    elseif buoyancy isa BuoyancyTracer()
+    elseif buoyancy isa BuoyancyTracer
         set!(model, b=bᵢ)
     end
 

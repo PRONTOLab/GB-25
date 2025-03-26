@@ -8,7 +8,7 @@ using Random
 
 include("../ocean-climate-simulation/common.jl")
 
-raise = false
+raise = true
 
 configuration = (;
     Δt                 = 1.0,
@@ -16,9 +16,12 @@ configuration = (;
     Nz                 = 50,
     closure            = nothing, # VerticalScalarDiffusivity(κ=1e-5, ν=1e-4),
     free_surface       = ExplicitFreeSurface(gravitational_acceleration=0.1),
-    momentum_advection = WENOVectorInvariant(order=5),
-    tracer_advection   = WENO(order=5),
+    buoyancy           = nothing,
+    momentum_advection = nothing, # WENOVectorInvariant(order=5),
+    tracer_advection   = nothing, # WENO(order=5),
 )
+
+@show configuration
 
 arch = ReactantState()
 r_model = GordonBell25.baroclinic_instability_model(arch; configuration...)
@@ -26,7 +29,7 @@ c_model = GordonBell25.baroclinic_instability_model(CPU(); configuration...)
 GordonBell25.sync_states!(r_model, c_model)
 
 @info "Comparing regular and Reactant model, where the regular model is"
-@show c_model
+@show r_model
 GordonBell25.compare_states(r_model, c_model)
 
 GC.gc(true); GC.gc(false); GC.gc(true)
