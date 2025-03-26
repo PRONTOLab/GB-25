@@ -13,18 +13,7 @@ resolution = 2
 closure = Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity()
 configuration = (; Δt, resolution, closure)
 
-Reactant.set_default_backend("gpu")
-arch = Distributed(ReactantState(), partition=Partition(2, 1, 1))
-grid = TripolarGrid(arch, size = (40, 40, 1), z = (-1000, 0), halo = (5, 5, 5))
-
-c = CenterField(grid)
-h = Field{Center, Center, Nothing}(grid)
-
-@show typeof(parent(grid.Δxᶜᶜᵃ))
-@show typeof(parent(c))
-@show typeof(parent(h))
-
-#=
+arch = Distributed(ReactantState(), partition=Partition(2, 1))
 r_model = GordonBell25.baroclinic_instability_model(arch; configuration...)
 c_model = GordonBell25.baroclinic_instability_model(CPU(); configuration...)
 GordonBell25.sync_states!(r_model, c_model)
@@ -58,4 +47,4 @@ GordonBell25.compare_states(r_model, c_model)
 
 @info "After second time step:"
 GordonBell25.compare_states(r_model, c_model)
-=#
+
