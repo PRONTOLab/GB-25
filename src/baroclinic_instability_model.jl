@@ -12,8 +12,8 @@ using Random
     φ₀ = 50
     Δφ = 20
     γ = π/2 - 2π * (φ₀ - φ) / Δφ
-    b = ifelse(γ < 0, 0, ifelse(γ > π, 1, 1 - (π - γ - sin(π - γ) * cos(π - γ)) / π))
-    return p.N² * z + Δb * b + 1e-2 * Δb * randn()
+    μ = ifelse(γ < 0, 0, ifelse(γ > π, 1, 1 - (π - γ - sin(π - γ) * cos(π - γ)) / π))
+    return N² * z + Δb * μ + 1e-2 * Δb * randn()
 end
 
 function baroclinic_instability_model(arch; resolution, Δt, Nz,
@@ -28,7 +28,7 @@ function baroclinic_instability_model(arch; resolution, Δt, Nz,
 
     # CATKE correctness is not established yet, so we are using a simpler closure
     # closure = Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity()
-    closure = VerticalScalarDiffusivity(κ=1e-5, ν=1e-4),
+    closure = VerticalScalarDiffusivity(VerticallyImplicitTimeDiscretization(), κ=1e-5, ν=1e-4),
 
     # Coriolis forces for a rotating Earth
     coriolis = HydrostaticSphericalCoriolis(),
@@ -49,6 +49,9 @@ function baroclinic_instability_model(arch; resolution, Δt, Nz,
 
     if closure isa Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity
         push!(tracers, :e)
+    elseif closure isa Oceananigans.TurbulenceClosures.TKEDissipationVerticalDiffusivity
+        push!(tracers, :e)
+        push!(tracers, :ϵ)
     end
 
     tracers = tuple(tracers...)
