@@ -1,3 +1,4 @@
+
 function gaussian_islands_tripolar_grid(arch::Architectures.AbstractArchitecture, resolution, Nz)
     Nx = convert(Int, 360 / resolution)
     Ny = convert(Int, 180 / resolution)
