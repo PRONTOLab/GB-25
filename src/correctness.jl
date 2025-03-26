@@ -6,7 +6,8 @@ function compare_states(m1, m2)
     for name in keys(Ψ1)
         ψ1p = Array(parent(Ψ1[name]))
         ψ2p = Array(parent(Ψ2[name]))
-        @show name, ψ1p ≈ ψ2p
+        δ = ψ1p .- ψ2p
+        @show name, ψ1p ≈ ψ2p, maximum(abs, ψ1p), maximum(ψ2p), maximum(abs, δ)
     end
     return nothing
 end

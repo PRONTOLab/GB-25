@@ -71,27 +71,6 @@ zonal_wind(λ, φ) = 4 * sind(2φ)^2 - 2 * exp(-(abs(φ) - 12)^2 / 72)
 sunlight(λ, φ) = -200 - 600 * cosd(φ)^2
 Tatm(λ, φ, z=0) = 30 * cosd(φ)
 
-function gaussian_islands_tripolar_grid(arch::Architectures.AbstractArchitecture, resolution, Nz)
-    Nx = convert(Int, 360 / resolution)
-    Ny = convert(Int, 180 / resolution)
-
-    # Time step. This must be decreased as resolution is decreased.
-    Δt = 1minutes
-
-    # Grid setup
-    z_faces = exponential_z_faces(; Nz, depth=4000, h=30) # may need changing for very large Nz
-    underlying_grid = TripolarGrid(arch; size=(Nx, Ny, Nz), halo=(7, 7, 7), z=z_faces)
-
-    #underlying_grid = LatitudeLongitudeGrid(arch; size=(Nx, Ny, Nz), halo=(7, 7, 7), z=z_faces,
-    #                                        longitude=(0, 360), latitude=(-80, 80))
-    zb = z_faces[1]
-    h = -zb + 100
-    gaussian_islands(λ, φ) = zb + h * (mtn₁(λ, φ) + mtn₂(λ, φ))
-
-    return @gbprofile "ImmersedBoundaryGrid" ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(gaussian_islands);
-                                                                  active_cells_map=false)
-end
-
 function set_tracers(T, Ta, u, ua, shortwave, Qs)
     T .= Ta .+ 273.15
     u .= ua

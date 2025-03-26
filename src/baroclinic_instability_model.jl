@@ -16,14 +16,15 @@ using Random
     return p.N² * z + Δb * b + 1e-2 * Δb * randn()
 end
 
-function baroclinic_instability_model(arch; resolution, Δt,
+function baroclinic_instability_model(arch; resolution, Δt, Nz,
+    grid = :simple_lat_lon,
+    
     # Fewer substeps can be used at higher resolutions
     free_surface = SplitExplicitFreeSurface(substeps=30),
 
     # TEOS10 is a 54-term polynomial that relates temperature (T),
     # and salinity (S) to buoyancy
-    equation_of_state = SeawaterPolynomials.TEOS10EquationOfState(),
-    buoyancy = SeawaterBuoyancy(; equation_of_state),
+    buoyancy = SeawaterBuoyancy(equation_of_state=SeawaterPolynomials.TEOS10EquationOfState()),
 
     # CATKE correctness is not established yet, so we are using a simpler closure
     # closure = Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity()
@@ -37,13 +38,17 @@ function baroclinic_instability_model(arch; resolution, Δt,
     momentum_advection = WENOVectorInvariant(order=5),
     tracer_advection = WENO(order=5))
 
-    if closure isa CATKEVerticalDiffusivity
+    if closure isa Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity
         tracers = (:T, :S, :e)
     else
         tracers = (:T, :S)
     end
 
-    grid = gaussian_islands_tripolar_grid(arch, resolution, Nz)
+    if grid === :gaussian_islands
+        grid = gaussian_islands_tripolar_grid(arch, resolution, Nz)
+    elseif grid === :simple_lat_lon
+        grid = simple_latitude_longitude_grid(arch, resolution, Nz)
+    end
 
     model = HydrostaticFreeSurfaceModel(;
         grid, free_surface, closure, buoyancy, tracers,

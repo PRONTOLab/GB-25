@@ -8,23 +8,14 @@ using Random
 
 include("../ocean-climate-simulation/common.jl")
 
-Δt = 2minutes
+Δt = 1.0
 resolution = 2
-closure = Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity()
-configuration = (; Δt, resolution, closure)
+Nz = 50
+closure = nothing #VerticalScalarDiffusivity(κ=1e-5, ν=1e-4)
+free_surface = ExplicitFreeSurface(gravitational_acceleration=0.1)
+configuration = (; Δt, resolution, closure, Nz, free_surface)
 
-Reactant.set_default_backend("gpu")
-arch = Distributed(ReactantState(), partition=Partition(2, 1, 1))
-grid = TripolarGrid(arch, size = (40, 40, 1), z = (-1000, 0), halo = (5, 5, 5))
-
-c = CenterField(grid)
-h = Field{Center, Center, Nothing}(grid)
-
-@show typeof(parent(grid.Δxᶜᶜᵃ))
-@show typeof(parent(c))
-@show typeof(parent(h))
-
-#=
+arch = ReactantState()
 r_model = GordonBell25.baroclinic_instability_model(arch; configuration...)
 c_model = GordonBell25.baroclinic_instability_model(CPU(); configuration...)
 GordonBell25.sync_states!(r_model, c_model)
@@ -34,10 +25,10 @@ GordonBell25.sync_states!(r_model, c_model)
 GordonBell25.compare_states(r_model, c_model)
 
 GC.gc(true); GC.gc(false); GC.gc(true)
+raise = true
 
-@info "Compiling update_state..."
-raise = false
-r_update_state! = @compile sync=true raise=raise Oceananigans.TimeSteppers.update_state!(r_model)
+#@info "Compiling update_state..."
+#r_update_state! = @compile sync=true raise=raise Oceananigans.TimeSteppers.update_state!(r_model)
 
 @info "Compiling first time step..."
 r_first_time_step! = @compile sync=true raise=raise first_time_step!(r_model)
@@ -46,8 +37,6 @@ r_first_time_step! = @compile sync=true raise=raise first_time_step!(r_model)
 r_step! = @compile sync=true raise=raise time_step!(r_model)
 
 first_time_step!(c_model)
-
-r_update_state!(r_model) # additionally needed for Reactant
 r_first_time_step!(r_model)
 
 @info "After first time step:"
@@ -58,4 +47,4 @@ GordonBell25.compare_states(r_model, c_model)
 
 @info "After second time step:"
 GordonBell25.compare_states(r_model, c_model)
-=#
+
