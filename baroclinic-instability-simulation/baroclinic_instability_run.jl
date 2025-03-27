@@ -70,7 +70,7 @@ GordonBell25.compare_states(r_model, c_model)
 r_first_time_step! = @compile sync=true raise=raise first_time_step!(r_model)
 
 @info "Compiling time step..."
-r_loop! = @compile sync=true raise=raise loop!(r_model)
+r_loop! = @compile sync=true raise=raise loop!(r_model, ConcreteRNumber(10))
 
 @time "First Reactant time step" first_time_step!(c_model)
 @time "First regular time step" r_first_time_step!(r_model)
