@@ -102,4 +102,3 @@ function gaussian_islands_tripolar_grid(arch::Architectures.AbstractArchitecture
                                                                   GridFittedBottom(gaussian_islands);
                                                                   active_cells_map = false)
 end
-

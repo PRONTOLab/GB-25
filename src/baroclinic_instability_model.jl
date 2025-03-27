@@ -10,7 +10,7 @@ end
 
 function baroclinic_instability_model(arch; resolution, Δt, Nz,
     grid = :simple_lat_lon, # :gaussian_islands
-    
+
     # Fewer substeps can be used at higher resolutions
     free_surface = SplitExplicitFreeSurface(substeps=30),
 
@@ -32,12 +32,12 @@ function baroclinic_instability_model(arch; resolution, Δt, Nz,
     tracer_advection = WENO(order=5),
     )
 
-    if buoyancy isa BuoyancyTracer
-        tracers = [:b]
+    tracers = if buoyancy isa BuoyancyTracer
+        [:b]
     elseif buoyancy isa SeawaterBuoyancy
-        tracers = [:T, :S]
+        [:T, :S]
     else
-        tracers = []
+        Symbol[]
     end
 
     if closure isa Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity
@@ -49,14 +49,14 @@ function baroclinic_instability_model(arch; resolution, Δt, Nz,
 
     tracers = tuple(tracers...)
 
-    if grid === :gaussian_islands
-        grid = gaussian_islands_tripolar_grid(arch, resolution, Nz)
+    the_grid = if grid === :gaussian_islands
+        gaussian_islands_tripolar_grid(arch, resolution, Nz)
     elseif grid === :simple_lat_lon
-        grid = simple_latitude_longitude_grid(arch, resolution, Nz)
+        simple_latitude_longitude_grid(arch, resolution, Nz)
     end
 
     model = HydrostaticFreeSurfaceModel(;
-        grid, free_surface, closure, buoyancy, tracers,
+        grid=the_grid, free_surface, closure, buoyancy, tracers,
         coriolis, momentum_advection, tracer_advection,
     )
 
