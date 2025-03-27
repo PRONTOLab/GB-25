@@ -75,9 +75,6 @@ function gaussian_islands_tripolar_grid(arch::Architectures.AbstractArchitecture
     Nx = convert(Int, 360 / resolution)
     Ny = convert(Int, 180 / resolution)
 
-    # Time step. This must be decreased as resolution is decreased.
-    Δt = 1minutes
-
     # Grid setup
     z_faces = exponential_z_faces(; Nz, depth=4000, h=30) # may need changing for very large Nz
     underlying_grid = TripolarGrid(arch; size=(Nx, Ny, Nz), halo=(7, 7, 7), z=z_faces)
