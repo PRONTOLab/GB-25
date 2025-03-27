@@ -35,11 +35,11 @@ concurrency:
 
 jobs:
   run_simulations:
-    name: Julia ${{ matrix.julia_version }} - ${{ matrix.simulation_type }} - ${{ matrix.os }} - ${{ matrix.xla_runtime }}
+    name: Julia ${{ matrix.julia_version }} - ${{ matrix.sim_type }} - ${{ matrix.os }} - ${{ matrix.xla_runtime }}
     strategy:
       fail-fast: false
       matrix:
-        simulation_type:
+        sim_type:
           - 'baroclinic_instability'
           - 'ocean_climate'
         julia_version:
@@ -63,7 +63,7 @@ jobs:
         #     earlyoom_threshold: 20
     uses: ./.github/workflows/CompileOrRun.yml
     with:
-      simulation_type: ${{ matrix.simulation_type }}
+      sim_type: ${{ matrix.sim_type }}
       julia_version: ${{ matrix.julia_version }}
       os: ${{ matrix.os }}
       xla_runtime: ${{ matrix.xla_runtime }}
