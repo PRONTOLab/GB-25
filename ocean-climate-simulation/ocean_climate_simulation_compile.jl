@@ -3,6 +3,8 @@ using Reactant
 using Oceananigans
 using Oceananigans.Architectures: ReactantState
 
+Reactant.Ops.GATHER_GETINDEX_DISABLED[] = true
+
 PROFILE[] = true
 
 include("common.jl")
