@@ -10,6 +10,12 @@ function loop!(model, Ninner)
     return nothing
 end
 
+first_time_step!(model) =
+    Oceananigans.TimeSteppers.first_time_step!(model, model.clock.last_Δt)
+
+time_step!(model) =
+    Oceananigans.TimeSteppers.time_step!(model, model.clock.last_Δt)
+    
 Ninner = ConcreteRNumber(2)
 
 # If we are in GitHub Actions, make `TMPDIR` be a local directory from which we
