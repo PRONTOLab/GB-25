@@ -15,8 +15,6 @@ using Profile
 using Random
 using Serialization
 
-OceananigansReactantExt = Base.get_extension(Oceananigans, :OceananigansReactantExt)
-
 const PROFILE = Ref(false)
 
 macro gbprofile(name::String, expr::Expr)
