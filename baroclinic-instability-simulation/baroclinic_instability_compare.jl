@@ -33,7 +33,7 @@ configuration = (;
 @show configuration
 
 r_arch = ReactantState()
-c_arch = GPU(Metal.MetalBackend())
+c_arch = CPU()
 r_model = GordonBell25.baroclinic_instability_model(r_arch; configuration...)
 c_model = GordonBell25.baroclinic_instability_model(c_arch; configuration...)
 GordonBell25.sync_states!(r_model, c_model)
