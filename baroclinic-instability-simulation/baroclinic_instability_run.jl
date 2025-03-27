@@ -6,7 +6,6 @@ using SeawaterPolynomials
 using Reactant
 using Random
 using Pkg
-using Metal
 
 OceananigansReactantExt = Base.get_extension(Oceananigans, :OceananigansReactantExt)
 
@@ -26,7 +25,7 @@ configuration = (;
     # closure            = Oceananigans.TurbulenceClosures.TKEDissipationVerticalDiffusivity(),
     # closure            = Oceananigans.TurbulenceClosures.RiBasedVerticalDiffusivity(),
     # free_surface       = ExplicitFreeSurface(gravitational_acceleration=0.1),
-    buoyancy             = BuoyancyTracer(),
+    buoyancy           = BuoyancyTracer(),
     coriolis           = nothing,
     # momentum_advection = nothing, #WENOVectorInvariant(order=5),
     # tracer_advection   = nothing, #WENO(order=5),
@@ -34,7 +33,8 @@ configuration = (;
 
 @show configuration
 
-arch = ReactantState()
+#arch = ReactantState()
+arch = Distributed(ReactantState(), partition=Partition(2, 2, 1))
 r_model = GordonBell25.baroclinic_instability_model(arch; configuration...)
 @show r_model isa OceananigansReactantExt.Models.ReactantHFSM 
 
