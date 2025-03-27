@@ -37,7 +37,7 @@ using Dates
 @info "[$rank] Generating model..." now(UTC)
 resolution_fraction_str = get(ENV, "resolution_fraction", "4")
 @show resolution_fraction = parse(Float64, resolution_fraction_str)
-model = GordonBell25.baroclinic_instability_model(arch; resolution=1/resolution_fraction)
+model = GordonBell25.baroclinic_instability_model(arch; resolution=1/resolution_fraction, Δt=1)
 
 @info "[$rank] Compiling first_time_step!..." 
 rfirst! = @compile first_time_step!(model)
