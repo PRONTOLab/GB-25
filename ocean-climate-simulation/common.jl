@@ -1,5 +1,4 @@
 using Reactant
-Reactant.LARGE_CONSTANT_THRESHOLD[] = 100
 using Oceananigans
 
 function first_time_step!(model)
