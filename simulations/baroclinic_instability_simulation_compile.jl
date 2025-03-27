@@ -9,7 +9,7 @@ include("common.jl")
 
 @info "Generating model..."
 arch = ReactantState()
-model = baroclinic_instability_model(arch, resolution=1, Δt=60, Nz=50)
+model = baroclinic_instability_model(arch, resolution=8, Δt=60, Nz=10)
 
 GC.gc(true); GC.gc(false); GC.gc(true)
 
