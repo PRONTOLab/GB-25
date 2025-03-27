@@ -6,8 +6,8 @@ out_dir = joinpath(ENV["SCRATCH"], "GB25")
 # run params
 submit   = true
 run_name = "r_react_"
-time     = "00:40:00"
-Ngpus    = [4, 8, 16, 32, 64]
+time     = "01:00:00"
+Ngpus    = [4, 8, 16, 32, 64, 128]
 type     = "weak"
 
 gpus_per_node = 4
@@ -33,7 +33,7 @@ function perlmutter_submit_job_writer(cfg::JobConfig, job_name, Nnodes, job_dir,
 #SBATCH --error=$(job_dir)/%j.err
 
 source /global/common/software/nersc9/julia/scripts/activate_beta.sh
-ml load julia/1.10.8
+ml load julia/1.10.9
 
 export SBATCH_ACCOUNT=$(cfg.account)
 export SALLOC_ACCOUNT=$(cfg.account)
