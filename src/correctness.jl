@@ -1,13 +1,30 @@
 using Reactant
+using Printf
+
+function print_comparison(name, ψ1, ψ2)
+    ψ1 = Array(parent(ψ1))
+    ψ2 = Array(parent(ψ2))
+    δ = ψ1 .- ψ2
+    @printf("(%4s) ψ₁ ≈ ψ₂: %-5s, max|ψ₁|, max|ψ₂|: %.15e, %.15e, max|δ|: %.15e \n",
+            name, ψ1 ≈ ψ2, maximum(abs, ψ1), maximum(abs, ψ2), maximum(abs, δ))
+end
+
 
 function compare_states(m1, m2)
     Ψ1 = Oceananigans.fields(m1)
     Ψ2 = Oceananigans.fields(m2)
     for name in keys(Ψ1)
-        ψ1p = Array(parent(Ψ1[name]))
-        ψ2p = Array(parent(Ψ2[name]))
-        δ = ψ1p .- ψ2p
-        @show name, ψ1p ≈ ψ2p, maximum(abs, ψ1p), maximum(ψ2p), maximum(abs, δ)
+        print_comparison(name, Ψ1[name], Ψ2[name])
+
+        if !(name ∈ (:w, :η))
+            Gⁿ1 = m1.timestepper.Gⁿ
+            Gⁿ2 = m2.timestepper.Gⁿ
+            print_comparison("Gⁿ.$name", Gⁿ1[name], Gⁿ2[name]) 
+
+            G⁻1 = m1.timestepper.G⁻
+            G⁻2 = m2.timestepper.G⁻
+            print_comparison("G⁻.$name", G⁻1[name], G⁻2[name]) 
+        end
     end
 
     if m1.closure isa Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity
@@ -15,10 +32,7 @@ function compare_states(m1, m2)
         Φ1 = NamedTuple(name => getproperty(m1.diffusivity_fields, name) for name in names)
         Φ2 = NamedTuple(name => getproperty(m2.diffusivity_fields, name) for name in names)
         for name in keys(Φ1)
-            ϕ1p = Array(parent(Φ1[name]))
-            ϕ2p = Array(parent(Φ2[name]))
-            δ = ϕ1p .- ϕ2p
-            @show name, ϕ1p ≈ ϕ2p, maximum(abs, ϕ1p), maximum(ϕ2p), maximum(abs, δ)
+            print_comparison(name, Φ1[name], Φ2[name])
         end
     end
 
@@ -27,10 +41,7 @@ function compare_states(m1, m2)
         Φ1 = NamedTuple(name => getproperty(m1.diffusivity_fields, name) for name in names)
         Φ2 = NamedTuple(name => getproperty(m2.diffusivity_fields, name) for name in names)
         for name in keys(Φ1)
-            ϕ1p = Array(parent(Φ1[name]))
-            ϕ2p = Array(parent(Φ2[name]))
-            δ = ϕ1p .- ϕ2p
-            @show name, ϕ1p ≈ ϕ2p, maximum(abs, ϕ1p), maximum(ϕ2p), maximum(abs, δ)
+            print_comparison(name, Φ1[name], Φ2[name])
         end
     end
 
