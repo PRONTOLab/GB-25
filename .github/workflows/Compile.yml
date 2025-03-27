@@ -32,13 +32,12 @@ concurrency:
   cancel-in-progress: ${{ startsWith(github.ref, 'refs/pull/') }}
 
 jobs:
-  compile_ocean_climate_simulation:
+  compile_simulations:
     name: Julia ${{ matrix.julia_version }} - ${{ matrix.os }} - ${{ matrix.xla_runtime }}
     strategy:
       fail-fast: false
       matrix:
         simulation_type:
-          - 'baroclinic_instability'
           - 'ocean_climate'
         julia_version:
           - '1.10'
