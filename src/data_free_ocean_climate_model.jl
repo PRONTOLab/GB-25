@@ -103,6 +103,8 @@ function data_free_ocean_climate_model_init(
     arch::Architectures.AbstractArchitecture=Architectures.ReactantState();
     # Horizontal resolution
     resolution::Real = 2, # 1/4 for quarter degree
+    Δt = 30seconds,
+    free_surface = SplitExplicitFreeSurface(substeps=30),
     # Vertical resolution
     Nz::Int = 20, # eventually we want to increase this to between 100-600
     )
@@ -111,12 +113,7 @@ function data_free_ocean_climate_model_init(
 
     # See visualize_ocean_climate_simulation.jl for information about how to
     # visualize the results of this run.
-    Δt=30seconds
-    ocean = @gbprofile "ocean_simulation" ocean_simulation(grid;
-                                                           Δt,
-                                                           free_surface=ClimaOcean.OceanSimulations.default_free_surface(grid, fixed_Δt=Δt)
-                                                          )
-
+    ocean = @gbprofile "ocean_simulation" ocean_simulation(grid; Δt, free_surface)
     @gbprofile "set_ocean_model" set!(ocean.model, T=Tᵢ, S=Sᵢ)
 
     # Set up an atmosphere
