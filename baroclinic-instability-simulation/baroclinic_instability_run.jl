@@ -26,7 +26,7 @@ configuration = (;
     # closure            = Oceananigans.TurbulenceClosures.TKEDissipationVerticalDiffusivity(),
     # closure            = Oceananigans.TurbulenceClosures.RiBasedVerticalDiffusivity(),
     # free_surface       = ExplicitFreeSurface(gravitational_acceleration=0.1),
-    buoyancy             = BuoyancyTracer(),
+    buoyancy           = BuoyancyTracer(),
     coriolis           = nothing,
     # momentum_advection = nothing, #WENOVectorInvariant(order=5),
     # tracer_advection   = nothing, #WENO(order=5),
@@ -56,5 +56,9 @@ r_loop! = @compile sync=true raise=raise loop!(r_model, ConcreteRNumber(10))
 @time "Reactant initialize" r_initialize!(r_model)
 @time "Reactant update state" r_update_state!(r_model)
 @time "First Reactant time step" r_first_time_step!(r_model)
+@time "First Reactant time step" r_first_time_step!(r_model)
+@time "First Reactant time step" r_first_time_step!(r_model)
+@time "Reactant ten step loop" r_loop!(r_model, ConcreteRNumber(10))
+@time "Reactant ten step loop" r_loop!(r_model, ConcreteRNumber(10))
 @time "Reactant ten step loop" r_loop!(r_model, ConcreteRNumber(10))
 
