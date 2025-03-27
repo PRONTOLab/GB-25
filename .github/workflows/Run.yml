@@ -35,7 +35,7 @@ concurrency:
 
 jobs:
   run_simulations:
-    name: Julia ${{ matrix.julia_version }} - ${{ matrix.os }} - ${{ matrix.xla_runtime }}
+    name: Julia ${{ matrix.julia_version }} - ${{ matrix.simulation_type }} - ${{ matrix.os }} - ${{ matrix.xla_runtime }}
     strategy:
       fail-fast: false
       matrix:

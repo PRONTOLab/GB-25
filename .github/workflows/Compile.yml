@@ -6,6 +6,7 @@ on:
       - '.github/workflows/Compile.yml'
       - '.github/workflows/CompileOrRun.yml'
       - 'simulations/common.jl'
+      - 'simulations/baroclinic_instability_simulation_compile.jl'
       - 'simulations/ocean_climate_simulation_compile.jl'
       - 'Project.toml'
       - 'src/**'
@@ -18,6 +19,7 @@ on:
       - '.github/workflows/Compile.yml'
       - '.github/workflows/CompileOrRun.yml'
       - 'simulations/common.jl'
+      - 'simulations/baroclinic_instability_simulation_compile.jl'
       - 'simulations/ocean_climate_simulation_compile.jl'
       - 'Project.toml'
       - 'src/**'
@@ -33,11 +35,12 @@ concurrency:
 
 jobs:
   compile_simulations:
-    name: Julia ${{ matrix.julia_version }} - ${{ matrix.os }} - ${{ matrix.xla_runtime }}
+    name: Julia ${{ matrix.julia_version }} - ${{ matrix.simulation_type }} - ${{ matrix.os }} - ${{ matrix.xla_runtime }}
     strategy:
       fail-fast: false
       matrix:
         simulation_type:
+          - 'baroclinic_instability'
           - 'ocean_climate'
         julia_version:
           - '1.10'
