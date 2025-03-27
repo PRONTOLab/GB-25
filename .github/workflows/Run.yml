@@ -5,8 +5,9 @@ on:
     paths:
       - '.github/workflows/Run.yml'
       - '.github/workflows/CompileOrRun.yml'
-      - 'ocean-climate-simulation/common.jl'
-      - 'ocean-climate-simulation/ocean_climate_simulation_run.jl'
+      - 'simulations/common.jl'
+      - 'simulations/baroclinic_instability_simulation_run.jl'
+      - 'simulations/ocean_climate_simulation_run.jl'
       - 'Project.toml'
       - 'src/**'
   push:
@@ -17,8 +18,9 @@ on:
     paths:
       - '.github/workflows/Run.yml'
       - '.github/workflows/CompileOrRun.yml'
-      - 'ocean-climate-simulation/common.jl'
-      - 'ocean-climate-simulation/ocean_climate_simulation_run.jl'
+      - 'simulations/common.jl'
+      - 'simulations/baroclinic_instability_simulation_run.jl'
+      - 'simulations/ocean_climate_simulation_run.jl'
       - 'Project.toml'
       - 'src/**'
   workflow_dispatch:
@@ -32,11 +34,14 @@ concurrency:
   cancel-in-progress: ${{ startsWith(github.ref, 'refs/pull/') }}
 
 jobs:
-  run_ocean_climate_simulation:
+  run_simulations:
     name: Julia ${{ matrix.julia_version }} - ${{ matrix.os }} - ${{ matrix.xla_runtime }}
     strategy:
       fail-fast: false
       matrix:
+        simulation_type:
+          - 'baroclinic_instability'
+          - 'ocean_climate'
         julia_version:
           - '1.11'
         os:

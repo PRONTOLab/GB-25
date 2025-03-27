@@ -5,8 +5,8 @@ on:
     paths:
       - '.github/workflows/Compile.yml'
       - '.github/workflows/CompileOrRun.yml'
-      - 'ocean-climate-simulation/common.jl'
-      - 'ocean-climate-simulation/ocean_climate_simulation_compile.jl'
+      - 'simulations/common.jl'
+      - 'simulations/ocean_climate_simulation_compile.jl'
       - 'Project.toml'
       - 'src/**'
   push:
@@ -17,8 +17,8 @@ on:
     paths:
       - '.github/workflows/Compile.yml'
       - '.github/workflows/CompileOrRun.yml'
-      - 'ocean-climate-simulation/common.jl'
-      - 'ocean-climate-simulation/ocean_climate_simulation_compile.jl'
+      - 'simulations/common.jl'
+      - 'simulations/ocean_climate_simulation_compile.jl'
       - 'Project.toml'
       - 'src/**'
   workflow_dispatch:
@@ -37,6 +37,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        simulation_type:
+          - 'baroclinic_instability'
+          - 'ocean_climate'
         julia_version:
           - '1.10'
           - '1.11'
