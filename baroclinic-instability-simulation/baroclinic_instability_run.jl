@@ -13,12 +13,12 @@ Pkg.status()
 
 include("../ocean-climate-simulation/common.jl")
 
-Oceananigans.defaults.FloatType = Float32
+Oceananigans.defaults.FloatType = Float64
 raise = true
 
 configuration = (;
     Δt                 = 1minutes, #10minutes,
-    resolution         = 2,
+    resolution         = 1/4,
     Nz                 = 50,
     closure            = nothing,
     # closure            = Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity(),

@@ -7,6 +7,8 @@ using Reactant
 using Random
 using Printf
 
+OceananigansReactantExt = Base.get_extension(Oceananigans, :OceananigansReactantExt)
+
 function print_comparison(name, ψ1, ψ2)
     ψ1 = Array(parent(ψ1))
     ψ2 = Array(parent(ψ2))
