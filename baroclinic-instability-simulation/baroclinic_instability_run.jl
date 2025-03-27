@@ -33,8 +33,8 @@ configuration = (;
 
 @show configuration
 
-#arch = ReactantState()
-arch = Distributed(ReactantState(), partition=Partition(2, 2, 1))
+arch = ReactantState()
+#arch = Distributed(ReactantState(), partition=Partition(2, 2, 1))
 r_model = GordonBell25.baroclinic_instability_model(arch; configuration...)
 @show r_model isa OceananigansReactantExt.Models.ReactantHFSM 
 
@@ -51,14 +51,18 @@ r_update_state! = @compile sync=true raise=raise Oceananigans.TimeSteppers.updat
 r_first_time_step! = @compile sync=true raise=raise first_time_step!(r_model)
 
 @info "Compiling loop..."
-r_loop! = @compile sync=true raise=raise loop!(r_model, ConcreteRNumber(10))
+#r_loop! = @compile sync=true raise=raise loop!(r_model, ConcreteRNumber(10))
+r_step! = @compile sync=true raise=raise time_step!(r_model)
 
 @time "Reactant initialize" r_initialize!(r_model)
 @time "Reactant update state" r_update_state!(r_model)
 @time "First Reactant time step" r_first_time_step!(r_model)
-@time "First Reactant time step" r_first_time_step!(r_model)
-@time "First Reactant time step" r_first_time_step!(r_model)
-@time "Reactant ten step loop" r_loop!(r_model, ConcreteRNumber(10))
-@time "Reactant ten step loop" r_loop!(r_model, ConcreteRNumber(10))
-@time "Reactant ten step loop" r_loop!(r_model, ConcreteRNumber(10))
+@time "Second Reactant time step" r_step!(r_model)
+@time "Second Reactant time step" r_step!(r_model)
+@time "Second Reactant time step" r_step!(r_model)
+@time "Second Reactant time step" r_step!(r_model)
+@time "Second Reactant time step" r_step!(r_model)
+#@time "Reactant ten step loop" r_loop!(r_model, ConcreteRNumber(10))
+#@time "Reactant ten step loop" r_loop!(r_model, ConcreteRNumber(10))
+#@time "Reactant ten step loop" r_loop!(r_model, ConcreteRNumber(10))
 
