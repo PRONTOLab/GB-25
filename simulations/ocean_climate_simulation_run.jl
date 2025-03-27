@@ -14,12 +14,15 @@ GC.gc(true); GC.gc(false); GC.gc(true)
 
 @info "Compiling..."
 rfirst! = @compile raise=true sync=true first_time_step!(model)
-
+rstep! = @compile raise=true sync=true time_step!(model)
 rloop! = @compile raise=true sync=true loop!(model, Ninner)
 
 @info "Running..."
 Reactant.with_profiler("./") do
     rfirst!(model)
+end
+Reactant.with_profiler("./") do
+    rstep!(model)
 end
 Reactant.with_profiler("./") do
     rloop!(model, Ninner)
