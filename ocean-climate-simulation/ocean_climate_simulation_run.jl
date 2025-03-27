@@ -19,7 +19,7 @@ rloop! = @compile raise=true sync=true loop!(model, Ninner)
 
 @info "Running..."
 Reactant.with_profiler("./") do
-    rfirst!(model, Ninner)
+    rfirst!(model)
 end
 Reactant.with_profiler("./") do
     rloop!(model, Ninner)
