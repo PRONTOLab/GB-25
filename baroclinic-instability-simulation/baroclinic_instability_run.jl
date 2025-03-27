@@ -6,6 +6,7 @@ using SeawaterPolynomials
 using Reactant
 using Random
 using Pkg
+using Metal
 
 OceananigansReactantExt = Base.get_extension(Oceananigans, :OceananigansReactantExt)
 
@@ -13,6 +14,7 @@ Pkg.status()
 
 include("../ocean-climate-simulation/common.jl")
 
+Oceananigans.defaults.FloatType = Float32
 raise = true
 
 configuration = (;
@@ -23,7 +25,7 @@ configuration = (;
     # closure            = Oceananigans.TurbulenceClosures.TKEDissipationVerticalDiffusivity(),
     # closure            = Oceananigans.TurbulenceClosures.RiBasedVerticalDiffusivity(),
     # free_surface       = ExplicitFreeSurface(gravitational_acceleration=0.1),
-    # buoyancy           = nothing, #BuoyancyTracer(),
+    buoyancy             = BuoyancyTracer(),
     # coriolis           = nothing,
     # momentum_advection = nothing, #WENOVectorInvariant(order=5),
     # tracer_advection   = nothing, #WENO(order=5),
@@ -31,14 +33,20 @@ configuration = (;
 
 @show configuration
 
-arch = ReactantState()
-r_model = GordonBell25.baroclinic_instability_model(arch; configuration...)
-c_model = GordonBell25.baroclinic_instability_model(CPU(); configuration...)
+r_arch = ReactantState()
+c_arch = GPU(Metal.MetalBackend())
+r_model = GordonBell25.baroclinic_instability_model(r_arch; configuration...)
+c_model = GordonBell25.baroclinic_instability_model(c_arch; configuration...)
 GordonBell25.sync_states!(r_model, c_model)
 @show r_model isa OceananigansReactantExt.Models.ReactantHFSM 
 
 @info "Comparing regular and Reactant model on the grid"
 @show c_model.grid
+
+@time "Regular initialize" Oceananigans.initialize!(c_model)
+@time "Regular update state" Oceananigans.TimeSteppers.update_state!(c_model)
+@time "Regular first time step" first_time_step!(c_model)
+@time "Regular ten step loop" loop!(c_model, 10)
 
 @info "The Reactant model is"
 @show r_model
@@ -72,8 +80,7 @@ r_first_time_step! = @compile sync=true raise=raise first_time_step!(r_model)
 @info "Compiling time step..."
 r_loop! = @compile sync=true raise=raise loop!(r_model, ConcreteRNumber(10))
 
-@time "First Reactant time step" first_time_step!(c_model)
-@time "First regular time step" r_first_time_step!(r_model)
+@time "First Reactant time step" r_first_time_step!(r_model)
 
 @info "After first time step:"
 GordonBell25.compare_states(r_model, c_model)
@@ -81,8 +88,8 @@ GordonBell25.compare_states(r_model, c_model)
 @info "Synchronizing states to test effect of initialization:"
 GordonBell25.sync_states!(r_model, c_model)
 
-@time "Ten Reactant time steps" r_loop!(r_model, ConcreteRNumber(10))
-@time "Ten regular time steps" loop!(c_model, 10)
+@time "Reactant ten step loop" r_loop!(r_model, ConcreteRNumber(10))
+@time "Regular ten step loop" loop!(c_model, 10)
 
 @info "After ten time steps:"
 GordonBell25.compare_states(r_model, c_model)
