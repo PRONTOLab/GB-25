@@ -42,9 +42,9 @@ jobs:
           - '1.11'
         os:
           - ubuntu-24.04
-          - ubuntu-22.04-arm
+          # - ubuntu-22.04-arm
         xla_runtime:
-          # - 'PJRT'
+          - 'PJRT'
           - 'IFRT'
     uses: ./.github/workflows/CompileOrRun.yml
     with:

@@ -74,4 +74,3 @@ compiled_time_step! = @compile Oceananigans.TimeSteppers.time_step!(model, model
 @time "[$(process_id)] first time step" compiled_first_time_step!(model, model.clock.last_Δt)
 @info "[$(process_id)] running second time step" now(UTC)
 @time "[$(process_id)] second time step" compiled_time_step!(model, model.clock.last_Δt)
-
