@@ -100,7 +100,7 @@ jobs:
           earlyoom -m ${{ inputs.earlyoom_threshold }} -s 100 -r 120 --prefer 'julia' &
           julia --color=yes --project -O${{ inputs.julia_optlevel }} simulations/${{ inputs.simulation_type }}_simulation_${{ inputs.compile_or_run }}.jl
 
-          julia --color=yes --project -O${{ inputs.julia_optlevel }} ocean-climate-simulation/ocean_climate_simulation_${{ inputs.compile_or_run }}.jl
+          julia --color=yes --project -O${{ inputs.julia_optlevel }} simulations/ocean_climate_simulation_${{ inputs.compile_or_run }}.jl
         env:
           XLA_FLAGS: "--xla_dump_to=xla_dump"
       - name: Show remaining jit calls
