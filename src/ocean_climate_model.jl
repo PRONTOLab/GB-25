@@ -47,6 +47,9 @@ function ocean_climate_model_init(
     # for the fact that we are running without a sea ice model.
     polar_restoring = false,
     polar_restoring_rate = 1 / 10days,
+
+    # Whether to include passive tracers, which are useful for numerics tests
+    include_passive_tracers = false
     )
 
     grid = earth_tripolar_grid(arch, resolution, Nz, zstar_vertical_coordinate)
@@ -75,19 +78,39 @@ function ocean_climate_model_init(
     end
 
     tracer_advection = WENO(order=tracer_advection_order)
+
+    if include_passive_tracers
+    	tracers=(:T, :S, :e, :C_surface, :C_bottom)
+    else
+    	tracers=(:T, :S, :e)
+    end
+
     ocean = @gbprofile "ocean_simulation" ocean_simulation(
         grid;
         Δt,
         free_surface,
         tracer_advection,
         momentum_advection,
-        vertical_coordinate
+        vertical_coordinate,
+	tracers
     )
 
     T_init_meta = ClimaOcean.Metadata(:temperature; dates=first(dates), dataset=ClimaOcean.ECCO4Monthly())
     S_init_meta = ClimaOcean.Metadata(:salinity;    dates=first(dates), dataset=ClimaOcean.ECCO4Monthly())
     @gbprofile "set_ocean_model" set!(ocean.model, T=T_init_meta, S=S_init_meta)
     
+    if include_passive_tracers
+        # Initialize surface and bottom tracer conditions
+        C_surface_init, C_bottom_init = ocean.model.tracers.C_surface, ocean.model.tracers.C_bottom
+        C_surface_init_interior, C_bottom_init_interior = interior(C_surface_init), interior(C_bottom_init)
+    
+        # Set initial conditions to 1 at the vertical boundaries
+        C_surface_init_interior[:, :, Nz] .= 1  # Uppermost level
+        C_bottom_init_interior[:, :, 1] .= 1    # Lowermost level
+    
+        @gbprofile "set_ocean_model" set!(ocean.model, C_surface=C_surface_init, C_bottom=C_bottom_init)
+    end
+
     # Atmospheric model with 8 days of data at 3-hourly resolution
     atmosphere = JRA55PrescribedAtmosphere(arch, backend=JRA55NetCDFBackend(41))
     radiation = Radiation(arch)
