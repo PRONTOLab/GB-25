@@ -27,7 +27,7 @@ configuration = (;
     # closure            = Oceananigans.TurbulenceClosures.RiBasedVerticalDiffusivity(),
     # free_surface       = ExplicitFreeSurface(gravitational_acceleration=0.1),
     buoyancy             = BuoyancyTracer(),
-    # coriolis           = nothing,
+    coriolis           = nothing,
     # momentum_advection = nothing, #WENOVectorInvariant(order=5),
     # tracer_advection   = nothing, #WENO(order=5),
 )
