@@ -21,6 +21,7 @@ configuration = (;
     Δt                 = 1minutes, #10minutes,
     resolution         = 2,
     Nz                 = 50,
+    closure            = nothing,
     # closure            = Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity(),
     # closure            = Oceananigans.TurbulenceClosures.TKEDissipationVerticalDiffusivity(),
     # closure            = Oceananigans.TurbulenceClosures.RiBasedVerticalDiffusivity(),
