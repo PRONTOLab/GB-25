@@ -63,6 +63,7 @@ jobs:
         #     earlyoom_threshold: 20
     uses: ./.github/workflows/CompileOrRun.yml
     with:
+      simulation_type: ${{ matrix.simulation_type }}
       julia_version: ${{ matrix.julia_version }}
       os: ${{ matrix.os }}
       xla_runtime: ${{ matrix.xla_runtime }}
