@@ -76,6 +76,7 @@ jobs:
           #     PackageSpec(; name="ReactantCore", rev="main"),
           #     PackageSpec(; name="Oceananigans", rev="main"),
           #     PackageSpec(; name="ClimaOcean", rev="main"),
+              PackageSpec(; name="SeawaterPolynomials", rev="glw/with-float-type"),
           ])
           Pkg.instantiate()
       - name: Upload project environment
