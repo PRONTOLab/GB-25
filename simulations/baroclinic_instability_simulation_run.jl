@@ -31,4 +31,3 @@ Reactant.with_profiler("./") do
     rloop!(model, Ninner)
 end
 @info "Done!"
-

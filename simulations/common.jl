@@ -1,6 +1,19 @@
 using Reactant
 using Oceananigans
 
+function try_code_hlo(f)
+    try
+        f()
+    catch e
+        @error "Failed to compile" exception=(e, catch_backtrace())
+        global failed = true
+        Text("""
+        // Failed to compile
+        //$e
+        """)
+    end
+end
+
 function first_time_step!(model)
     Δt = model.clock.last_Δt
     Oceananigans.TimeSteppers.first_time_step!(model, Δt)

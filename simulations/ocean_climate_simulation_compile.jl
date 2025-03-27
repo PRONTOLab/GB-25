@@ -14,19 +14,6 @@ GC.gc(true); GC.gc(false); GC.gc(true)
 
 failed = false
 
-function try_code_hlo(f)
-    try
-        f()
-    catch e
-        @error "Failed to compile" exception=(e, catch_backtrace())
-        global failed = true
-        Text("""
-        // Failed to compile
-        //$e
-        """)
-    end
-end
-
 # Pre-raise IR
 @info "Compiling before raise kernels..."
 before_raise_first = try_code_hlo() do
