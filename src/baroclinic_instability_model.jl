@@ -79,7 +79,8 @@ function baroclinic_instability_model(arch; resolution, Δt, Nz,
 
     # TEOS10 is a 54-term polynomial that relates temperature (T),
     # and salinity (S) to buoyancy
-    buoyancy = SeawaterBuoyancy(equation_of_state=SeawaterPolynomials.TEOS10EquationOfState()),
+    buoyancy = SeawaterBuoyancy(
+        equation_of_state = SeawaterPolynomials.TEOS10EquationOfState(Oceananigans.defaults.FloatType)),
 
     # CATKE correctness is not established yet, so we are using a simpler closure
     # closure = Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity()
