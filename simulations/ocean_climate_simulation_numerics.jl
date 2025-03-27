@@ -128,6 +128,12 @@ simulation.output_writers[:vertical_integral] = vertical_integral_ow
 run!(simulation)
 
 # Proceed simulation with a larger time step
+# Note that with Reactant, we can't change the time step half way as we do in the following.
+# Instead we have to
+# 1. dump the current ocean state to disk
+# 2. re-create the model with ocean_climate_model_init and the new time step Δt₂
+# 3. read the saved ocean state from disk and initialize the new model with that state
+# 4. re-set the same callback and diagnostics as above
 simulation.stop_time = 730days
 simulation.Δt = Δt₂
 run!(simulation)
