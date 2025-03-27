@@ -6,7 +6,6 @@ using SeawaterPolynomials
 using Reactant
 using Random
 using Pkg
-using Metal
 
 OceananigansReactantExt = Base.get_extension(Oceananigans, :OceananigansReactantExt)
 
