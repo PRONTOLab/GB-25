@@ -35,7 +35,7 @@ concurrency:
 
 jobs:
   run_simulations:
-    name: Julia ${{ matrix.julia_version }} - ${{ matrix.sim_type }} - ${{ matrix.os }} - ${{ matrix.xla_runtime }}
+    name: Simulations / Julia ${{ matrix.julia_version }} - ${{ matrix.sim_type }} - ${{ matrix.os }} - ${{ matrix.xla_runtime }}
     strategy:
       fail-fast: false
       matrix:
@@ -76,3 +76,31 @@ jobs:
       compile_or_run: 'run'
       earlyoom_threshold: ${{ matrix.earlyoom_threshold }}
       julia_optlevel: 0
+
+#  run_sharded:
+#    name: Sharding / Julia ${{ matrix.julia_version }} - ${{ matrix.os }}
+#    runs-on: ${{ matrix.os }}
+#    strategy:
+#      fail-fast: false
+#      matrix:
+#          julia_version: ['1.11']
+#          os: ['ubuntu-24.04']
+#          xla_runtime: ['IFRT']
+#          grid_name: ['simple_lat_lon', 'gaussian_islands']
+#          earlyoom_threshold: [4]
+#      steps:
+#        - uses: ./.github/workflows/Setup.yml
+#          with: 
+#            os: ${{ matrix.os }}
+#            julia_version: ${{ matrix.julia_version }}
+#            xla_runtime: ${{ matrix.xla_runtime }}
+#            sim_type: ${{ matrix.sim_type }}
+#            compile_or_run: ${{ matrix.compile_or_run }}
+#
+#        - name: Sharded baroclinic instability
+#          timeout-minutes: 180
+#          env:
+#            - resolution_fraction: 2
+#            - XLA_FLAGS: "--xla_force_host_platform_device_count=4"
+#          run: julia --project -O0 sharding/sharded_baroclinic_instability.jl
+#              

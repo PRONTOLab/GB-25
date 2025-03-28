@@ -1,0 +1,82 @@
+name: Setup Environment
+description: Environment setup for compiling and running simulations
+
+on:
+  workflow_call:
+    inputs:
+      os:
+        required: true
+        type: string
+      julia_version:
+        required: true
+        type: string
+      xla_runtime:
+        required: true
+        type: string
+      sim_type:
+        required: true
+        type: string
+      compile_or_run:
+        required: true
+        type: string
+
+jobs:
+  setup:
+    runs-on: ${{ inputs.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install earlyoom
+        if: ${{ startsWith(inputs.os, 'ubuntu') }}
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y earlyoom
+  
+      - uses: julia-actions/setup-julia@v2
+        if: ${{ startsWith(inputs.os, 'ubuntu') }}
+        with:
+          version: ${{ inputs.julia_version }}
+  
+      - uses: julia-actions/cache@v2
+        if: ${{ startsWith(inputs.os, 'ubuntu') }}
+        with:
+          cache-name: |
+            julia-cache;
+            workflow=${{ inputs.julia_version }}-${{ inputs.sim_type }}-${{
+                         inputs.os }}-${{ inputs.xla_runtime }}-${{ inputs.compile_or_run }};
+            job=${{ github.job }}
+  
+      - name: Collect Workflow Telemetry
+        uses: catchpoint/workflow-telemetry-action@v2
+        with:
+          comment_on_pr: false
+          job_summary: true
+  
+      - name: Set XLA runtime
+        shell: bash
+        run: |
+          cat <<EOF > LocalPreferences.toml
+          [Reactant]
+          xla_runtime = "${{ inputs.xla_runtime }}"
+          EOF
+  
+      - name: Instantiate environment
+        timeout-minutes: 90
+        shell: julia --color=yes --project {0}
+        run: |
+          using Pkg
+          Pkg.Registry.update()
+          Pkg.instantiate()
+  
+      - name: Upload project environment
+        uses: actions/upload-artifact@v4
+        timeout-minutes: 10
+          if: ${{ always() }}
+          with:
+            name: 'environment-${{ inputs.sim_type }}-${{ inputs.julia_version }}-${{ inputs.os }}-${{ inputs.xla_runtime }}-${{ inputs.compile_or_run }}'
+            path: |
+              Manifest.toml
+              Project.toml
+            retention-days: 90
+            overwrite: false
