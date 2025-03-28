@@ -78,6 +78,7 @@ jobs:
     uses: ./.github/workflows/CompileOrRun.yml
     with:
       sim_type: 'sharded_baroclinic_instability'
+      grid_name: ${{ matrix.grid_name }}
       sharded: true
       julia_version: '1.11'
       os: ${{ matrix.os }}
