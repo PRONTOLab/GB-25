@@ -41,18 +41,59 @@ on:
 
 jobs:
   simulation:
-    uses: ./.github/workflows/Setup.yml
-    with: 
-      os: ${{ inputs.os }}
-      julia_version: ${{ inputs.julia_version }}
-      xla_runtime: ${{ inputs.xla_runtime }}
-      sim_type: ${{ inputs.sim_type }}
-      compile_or_run: ${{ inputs.compile_or_run }}
-
-  run_simulation:
-    runs-on: ${{ inputs.os }}
     name: Julia ${{ inputs.julia_version }} - ${{ inputs.sim_type }} - ${{ inputs.os }} - ${{ inputs.xla_runtime }} - ${{ inputs.compile_or_run }}
+    runs-on: ${{ inputs.os }}
+    strategy:
+      fail-fast: false
     steps:
+      - uses: actions/checkout@v4
+      - name: Install earlyoom
+        if: ${{ startsWith(inputs.os, 'ubuntu') }}
+        run: |
+          sudo apt-get install -y earlyoom
+      - uses: julia-actions/setup-julia@v2
+        if: ${{ startsWith(inputs.os, 'ubuntu') }}
+        with:
+          version: ${{ inputs.julia_version }}
+      - uses: julia-actions/cache@v2
+        if: ${{ startsWith(inputs.os, 'ubuntu') }}
+        with:
+          cache-name: julia-cache;workflow=${{ inputs.julia_version }}-${{ inputs.sim_type }}-${{ inputs.os }}-${{ inputs.xla_runtime }}-${{ inputs.compile_or_run }};job=${{ github.job }}
+      - name: Collect Workflow Telemetry
+        uses: catchpoint/workflow-telemetry-action@v2
+        with:
+          comment_on_pr: false
+          job_summary: true
+      - name: Set XLA runtime
+        run: |
+          cat <<EOF > LocalPreferences.toml
+          [Reactant]
+          xla_runtime = "${{ inputs.xla_runtime }}"
+          EOF
+      - name: Instantiate environment
+        timeout-minutes: 90
+        shell: julia --color=yes --project {0}
+        run: |
+          using Pkg
+          Pkg.Registry.update()
+          # Pkg.add([
+          #     PackageSpec(; name="Reactant", rev="main"),
+          #     PackageSpec(; name="ReactantCore", rev="main"),
+          #     PackageSpec(; name="Oceananigans", rev="main"),
+          #     PackageSpec(; name="ClimaOcean", rev="main"),
+          # ])
+          Pkg.instantiate()
+      - name: Upload project environment
+        uses: actions/upload-artifact@v4
+        timeout-minutes: 10
+        if: ${{ always() }}
+        with:
+          name: 'environment-${{ inputs.sim_type }}-${{ inputs.julia_version }}-${{ inputs.os }}-${{ inputs.xla_runtime }}-${{ inputs.compile_or_run }}'
+          path: |
+            Manifest.toml
+            Project.toml
+          retention-days: 90
+          overwrite: false
       - name: Ocean climate simulation
         timeout-minutes: 180
         run: |
