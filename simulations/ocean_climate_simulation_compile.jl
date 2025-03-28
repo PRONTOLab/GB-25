@@ -5,14 +5,13 @@ using Oceananigans.Architectures: ReactantState
 
 PROFILE[] = true
 
-include("common.jl")
-
 @info "Generating model..."
 model = data_free_ocean_climate_model_init(ReactantState())
 
 GC.gc(true); GC.gc(false); GC.gc(true)
 
 failed = false
+Ninner = ConcreteRNumber(2)
 
 # Pre-raise IR
 @info "Compiling before raise kernels..."
@@ -23,7 +22,6 @@ end
 before_raise_loop = try_code_hlo() do
     @code_hlo optimize=:before_raise raise=true loop!(model, Ninner)
 end
-
 
 # Unoptimized HLO
 @info "Compiling unoptimised kernel..."

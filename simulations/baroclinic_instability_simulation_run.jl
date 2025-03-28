@@ -5,7 +5,6 @@ using Reactant
 # Reactant.Compiler.SROA_ATTRIBUTOR[] = false
 # Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
 
-include("common.jl")
 Ninner = ConcreteRNumber(3)
 
 @info "Generating model..."

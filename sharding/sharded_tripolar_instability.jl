@@ -8,8 +8,6 @@ using Random
 
 Reactant.Distributed.initialize(; single_gpu_per_process=false)
 
-include("../ocean-climate-simulation/common.jl")
-
 @show Ngpu = length(Reactant.devices())
 
 if Ngpu == 1
