@@ -13,7 +13,7 @@ MPI.Init()
 
 Reactant.Distributed.initialize(; single_gpu_per_process=false)
 
-include("../ocean-climate-simulation/common.jl")
+include("../simulations/common.jl")
 
 @show Ngpu = length(Reactant.devices())
 
