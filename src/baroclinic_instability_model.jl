@@ -9,7 +9,7 @@
 end
 
 function baroclinic_instability_model(arch; resolution, Δt, Nz,
-    grid = :simple_lat_lon, # :gaussian_islands
+    grid_type = :simple_lat_lon, # :gaussian_islands
 
     # Fewer substeps can be used at higher resolutions
     free_surface = SplitExplicitFreeSurface(substeps=30),
@@ -49,10 +49,12 @@ function baroclinic_instability_model(arch; resolution, Δt, Nz,
 
     tracers = tuple(tracers...)
 
-    the_grid = if grid === :gaussian_islands
+    grid = if grid_type === :gaussian_islands
         gaussian_islands_tripolar_grid(arch, resolution, Nz)
-    elseif grid === :simple_lat_lon
+    elseif grid_type === :simple_lat_lon
         simple_latitude_longitude_grid(arch, resolution, Nz)
+    else
+        error("grid_type=$grid_type must be :gaussian_islands or :simple_lat_lon.")
     end
 
     model = HydrostaticFreeSurfaceModel(;

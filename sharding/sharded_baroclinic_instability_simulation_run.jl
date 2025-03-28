@@ -45,12 +45,12 @@ resolution_fraction_str = get(ENV, "resolution_fraction", "2")
 time_step_str = get(ENV, "time_step", "60")
 Nz_str = get(ENV, "Nz", "10")
 
-@show grid_type = parse(Float64, resolution_fraction_str)
+@show grid_type = parse(Float64, grid_str)
 @show resolution_fraction = parse(Float64, resolution_fraction_str)
 @show time_step_str = parse(Float64, time_step_str)
 @show Nz = parse(Int, Nz_str)
 
-model = GordonBell25.baroclinic_instability_model(arch; grid=grid_type, Δt=1, Nz,
+model = GordonBell25.baroclinic_instability_model(arch; grid_type, Δt=1, Nz,
                                                   resolution=1/resolution_fraction)
 
 @info "[$rank] Compiling first_time_step!..." 
