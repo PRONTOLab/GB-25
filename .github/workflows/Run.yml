@@ -83,7 +83,7 @@ jobs:
       sharded: true
       julia_version: '1.11'
       os: ${{ matrix.os }}
-      xla_runtime: 'IRFT'
+      xla_runtime: 'IFRT'
       compile_or_run: 'run'
       earlyoom_threshold: 4
       julia_optlevel: 0
