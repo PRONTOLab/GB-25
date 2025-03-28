@@ -1,11 +1,10 @@
+using GordonBell25: first_time_step!, loop!, try_code_hlo
 using GordonBell25: baroclinic_instability_model, PROFILE
 using Reactant
 using Oceananigans
 using Oceananigans.Architectures: ReactantState
 
 PROFILE[] = true
-
-include("common.jl")
 
 @info "Generating model..."
 arch = ReactantState()
@@ -14,6 +13,7 @@ model = baroclinic_instability_model(arch, resolution=8, Δt=60, Nz=10)
 GC.gc(true); GC.gc(false); GC.gc(true)
 
 failed = false
+Ninner = ConcreteRNumber(2)
 
 # Pre-raise IR
 @info "Compiling before raise kernels..."
@@ -24,7 +24,6 @@ end
 before_raise_loop = try_code_hlo() do
     @code_hlo optimize=:before_raise raise=true loop!(model, Ninner)
 end
-
 
 # Unoptimized HLO
 @info "Compiling unoptimised kernel..."
