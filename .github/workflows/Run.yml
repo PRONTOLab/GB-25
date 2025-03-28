@@ -71,8 +71,7 @@ jobs:
       julia_optlevel: 0
 
   run_sharded:
-    name: Sharded - Julia ${{ matrix.julia_version }} - ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
+    name: Sharded - Julia ${{ matrix.julia_version }} - ${{ matrix.grid_name }} - ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
@@ -81,14 +80,14 @@ jobs:
           xla_runtime: ['IFRT']
           grid_name: ['simple_lat_lon', 'gaussian_islands']
           earlyoom_threshold: [4]
-     uses: ./.github/workflows/CompileOrRun.yml
-     with:
-       sim_type: 'sharded_baroclinic_instability'
-       sharded: true
-       julia_version: ${{ matrix.julia_version }}
-       os: ${{ matrix.os }}
-       xla_runtime: ${{ matrix.xla_runtime }}
-       compile_or_run: 'run'
-       earlyoom_threshold: ${{ matrix.earlyoom_threshold }}
-       julia_optlevel: 0
+    uses: ./.github/workflows/CompileOrRun.yml
+    with:
+      sim_type: 'sharded_baroclinic_instability'
+      sharded: true
+      julia_version: ${{ matrix.julia_version }}
+      os: ${{ matrix.os }}
+      xla_runtime: ${{ matrix.xla_runtime }}
+      compile_or_run: 'run'
+      earlyoom_threshold: ${{ matrix.earlyoom_threshold }}
+      julia_optlevel: 0
 
