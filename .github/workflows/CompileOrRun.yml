@@ -13,6 +13,11 @@ on:
         required: true
         default: ''
         type: string
+      sharded:
+        description: 'Whether we are using sharding'
+        required: true
+        default: false
+        type: boolean
       xla_runtime:
         description: 'The XLA runtime'
         required: true
@@ -96,11 +101,13 @@ jobs:
           overwrite: false
       - name: Ocean climate simulation
         timeout-minutes: 180
+        env:
+          XLA_FLAGS: ${{ inputs.sharded && '--xla_force_host_platform_device_count=4' || '' }}
+          RUNDIR: ${{ inputs.sharded && 'sharding' || 'simulations' }}
+        steps:
         run: |
           earlyoom -m ${{ inputs.earlyoom_threshold }} -s 100 -r 120 --prefer 'julia' &
-          julia --color=yes --project -O${{ inputs.julia_optlevel }} simulations/${{ inputs.sim_type }}_simulation_${{ inputs.compile_or_run }}.jl
-
-          julia --color=yes --project -O${{ inputs.julia_optlevel }} simulations/ocean_climate_simulation_${{ inputs.compile_or_run }}.jl
+          julia --color=yes --project -O${{ inputs.julia_optlevel }} $RUNDIR/${{ inputs.sim_type }}_simulation_${{ inputs.compile_or_run }}.jl
         env:
           XLA_FLAGS: "--xla_dump_to=xla_dump"
       - name: Show remaining jit calls
