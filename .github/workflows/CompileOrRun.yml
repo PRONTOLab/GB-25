@@ -15,7 +15,7 @@ on:
         type: string
       sharded:
         description: 'Whether we are using sharding'
-        required: true
+        required: false
         default: false
         type: boolean
       xla_runtime:
