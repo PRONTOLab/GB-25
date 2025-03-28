@@ -16,6 +16,11 @@ ENV["JULIA_DEBUG"] = "Reactant_jll,Reactant"
 using Oceananigans
 using Reactant
 
+Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
+Reactant.MLIR.IR.DUMP_MLIR_DIR[] = joinpath(@__DIR__, "mlir_dumps", string(ENV["SLURM_JOB_ID"], ".", ENV["SLURM_PROCID"]))
+Reactant.Compiler.DEBUG_DISABLE_RESHARDING[] = true
+Reactant.Compiler.DEBUG_PRINT_CODEGEN[] = true
+
 # using Cthulhu
 using Dates
 
@@ -34,9 +39,11 @@ arch = Oceananigans.Distributed(
 
 # arch = Oceananigans.ReactantState()
 
-Nx = Ny = 16
-Nz = 4
+Nx = Ny = 512 * ndevices
+Nz = 128
 
+#=
+##### Tripolar Grid
 @info "[$(process_id)] creating tripolar grid" now(UTC)
 grid = TripolarGrid(arch; size=(Nx, Ny, Nz), halo=(7, 7, 7), z=(0, 1))
 
@@ -59,18 +66,81 @@ gaussian_islands(λ, φ) = 2 * (mtn₁(λ, φ) + mtn₂(λ, φ))
 
 @info "[$(process_id)] creating immersed boundary grid" now(UTC)
 grid = ImmersedBoundaryGrid(grid, GridFittedBottom(gaussian_islands))
+=#
 
-free_surface = SplitExplicitFreeSurface(substeps=3)
+@info "[$(process_id)] allocations" Reactant.XLA.allocatorstats()
+
+##### Latlong grid
+@info "[$(process_id)] creating latlong grid" now(UTC)
+grid = LatitudeLongitudeGrid(arch, size=(Nx, Ny, Nz), halo=(7, 7, 7), z=(-4000, 0),
+                             latitude = (-80, 80),
+                             longitude = (0, 360)
+                             )
+
+@info "[$(process_id)] allocations" Reactant.XLA.allocatorstats()
+
+free_surface = ExplicitFreeSurface()
 model = HydrostaticFreeSurfaceModel(; grid, free_surface)
 # model = HydrostaticFreeSurfaceModel(; grid)
 
+@show model
+
 model.clock.last_Δt = ConcreteRNumber(60.0)
+
+function first_time_step!(model)
+    Δt = model.clock.last_Δt
+    Oceananigans.TimeSteppers.first_time_step!(model, Δt)
+    return nothing
+end
+
+function loop!(model, Ninner)
+    Δt = model.clock.last_Δt
+    @trace track_numbers=false for _ = 1:Ninner
+        Oceananigans.TimeSteppers.time_step!(model, Δt)
+    end
+    return nothing
+end
+
+Ninner = ConcreteRNumber(2)
+
+@info "[$(process_id)] allocations" Reactant.XLA.allocatorstats()
 
 @info "[$(process_id)] compiling first time step" now(UTC)
 compiled_first_time_step! = @compile Oceananigans.TimeSteppers.first_time_step!(model, model.clock.last_Δt)
+@info "[$(process_id)] compiling second time step" now(UTC)
 compiled_time_step! = @compile Oceananigans.TimeSteppers.time_step!(model, model.clock.last_Δt)
+compiled_update_state! = @compile Oceananigans.TimeSteppers.update_state!(model)
+
+@info "[$(process_id)] allocations" Reactant.XLA.allocatorstats()
+
+# @info "[$(process_id)] compiling first time step" now(UTC)
+# compiled_first_time_step! = @compile first_time_step!(model)
+# @info "[$(process_id)] compiling second time step" now(UTC)
+# compiled_loop! = @compile loop!(model, Ninner)
+
+# code = @code_hlo optimize=:before_raise Oceananigans.TimeSteppers.time_step!(model, model.clock.last_Δt)
+# open(joinpath(@__DIR__, "module_$(process_id).mlir"), "w") do io
+#     show(IOContext(io, :debug => true), code)
+# end
 
 @info "[$(process_id)] running first time step" now(UTC)
+@info "[$(process_id)] allocations" Reactant.XLA.allocatorstats()
 @time "[$(process_id)] first time step" compiled_first_time_step!(model, model.clock.last_Δt)
-@info "[$(process_id)] running second time step" now(UTC)
-@time "[$(process_id)] second time step" compiled_time_step!(model, model.clock.last_Δt)
+@info "[$(process_id)] allocations" Reactant.XLA.allocatorstats()
+@info "[$(process_id)] running loop" now(UTC)
+@time "[$(process_id)] loop" for iter in 2:1000
+    @info "[$(process_id)] iterating" iter now(UTC)
+    @time "[$(process_id)] $(iter)-th timestep" compiled_update_state!(model)
+    if iter < 10 || iszero(iter % 50)
+        @info "[$(process_id)] allocations" iter Reactant.XLA.allocatorstats()
+    end
+    #GC.gc(true); GC.gc(false); GC.gc(true)
+end
+
+# Ninner = ConcreteRNumber(100)
+# @info "[$(process_id)] running first time step" now(UTC)
+# @time "[$(process_id)] first time step" compiled_first_time_step!(model)
+# @info "[$(process_id)] running loop" now(UTC)
+# @time "[$(process_id)] loop" compiled_loop!(model, Ninner)
+
+@info "Done!" now(UTC)

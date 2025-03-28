@@ -53,7 +53,8 @@ function generate_and_submit(submit_job_writer, cfg::JobConfig; input_file_name:
         end
         cp(joinpath("..", filename), joinpath(out_path, filename))
     end
-    cp(run_file, joinpath(out_path, basename(run_file)))
+    run_file_out = joinpath(out_path, basename(run_file))
+    cp(run_file, run_file_out)
 
     @info "User: $(cfg.username); Project: $(cfg.account)"
     @info "run_file=$(run_file)"
@@ -91,6 +92,8 @@ function generate_and_submit(submit_job_writer, cfg::JobConfig; input_file_name:
 #!/usr/bin/env sh
 
 export CUDA_VISIBLE_DEVICES=$(join(0:(min(Ngpu, gpus_per_node) - 1), ','))
+# export XLA_REACTANT_GPU_MEM_FRACTION=0.98
+export XLA_REACTANT_GPU_PREALLOCATE=false
 
 # Important else XLA might hang indefinitely
 unset no_proxy http_proxy https_proxy NO_PROXY HTTP_PROXY HTTPS_PROXY
@@ -105,7 +108,7 @@ echo "[\${SLURM_JOB_ID}.\${SLURM_PROCID}] Process exited with code \${?}"
             print(io, submit_job_writer(cfg::JobConfig, job_name::String,
                                         Nnodes::Int, job_dir::String, Ngpu::Int,
                                         resolution_fraction::Int,
-                                        project_path::String, run_file::String))
+                                        project_path::String, run_file_out::String))
         end
         if cfg.submit
             run(`sbatch $(sbatch_name)`)
