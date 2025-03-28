@@ -98,7 +98,7 @@ jobs:
         timeout-minutes: 10
         if: ${{ always() }}
         with:
-          name: 'environment-${{ inputs.sim_type }}-${{ inputs.julia_version }}-${{ inputs.os }}-${{ inputs.xla_runtime }}-${{ inputs.compile_or_run }}'
+          name: 'environment-${{ inputs.sim_type }}-${{ inputs.grid_name }}-${{ inputs.julia_version }}-${{ inputs.os }}-${{ inputs.xla_runtime }}-${{ inputs.compile_or_run }}'
           path: |
             Manifest.toml
             Project.toml
