@@ -1,4 +1,5 @@
 using GordonBell25
+using GordonBell25: first_time_step!, time_step!, loop!
 using Oceananigans
 using Oceananigans.Units
 using Oceananigans.Architectures: ReactantState
@@ -12,8 +13,6 @@ using MPI
 MPI.Init()
 
 Reactant.Distributed.initialize(; single_gpu_per_process=false)
-
-include("../simulations/common.jl")
 
 @show Ngpu = length(Reactant.devices())
 
