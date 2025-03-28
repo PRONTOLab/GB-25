@@ -1,6 +1,6 @@
 using Reactant
 using Oceananigans
-import Oceananigans.TimeSteppers: first_time_step!, time_step!
+import Oceananigans.TimeSteppers: first_time_step!, time_step!, try_code_hlo
 
 function try_code_hlo(f)
     try
