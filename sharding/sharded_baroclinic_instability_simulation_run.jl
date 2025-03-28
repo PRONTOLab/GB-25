@@ -51,7 +51,7 @@ Nz_str = get(ENV, "Nz", "10")
 @show time_step_str = parse(Float64, time_step_str)
 @show Nz = parse(Int, Nz_str)
 
-model = GordonBell25.baroclinic_instability_model(arch; grid=grid_type, Δt, Nz,
+model = GordonBell25.baroclinic_instability_model(arch; grid=grid_type, Δt=1, Nz,
                                                   resolution=1/resolution_fraction)
 
 @info "[$rank] Compiling first_time_step!..." 
