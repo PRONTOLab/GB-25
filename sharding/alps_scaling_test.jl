@@ -49,7 +49,7 @@ ulimit -s unlimited
 # Setting `--cpu_bind` is explicitly discouraged:
 # <https://eth-cscs.github.io/cscs-docs/guides/gb2025/#slurm>.
 # We only set it to vrbose to record what's going on
-srun --preserve-env --gpu-bind=per_task:1 --cpu_bind=verbose --cpu-bind=verbose,cores $(job_dir)/launcher.sh $(Base.julia_cmd()[1]) --project=$(project_path) --threads=auto -O0 $(run_file)
+srun --preserve-env --gpu-bind=per_task:1 --cpu_bind=verbose $(job_dir)/launcher.sh $(Base.julia_cmd()[1]) --project=$(project_path) --threads=auto -O0 $(run_file)
 """
 end
 
