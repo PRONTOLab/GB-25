@@ -75,19 +75,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-          julia_version: ['1.11']
-          os: ['ubuntu-24.04']
-          xla_runtime: ['IFRT']
+          os: ['ubuntu-24.04', 'ubuntu-22.04-arm']
           grid_name: ['simple_lat_lon', 'gaussian_islands']
-          earlyoom_threshold: [4]
     uses: ./.github/workflows/CompileOrRun.yml
     with:
       sim_type: 'sharded_baroclinic_instability'
       sharded: true
-      julia_version: ${{ matrix.julia_version }}
+      julia_version: '1.11'
       os: ${{ matrix.os }}
-      xla_runtime: ${{ matrix.xla_runtime }}
+      xla_runtime: 'IRFT'
       compile_or_run: 'run'
-      earlyoom_threshold: ${{ matrix.earlyoom_threshold }}
+      earlyoom_threshold: 4
       julia_optlevel: 0
 
