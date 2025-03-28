@@ -1,3 +1,4 @@
+using GordonBell25: first_time_step!, loop!, try_code_hlo
 using GordonBell25: data_free_ocean_climate_model_init, PROFILE
 using Reactant
 using Oceananigans

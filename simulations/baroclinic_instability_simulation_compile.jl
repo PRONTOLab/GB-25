@@ -1,3 +1,4 @@
+using GordonBell25: first_time_step!, loop!, try_code_hlo
 using GordonBell25: baroclinic_instability_model, PROFILE
 using Reactant
 using Oceananigans

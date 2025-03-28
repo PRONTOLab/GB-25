@@ -1,3 +1,4 @@
+using GordonBell25: first_time_step!, time_step!, loop!
 using GordonBell25: baroclinic_instability_model
 using Oceananigans.Architectures: ReactantState
 using Reactant
