@@ -41,16 +41,13 @@ on:
 
 jobs:
   simulation:
-    runs-on: ${{ inputs.os }}
-    strategy:
-      fail-fast: false
-  uses: ./.github/workflows/Setup.yml
-  with: 
-    os: ${{ inputs.os }}
-    julia_version: ${{ inputs.julia_version }}
-    xla_runtime: ${{ inputs.xla_runtime }}
-    sim_type: ${{ inputs.sim_type }}
-    compile_or_run: ${{ inputs.compile_or_run }}
+    uses: ./.github/workflows/Setup.yml
+    with: 
+      os: ${{ inputs.os }}
+      julia_version: ${{ inputs.julia_version }}
+      xla_runtime: ${{ inputs.xla_runtime }}
+      sim_type: ${{ inputs.sim_type }}
+      compile_or_run: ${{ inputs.compile_or_run }}
 
   run_simulation:
     runs-on: ${{ inputs.os }}
