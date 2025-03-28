@@ -74,8 +74,6 @@ function baroclinic_instability_model(arch; resolution, Nz=100, Δt=1)
     return model
 end
 
-include("../ocean-climate-simulation/common.jl")
-
 @show Ngpu = length(Reactant.devices())
 
 if Ngpu == 1

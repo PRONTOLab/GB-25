@@ -5,7 +5,6 @@ on:
     paths:
       - '.github/workflows/Run.yml'
       - '.github/workflows/CompileOrRun.yml'
-      - 'simulations/common.jl'
       - 'simulations/baroclinic_instability_simulation_run.jl'
       - 'simulations/ocean_climate_simulation_run.jl'
       - 'Project.toml'
@@ -18,7 +17,6 @@ on:
     paths:
       - '.github/workflows/Run.yml'
       - '.github/workflows/CompileOrRun.yml'
-      - 'simulations/common.jl'
       - 'simulations/baroclinic_instability_simulation_run.jl'
       - 'simulations/ocean_climate_simulation_run.jl'
       - 'Project.toml'
