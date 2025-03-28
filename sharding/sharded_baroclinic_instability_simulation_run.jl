@@ -4,8 +4,13 @@ using Oceananigans.Units
 using Oceananigans.Architectures: ReactantState
 using Random
 using Printf
-
 using Reactant
+using MPI
+
+# Need this for sharding with non-openMPI implementations?
+# (GHA uses MPICH)
+MPI.Init()
+
 Reactant.Distributed.initialize(; single_gpu_per_process=false)
 
 include("../ocean-climate-simulation/common.jl")
