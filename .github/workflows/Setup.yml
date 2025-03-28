@@ -72,11 +72,11 @@ jobs:
       - name: Upload project environment
         uses: actions/upload-artifact@v4
         timeout-minutes: 10
-          if: ${{ always() }}
-          with:
-            name: 'environment-${{ inputs.sim_type }}-${{ inputs.julia_version }}-${{ inputs.os }}-${{ inputs.xla_runtime }}-${{ inputs.compile_or_run }}'
-            path: |
-              Manifest.toml
-              Project.toml
-            retention-days: 90
-            overwrite: false
+        if: ${{ always() }}
+        with:
+          name: 'environment-${{ inputs.sim_type }}-${{ inputs.julia_version }}-${{ inputs.os }}-${{ inputs.xla_runtime }}-${{ inputs.compile_or_run }}'
+          path: |
+            Manifest.toml
+            Project.toml
+          retention-days: 90
+          overwrite: false
