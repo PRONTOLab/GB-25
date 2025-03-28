@@ -102,7 +102,7 @@ jobs:
       - name: Ocean climate simulation
         timeout-minutes: 180
         env:
-          XLA_FLAGS: ${{ inputs.sharded && "--xla_force_host_platform_device_count=4 --xla_dump_to=xla_dump" || "--xla_dump_to=xla_dump" }}
+          XLA_FLAGS: ${{ inputs.sharded && '--xla_force_host_platform_device_count=4 --xla_dump_to=xla_dump' || '--xla_dump_to=xla_dump' }}
           RUNDIR: ${{ inputs.sharded && 'sharding' || 'simulations' }}
         steps:
         run: |
