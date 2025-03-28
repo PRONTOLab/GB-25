@@ -45,6 +45,16 @@ function generate_and_submit(submit_job_writer, cfg::JobConfig; input_file_name:
 
     mkpath(out_path)
 
+    # Copy environment files and run files for future reference.
+    for filename in ("Project.toml", "Manifest.toml", "LocalPreferences.toml")
+        if filename == "LocalPreferences.toml" && !isfile(joinpath("..", filename))
+            @warn "LocalPreferences.toml missing, are you sure you selected the XLA runtime correctly?"
+            continue
+        end
+        cp(joinpath("..", filename), joinpath(out_path, filename))
+    end
+    cp(run_file, joinpath(out_path, basename(run_file)))
+
     @info "User: $(cfg.username); Project: $(cfg.account)"
     @info "run_file=$(run_file)"
     @info "Writing all output to: $(out_path)"
@@ -53,14 +63,6 @@ function generate_and_submit(submit_job_writer, cfg::JobConfig; input_file_name:
         ngpu_string = lpad(Ngpu, 5, '0')
         job_dir = joinpath(out_path, "ngpu=$(ngpu_string)")
         mkpath(job_dir)
-
-        for filename in ("Project.toml", "Manifest.toml", "LocalPreferences.toml")
-            if filename == "LocalPreferences.toml" && !isfile(joinpath("..", filename))
-                @warn "LocalPreferences.toml missing, are you sure you selected the XLA runtime correctly?"
-                continue
-            end
-            cp(joinpath("..", filename), joinpath(job_dir, filename))
-        end
 
         run_id   = string(run_name, "_",
                           Dates.format(now(UTC), "ud"), "_ngpu",  ngpu_string)
