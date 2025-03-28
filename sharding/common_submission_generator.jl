@@ -39,6 +39,10 @@ function generate_and_submit(submit_job_writer, cfg::JobConfig; input_file_name:
     out_path = joinpath(cfg.out_dir, "runs", "$(timestamp)_$(randstring(4))")
     project_path = dirname(@__DIR__)
 
+    if !isfile(joinpath("..", "Manifest.toml"))
+        error("Manifest.toml missing in the top-level directory of this repository! Instantiate the environment before submitting the job")
+    end
+
     mkpath(out_path)
 
     @info "User: $(cfg.username); Project: $(cfg.account)"
@@ -49,6 +53,14 @@ function generate_and_submit(submit_job_writer, cfg::JobConfig; input_file_name:
         ngpu_string = lpad(Ngpu, 5, '0')
         job_dir = joinpath(out_path, "ngpu=$(ngpu_string)")
         mkpath(job_dir)
+
+        for filename in ("Project.toml", "Manifest.toml", "LocalPreferences.toml")
+            if filename == "LocalPreferences.toml" && !isfile(joinpath("..", filename))
+                @warn "LocalPreferences.toml missing, are you sure you selected the XLA runtime correctly?"
+                continue
+            end
+            cp(joinpath("..", filename), joinpath(job_dir, filename))
+        end
 
         run_id   = string(run_name, "_",
                           Dates.format(now(UTC), "ud"), "_ngpu",  ngpu_string)
