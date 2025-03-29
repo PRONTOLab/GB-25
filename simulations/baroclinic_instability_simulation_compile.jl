@@ -5,6 +5,7 @@ using Oceananigans
 using Oceananigans.Architectures: ReactantState
 
 PROFILE[] = true
+Oceananigans.defaults.FloatType = Float32
 
 @info "Generating model..."
 arch = ReactantState()
