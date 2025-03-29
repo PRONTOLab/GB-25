@@ -1,9 +1,11 @@
-using GordonBell25: first_time_step!, time_step!, loop!
+using GordonBell25: first_time_step!, time_step!, loop!, preamble
 using GordonBell25: data_free_ocean_climate_model_init
 using Oceananigans.Architectures: ReactantState
 using Reactant
 
 # Reactant.Compiler.SROA_ATTRIBUTOR[] = false
+
+preamble()
 
 Ninner = ConcreteRNumber(3)
 

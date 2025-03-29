@@ -1,10 +1,12 @@
-using GordonBell25: first_time_step!, loop!, try_code_hlo
+using GordonBell25: first_time_step!, loop!, try_code_hlo, preamble
 using GordonBell25: data_free_ocean_climate_model_init, PROFILE
 using Reactant
 using Oceananigans
 using Oceananigans.Architectures: ReactantState
 
 PROFILE[] = true
+
+preamble()
 
 @info "Generating model..."
 model = data_free_ocean_climate_model_init(ReactantState())
@@ -35,6 +37,7 @@ unopt_loop = try_code_hlo() do
 end
 
 # Optimized HLO
+@info "Compiling optimised kernel..."
 opt_first = try_code_hlo() do
     @code_hlo optimize=:before_jit raise=true first_time_step!(model)
 end
