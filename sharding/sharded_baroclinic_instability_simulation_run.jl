@@ -45,7 +45,7 @@ resolution_fraction_str = get(ENV, "resolution_fraction", "2")
 time_step_str = get(ENV, "time_step", "60")
 Nz_str = get(ENV, "Nz", "10")
 
-@show grid_type = parse(Symbol, grid_str)
+@show grid_type = Symbol(grid_str)
 @show resolution_fraction = parse(Float64, resolution_fraction_str)
 @show time_step_str = parse(Float64, time_step_str)
 @show Nz = parse(Int, Nz_str)
