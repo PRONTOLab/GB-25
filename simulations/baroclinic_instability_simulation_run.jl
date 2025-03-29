@@ -1,5 +1,6 @@
 using GordonBell25: first_time_step!, time_step!, loop!
 using GordonBell25: baroclinic_instability_model
+using Oceananigans
 using Oceananigans.Architectures: ReactantState
 using Reactant
 
@@ -7,6 +8,7 @@ using Reactant
 # Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
 
 Ninner = ConcreteRNumber(3)
+Oceananigans.defaults.FloatType = Float32
 
 @info "Generating model..."
 arch = ReactantState()
