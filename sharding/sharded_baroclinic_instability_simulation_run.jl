@@ -1,10 +1,16 @@
 using GordonBell25
+using GordonBell25: first_time_step!, time_step!, loop!
 using Oceananigans
-using Oceananigans.Architectures: ReactantState
 using Oceananigans.Units
-using SeawaterPolynomials
-using Reactant
+using Oceananigans.Architectures: ReactantState
 using Random
+using Printf
+using Reactant
+using MPI
+
+# Need this for sharding with non-openMPI implementations?
+# (GHA uses MPICH)
+MPI.Init()
 
 Reactant.Distributed.initialize(; single_gpu_per_process=false)
 
@@ -33,10 +39,19 @@ end
 
 using Dates
 @info "[$rank] Generating model..." now(UTC)
-resolution_fraction_str = get(ENV, "resolution_fraction", "4")
+
+grid_type_str = get(ENV, "grid_type", "simple_lat_lon")
+resolution_fraction_str = get(ENV, "resolution_fraction", "2")
+time_step_str = get(ENV, "time_step", "60")
+Nz_str = get(ENV, "Nz", "10")
+
+@show grid_type = Symbol(grid_type_str)
 @show resolution_fraction = parse(Float64, resolution_fraction_str)
-grid_type = :gaussian_islands # an idealized TripolarGrid with Gaussian-shaped islands
-model = GordonBell25.baroclinic_instability_model(arch; resolution=1/resolution_fraction, Δt=1, grid_type)
+@show time_step_str = parse(Float64, time_step_str)
+@show Nz = parse(Int, Nz_str)
+
+model = GordonBell25.baroclinic_instability_model(arch; grid_type, Δt=1, Nz,
+                                                  resolution=1/resolution_fraction)
 
 @info "[$rank] Compiling first_time_step!..." 
 rfirst! = @compile first_time_step!(model)
@@ -51,8 +66,9 @@ rstep!(model)
 rstep!(model)
 rstep!(model)
 
-@time "[$rank] Running loop" begin
+@time "[$rank] Running loop..." begin
     for n = 1:10
-        @time "[$rank] Time step $n" rstep!(model)
+        rstep!(model)
     end
 end
+
