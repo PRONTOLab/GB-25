@@ -41,13 +41,11 @@ jobs:
           - 'baroclinic_instability'
           - 'ocean_climate'
         julia_version:
-          - '1.10'
           - '1.11'
         os:
           - ubuntu-24.04
           # - ubuntu-22.04-arm
         xla_runtime:
-          - 'PJRT'
           - 'IFRT'
     uses: ./.github/workflows/CompileOrRun.yml
     with:
