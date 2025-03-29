@@ -47,4 +47,4 @@ srun -n $(Nnodes) -c 32 -G $(Ngpu) --cpu-bind=verbose,cores $(job_dir)/launcher.
 """
 end
 
-generate_and_submit(perlmutter_submit_job_writer, perlmutter_config; input_file_name=@__FILE__)
+generate_and_submit(perlmutter_submit_job_writer, perlmutter_config; caller_file=@__FILE__)
