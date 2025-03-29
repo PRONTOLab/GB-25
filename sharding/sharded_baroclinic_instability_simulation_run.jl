@@ -40,12 +40,12 @@ end
 using Dates
 @info "[$rank] Generating model..." now(UTC)
 
-grid_str = get(ENV, "grid_name", "simple_lat_lon")
+grid_type_str = get(ENV, "grid_type", "simple_lat_lon")
 resolution_fraction_str = get(ENV, "resolution_fraction", "2")
 time_step_str = get(ENV, "time_step", "60")
 Nz_str = get(ENV, "Nz", "10")
 
-@show grid_type = Symbol(grid_str)
+@show grid_type = Symbol(grid_type_str)
 @show resolution_fraction = parse(Float64, resolution_fraction_str)
 @show time_step_str = parse(Float64, time_step_str)
 @show Nz = parse(Int, Nz_str)

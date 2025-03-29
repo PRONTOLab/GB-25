@@ -18,7 +18,7 @@ on:
         required: false
         default: false
         type: boolean
-      grid_name:
+      grid_type:
         description: 'What type of grid to use'
         required: false
         default: ''
@@ -101,7 +101,7 @@ jobs:
         timeout-minutes: 10
         if: ${{ always() }}
         with:
-          name: 'environment-${{ inputs.sim_type }}-${{ inputs.grid_name }}-${{ inputs.julia_version }}-${{ inputs.os }}-${{ inputs.xla_runtime }}-${{ inputs.compile_or_run }}'
+          name: 'environment-${{ inputs.sim_type }}-${{ inputs.grid_type }}-${{ inputs.julia_version }}-${{ inputs.os }}-${{ inputs.xla_runtime }}-${{ inputs.compile_or_run }}'
           path: |
             Manifest.toml
             Project.toml
@@ -110,7 +110,7 @@ jobs:
       - name: Ocean climate simulation
         timeout-minutes: 180
         env:
-          grid_name: ${{ inputs.grid_name }}
+          grid_type: ${{ inputs.grid_type }}
           XLA_FLAGS: ${{ inputs.sharded && '--xla_force_host_platform_device_count=4 --xla_dump_to=xla_dump' || '--xla_dump_to=xla_dump' }}
           RUNDIR: ${{ inputs.sharded && 'sharding' || 'simulations' }}
         run: |
@@ -136,7 +136,7 @@ jobs:
         timeout-minutes: 10
         if: ${{ always() }}
         with:
-          name: 'simulation-mlir-${{ inputs.sim_type }}-${{ inputs.grid_name }}-${{ inputs.julia_version }}-${{ inputs.os }}-${{ inputs.xla_runtime }}'
+          name: 'simulation-mlir-${{ inputs.sim_type }}-${{ inputs.grid_type }}-${{ inputs.julia_version }}-${{ inputs.os }}-${{ inputs.xla_runtime }}'
           path: '**/*.mlir'
           retention-days: 90
           overwrite: false
@@ -145,7 +145,7 @@ jobs:
         timeout-minutes: 10
         if: ${{ always() && inputs.compile_or_run == 'compile' }}
         with:
-          name: 'simulation-julia-profile-${{ inputs.sim_type }}-${{ inputs.grid_name }}-${{ inputs.julia_version }}-${{ inputs.os }}-${{ inputs.xla_runtime }}'
+          name: 'simulation-julia-profile-${{ inputs.sim_type }}-${{ inputs.grid_type }}-${{ inputs.julia_version }}-${{ inputs.os }}-${{ inputs.xla_runtime }}'
           path: |
             **/profile_*.txt
             **/profile_*.dat
@@ -156,7 +156,7 @@ jobs:
         timeout-minutes: 10
         if: ${{ always() && inputs.compile_or_run == 'run' }}
         with:
-          name: 'simulation-xla-dump-${{ inputs.sim_type }}-${{ inputs.grid_name }}-${{ inputs.julia_version }}-${{ inputs.os }}-${{ inputs.xla_runtime }}'
+          name: 'simulation-xla-dump-${{ inputs.sim_type }}-${{ inputs.grid_type }}-${{ inputs.julia_version }}-${{ inputs.os }}-${{ inputs.xla_runtime }}'
           path: '**/xla_dump'
           retention-days: 90
           overwrite: false
@@ -165,7 +165,7 @@ jobs:
         timeout-minutes: 10
         if: ${{ always() && inputs.compile_or_run == 'run' }}
         with:
-          name: 'simulation-xla-profile-${{ inputs.sim_type }}-${{ inputs.grid_name }}-${{ inputs.julia_version }}-${{ inputs.os }}-${{ inputs.xla_runtime }}'
+          name: 'simulation-xla-profile-${{ inputs.sim_type }}-${{ inputs.grid_type }}-${{ inputs.julia_version }}-${{ inputs.os }}-${{ inputs.xla_runtime }}'
           path: '**/plugins'
           retention-days: 90
           overwrite: false
