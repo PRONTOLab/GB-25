@@ -19,7 +19,7 @@ function frozen_clock(FT)
     stage = 0
     last_Δt = zero(FT)
     last_stage_Δt = zero(FT)
-    return Clock(; time, iteration, stage, last_Δt, last_stage_Δt)
+    return Oceananigans.TimeSteppers.Clock(; time, iteration, stage, last_Δt, last_stage_Δt)
 end
 
 function baroclinic_instability_model(arch; resolution, Δt, Nz,
