@@ -61,6 +61,7 @@ jobs:
     uses: ./.github/workflows/CompileOrRun.yml
     with:
       sim_type: ${{ matrix.sim_type }}
+      grid_type: ${{ matrix.sim_type == 'baroclinic_instability' && 'simple_lat_lon' || 'gaussian_islands' }}
       julia_version: ${{ matrix.julia_version }}
       os: ${{ matrix.os }}
       xla_runtime: ${{ matrix.xla_runtime }}
