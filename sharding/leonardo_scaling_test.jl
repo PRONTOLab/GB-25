@@ -53,4 +53,4 @@ srun --cpu-bind=verbose,cores $(job_dir)/launcher.sh $(Base.julia_cmd()[1]) --pr
 """
 end
 
-generate_and_submit(leonardo_submit_job_writer, leonardo_config; input_file_name=@__FILE__)
+generate_and_submit(leonardo_submit_job_writer, leonardo_config; caller_file=@__FILE__)

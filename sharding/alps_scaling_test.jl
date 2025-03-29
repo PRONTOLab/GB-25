@@ -53,4 +53,4 @@ srun --preserve-env --gpu-bind=per_task:1 --cpu_bind=verbose $(job_dir)/launcher
 """
 end
 
-generate_and_submit(alps_submit_job_writer, alps_config; input_file_name=@__FILE__)
+generate_and_submit(alps_submit_job_writer, alps_config; caller_file=@__FILE__)

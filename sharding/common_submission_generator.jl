@@ -15,23 +15,23 @@ username = ENV["USER"]
     submit::Bool
 end
 
-function generate_and_submit(submit_job_writer, cfg::JobConfig; input_file_name::String)
+function generate_and_submit(submit_job_writer, cfg::JobConfig; caller_file::String)
 
     if !isone(length(Base.ARGS))
         error("""
               Usage:
 
-                  julia $(basename(input_file_name)) <SCRIPT_PATH>
+                  julia $(basename(caller_file)) <SCRIPT_PATH>
 
               E.g.:
 
-                  julia $(basename(input_file_name)) sharded_baroclinic_instability.jl
+                  julia $(basename(caller_file)) sharded_baroclinic_instability.jl
               """)
     end
 
     exe_path = Base.ARGS[1]
-    run_file = joinpath(@__DIR__, exe_path)
-    if !isfile(run_file)
+    input_file = joinpath(@__DIR__, exe_path)
+    if !isfile(input_file)
         error("File $(run_file) does not exist")
     end
     # Some filesystems don't like colons in directory names
@@ -53,8 +53,8 @@ function generate_and_submit(submit_job_writer, cfg::JobConfig; input_file_name:
         end
         cp(joinpath("..", filename), joinpath(out_path, filename))
     end
-    run_file_out = joinpath(out_path, basename(run_file))
-    cp(run_file, run_file_out)
+    run_file = joinpath(out_path, basename(input_file))
+    cp(input_file, run_file)
 
     @info "User: $(cfg.username); Project: $(cfg.account)"
     @info "run_file=$(run_file)"
@@ -106,7 +106,7 @@ echo "[\${SLURM_JOB_ID}.\${SLURM_PROCID}] Process exited with code \${?}"
             print(io, submit_job_writer(cfg::JobConfig, job_name::String,
                                         Nnodes::Int, job_dir::String, Ngpu::Int,
                                         resolution_fraction::Int,
-                                        project_path::String, run_file_out::String))
+                                        project_path::String, run_file::String))
         end
         if cfg.submit
             run(`sbatch $(sbatch_name)`)
