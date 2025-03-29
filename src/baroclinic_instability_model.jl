@@ -58,7 +58,7 @@ function baroclinic_instability_model(arch; resolution, Δt, Nz,
     end
 
     model = HydrostaticFreeSurfaceModel(;
-        grid=the_grid, free_surface, closure, buoyancy, tracers,
+        grid, free_surface, closure, buoyancy, tracers,
         coriolis, momentum_advection, tracer_advection,
     )
 
