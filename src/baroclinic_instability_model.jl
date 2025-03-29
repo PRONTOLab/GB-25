@@ -21,8 +21,9 @@ function baroclinic_instability_model(arch; resolution, Δt, Nz,
 
     # CATKE correctness is not established yet, so we are using a simpler closure
     # closure = Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity()
-    closure = VerticalScalarDiffusivity(VerticallyImplicitTimeDiscretization(), κ=1e-5, ν=1e-4),
-
+    # closure = VerticalScalarDiffusivity(VerticallyImplicitTimeDiscretization(), κ=1e-5, ν=1e-4),
+    closure = nothing,
+        
     # Coriolis forces for a rotating Earth
     coriolis = HydrostaticSphericalCoriolis(),
 
