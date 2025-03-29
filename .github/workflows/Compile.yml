@@ -55,4 +55,4 @@ jobs:
       xla_runtime: ${{ matrix.xla_runtime }}
       compile_or_run: 'compile'
       earlyoom_threshold: 4
-      julia_optlevel: 2
+      julia_optlevel: 0
