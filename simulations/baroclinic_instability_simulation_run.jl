@@ -7,6 +7,7 @@ using Reactant
 # Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
 
 Ninner = ConcreteRNumber(3)
+Oceananigans.defaults.FloatType = Float32
 
 @info "Generating model..."
 arch = ReactantState()
