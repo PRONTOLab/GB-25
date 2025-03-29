@@ -8,8 +8,25 @@
     return N² * z + Δb * μ + 1e-2 * Δb * randn()
 end
 
+"""
+    frozen_clock(FT)
+
+Make a clock that doesn't tick with floating-point time type `FT`.
+"""
+function frozen_clock(FT)
+    time = zero(FT)
+    iteration = 0
+    stage = 0
+    last_Δt = zero(FT)
+    last_stage_Δt = zero(FT)
+    return Clock(; time, iteration, stage, last_Δt, last_stage_Δt)
+end
+
 function baroclinic_instability_model(arch; resolution, Δt, Nz,
     grid = :simple_lat_lon, # :gaussian_islands
+
+    # Default to a clock that doesn't tick
+    clock = frozen_clock(Oceananigans.defaults.FloatType),
 
     # Fewer substeps can be used at higher resolutions
     free_surface = SplitExplicitFreeSurface(substeps=30),
