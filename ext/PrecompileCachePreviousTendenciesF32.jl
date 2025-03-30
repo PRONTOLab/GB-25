@@ -38,7 +38,7 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels:
     arch = Oceananigans.Architectures.ReactantState()
 
     @compile_workload begin
-        model = GordonBell25.baroclinic_instability_model(arch; resolution=4, Δt=60, Nz=4, grid=:simple_lat_lon)
+        model = GordonBell25.baroclinic_instability_model(arch; resolution=4, Δt=60, Nz=4, grid_type=:simple_lat_lon)
         Δt = ConcreteRNumber(60.0)
         compiled! = @compile GordonBell25.correct_velocities_and_cache_previous_tendencies_workload!(model, Δt)
     end
