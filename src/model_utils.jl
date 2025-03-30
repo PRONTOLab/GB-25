@@ -85,8 +85,8 @@ function Sᵢ(λ, φ, z)
 end
 
 function gaussian_islands_tripolar_grid(arch::Architectures.AbstractArchitecture, resolution, Nz)
-    Nx = convert(Int, 360 / resolution)
-    Ny = convert(Int, 180 / resolution)
+    Nx = convert(Int, 384 / resolution)
+    Ny = convert(Int, 192 / resolution)
 
     # Grid setup
     z_faces = exponential_z_faces(; Nz, depth=4000, h=30) # may need changing for very large Nz
