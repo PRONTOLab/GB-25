@@ -41,7 +41,7 @@ using Dates
 @info "[$rank] Generating model..." now(UTC)
 
 grid_type_str = get(ENV, "grid_type", "simple_lat_lon")
-resolution_fraction_str = get(ENV, "resolution_fraction", "2")
+resolution_fraction_str = get(ENV, "resolution_fraction", "1/4")
 time_step_str = get(ENV, "time_step", "60")
 Nz_str = get(ENV, "Nz", "10")
 
