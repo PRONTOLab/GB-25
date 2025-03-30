@@ -39,7 +39,7 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels:
 
     @compile_workload begin
         Δt = FT(60)
-        model = GordonBell25.baroclinic_instability_model(arch; resolution=4, Δt, Nz=4, grid=:simple_lat_lon)
+        model = GordonBell25.baroclinic_instability_model(arch; resolution=4, Δt, Nz=4, grid_type=:simple_lat_lon)
         compiled! = @compile GordonBell25.ab2_step_workload!(model, Δt)
     end
 

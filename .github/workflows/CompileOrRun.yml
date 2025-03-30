@@ -13,6 +13,16 @@ on:
         required: true
         default: ''
         type: string
+      sharded:
+        description: 'Whether we are using sharding'
+        required: false
+        default: false
+        type: boolean
+      grid_type:
+        description: 'What type of grid to use'
+        required: false
+        default: ''
+        type: string
       xla_runtime:
         description: 'The XLA runtime'
         required: true
@@ -58,7 +68,10 @@ jobs:
       - uses: julia-actions/cache@v2
         if: ${{ startsWith(inputs.os, 'ubuntu') }}
         with:
-          cache-name: julia-cache;workflow=${{ inputs.julia_version }}-${{ inputs.sim_type }}-${{ inputs.os }}-${{ inputs.xla_runtime }}-${{ inputs.compile_or_run }};job=${{ github.job }}
+          cache-name: |
+            julia-cache;
+            workflow=${{ inputs.julia_version }}-${{ inputs.sim_type }}-${{ inputs.os }}-${{ inputs.xla_runtime }}-${{ inputs.compile_or_run }};
+            job=${{ github.job }}
       - name: Collect Workflow Telemetry
         uses: catchpoint/workflow-telemetry-action@v2
         with:
@@ -88,7 +101,7 @@ jobs:
         timeout-minutes: 10
         if: ${{ always() }}
         with:
-          name: 'environment-${{ inputs.sim_type }}-${{ inputs.julia_version }}-${{ inputs.os }}-${{ inputs.xla_runtime }}-${{ inputs.compile_or_run }}'
+          name: 'environment-${{ inputs.sim_type }}-${{ inputs.grid_type }}-${{ inputs.julia_version }}-${{ inputs.os }}-${{ inputs.xla_runtime }}-${{ inputs.compile_or_run }}'
           path: |
             Manifest.toml
             Project.toml
@@ -96,11 +109,13 @@ jobs:
           overwrite: false
       - name: Ocean climate simulation
         timeout-minutes: 180
+        env:
+          grid_type: ${{ inputs.grid_type }}
+          XLA_FLAGS: ${{ inputs.sharded && '--xla_force_host_platform_device_count=4 --xla_dump_to=xla_dump' || '--xla_dump_to=xla_dump' }}
+          RUNDIR: ${{ inputs.sharded && 'sharding' || 'simulations' }}
         run: |
           earlyoom -m ${{ inputs.earlyoom_threshold }} -s 100 -r 120 --prefer 'julia' &
-          julia --color=yes --project -O${{ inputs.julia_optlevel }} simulations/${{ inputs.sim_type }}_simulation_${{ inputs.compile_or_run }}.jl
-        env:
-          XLA_FLAGS: "--xla_dump_to=xla_dump"
+          julia --color=yes --project -O${{ inputs.julia_optlevel }} $RUNDIR/${{ inputs.sim_type }}_simulation_${{ inputs.compile_or_run }}.jl
       - name: Show remaining jit calls
         if: ${{ inputs.compile_or_run == 'compile' }}
         timeout-minutes: 10
@@ -121,7 +136,7 @@ jobs:
         timeout-minutes: 10
         if: ${{ always() }}
         with:
-          name: 'simulation-mlir-${{ inputs.sim_type }}-${{ inputs.julia_version }}-${{ inputs.os }}-${{ inputs.xla_runtime }}'
+          name: 'simulation-mlir-${{ inputs.sim_type }}-${{ inputs.grid_type }}-${{ inputs.julia_version }}-${{ inputs.os }}-${{ inputs.xla_runtime }}'
           path: '**/*.mlir'
           retention-days: 90
           overwrite: false
@@ -130,7 +145,7 @@ jobs:
         timeout-minutes: 10
         if: ${{ always() && inputs.compile_or_run == 'compile' }}
         with:
-          name: 'simulation-julia-profile-${{ inputs.sim_type }}-${{ inputs.julia_version }}-${{ inputs.os }}-${{ inputs.xla_runtime }}'
+          name: 'simulation-julia-profile-${{ inputs.sim_type }}-${{ inputs.grid_type }}-${{ inputs.julia_version }}-${{ inputs.os }}-${{ inputs.xla_runtime }}'
           path: |
             **/profile_*.txt
             **/profile_*.dat
@@ -141,7 +156,7 @@ jobs:
         timeout-minutes: 10
         if: ${{ always() && inputs.compile_or_run == 'run' }}
         with:
-          name: 'simulation-xla-dump-${{ inputs.sim_type }}-${{ inputs.julia_version }}-${{ inputs.os }}-${{ inputs.xla_runtime }}'
+          name: 'simulation-xla-dump-${{ inputs.sim_type }}-${{ inputs.grid_type }}-${{ inputs.julia_version }}-${{ inputs.os }}-${{ inputs.xla_runtime }}'
           path: '**/xla_dump'
           retention-days: 90
           overwrite: false
@@ -150,7 +165,7 @@ jobs:
         timeout-minutes: 10
         if: ${{ always() && inputs.compile_or_run == 'run' }}
         with:
-          name: 'simulation-xla-profile-${{ inputs.sim_type }}-${{ inputs.julia_version }}-${{ inputs.os }}-${{ inputs.xla_runtime }}'
+          name: 'simulation-xla-profile-${{ inputs.sim_type }}-${{ inputs.grid_type }}-${{ inputs.julia_version }}-${{ inputs.os }}-${{ inputs.xla_runtime }}'
           path: '**/plugins'
           retention-days: 90
           overwrite: false
