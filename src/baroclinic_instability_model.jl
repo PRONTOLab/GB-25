@@ -8,9 +8,19 @@
     return N² * z + Δb * μ + 1e-2 * Δb * randn()
 end
 
-function baroclinic_instability_model(arch; resolution, Δt, Nz,
-    grid = :simple_lat_lon, # :gaussian_islands
+function baroclinic_instability_model(arch::Oceananigans.Architectures.AbstractArchitecture;
+    resolution, Nz, grid = :simple_lat_lon, kw...)
 
+    the_grid = if grid === :gaussian_islands
+        gaussian_islands_tripolar_grid(arch, resolution, Nz)
+    elseif grid === :simple_lat_lon
+        simple_latitude_longitude_grid(arch, resolution, Nz)
+    end
+
+    return baroclinic_instability_model(the_grid; kw...)
+end
+
+function baroclinic_instability_model(grid::Oceananigans.Grids.AbstractGrid; Δt,
     # Fewer substeps can be used at higher resolutions
     free_surface = SplitExplicitFreeSurface(substeps=30),
 
@@ -48,15 +58,9 @@ function baroclinic_instability_model(arch; resolution, Δt, Nz,
     end
 
     tracers = tuple(tracers...)
-
-    the_grid = if grid === :gaussian_islands
-        gaussian_islands_tripolar_grid(arch, resolution, Nz)
-    elseif grid === :simple_lat_lon
-        simple_latitude_longitude_grid(arch, resolution, Nz)
-    end
-
+    
     model = HydrostaticFreeSurfaceModel(;
-        grid=the_grid, free_surface, closure, buoyancy, tracers,
+        grid, free_surface, closure, buoyancy, tracers,
         coriolis, momentum_advection, tracer_advection,
     )
 
@@ -72,3 +76,4 @@ function baroclinic_instability_model(arch; resolution, Δt, Nz,
 
     return model
 end
+
