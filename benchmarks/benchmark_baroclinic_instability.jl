@@ -50,65 +50,43 @@ function benchmark_model(arch, Nx, Ny, Nz)
     return step_timings, loop_timings
 end
 
+
+function benchmark_series(arch, filename)
+    for FT = (Float32, Float64)
+        Oceananigans.defaults.FloatType = FT
+        for n = 4:11
+            Nx = 2^n
+            Ny = 2^(n-1)
+            Nz = 128
+            @info "Running $Nx, $Ny, $Nz for $FT..."
+            step_timings, loop_timings = benchmark_model(arch, Nx, Ny, Nz)
+            @show step_timings
+            @show loop_timings
+    
+            addr = string(FT, "/", n)
+            file = jldopen(filename, "a+")
+            file["$addr/Nx"] = Nx
+            file["$addr/Ny"] = Ny
+            file["$addr/Nz"] = Nz
+            file["$addr/Nt"] = Nt
+            file["$addr/n"] = n
+            file["$addr/FT"] = FT
+            file["$addr/step"] = step_timings
+            file["$addr/loop"] = loop_timings
+            close(file)
+        
+            GC.gc(true); GC.gc(false); GC.gc(true)
+        end
+    end
+end
+
+arch = GPU()
+filename = "timings_GPU.jld2"
+rm(filename, force=true)
+benchmark_series(arch, filename)
+
 arch = ReactantState()
-filename = "timings_Reactant.jld2"
+filename = "timings_Reactant_GPU.jld2"
 rm(filename, force=true)
-
-for FT = (Float32, Float64)
-    Oceananigans.defaults.FloatType = FT
-    for α = 1:32
-        Nx = α * 16
-        Ny = α * 8
-        Nz = 128
-        @info "Running $Nx, $Ny, $Nz for $FT..."
-        step_timings, loop_timings = benchmark_model(arch, Nx, Ny, Nz)
-        @show step_timings
-        @show loop_timings
-
-        addr = string(FT, "/", α)
-        file = jldopen(filename, "a+")
-        file["$addr/Nx"] = Nx
-        file["$addr/Ny"] = Ny
-        file["$addr/Nz"] = Nz
-        file["$addr/Nt"] = Nt
-        file["$addr/α"] = α
-        file["$addr/FT"] = FT
-        file["$addr/step"] = step_timings
-        file["$addr/loop"] = loop_timings
-        close(file)
-    
-        GC.gc(true); GC.gc(false); GC.gc(true)
-    end
-end
-
-arch = CPU()
-filename = "timings_CPU.jld2"
-rm(filename, force=true)
-
-for FT = (Float32, Float64)
-    Oceananigans.defaults.FloatType = FT
-    for α = 1:32
-        Nx = α * 16
-        Ny = α * 8
-        Nz = 128
-        @info "Running $Nx, $Ny, $Nz for $FT..."
-        step_timings, loop_timings = benchmark_model(arch, Nx, Ny, Nz)
-        @show step_timings
-        @show loop_timings
-
-        addr = string(FT, "/", α)
-        file = jldopen(filename, "a+")
-        file["$addr/Nx"] = Nx
-        file["$addr/Ny"] = Ny
-        file["$addr/Nz"] = Nz
-        file["$addr/Nt"] = Nt
-        file["$addr/α"] = α
-        file["$addr/FT"] = FT
-        file["$addr/step"] = step_timings
-        file["$addr/loop"] = loop_timings
-        close(file)
-    
-        GC.gc(true); GC.gc(false); GC.gc(true)
-    end
-end
+benchmark_series(arch, filename)
 
