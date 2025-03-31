@@ -15,7 +15,7 @@ function alps_submit_job_writer(cfg::JobConfig, job_name, Nnodes, job_dir, Ngpu,
 #SBATCH --gpus-per-node=$(cfg.gpus_per_node)
 #SBATCH --constraint=gpu
 #SBATCH --account=$(cfg.account)
-#SBATCH --exclusive
+##SBATCH --exclusive
 
 export JULIA_CUDA_USE_COMPAT=false
 export JULIA_CUDA_MEMORY_POOL=none
@@ -59,7 +59,8 @@ configs = [
     # JobConfig(arch_kind="ReactantState", tasks_per_node=1, Ngpus=[1]; kw...),
     # JobConfig(arch_kind="GPU", tasks_per_node=1, Ngpus=[1]; kw...),
     #JobConfig(arch_kind="ReactantState", tasks_per_node=1, Ngpus=[4, 8]; kw...),
-    JobConfig(arch_kind="GPU", tasks_per_node=4, Ngpus=[4, 8]; kw...),
+    #JobConfig(arch_kind="GPU", tasks_per_node=4, Ngpus=collect(1:12); kw...),
+    JobConfig(arch_kind="GPU", tasks_per_node=1, Ngpus=[1]; kw...),
 ]
 
 # run(`$(Base.julia_cmd()) --project -e 'using Pkg; Pkg.instantiate()'`)

@@ -3,6 +3,7 @@ using Oceananigans
 using Reactant
 using Dates
 using MPI
+using CUDA
 
 MPI.Init()  # Only needed if using MPI to detect the coordinator
 Reactant.Distributed.initialize()
@@ -38,18 +39,16 @@ else
     Rx = floor(Int, sqrt(Nr))
     partition = Partition(Rx, Ry, 1)
     arch = Oceananigans.Distributed(local_arch; partition)
+    @show CUDA.device()
     rank = arch.local_rank
 end
 
-@show arch
-@show arch.devices
-try
-    @show arch.devices[arch.local_rank]
-catch; end
+using Oceananigans.DistributedComputations: @handshake
+@handshake @show arch
 
-Nx = 64 * Rx
-Ny = 32 * Ry
-Nz = 64
+Nx = 1024 * Rx
+Ny = 512 * Ry
+Nz = 256
 
 longitude = (0, 360)
 latitude = (-80, 80)
@@ -66,15 +65,16 @@ else
     FT(60.0)
 end
 
-free_surface = ExplicitFreeSurface(gravitational_acceleration=1)
+#free_surface = ExplicitFreeSurface(gravitational_acceleration=1)
+free_surface = SplitExplicitFreeSurface(substeps=3)
 momentum_advection = WENOVectorInvariant()
 tracer_advection = WENO(order=7)
 closure = nothing
 model = GordonBell25.baroclinic_instability_model(grid; Δt, free_surface) #, closure, momentum_advection, tracer_advection)
-@show model
+@handshake @show model
 
 # Prep time stepping
-Nt = 10
+Nt = 100
 
 if local_arch isa Oceananigans.ReactantState
     Nt = if arch isa Distributed
@@ -98,11 +98,29 @@ else
     first! = GordonBell25.first_time_step!
 end
 
-@time "[$rank] first" first!(model)
-@time "[$rank] step"  step!(model)
-@time "[$rank] step"  step!(model)
-@time "[$rank] step"  step!(model)
-@time "[$rank] loop"  loop!(model, Nt)
-@time "[$rank] loop"  loop!(model, Nt)
-@time "[$rank] loop"  loop!(model, Nt)
+function untraced_loop!(model, Nt)
+    for n = 1:Nt
+        GordonBell25.time_step!(model)
+    end
+end
+
+@info "[$rank] first"
+CUDA.@time first!(model)
+@info "[$rank] step"
+CUDA.@time step!(model)
+@info "[$rank] step"
+CUDA.@time step!(model)
+@info "[$rank] step"
+CUDA.@time step!(model)
+
+CUDA.@profile step!(model)
+
+sleep(3)
+
+@info "[$rank] loop" 
+CUDA.@time untraced_loop!(model, 10)
+@info "[$rank] loop" 
+CUDA.@time untraced_loop!(model, 10)
+@info "[$rank] loop" 
+CUDA.@time untraced_loop!(model, 10)
 
