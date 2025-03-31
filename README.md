@@ -4,11 +4,13 @@ This repository accompanies a submission for the 2025 Gordon Bell climate prize 
 
 ## Package organization
 
-### `oceananigans-dynamical-core`
+* `src` implements two models:
+    * `GordonBell25.data_free_climate_simulation_init`, which uses ClimaOcean to drive an Oceananigans `HydrostaticFreeSurfaceModel`
+    * `GordonBell25.baroclinic_instability_model`, a simpler, unforced, pure Oceananigans setup.
+    * Both models can be to use either a `LatitudeLongitudeGrid` or a `TripolarGrid` with idealized bathymetry.
 
-* `super_simple_simulation.jl`: a barebones Oceananigans simulation that illustrates Reactant-acceleration of an Oceananigans simulation (but doesn't do anything interesting), useful for debugging.
+* `simulations`: scripts to i) compile and ii) run either of the two models
 
-* `baroclinic_wave_test.jl`: implements a still-simple Reactant-accelerated Oceananigans simulation of "baroclinic instability" (the physical process that generates weather in Earth's midlatitudes), which invokes more physics than "super simple simulation", and has the potential to generate pretty movies.
+* `sharding`: scripts and utilities that use XLA's sharding to distribute computations across multiple nodes. Oceananigans uses its `Distributed` architecture to represent sharding across nodes.
 
-* `bumpy_baroclinic_wave_test.jl`: the same as "baroclinic wave test", but with some bathymetry. This test will eventually encapsulate all of the Oceananigans functionality needed for ocean climate simulations with ClimaOcean.
-
+* `ext`: many small packages that each precompile part of a model time-step, in order to accelerate compilation during intensive jobs.
