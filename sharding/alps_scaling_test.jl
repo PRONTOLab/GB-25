@@ -30,7 +30,8 @@ function alps_submit_job_writer(cfg::JobConfig, job_name, Nnodes, job_dir, Ngpu,
 #SBATCH --error=$(job_dir)/%j.err
 #SBATCH --nodes=$(Nnodes)
 #SBATCH --ntasks-per-node=1
-#SBATCH --gpus-per-node=$gpus_per_node
+#SBATCH --gpus-per-node=$(gpus_per_node)
+#SBATCH --gpu-bind=per_task:$(gpus_per_node)
 #SBATCH --constraint=gpu
 #SBATCH --account=$(account)
 #SBATCH --exclusive
@@ -43,13 +44,15 @@ export JULIA_DEPOT_PATH=$(join(Base.DEPOT_PATH, ':'))
 # export TF_CPP_MAX_VLOG_LEVEL=3
 # export XLA_FLAGS="--xla_dump_to=$(job_dir)/xla_dump"
 export MPICH_GPU_SUPPORT_ENABLED=$(MPICH_GPU_SUPPORT_ENABLED)
+export FI_MR_CACHE_MONITOR=disabled
+export XLA_REACTANT_GPU_MEM_FRACTION=0.9
 
 ulimit -s unlimited
 
 # Setting `--cpu_bind` is explicitly discouraged:
 # <https://eth-cscs.github.io/cscs-docs/guides/gb2025/#slurm>.
-# We only set it to vrbose to record what's going on
-srun --uenv=prgenv-gnu --view=prgenv-gnu:default --preserve-env --gpu-bind=per_task:1 --cpu_bind=verbose \
+# We only set it to `verbose` to record what's going on.
+srun --uenv=prgenv-gnu --preserve-env --cpu_bind=verbose \
     --export=ALL,LD_PRELOAD="/user-environment/linux-sles15-neoverse_v2/gcc-13.3.0/nccl-2.22.3-1-4j6h3ffzysukqpqbvriorrzk2lm762dd/lib/libnccl.so.2" \
     $(job_dir)/launcher.sh $(Base.julia_cmd()[1]) --project=$(project_path) --startup-file=no --threads=$(cfg.cpus_per_task) -O0 $(run_file)
 """
