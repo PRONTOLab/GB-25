@@ -92,6 +92,7 @@ function generate_and_submit(submit_job_writer, cfg::JobConfig; caller_file::Str
 #!/usr/bin/env sh
 
 export CUDA_VISIBLE_DEVICES=$(join(0:(min(Ngpu, gpus_per_node) - 1), ','))
+export TZ=UTC
 
 # Important else XLA might hang indefinitely
 unset no_proxy http_proxy https_proxy NO_PROXY HTTP_PROXY HTTPS_PROXY
