@@ -1,76 +1,108 @@
-# /home/avik-pal/.julia/bin/mpiexecjl -np 4 --project=. julia --threads=32 --color=yes --startup=no GB-25/sharding/simple_sharding_problem.jl
-
-# mkpath("xla_dumps")
-# tmpname = tempname("xla_dumps")
-
-# ENV["CUDA_VISIBLE_DEVICES"] = ""
-# ENV["XLA_FLAGS"] = "--xla_force_host_platform_device_count=4"
-# ENV["XLA_FLAGS"] = " --xla_dump_to=xla_dumps/$(tmpname)/"
-ENV["JULIA_DEBUG"] = "Reactant_jll,Reactant"
-
-# @info ENV["XLA_FLAGS"]
-
-# using MPI
-# MPI.Init()  # Only needed if using MPI to detect the coordinator
-
+using GordonBell25
 using Oceananigans
 using Reactant
-
-# using Cthulhu
 using Dates
+using MPI
 
+MPI.Init()  # Only needed if using MPI to detect the coordinator
 Reactant.Distributed.initialize()
 
-ndevices = length(Reactant.devices())
-nxdevices = floor(Int, sqrt(ndevices))
-nydevices = ndevices ÷ nxdevices
+ENV["JULIA_DEBUG"] = "Reactant_jll,Reactant"
+arch_kind = get(ENV, "OCEANANIGANS_ARCHITECTURE", "ReactantState")
+float_type = get(ENV, "FLOAT_TYPE", "Float64")
 
-process_id = Reactant.Distributed.local_rank()
-
-arch = Oceananigans.Distributed(
-    Oceananigans.ReactantState();
-    partition=Partition(nxdevices, nydevices, 1)
-)
-
-# arch = Oceananigans.ReactantState()
-
-Nx = Ny = 16
-Nz = 4
-
-@info "[$(process_id)] creating tripolar grid" now(UTC)
-grid = TripolarGrid(arch; size=(Nx, Ny, Nz), halo=(7, 7, 7), z=(0, 1))
-
-function mtn₁(λ, φ)
-    λ₁ = 70
-    φ₁ = 55
-    dφ = 5
-    return exp(-((λ - λ₁)^2 + (φ - φ₁)^2) / 2dφ^2)
+FT = if float_type == "Float64"
+    Float64
+elseif float_type == "Float32"
+    Float32
 end
 
-function mtn₂(λ, φ)
-    λ₁ = 70
-    λ₂ = λ₁ + 180
-    φ₂ = 55
-    dφ = 5
-    return exp(-((λ - λ₂)^2 + (φ - φ₂)^2) / 2dφ^2)
+Oceananigans.defaults.FloatType = FT
+
+local_arch, Nr, = if arch_kind == "ReactantState"
+    Nr = length(Reactant.devices())
+    (Oceananigans.ReactantState(), Nr)
+else
+    Nr = MPI.Comm_size(MPI.COMM_WORLD)
+    arch = GPU()
+    (arch, Nr, )
 end
 
-gaussian_islands(λ, φ) = 2 * (mtn₁(λ, φ) + mtn₂(λ, φ))
+Rx = floor(Int, sqrt(Nr))
+Ry = Nr ÷ Rx
 
-@info "[$(process_id)] creating immersed boundary grid" now(UTC)
-grid = ImmersedBoundaryGrid(grid, GridFittedBottom(gaussian_islands))
+if Nr == 1
+    arch = local_arch
+    rank = 0
+else
+    Rx = floor(Int, sqrt(Nr))
+    partition = Partition(Rx, Ry, 1)
+    arch = Oceananigans.Distributed(local_arch; partition)
+    rank = arch.local_rank
+end
 
-free_surface = SplitExplicitFreeSurface(substeps=3)
-model = HydrostaticFreeSurfaceModel(; grid, free_surface)
-# model = HydrostaticFreeSurfaceModel(; grid)
+@show arch
+@show arch.devices
+try
+    @show arch.devices[arch.local_rank]
+catch; end
 
-model.clock.last_Δt = ConcreteRNumber(60.0)
+Nx = 64 * Rx
+Ny = 32 * Ry
+Nz = 64
 
-@info "[$(process_id)] compiling first time step" now(UTC)
-compiled_first_time_step! = @compile Oceananigans.TimeSteppers.first_time_step!(model, model.clock.last_Δt)
-compiled_time_step! = @compile Oceananigans.TimeSteppers.time_step!(model, model.clock.last_Δt)
+longitude = (0, 360)
+latitude = (-80, 80)
+z = (-1000, 0)
+grid = LatitudeLongitudeGrid(arch, size=(Nx, Ny, Nz), halo=(7, 7, 7),
+                             longitude=(0, 360), latitude=(-80, 80), z=(-1000, 0))
 
-@info "[$(process_id)] running first time step" now(UTC)
-@time "[$(process_id)] first time step" compiled_first_time_step!(model, model.clock.last_Δt)
-@info "[$(process_id)] running second time step" now(UTC)
-@time "[$(process_id)] second time step" compiled_time_step!(model, model.clock.last_Δt)
+# free_surface = ExplicitFreeSurface(gravitational_acceleration=1)
+# model = HydrostaticFreeSurfaceModel(; grid, free_surface)
+
+Δt = if local_arch isa Oceananigans.ReactantState
+    ConcreteRNumber(FT(60.0))
+else
+    FT(60.0)
+end
+
+free_surface = ExplicitFreeSurface(gravitational_acceleration=1)
+momentum_advection = WENOVectorInvariant()
+tracer_advection = WENO(order=7)
+closure = nothing
+model = GordonBell25.baroclinic_instability_model(grid; Δt, free_surface) #, closure, momentum_advection, tracer_advection)
+@show model
+
+# Prep time stepping
+Nt = 10
+
+if local_arch isa Oceananigans.ReactantState
+    Nt = if arch isa Distributed
+        replicated = Sharding.NamedSharding(arch.connectivity, ())
+        ConcreteRNumber(Nt; sharding=replicated)
+    else
+        ConcreteRNumber(Nt)
+    end
+
+    @info "[$rank] compiling first time step" now(UTC)
+    first! = @compile GordonBell25.first_time_step!(model)
+
+    @info "[$rank] compiling second time step" now(UTC)
+    step!   = @compile GordonBell25.time_step!(model)
+
+    @info "[$rank] compiling loop" now(UTC)
+    loop!   = @compile GordonBell25.loop!(model, Nt)
+else
+    loop! = GordonBell25.loop!
+    step! = GordonBell25.time_step!
+    first! = GordonBell25.first_time_step!
+end
+
+@time "[$rank] first" first!(model)
+@time "[$rank] step"  step!(model)
+@time "[$rank] step"  step!(model)
+@time "[$rank] step"  step!(model)
+@time "[$rank] loop"  loop!(model, Nt)
+@time "[$rank] loop"  loop!(model, Nt)
+@time "[$rank] loop"  loop!(model, Nt)
+

@@ -3,6 +3,8 @@ using Dates, Random
 username = ENV["USER"]
 
 @kwdef struct JobConfig
+    arch_kind::String = "ReactantState"
+    float_type::String = "Float64"
     username::String
     account::String
     out_dir::String
@@ -10,7 +12,8 @@ username = ENV["USER"]
     cpus_per_task::Int
     Ngpus::Vector{Int}
     run_name::String
-    gpus_per_node::Int
+    gpus_per_node::Int = 4
+    tasks_per_node::Int = 1
     type::String
     submit::Bool
 end
@@ -62,13 +65,12 @@ function generate_and_submit(submit_job_writer, cfg::JobConfig; caller_file::Str
 
     for Ngpu in cfg.Ngpus
         ngpu_string = lpad(Ngpu, 5, '0')
-        job_dir = joinpath(out_path, "ngpu=$(ngpu_string)")
+        job_dir = joinpath(out_path, "ngpu_$(ngpu_string)")
         mkpath(job_dir)
-
-        run_id   = string(run_name, "_",
+        job_name = "$(cfg.arch_kind)_$(ngpu_string)"
+        run_id   = string(job_name, "_", cfg.run_name, "_",
                           Dates.format(now(UTC), "ud"), "_ngpu",  ngpu_string)
 
-        job_name = "scaling_test_$(ngpu_string)"
 
         # !isinteger(cbrt(Ngpu)) && (@warn "problem size is not cubic")
         Nnodes = ceil(Int, Ngpu / cfg.gpus_per_node)
@@ -80,18 +82,19 @@ function generate_and_submit(submit_job_writer, cfg::JobConfig; caller_file::Str
             resolution_fraction = 4 * cfg.Ngpus[1]
         end
 
-        @info "number of GPUs: $(Ngpu)"
-        @info "number of nodes: $(Nnodes)"
-        @info "number of GPUs per node: $(cfg.gpus_per_node)"
+        @info "Architecture: $(cfg.arch_kind)"
+        @info "Number of GPUs: $(Ngpu)"
+        @info "Number of nodes: $(Nnodes)"
+        @info "Number of GPUs per node: $(cfg.gpus_per_node)"
 
         sbatch_name = joinpath(job_dir, "submit.sh")
-
         launcher = joinpath(job_dir, "launcher.sh")
+
         open(launcher, "w") do io
             print(io, """
 #!/usr/bin/env sh
 
-export CUDA_VISIBLE_DEVICES=$(join(0:(min(Ngpu, gpus_per_node) - 1), ','))
+export CUDA_VISIBLE_DEVICES=$(join(0:(min(Ngpu, cfg.gpus_per_node) - 1), ','))
 
 # Important else XLA might hang indefinitely
 unset no_proxy http_proxy https_proxy NO_PROXY HTTP_PROXY HTTPS_PROXY
