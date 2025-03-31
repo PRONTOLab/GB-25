@@ -4,6 +4,7 @@ using Oceananigans.Architectures: ReactantState
 using Reactant
 
 # Reactant.Compiler.SROA_ATTRIBUTOR[] = false
+Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
 
 preamble()
 

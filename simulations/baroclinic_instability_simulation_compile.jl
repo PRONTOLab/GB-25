@@ -5,6 +5,7 @@ using Oceananigans
 using Oceananigans.Architectures: ReactantState
 
 PROFILE[] = true
+Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
 Oceananigans.defaults.FloatType = Float32
 
 preamble()
