@@ -9,6 +9,5 @@ include("baroclinic_instability_model.jl")
 include("tracer_only_model.jl")
 include("sharding_utils.jl")
 include("precompile.jl")
-include("correctness.jl")
 
 end # module
