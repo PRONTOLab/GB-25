@@ -79,10 +79,9 @@ grid = ImmersedBoundaryGrid(grid, GridFittedBottom(gaussian_islands))
 
 ##### Latlong grid
 @info "[$(process_id)] creating latlong grid" now(UTC)
-grid = LatitudeLongitudeGrid(arch, size=(Nx, Ny, Nz), halo=(7, 7, 7), z=(-4000, 0),
+grid = LatitudeLongitudeGrid(arch, size=(Nx, Ny, Nz), z=(-4000, 0),
                              latitude = (-80, 80),
                              longitude = (0, 360),
-                             topology = (Periodic, Periodic, Bounded),
                              halos = (Hx, Hy, 2)
                              )
 
