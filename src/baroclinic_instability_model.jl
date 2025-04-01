@@ -8,7 +8,13 @@
     return N² * z + Δb * μ + 1e-2 * Δb * randn()
 end
 
-function baroclinic_instability_model(arch; resolution, Δt, Nz,
+
+function baroclinic_instability_model(arch; resolution, Nz, kw...)
+    Nx, Ny = resolution_to_points(resolution)
+    return baroclinic_instability_model(arch, Nx, Ny, Nz; kw...)
+end
+
+function baroclinic_instability_model(arch, Nx, Ny, Nz; Δt,
     grid_type = :simple_lat_lon, # :gaussian_islands
 
     # Fewer substeps can be used at higher resolutions
