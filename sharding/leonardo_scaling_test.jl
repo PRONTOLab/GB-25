@@ -41,12 +41,6 @@ unset LD_LIBRARY_PATH
 # export SBATCH_ACCOUNT=$(cfg.account)
 # export SALLOC_ACCOUNT=$(cfg.account)
 export JULIA_CUDA_MEMORY_POOL=none
-export Ngpu=$(Ngpu)
-export resolution_fraction=$(resolution_fraction)
-export JULIA_DEBUG="Reactant,Reactant_jll"
-export JULIA_DEPOT_PATH=$(join(Base.DEPOT_PATH, ':'))
-# export TF_CPP_MAX_VLOG_LEVEL=3
-# export XLA_FLAGS="--xla_dump_to=$(job_dir)/xla_dump"
 
 module load cuda/12.3
 srun --cpu-bind=verbose,cores \
