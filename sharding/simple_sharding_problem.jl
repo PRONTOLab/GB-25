@@ -110,17 +110,17 @@ end
 @info "[$(process_id)] allocations" Reactant.XLA.allocatorstats()
 
 # @info "[$(process_id)] compiling first time step" now(UTC)
-# compiled_first_time_step! = @compile Oceananigans.TimeSteppers.first_time_step!(model, model.clock.last_Δt)
+# compiled_first_time_step! = @compile sync=true Oceananigans.TimeSteppers.first_time_step!(model, model.clock.last_Δt)
 # @info "[$(process_id)] compiling second time step" now(UTC)
-# compiled_time_step! = @compile Oceananigans.TimeSteppers.time_step!(model, model.clock.last_Δt)
-# compiled_update_state! = @compile Oceananigans.TimeSteppers.update_state!(model)
+# compiled_time_step! = @compile sync=true Oceananigans.TimeSteppers.time_step!(model, model.clock.last_Δt)
+# compiled_update_state! = @compile sync=true Oceananigans.TimeSteppers.update_state!(model)
 # @info "[$(process_id)] allocations" Reactant.XLA.allocatorstats()
 
 @info "[$(process_id)] compiling first time step" now(UTC)
-compiled_first_time_step! = @compile raise=true first_time_step!(model)
+compiled_first_time_step! = @compile sync=true raise=true first_time_step!(model)
 @info "[$(process_id)] compiling loop" now(UTC)
 Ninner = ConcreteRNumber(2; sharding=Sharding.NamedSharding(arch.connectivity, ()))
-compiled_loop! = @compile raise=true loop!(model, Ninner)
+compiled_loop! = @compile sync=true raise=true loop!(model, Ninner)
 @info "[$(process_id)] allocations" Reactant.XLA.allocatorstats()
 
 # #-------------------------------------------------------------------------------
