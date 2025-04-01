@@ -14,7 +14,7 @@ MPI.Init()
 
 Reactant.Distributed.initialize(; single_gpu_per_process=false)
 
-@show Ngpu = length(Reactant.devices())
+@show ndevices = length(Reactant.devices())
 
 if Ngpu == 1
     rank = 0
@@ -41,17 +41,34 @@ using Dates
 @info "[$rank] Generating model..." now(UTC)
 
 grid_type_str = get(ENV, "grid_type", "simple_lat_lon")
-resolution_fraction_str = get(ENV, "resolution_fraction", "0.25")
 time_step_str = get(ENV, "time_step", "60")
-Nz_str = get(ENV, "Nz", "10")
+
+function factors(N)
+    d = log2(N) / 2
+    D = exp2(ceil(Int, d)) |> Int
+
+    alternate = 1
+    tries = 1
+    while (N % D != 0)
+        D -= tries * alternate
+        tries += 1
+        alternate *= -1
+    end
+
+    return D, N ÷ D
+end
+
+Rx, Ry = factors(ndevices)
+Nx = 16 * Rx
+Ny = 16 * Ry
+Nz = 16
 
 @show grid_type = Symbol(grid_type_str)
 @show resolution_fraction = parse(Float64, resolution_fraction_str)
 @show time_step_str = parse(Float64, time_step_str)
 @show Nz = parse(Int, Nz_str)
 
-model = GordonBell25.baroclinic_instability_model(arch; grid_type, Δt=1, Nz,
-                                                  resolution=1/resolution_fraction)
+model = GordonBell25.baroclinic_instability_model(arch, Nx, Ny, Nz; grid_type, Δt=1)
 
 @info "[$rank] Compiling first_time_step!..." 
 rfirst! = @compile first_time_step!(model)
