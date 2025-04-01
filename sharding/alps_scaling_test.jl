@@ -56,11 +56,10 @@ kw = (;
 
 #config1 = JobConfig(arch_kind="ReactantState", tasks_per_node=1, Ngpus-[4, 8]; kw...)
 configs = [
-    # JobConfig(arch_kind="ReactantState", tasks_per_node=1, Ngpus=[1]; kw...),
+    JobConfig(arch_kind="ReactantState", tasks_per_node=1, Ngpus=[4, 8, 12]; kw...),
+    JobConfig(arch_kind="GPU", tasks_per_node=4, Ngpus=[4, 8, 12]; kw...),
     # JobConfig(arch_kind="GPU", tasks_per_node=1, Ngpus=[1]; kw...),
-    #JobConfig(arch_kind="ReactantState", tasks_per_node=1, Ngpus=[4, 8]; kw...),
-    #JobConfig(arch_kind="GPU", tasks_per_node=4, Ngpus=collect(1:12); kw...),
-    JobConfig(arch_kind="GPU", tasks_per_node=1, Ngpus=[1]; kw...),
+    # JobConfig(arch_kind="ReactantState", tasks_per_node=1, Ngpus=[1]; kw...),
 ]
 
 # run(`$(Base.julia_cmd()) --project -e 'using Pkg; Pkg.instantiate()'`)

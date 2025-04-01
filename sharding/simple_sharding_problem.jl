@@ -20,23 +20,37 @@ end
 
 Oceananigans.defaults.FloatType = FT
 
-local_arch, Nr, = if arch_kind == "ReactantState"
-    Nr = length(Reactant.devices())
-    (Oceananigans.ReactantState(), Nr)
+local_arch, Nd = if arch_kind == "ReactantState"
+    Nd = length(Reactant.devices())
+    (Oceananigans.ReactantState(), Nd)
 else
-    Nr = MPI.Comm_size(MPI.COMM_WORLD)
-    arch = GPU()
-    (arch, Nr, )
+    Nd = MPI.Comm_size(MPI.COMM_WORLD)
+    (GPU(), Nd)
 end
 
-Rx = floor(Int, sqrt(Nr))
-Ry = Nr ÷ Rx
+function similar_factors(N)
+    N == 1 && return (1, 1)
+    d = log2(N) / 2
+    D = exp2(ceil(Int, d)) |> Int
 
-if Nr == 1
+    alternate = 1
+    tries = 1
+    while (N % D != 0)
+        D -= tries * alternate
+        tries += 1
+        alternate *= -1
+    end
+
+    return D, N ÷ D
+end
+
+Rx, Ry = similar_factors(Nd)
+
+if Nd == 1
     arch = local_arch
     rank = 0
 else
-    Rx = floor(Int, sqrt(Nr))
+    Rx = floor(Int, sqrt(Nd))
     partition = Partition(Rx, Ry, 1)
     arch = Oceananigans.Distributed(local_arch; partition)
     @show CUDA.device()
@@ -46,9 +60,13 @@ end
 using Oceananigans.DistributedComputations: @handshake
 @handshake @show arch
 
+# Nx = 2048 * Rx
+# Ny = 1024 * Ry
+# Nz = 192
+
 Nx = 1024 * Rx
 Ny = 512 * Ry
-Nz = 256
+Nz = 128
 
 longitude = (0, 360)
 latitude = (-80, 80)
@@ -65,12 +83,9 @@ else
     FT(60.0)
 end
 
-#free_surface = ExplicitFreeSurface(gravitational_acceleration=1)
-free_surface = SplitExplicitFreeSurface(substeps=3)
-momentum_advection = WENOVectorInvariant()
-tracer_advection = WENO(order=7)
-closure = nothing
-model = GordonBell25.baroclinic_instability_model(grid; Δt, free_surface) #, closure, momentum_advection, tracer_advection)
+free_surface = SplitExplicitFreeSurface(substeps=30)
+closure = Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity()
+model = GordonBell25.baroclinic_instability_model(grid; Δt, free_surface, closure)
 @handshake @show model
 
 # Prep time stepping
@@ -113,7 +128,7 @@ CUDA.@time step!(model)
 @info "[$rank] step"
 CUDA.@time step!(model)
 
-CUDA.@profile step!(model)
+# @show CUDA.@profile step!(model)
 
 sleep(3)
 
