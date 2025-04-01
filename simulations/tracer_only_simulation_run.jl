@@ -18,16 +18,6 @@ model = GordonBell25.tracer_only_model(arch, Nx=32, Ny=32, Nz=32, Δt=1e-2)
 
 GC.gc(true); GC.gc(false); GC.gc(true)
 
-#=
-@time first_time_step!(model)
-@time time_step!(model)
-@time time_step!(model)
-@time time_step!(model)
-@time loop!(model, 10)
-@time loop!(model, 10)
-@time loop!(model, 10)
-=#
-
 @info "Compiling..."
 rfirst! = @compile raise=true sync=true first_time_step!(model)
 rstep! = @compile raise=true sync=true time_step!(model)
