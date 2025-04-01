@@ -37,7 +37,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        sim_type: ['baroclinic_instability', 'ocean_climate']
+        sim_type: ['baroclinic_instability', 'ocean_climate', 'tracer_only']
         julia_version: ['1.11']
         os: ['ubuntu-24.04']
         xla_runtime: ['IFRT', 'PJRT']
@@ -52,7 +52,7 @@ jobs:
             julia_version: '1.11'
             xla_runtime: 'IFRT'
             earlyoom_threshold: 4
-            sim_type: 'ocean_climate'
+ sim_type: 'ocean_climate'
         # include:
         #   - os: mg
         #     julia_version: '1.11'
