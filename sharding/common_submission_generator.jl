@@ -93,6 +93,13 @@ function generate_and_submit(submit_job_writer, cfg::JobConfig; caller_file::Str
 
 export CUDA_VISIBLE_DEVICES=$(join(0:(min(Ngpu, gpus_per_node) - 1), ','))
 export TZ=UTC
+export Ngpu=$(Ngpu)
+export resolution_fraction=$(resolution_fraction)
+export JULIA_DEBUG="Reactant,Reactant_jll"
+export JULIA_DEPOT_PATH=$(join(Base.DEPOT_PATH, ':'))
+# export TF_CPP_MAX_VLOG_LEVEL=3
+# export XLA_FLAGS="--xla_dump_to=$(job_dir)/xla_dump --xla_dump_hlo_pass_re=.*"
+export XLA_REACTANT_GPU_MEM_FRACTION=0.9
 
 # Important else XLA might hang indefinitely
 unset no_proxy http_proxy https_proxy NO_PROXY HTTP_PROXY HTTPS_PROXY

@@ -36,16 +36,8 @@ function alps_submit_job_writer(cfg::JobConfig, job_name, Nnodes, job_dir, Ngpu,
 #SBATCH --account=$(account)
 #SBATCH --exclusive
 
-
-export Ngpu=$(Ngpu)
-export resolution_fraction=$(resolution_fraction)
-export JULIA_DEBUG="Reactant,Reactant_jll"
-export JULIA_DEPOT_PATH=$(join(Base.DEPOT_PATH, ':'))
-# export TF_CPP_MAX_VLOG_LEVEL=3
-# export XLA_FLAGS="--xla_dump_to=$(job_dir)/xla_dump"
 export MPICH_GPU_SUPPORT_ENABLED=$(MPICH_GPU_SUPPORT_ENABLED)
 export FI_MR_CACHE_MONITOR=disabled
-export XLA_REACTANT_GPU_MEM_FRACTION=0.9
 
 ulimit -s unlimited
 
