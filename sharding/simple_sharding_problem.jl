@@ -82,7 +82,7 @@ grid = ImmersedBoundaryGrid(grid, GridFittedBottom(gaussian_islands))
 grid = LatitudeLongitudeGrid(arch, size=(Nx, Ny, Nz), z=(-4000, 0),
                              latitude = (-80, 80),
                              longitude = (0, 360),
-                             halos = (Hx, Hy, 2)
+                             halo = (Hx, Hy, 2)
                              )
 
 @info "[$(process_id)] allocations" Reactant.XLA.allocatorstats()
