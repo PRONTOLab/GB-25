@@ -45,7 +45,9 @@ function factors(N)
     return D, N ÷ D
 end
 
-Nx, Ny = 512 .* factors(ndevices)
+H = 7 # halo size
+T = Tx, Ty = 512 .* factors(ndevices)
+Nx, Ny = @. T - 2 * H - 1
 Nz = 128
 
 #=
@@ -78,7 +80,7 @@ grid = ImmersedBoundaryGrid(grid, GridFittedBottom(gaussian_islands))
 
 ##### Latlong grid
 @info "[$(process_id)] creating latlong grid" now(UTC)
-grid = LatitudeLongitudeGrid(arch, size=(Nx, Ny, Nz), halo=(7, 7, 7), z=(-4000, 0),
+grid = LatitudeLongitudeGrid(arch, size=(Nx, Ny, Nz), halo=(H, H, H), z=(-4000, 0),
                              latitude = (-80, 80),
                              longitude = (0, 360)
                              )
@@ -86,8 +88,13 @@ grid = LatitudeLongitudeGrid(arch, size=(Nx, Ny, Nz), halo=(7, 7, 7), z=(-4000, 
 @info "[$(process_id)] allocations" Reactant.XLA.allocatorstats()
 
 free_surface = ExplicitFreeSurface()
-model = HydrostaticFreeSurfaceModel(; grid, free_surface)
+model = HydrostaticFreeSurfaceModel(; grid, tracers=:c, free_surface)
 # model = HydrostaticFreeSurfaceModel(; grid)
+
+@show size(parent(model.velocities.u))
+@assert size(parent(model.velocities.u)) == size(parent(model.tracers.c))
+@assert size(parent(model.velocities.v)) == size(parent(model.tracers.c))
+@assert size(parent(model.velocities.w)) == size(parent(model.tracers.c))
 
 @show model
 
