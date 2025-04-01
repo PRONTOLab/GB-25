@@ -5,6 +5,7 @@ using Reactant
 
 # Reactant.Compiler.SROA_ATTRIBUTOR[] = false
 Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
+Reactant.Compiler.DEBUG_ALIASED_BUFFER_ASSIGNMENT_ERROR[] = true
 
 preamble()
 
