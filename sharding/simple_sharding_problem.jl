@@ -45,7 +45,8 @@ function factors(N)
     return D, N ÷ D
 end
 
-Nx, Ny = 512 .* factors(ndevices)
+Hx, Hy = (2, 2) .* factors(ndevices)
+Nx, Ny = (508, 508) .* factors(ndevices)
 Nz = 128
 
 #=
@@ -80,7 +81,9 @@ grid = ImmersedBoundaryGrid(grid, GridFittedBottom(gaussian_islands))
 @info "[$(process_id)] creating latlong grid" now(UTC)
 grid = LatitudeLongitudeGrid(arch, size=(Nx, Ny, Nz), halo=(7, 7, 7), z=(-4000, 0),
                              latitude = (-80, 80),
-                             longitude = (0, 360)
+                             longitude = (0, 360),
+                             topology = (Periodic, Periodic, Bounded),
+                             halos = (Hx, Hy, 2)
                              )
 
 @info "[$(process_id)] allocations" Reactant.XLA.allocatorstats()
