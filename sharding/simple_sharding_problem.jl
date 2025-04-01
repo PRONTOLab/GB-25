@@ -30,11 +30,22 @@ arch = Oceananigans.Distributed(
 
 # arch = Oceananigans.ReactantState()
 
-@assert ispow2(ndevices)
-Nx, Ny = let
-    x = log2(ndevices) / 2
-    512 .* Int.(exp2.((floor(Int, x), ceil(Int, x))))
+function factors(N)
+    d = log2(N) / 2
+    D = exp2(ceil(Int, d)) |> Int
+
+    alternate = 1
+    tries = 1
+    while (N % D != 0)
+        D -= tries * alternate
+        tries += 1
+        alternate *= -1
+    end
+
+    return D, N ÷ D
 end
+
+Nx, Ny = 512 .* factors(ndevices)
 Nz = 128
 
 #=
