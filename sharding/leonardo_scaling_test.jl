@@ -49,7 +49,9 @@ export JULIA_DEPOT_PATH=$(join(Base.DEPOT_PATH, ':'))
 # export XLA_FLAGS="--xla_dump_to=$(job_dir)/xla_dump"
 
 module load cuda/12.3
-srun --cpu-bind=verbose,cores $(job_dir)/launcher.sh $(Base.julia_cmd()[1]) --project=$(project_path) -O0 $(run_file)
+srun --cpu-bind=verbose,cores \
+     --export=ALL,LD_PRELOAD="/leonardo/prod/spack/5.2/install/0.21/linux-rhel8-icelake/gcc-12.2.0/nccl-2.19.3-1-cuoct3jempfrtirmnjwtxwr2wwgqrrbv/lib/libnccl.so.2" \
+     $(job_dir)/launcher.sh $(Base.julia_cmd()[1]) --project=$(project_path) -O0 $(run_file)
 """
 end
 
