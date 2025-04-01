@@ -52,7 +52,7 @@ jobs:
             julia_version: '1.11'
             xla_runtime: 'IFRT'
             earlyoom_threshold: 4
- sim_type: 'ocean_climate'
+            sim_type: 'ocean_climate'
         # include:
         #   - os: mg
         #     julia_version: '1.11'
