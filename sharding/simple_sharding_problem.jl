@@ -2,6 +2,7 @@ using Dates
 @info "This is where the fun begins" now(UTC)
 
 ENV["JULIA_DEBUG"] = "Reactant_jll,Reactant"
+jobid_procid = string(get(ENV, "SLURM_JOB_ID", Int(datetime2unix(now(UTC)) * 1000)), ".", get(ENV, "SLURM_PROCID", string(getpid())))
 
 using Oceananigans
 using Reactant
@@ -11,7 +12,7 @@ using Libdl: dllist
 @show filter(contains("nccl"), dllist())
 
 Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
-Reactant.MLIR.IR.DUMP_MLIR_DIR[] = joinpath(@__DIR__, "mlir_dumps", string(ENV["SLURM_JOB_ID"], ".", ENV["SLURM_PROCID"]))
+Reactant.MLIR.IR.DUMP_MLIR_DIR[] = joinpath(@__DIR__, "mlir_dumps", jobid_procid)
 Reactant.Compiler.DEBUG_DISABLE_RESHARDING[] = true
 Reactant.Compiler.DEBUG_PRINT_CODEGEN[] = true
 
@@ -142,7 +143,7 @@ compiled_loop! = @compile sync=true raise=true loop!(model, Ninner)
 # end
 # #-------------------------------------------------------------------------------
 
-profile_dir = joinpath(@__DIR__, "profiling", string(ENV["SLURM_JOB_ID"], ".", ENV["SLURM_PROCID"]))
+profile_dir = joinpath(@__DIR__, "profiling", jobid_procid)
 mkpath(profile_dir)
 Reactant.with_profiler(profile_dir) do
 
