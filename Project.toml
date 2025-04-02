@@ -49,7 +49,7 @@ Oceananigans = "0.96.5"
 PrecompileTools = "1.2.1"
 Printf = "1"
 Profile = "1"
-Reactant = "0.2.58"
+Reactant = "0.2.62"
 Serialization = "1"
 Setfield = "1.1.2"
 
