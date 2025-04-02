@@ -118,10 +118,10 @@ end
 # @info "[$(process_id)] allocations" Reactant.XLA.allocatorstats()
 
 @info "[$(process_id)] compiling first time step" now(UTC)
-compiled_first_time_step! = @compile sync=true raise=true first_time_step!(model)
+compiled_first_time_step! = @compile shardy_passes=:to_mhlo_shardings sync=true raise=true first_time_step!(model)
 @info "[$(process_id)] compiling loop" now(UTC)
 Ninner = ConcreteRNumber(2; sharding=Sharding.NamedSharding(arch.connectivity, ()))
-compiled_loop! = @compile sync=true raise=true loop!(model, Ninner)
+compiled_loop! = @compile shardy_passes=:to_mhlo_shardings sync=true raise=true loop!(model, Ninner)
 @info "[$(process_id)] allocations" Reactant.XLA.allocatorstats()
 
 # #-------------------------------------------------------------------------------
