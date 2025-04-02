@@ -45,9 +45,9 @@ function factors(N)
     return D, N ÷ D
 end
 
-H = 7 # halo size
+H = 8 # halo size
 T = Tx, Ty = 512 .* factors(ndevices)
-Nx, Ny = @. T - 2 * H - 1
+Nx, Ny = @. T - 2 * H 
 Nz = 128
 
 #=
