@@ -90,7 +90,7 @@ jobs:
           using Pkg
           Pkg.Registry.update()
           Pkg.add([
-             PackageSpec(; name="Reactant", rev="ap/aggressive_pointer_check"),
+             PackageSpec(; name="Reactant", rev="ap/codegen_fixes"),
           #     PackageSpec(; name="ReactantCore", rev="main"),
           #     PackageSpec(; name="Oceananigans", rev="main"),
           #     PackageSpec(; name="ClimaOcean", rev="main"),
