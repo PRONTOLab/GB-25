@@ -52,3 +52,6 @@ Profile = "1"
 Reactant = "0.2.58"
 Serialization = "1"
 Setfield = "1.1.2"
+
+[preferences.Reactant]
+xla_runtime = "IFRT"
