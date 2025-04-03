@@ -1,20 +1,46 @@
 cᵢ(x, y, z) = exp(-(x^2 + y^2) / 128)
 
-function tracer_only_model(arch; Nx, Ny, Nz, Δt,
-    tracer_advection=Centered(order=2))
+@inline function func(i, j, k, grid, clock, fields)
+    c = @inbounds fields.c[i, j, k]
+    return c - c^3 + log(abs(c) + 1)
+end
 
-    grid = RectilinearGrid(arch, size=(Nx, Ny, Nz), halo=(7, 7, 7),
-                           x=(-Nx/2, Nx/2), y=(-Ny/2, Ny/2), z=(0, Nz),
-                           topology = (Periodic, Periodic, Bounded))
+function tracer_only_model(arch; Nx, Ny, Nz, Δt)
 
-    model = HydrostaticFreeSurfaceModel(;
-        grid, velocities=PrescribedVelocityFields(),
-        tracers=:c, tracer_advection,
+    grid = LatitudeLongitudeGrid(arch,
+        size = (Nx, Ny, Nz),
+        halo = (1, 1, 1),
+        z = (0, 1),
+        latitude = (-80, 80),
+        longitude = (0, 360)
+    )
+
+    boundary_conditions = FieldBoundaryConditions(
+        top = nothing,
+        bottom = nothing,
+        east = nothing,
+        west = nothing,
+        north = nothing,
+        south = nothing,
+    )
+
+    c = CenterField(grid; boundary_conditions)
+    forcing = Forcing(func, discrete_form=true)
+
+    model = HydrostaticFreeSurfaceModel(; grid,
+        velocities = PrescribedVelocityFields(),
+        free_surface = nothing,
+        tracers  = (; c),
+        forcing = (; c=forcing),
+        tracer_advection = nothing,
     )
 
     Random.seed!(42)
-    set!(model, c=cᵢ)
+    c = model.tracers.c
+    cᵢ = rand(size(parent(c))...)
+    copyto!(parent(c), cᵢ)
     model.clock.last_Δt = Δt
 
     return model
 end
+
