@@ -2,6 +2,7 @@ using Dates
 @info "This is where the fun begins" now(UTC)
 
 ENV["JULIA_DEBUG"] = "Reactant_jll,Reactant"
+jobid_procid = string(get(ENV, "SLURM_JOB_ID", Int(datetime2unix(now(UTC)) * 1000)), ".", get(ENV, "SLURM_PROCID", string(getpid())))
 
 using Oceananigans
 using Reactant
@@ -11,9 +12,10 @@ using Libdl: dllist
 @show filter(contains("nccl"), dllist())
 
 Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
-Reactant.MLIR.IR.DUMP_MLIR_DIR[] = joinpath(@__DIR__, "mlir_dumps", string(ENV["SLURM_JOB_ID"], ".", ENV["SLURM_PROCID"]))
+Reactant.MLIR.IR.DUMP_MLIR_DIR[] = joinpath(@__DIR__, "mlir_dumps", jobid_procid)
 Reactant.Compiler.DEBUG_DISABLE_RESHARDING[] = true
 Reactant.Compiler.DEBUG_PRINT_CODEGEN[] = true
+Reactant.Compiler.WHILE_CONCAT[] = true
 
 Reactant.Distributed.initialize()
 
@@ -132,24 +134,24 @@ compiled_loop! = @compile sync=true raise=true loop!(model, Ninner)
 
 # #-------------------------------------------------------------------------------
 # code = @code_hlo optimize=:before_raise first_time_step!(model)
-# open(joinpath(@__DIR__, "first_time_step_before_raise_$(process_id).mlir"), "w") do io
+# open(joinpath(Reactant.MLIR.IR.DUMP_MLIR_DIR[], "first_time_step_before_raise_$(process_id).mlir"), "w") do io
 #     show(IOContext(io, :debug => true), code)
 # end
 # code = @code_hlo optimize=true first_time_step!(model)
-# open(joinpath(@__DIR__, "first_time_step_optimised_$(process_id).mlir"), "w") do io
+# open(joinpath(Reactant.MLIR.IR.DUMP_MLIR_DIR[], "first_time_step_optimised_$(process_id).mlir"), "w") do io
 #     show(IOContext(io, :debug => true), code)
 # end
 # code = @code_hlo optimize=:before_raise loop!(model, Ninner)
-# open(joinpath(@__DIR__, "loop_before_raise_$(process_id).mlir"), "w") do io
+# open(joinpath(Reactant.MLIR.IR.DUMP_MLIR_DIR[], "loop_before_raise_$(process_id).mlir"), "w") do io
 #     show(IOContext(io, :debug => true), code)
 # end
 # code = @code_hlo optimize=true loop!(model, Ninner)
-# open(joinpath(@__DIR__, "loop_optimised_$(process_id).mlir"), "w") do io
+# open(joinpath(Reactant.MLIR.IR.DUMP_MLIR_DIR[], "loop_optimised_$(process_id).mlir"), "w") do io
 #     show(IOContext(io, :debug => true), code)
 # end
 # #-------------------------------------------------------------------------------
 
-profile_dir = joinpath(@__DIR__, "profiling", string(ENV["SLURM_JOB_ID"], ".", ENV["SLURM_PROCID"]))
+profile_dir = joinpath(@__DIR__, "profiling", jobid_procid)
 mkpath(profile_dir)
 Reactant.with_profiler(profile_dir) do
 

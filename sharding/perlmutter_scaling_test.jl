@@ -38,10 +38,6 @@ ml load julia/1.10.9
 export SBATCH_ACCOUNT=$(cfg.account)
 export SALLOC_ACCOUNT=$(cfg.account)
 export JULIA_CUDA_MEMORY_POOL=none
-export Ngpu=$(Ngpu)
-export resolution_fraction=$(resolution_fraction)
-export JULIA_DEBUG="Reactant,Reactant_jll"
-export JULIA_DEPOT_PATH=\$SCRATCH/julia
 
 srun -n $(Nnodes) -c 32 -G $(Ngpu) --cpu-bind=verbose,cores $(job_dir)/launcher.sh julia --project=$(project_path) -O0 $(run_file) 
 """

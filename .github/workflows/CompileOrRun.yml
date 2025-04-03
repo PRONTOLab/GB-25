@@ -68,10 +68,7 @@ jobs:
       - uses: julia-actions/cache@v2
         if: ${{ startsWith(inputs.os, 'ubuntu') }}
         with:
-          cache-name: |
-            julia-cache;
-            workflow=${{ inputs.julia_version }}-${{ inputs.sim_type }}-${{ inputs.os }}-${{ inputs.xla_runtime }}-${{ inputs.compile_or_run }};
-            job=${{ github.job }}
+          cache-name: julia-cache;workflow=${{ inputs.julia_version }}-${{ inputs.sim_type }}-${{ inputs.os }}-${{ inputs.xla_runtime }}-${{ inputs.compile_or_run }};job=${{ github.job }}
       - name: Collect Workflow Telemetry
         uses: catchpoint/workflow-telemetry-action@v2
         with:
