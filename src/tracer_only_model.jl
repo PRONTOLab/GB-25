@@ -5,11 +5,10 @@ cᵢ(x, y, z) = exp(-(x^2 + y^2) / 128)
     return c - c^3 + log(abs(c) + 1)
 end
 
-function tracer_only_model(arch; Nx, Ny, Nz, Δt)
+function tracer_only_model(arch; Nx, Ny, Nz, Δt, halo=(0, 0, 0))
 
-    grid = LatitudeLongitudeGrid(arch,
+    grid = LatitudeLongitudeGrid(arch; halo,
         size = (Nx, Ny, Nz),
-        halo = (1, 1, 1),
         z = (0, 1),
         latitude = (-80, 80),
         longitude = (0, 360)
