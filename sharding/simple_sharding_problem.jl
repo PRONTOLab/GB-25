@@ -15,6 +15,7 @@ Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
 Reactant.MLIR.IR.DUMP_MLIR_DIR[] = joinpath(@__DIR__, "mlir_dumps", jobid_procid)
 Reactant.Compiler.DEBUG_DISABLE_RESHARDING[] = true
 Reactant.Compiler.DEBUG_PRINT_CODEGEN[] = true
+Reactant.Compiler.WHILE_CONCAT[] = true
 
 Reactant.Distributed.initialize()
 
@@ -126,19 +127,19 @@ compiled_loop! = @compile sync=true raise=true loop!(model, Ninner)
 
 # #-------------------------------------------------------------------------------
 # code = @code_hlo optimize=:before_raise first_time_step!(model)
-# open(joinpath(@__DIR__, "first_time_step_before_raise_$(process_id).mlir"), "w") do io
+# open(joinpath(Reactant.MLIR.IR.DUMP_MLIR_DIR[], "first_time_step_before_raise_$(process_id).mlir"), "w") do io
 #     show(IOContext(io, :debug => true), code)
 # end
 # code = @code_hlo optimize=true first_time_step!(model)
-# open(joinpath(@__DIR__, "first_time_step_optimised_$(process_id).mlir"), "w") do io
+# open(joinpath(Reactant.MLIR.IR.DUMP_MLIR_DIR[], "first_time_step_optimised_$(process_id).mlir"), "w") do io
 #     show(IOContext(io, :debug => true), code)
 # end
 # code = @code_hlo optimize=:before_raise loop!(model, Ninner)
-# open(joinpath(@__DIR__, "loop_before_raise_$(process_id).mlir"), "w") do io
+# open(joinpath(Reactant.MLIR.IR.DUMP_MLIR_DIR[], "loop_before_raise_$(process_id).mlir"), "w") do io
 #     show(IOContext(io, :debug => true), code)
 # end
 # code = @code_hlo optimize=true loop!(model, Ninner)
-# open(joinpath(@__DIR__, "loop_optimised_$(process_id).mlir"), "w") do io
+# open(joinpath(Reactant.MLIR.IR.DUMP_MLIR_DIR[], "loop_optimised_$(process_id).mlir"), "w") do io
 #     show(IOContext(io, :debug => true), code)
 # end
 # #-------------------------------------------------------------------------------
