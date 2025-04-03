@@ -19,8 +19,6 @@ alps_config = JobConfig(; username, account, out_dir, time, cpus_per_task, Ngpus
 function alps_submit_job_writer(cfg::JobConfig, job_name, Nnodes, job_dir, Ngpu,
                                 resolution_fraction, project_path, run_file)
 
-    MPICH_GPU_SUPPORT_ENABLED = 1
-
     """
 #!/bin/bash -l
 
@@ -36,7 +34,7 @@ function alps_submit_job_writer(cfg::JobConfig, job_name, Nnodes, job_dir, Ngpu,
 #SBATCH --account=$(account)
 #SBATCH --exclusive
 
-export MPICH_GPU_SUPPORT_ENABLED=$(MPICH_GPU_SUPPORT_ENABLED)
+export MPICH_GPU_SUPPORT_ENABLED=0
 export FI_MR_CACHE_MONITOR=disabled
 
 ulimit -s unlimited
