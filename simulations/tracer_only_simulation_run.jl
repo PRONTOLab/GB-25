@@ -17,7 +17,7 @@ arch = CPU()
 #arch = ReactantState()
 #arch = Distributed(ReactantState(), partition=Partition(2, 2, 1))
 halo = (0, 0, 0)
-model = GordonBell25.tracer_only_model(arch, halo, Nx=32, Ny=32, Nz=32, Δt=1e-2)
+model = GordonBell25.tracer_only_model(arch; halo, Nx=32, Ny=32, Nz=32, Δt=1e-2)
 
 GC.gc(true); GC.gc(false); GC.gc(true)
 
