@@ -14,3 +14,29 @@ This repository accompanies a submission for the 2025 Gordon Bell climate prize 
 * `sharding`: scripts and utilities that use XLA's sharding to distribute computations across multiple nodes. Oceananigans uses its `Distributed` architecture to represent sharding across nodes.
 
 * `ext`: many small packages that each precompile part of a model time-step, in order to accelerate compilation during intensive jobs.
+
+## Running scaling benchmarks
+
+Initial setup:
+
+* If you haven't already, install Julia following the instructions on the [official website](https://julialang.org/downloads/).
+  Julia may (or may not!) be available on the system you use, check that first too
+* Enter the directory and precompile the environment with
+  ```
+  julia --project -e 'using Pkg; Pkg.instantiate()'
+  ```
+  This step will take a few minutes, but should be needed only the first time (or any time you want to update the package)
+
+We have some scripts which use sharding in the [`sharding/`](./sharding) directory.
+You may be able to launch them locally with, e.g., (enter the `sharding` directory)
+```
+julia --project -O0 simple_sharding_problem.jl
+```
+Replace `simple_sharding_problem.jl` with the model you want to run.
+On systems we tested this application (Alps @ CSCS, Leonardo @ CINECA, Perlmutter @ NERSC) we provide some script to automatically submit scaling jobs that you can run with (need to be again inside the sharding directory)
+```
+julia alps_scaling_test.jl simple_sharding_problem.jl
+julia leonardo_scaling_test.jl simple_sharding_problem.jl
+julia perlmutter_scaling_test.jl simple_sharding_problem.jl
+```
+You'll need to tweak the content of the scaling test scripts to what you need, e.g. change `submit` to `true` to actuallt run the jobs, `time` to the walltime requested for the job, `Ngpus` for the number of GPUs you want to run on (note that that's number of GPUs , not nodes!), etc., have a look at the script for your system.
