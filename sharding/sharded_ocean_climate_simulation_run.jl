@@ -46,8 +46,7 @@ Nz_str = get(ENV, "Nz", "10")
 @show resolution_fraction = parse(Float64, resolution_fraction_str)
 @show Nz = parse(Int, Nz_str)
 
-model = GordonBell25.data_free_ocean_model_init(arch; Nz,
-                                                resolution=1/resolution_fraction)
+model = GordonBell25.data_free_ocean_climate_model_init(arch; Nz, resolution=1/resolution_fraction)
 
 @info "[$rank] Compiling first_time_step!..." 
 rfirst! = @compile first_time_step!(model)
