@@ -21,9 +21,14 @@ function (sharding::TreeSharding)(
     return sharding.sharding(client, device, x)
 end
 
-function factors(N)
+"""
+    factors(N::Int) -> NTuple{2, Int}
+
+Determine two adjectent factors of `N`, useful for finding partitioning factors for sharding.
+"""
+function factors(N::Int)
     d = log2(N) / 2
-    D = exp2(ceil(Int, d)) |> Int
+    D = Int(exp2(ceil(Int, d)))
 
     alternate = 1
     tries = 1
