@@ -70,7 +70,7 @@ jobs:
       julia_optlevel: 0
 
   run_sharded:
-    name: Sharded - Julia ${{ matrix.julia_version }} - ${{ matrix.grid_type }} - ${{ matrix.os }}
+    name: Sharded - Julia ${{ matrix.julia_version }} - ${{ matrix.sim_type }} - ${{ matrix.grid_type }} - ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
