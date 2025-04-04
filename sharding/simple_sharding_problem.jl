@@ -25,19 +25,6 @@ Reactant.Compiler.DUS_TO_CONCAT[] = true
 
 Reactant.Distributed.initialize()
 
-ndevices = length(Reactant.devices())
-nxdevices = floor(Int, sqrt(ndevices))
-nydevices = ndevices ÷ nxdevices
-
-process_id = Reactant.Distributed.local_rank()
-
-arch = Oceananigans.Distributed(
-    Oceananigans.ReactantState();
-    partition=Partition(nxdevices, nydevices, 1)
-)
-
-# arch = Oceananigans.ReactantState()
-
 function factors(N)
     d = log2(N) / 2
     D = exp2(ceil(Int, d)) |> Int
@@ -52,6 +39,15 @@ function factors(N)
 
     return D, N ÷ D
 end
+
+ndevices = length(Reactant.devices())
+
+process_id = Reactant.Distributed.local_rank()
+
+arch = Oceananigans.Distributed(
+    Oceananigans.ReactantState();
+    partition=Partition(factors(ndevices)..., 1)
+)
 
 H = 8 # halo size
 T = Tx, Ty = 512 .* factors(ndevices)
