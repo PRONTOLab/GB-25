@@ -41,6 +41,24 @@ export SBATCH_ACCOUNT=$(cfg.account)
 export SALLOC_ACCOUNT=$(cfg.account)
 export JULIA_CUDA_MEMORY_POOL=none
 
+# Equivalent to \$NCCL_DIR/lib/libnccl.so but will also work if module doesn't set NCCL_DIR
+export NCCL_LIB_PATH=\$(julia -e "n=\\"libnccl\\";using Libdl;dlopen(n);filter(contains(n),dllist())|>first|>println")
+
+#
+# HACKS to get this to work on Perlmutter
+#
+
+export LD_PRELOAD=\$NCCL_LIB_PATH
+export FI_CXI_RDZV_GET_MIN=0
+export FI_CXI_SAFE_DEVMEM_COPY_THRESHOLD=16777216
+# export MPICH_SMP_SINGLE_COPY_MODE=NONE
+# export NCCL_DEBUG=INFO
+# export FI_MR_CACHE_MONITOR=kdreg2
+# export MPICH_GPU_SUPPORT_ENABLED=0
+export NCCL_BUFFSIZE=33554432
+export JULIA_CUDA_USE_COMPAT=false
+
+
 srun -n $(Nnodes) -c 32 -G $(Ngpu) --cpu-bind=verbose,cores $(job_dir)/launcher.sh julia --project=$(project_path) -O0 $(run_file) 
 """
 end

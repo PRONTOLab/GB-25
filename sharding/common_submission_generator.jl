@@ -100,15 +100,6 @@ export JULIA_DEPOT_PATH=$(join(Base.DEPOT_PATH, ':'))
 # export TF_CPP_MAX_VLOG_LEVEL=3
 # export XLA_FLAGS="--xla_dump_to=$(job_dir)/xla_dump --xla_dump_hlo_pass_re=.*"
 export XLA_REACTANT_GPU_MEM_FRACTION=0.9
-export LD_PRELOAD=/global/common/software/nersc9/nccl/2.24.3/lib/libnccl.so
-export FI_CXI_RDZV_GET_MIN=0
-export FI_CXI_SAFE_DEVMEM_COPY_THRESHOLD=16777216
-export MPICH_SMP_SINGLE_COPY_MODE=NONE
-export NCCL_DEBUG=INFO
-export FI_MR_CACHE_MONITOR=kdreg2
-export MPICH_GPU_SUPPORT_ENABLED=0
-export NCCL_BUFFSIZE=33554432
-export JULIA_CUDA_USE_COMPAT=false
 
 # Important else XLA might hang indefinitely
 unset no_proxy http_proxy https_proxy NO_PROXY HTTP_PROXY HTTPS_PROXY
