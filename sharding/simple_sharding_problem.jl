@@ -24,7 +24,9 @@ Reactant.Compiler.DEBUG_PRINT_CODEGEN[] = true
 Reactant.Compiler.WHILE_CONCAT[] = true
 Reactant.Compiler.DUS_TO_CONCAT[] = true
 
-Reactant.Distributed.initialize()
+if !(get(ENV, "CI", "false") == "true")
+    Reactant.Distributed.initialize(; single_gpu_per_process=false)
+end
 
 ndevices = length(Reactant.devices())
 
