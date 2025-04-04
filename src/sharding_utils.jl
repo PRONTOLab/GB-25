@@ -49,3 +49,10 @@ function allocatorstats()
         Reactant.XLA.allocatorstats(device)
     end
 end
+
+function initialize(; kwargs...)
+    # TODO: improve the condition by checking the device we're on?
+    if get(ENV, "CI", "false") != "true"
+        Reactant.Distributed.initialize(; kwargs...)
+    end
+end
