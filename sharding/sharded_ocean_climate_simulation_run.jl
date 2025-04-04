@@ -12,7 +12,9 @@ using MPI
 # (GHA uses MPICH)
 MPI.Init()
 
-Reactant.Distributed.initialize(; single_gpu_per_process=false)
+if !(get(ENV, "CI", "false") == "true")
+    Reactant.Distributed.initialize(; single_gpu_per_process=false)
+end
 
 @show Ngpu = length(Reactant.devices())
 
