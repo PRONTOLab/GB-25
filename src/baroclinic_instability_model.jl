@@ -8,7 +8,7 @@
     return N² * z + Δb * μ + 1e-2 * Δb * randn()
 end
 
-function baroclinic_instability_model(arch; resolution, Δt, Nz,
+function baroclinic_instability_model(arch; Δt, Nx=nothing, Ny=nothing, resolution=nothing, Nz,
     grid_type = :simple_lat_lon, # :gaussian_islands
 
     # Fewer substeps can be used at higher resolutions
@@ -31,6 +31,11 @@ function baroclinic_instability_model(arch; resolution, Δt, Nz,
     momentum_advection = WENOVectorInvariant(order=5),
     tracer_advection = WENO(order=5),
     )
+    
+	if !(resolution isa Nothing)
+      Nx = convert(Int, 384 / resolution)
+      Ny = convert(Int, 192 / resolution)
+    end
 
     tracers = if buoyancy isa BuoyancyTracer
         [:b]
@@ -50,9 +55,9 @@ function baroclinic_instability_model(arch; resolution, Δt, Nz,
     tracers = tuple(tracers...)
 
     grid = if grid_type === :gaussian_islands
-        gaussian_islands_tripolar_grid(arch, resolution, Nz)
+        gaussian_islands_tripolar_grid(arch, Nx, Ny, Nz)
     elseif grid_type === :simple_lat_lon
-        simple_latitude_longitude_grid(arch, resolution, Nz)
+        simple_latitude_longitude_grid(arch, Nx, Ny, Nz)
     else
         error("grid_type=$grid_type must be :gaussian_islands or :simple_lat_lon.")
     end
