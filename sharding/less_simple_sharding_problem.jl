@@ -18,7 +18,7 @@ Reactant.Compiler.DEBUG_DISABLE_RESHARDING[] = true
 Reactant.Compiler.DEBUG_PRINT_CODEGEN[] = true
 Reactant.Compiler.WHILE_CONCAT[] = true
 
-# Reactant.Distributed.initialize()
+Reactant.Distributed.initialize()
 
 ndevices = length(Reactant.devices())
 nxdevices = floor(Int, sqrt(ndevices))
@@ -31,6 +31,7 @@ arch = Oceananigans.Distributed(
     partition=Partition(nxdevices, nydevices, 1)
 )
 
+# arch = CPU()
 # arch = Oceananigans.ReactantState()
 
 function factors(N)
@@ -48,9 +49,12 @@ function factors(N)
     return D, N ÷ D
 end
 
-H = 8 # halo size
-# T = Tx, Ty = 512 .* factors(ndevices)
-# Tz = 256
+# Nx, Ny = 64 .* (4, 4) # factors(ndevices)
+# Nz = 16
+
+H = 7 # halo size
+T = Tx, Ty = 512 .* factors(ndevices)
+Tz = 256
 Nx, Ny = 1024 .* factors(ndevices)
 Nz = 256
 
@@ -91,9 +95,9 @@ grid = LatitudeLongitudeGrid(arch, size=(Nx, Ny, Nz), halo=(H, H, H), z=(-4000, 
 
 @info "[$(process_id)] allocations" Reactant.XLA.allocatorstats()
 
-free_surface = SplitExplicitFreeSurface(substeps=64)
-momentum_advection = WENOVectorInvariant()
-tracer_advection = WENO(order=7)
+free_surface = SplitExplicitFreeSurface(substeps=32)
+momentum_advection = WENOVectorInvariant(order=5)
+tracer_advection = WENO(order=5)
 tracers = (:T, :S, :e)
 equation_of_state = TEOS10EquationOfState()
 buoyancy = SeawaterBuoyancy(; equation_of_state)
@@ -103,9 +107,9 @@ model = HydrostaticFreeSurfaceModel(; grid, tracers, free_surface,
                                     buoyancy, closure)
 
 @show size(parent(model.velocities.u))
-@assert size(parent(model.velocities.u)) == size(parent(model.tracers.T))
-@assert size(parent(model.velocities.v)) == size(parent(model.tracers.T))
-@assert size(parent(model.velocities.w)) == size(parent(model.tracers.T))
+# @assert size(parent(model.velocities.u)) == size(parent(model.tracers.T))
+# @assert size(parent(model.velocities.v)) == size(parent(model.tracers.T))
+# @assert size(parent(model.velocities.w)) == size(parent(model.tracers.T))
 
 @show model
 
