@@ -14,7 +14,7 @@ preamble()
 
 @info "Generating model..."
 arch = ReactantState()
-model = baroclinic_instability_model(arch, Δt=60, Nx=512, Ny=512, Nz=128)
+model = baroclinic_instability_model(arch, Δt=60, Nx=256, Ny=256, Nz=128)
 
 GC.gc(true); GC.gc(false); GC.gc(true)
 

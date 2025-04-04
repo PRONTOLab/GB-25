@@ -17,7 +17,7 @@ Oceananigans.defaults.FloatType = Float32
 @info "Generating model..."
 arch = ReactantState()
 #arch = Distributed(ReactantState(), partition=Partition(2, 2, 1))
-model = baroclinic_instability_model(arch, Δt=60, Nx=512, Ny=512, Nz=128)
+model = baroclinic_instability_model(arch, Δt=60, Nx=256, Ny=256, Nz=128)
 
 GC.gc(true); GC.gc(false); GC.gc(true)
 
