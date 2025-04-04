@@ -10,15 +10,13 @@ ENV["JULIA_DEBUG"] = "Reactant_jll,Reactant"
 jobid_procid = string(get(ENV, "SLURM_JOB_ID", Int(datetime2unix(now(UTC)) * 1000)), ".", get(ENV, "SLURM_PROCID", string(getpid())))
 
 using GordonBell25
-using GordonBell25: first_time_step!, time_step!, loop!
+using GordonBell25: first_time_step!, time_step!, loop!, factors
 using Oceananigans
 using Oceananigans.Units
 using Oceananigans.Architectures: ReactantState
 using Random
 using Printf
 using Reactant
-
-Reactant.Distributed.initialize(; single_gpu_per_process=false)
 
 using Libdl: dllist
 @show filter(contains("nccl"), dllist())
@@ -30,22 +28,7 @@ Reactant.Compiler.DEBUG_PRINT_CODEGEN[] = true
 Reactant.Compiler.WHILE_CONCAT[] = true
 Reactant.Compiler.DUS_TO_CONCAT[] = true
 
-Reactant.Distributed.initialize()
-
-function factors(N)
-    d = log2(N) / 2
-    D = exp2(ceil(Int, d)) |> Int
-
-    alternate = 1
-    tries = 1
-    while (N % D != 0)
-        D -= tries * alternate
-        tries += 1
-        alternate *= -1
-    end
-
-    return D, N ÷ D
-end
+GordonBell25.initialize(; single_gpu_per_process=false)
 
 ndevices = length(Reactant.devices())
 
@@ -55,48 +38,37 @@ arch = Oceananigans.Distributed(
     partition=Partition(factors(ndevices)..., 1)
 )
 
-H = 8 # halo size
-T = Tx, Ty = 512 .* factors(ndevices)
-Nx, Ny = @. T - 2 * H
 Nz = 128
 
-@info "[$(process_id)] allocations" Reactant.XLA.allocatorstats()
+@info "[$(process_id)] allocations" GordonBell25.allocatorstats()
 model = GordonBell25.baroclinic_instability_model(arch; grid_type=:simple_lat_lon, Δt=1, Nz,
                                                   resolution=1/0.25)
-@info "[$(process_id)] allocations" Reactant.XLA.allocatorstats()
+@info "[$(process_id)] allocations" GordonBell25.allocatorstats()
 
 @show model
-
-function loop!(model, Ninner)
-    @trace track_numbers=false for _ = 1:Ninner
-        time_step!(model)
-    end
-    return nothing
-end
 
 Ninner = ConcreteRNumber(256; sharding=Sharding.NamedSharding(arch.connectivity, ()))
 
 @info "[$(process_id)] Compiling first_time_step!..."
 rfirst! = @compile sync=true raise=true first_time_step!(model)
-@info "[$(process_id)] allocations" Reactant.XLA.allocatorstats()
+@info "[$(process_id)] allocations" GordonBell25.allocatorstats()
 @info "[$(process_id)] Compiling loop..."
-rstep! = @compile sync=true raise=true time_step!(model)
-@info "[$(process_id)] allocations" Reactant.XLA.allocatorstats()
+compiled_loop! = @compile sync=true raise=true loop!(model, Ninner)
+@info "[$(process_id)] allocations" GordonBell25.allocatorstats()
 
 profile_dir = joinpath(@__DIR__, "profiling", jobid_procid)
 mkpath(joinpath(profile_dir, "first_time_step"))
+@info "[$(process_id)] allocations" GordonBell25.allocatorstats()
+@info "[$(process_id)] running first time step" now(UTC)
 Reactant.with_profiler(joinpath(profile_dir, "first_time_step")) do
-    @info "[$(process_id)] allocations" Reactant.XLA.allocatorstats()
-    @info "[$(process_id)] running first time step" now(UTC)
     @time "[$(process_id)] first time step" rfirst!(model)
-    @info "[$(process_id)] allocations" Reactant.XLA.allocatorstats()
-
 end
+@info "[$(process_id)] allocations" GordonBell25.allocatorstats()
 
 mkpath(joinpath(profile_dir, "loop"))
+@info "[$(process_id)] allocations" GordonBell25.allocatorstats()
+@info "[$(process_id)] running loop" now(UTC)
 Reactant.with_profiler(joinpath(profile_dir, "loop")) do
-    @info "[$(process_id)] allocations" Reactant.XLA.allocatorstats()
-    @info "[$(process_id)] running loop" now(UTC)
     @time "[$(process_id)] loop" compiled_loop!(model, Ninner)
-    @info "[$(process_id)] allocations" Reactant.XLA.allocatorstats()
 end
+@info "[$(process_id)] allocations" GordonBell25.allocatorstats()
