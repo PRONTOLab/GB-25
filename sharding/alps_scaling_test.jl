@@ -3,11 +3,11 @@ include("common_submission_generator.jl")
 out_dir = @__DIR__
 
 # run params
-account  = "c44" #"g191"
-submit   = true
+account  = "g191"
+submit   = false
 run_name = "reactant_"
-time     = "01:00:00"
-Ngpus    = [64, 256] #[4, 8, 12, 16]
+time     = "00:40:00"
+Ngpus    = [4, 16] #[4, 8, 12, 16]
 type     = "weak"
 
 gpus_per_node = 4
