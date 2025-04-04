@@ -114,3 +114,7 @@ export MPICH_SMP_SINGLE_COPY_MODE=NONE
 export FI_MR_CACHE_MONITOR=kdreg2
 export MPICH_GPU_SUPPORT_ENABLED=0
 ```
+
+### Ludovic Fixed it!
+
+Looks like this was missing: `export JULIA_CUDA_USE_COMPAT=false` 
