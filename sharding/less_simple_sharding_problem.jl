@@ -93,7 +93,7 @@ grid = LatitudeLongitudeGrid(arch, size=(Nx, Ny, Nz), halo=(H, H, H), z=(-4000, 
 
 free_surface = SplitExplicitFreeSurface(substeps=64)
 momentum_advection = WENOVectorInvariant()
-tracer_advection = WENO()
+tracer_advection = WENO(order=7)
 tracers = (:T, :S, :e)
 equation_of_state = TEOS10EquationOfState()
 buoyancy = SeawaterBuoyancy(; equation_of_state)
