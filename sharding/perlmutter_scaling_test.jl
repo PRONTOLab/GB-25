@@ -1,13 +1,14 @@
 include("common_submission_generator.jl")
 
-account = "m4672"
+account = "nstaff"
 out_dir = joinpath(ENV["SCRATCH"], "GB25")
 
 # run params
 submit   = true
 run_name = "r_react_"
 time     = "01:00:00"
-Ngpus    = [4, 8, 16, 32, 64, 128]
+Ngpus    = [4, 8, 16, 32, 64]
+# Ngpus    = [128, 256, 512, 1024, 2048]
 type     = "weak"
 
 gpus_per_node = 4
@@ -23,7 +24,7 @@ function perlmutter_submit_job_writer(cfg::JobConfig, job_name, Nnodes, job_dir,
 #!/bin/bash -l
 
 #SBATCH -C gpu
-#SBATCH -q regular
+#SBATCH -q premium
 #SBATCH --gpu-bind=none
 #SBATCH --job-name="$(job_name)"
 #SBATCH --time=$(cfg.time)
@@ -33,7 +34,8 @@ function perlmutter_submit_job_writer(cfg::JobConfig, job_name, Nnodes, job_dir,
 #SBATCH --error=$(job_dir)/%j.err
 
 source /global/common/software/nersc9/julia/scripts/activate_beta.sh
-ml load julia/1.10.9
+ml load julia/1.11.4
+ml load nccl/2.24.3
 
 export SBATCH_ACCOUNT=$(cfg.account)
 export SALLOC_ACCOUNT=$(cfg.account)

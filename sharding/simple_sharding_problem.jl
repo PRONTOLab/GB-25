@@ -49,7 +49,8 @@ function factors(N)
 end
 
 H = 8 # halo size
-T = Tx, Ty = 512 .* factors(ndevices)
+T = Tx, Ty = 512 .* factors(ndevices) 
+println("TTTTTTTTTTTTTTTTT: $(T)")
 Nx, Ny = @. T - 2 * H
 Nz = 128
 
