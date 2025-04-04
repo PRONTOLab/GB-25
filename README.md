@@ -118,3 +118,5 @@ export MPICH_GPU_SUPPORT_ENABLED=0
 ### Ludovic Fixed it!
 
 Looks like this was missing: `export JULIA_CUDA_USE_COMPAT=false` 
+
+* Current working verison on Perlmutter here: https://github.com/PRONTOLab/GB-25/tree/jpb/futzing-about-on-pm
