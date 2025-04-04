@@ -28,12 +28,15 @@ Initial setup:
   This step will take a few minutes, but should be needed only the first time (or any time you want to update the package)
 
 We have some scripts which use sharding in the [`sharding/`](./sharding) directory.
-You may be able to launch them locally with, e.g., (enter the `sharding` directory)
+If you have multiple devices available locally, you may be able to launch a simple problem locally.
+To do this, you first must comment out `Reactant.Distributed.initialize()` in `sharding/simple_sharding_problem.jl`.
+Next, enter `sharding/` and type
 ```
 julia --project -O0 simple_sharding_problem.jl
 ```
-Replace `simple_sharding_problem.jl` with the model you want to run.
-On systems we tested this application (Alps @ CSCS, Leonardo @ CINECA, Perlmutter @ NERSC) we provide some script to automatically submit scaling jobs that you can run with (need to be again inside the sharding directory)
+(If you do not have multiple devices availalbe and you are using a CPU, add the flag `XLA_FLAGS="--xla_force_host_platform_device_count=4"` to
+trick XLA into thinking that you have 4 individual devices available, for example.)
+On systems we tested this application (Alps @ CSCS, Leonardo @ CINECA, Perlmutter @ NERSC) we provide some script to automatically submit scaling jobs that you can run with (need to be again inside the sharding directory, and in this case you do ***not*** need to comment out `Reactant.Distributed.initialize()`)
 ```
 julia alps_scaling_test.jl simple_sharding_problem.jl
 julia leonardo_scaling_test.jl simple_sharding_problem.jl
