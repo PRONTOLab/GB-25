@@ -1,3 +1,8 @@
+# Unset environment variables which would cause XLA distributed to hang indefinitely.
+for key in ("no_proxy", "http_proxy", "https_proxy", "NO_PROXY", "HTTP_PROXY", "HTTPS_PROXY")
+    delete!(ENV, key)
+end
+
 using Dates
 @info "This is when the fun begins" now(UTC)
 
@@ -17,6 +22,7 @@ Reactant.MLIR.IR.DUMP_MLIR_DIR[] = joinpath(@__DIR__, "mlir_dumps", jobid_procid
 Reactant.Compiler.DEBUG_DISABLE_RESHARDING[] = true
 Reactant.Compiler.DEBUG_PRINT_CODEGEN[] = true
 Reactant.Compiler.WHILE_CONCAT[] = true
+Reactant.Compiler.DUS_TO_CONCAT[] = true
 
 Reactant.Distributed.initialize()
 
