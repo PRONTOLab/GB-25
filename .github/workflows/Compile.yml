@@ -8,6 +8,7 @@ on:
       - 'simulations/baroclinic_instability_simulation_compile.jl'
       - 'simulations/ocean_climate_simulation_compile.jl'
       - 'Project.toml'
+      - 'ext/**'
       - 'src/**'
   push:
     branches:
@@ -20,6 +21,7 @@ on:
       - 'simulations/baroclinic_instability_simulation_compile.jl'
       - 'simulations/ocean_climate_simulation_compile.jl'
       - 'Project.toml'
+      - 'ext/**'
       - 'src/**'
   workflow_dispatch:
   schedule:
