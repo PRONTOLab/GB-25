@@ -173,4 +173,13 @@ end
 
 @info "[$(process_id)] allocations" Reactant.XLA.allocatorstats()
 
+mkpath(joinpath(profile_dir, "loop2"))
+@info "[$(process_id)] running loop2" now(UTC)
+Reactant.with_profiler(joinpath(profile_dir, "loop2")) do
+    @time "[$(process_id)] loop" compiled_loop!(model, Ninner)
+end
+
+@info "[$(process_id)] allocations" Reactant.XLA.allocatorstats()
+
+
 @info "Done!" now(UTC)
