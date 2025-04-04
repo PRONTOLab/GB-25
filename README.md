@@ -36,7 +36,7 @@ julia --project -O0 simple_sharding_problem.jl
 ```
 (If you do not have multiple devices availalbe and you are using a CPU, add the flag `XLA_FLAGS="--xla_force_host_platform_device_count=4"` to
 trick XLA into thinking that you have 4 individual devices available, for example.)
-On systems we tested this application (Alps @ CSCS, Leonardo @ CINECA, Perlmutter @ NERSC) we provide some script to automatically submit scaling jobs that you can run with (need to be again inside the sharding directory)
+On systems we tested this application (Alps @ CSCS, Leonardo @ CINECA, Perlmutter @ NERSC) we provide some script to automatically submit scaling jobs that you can run with (need to be again inside the sharding directory, and in this case you do ***not*** need to comment out `Reactant.Distributed.initialize()`)
 ```
 julia alps_scaling_test.jl simple_sharding_problem.jl
 julia leonardo_scaling_test.jl simple_sharding_problem.jl
