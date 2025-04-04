@@ -18,7 +18,9 @@ using Random
 using Printf
 using Reactant
 
-Reactant.Distributed.initialize(; single_gpu_per_process=false)
+if !(get(ENV, "CI", "false") == "true")
+    Reactant.Distributed.initialize(; single_gpu_per_process=false)
+end
 
 using Libdl: dllist
 @show filter(contains("nccl"), dllist())
@@ -29,8 +31,6 @@ Reactant.Compiler.DEBUG_DISABLE_RESHARDING[] = true
 Reactant.Compiler.DEBUG_PRINT_CODEGEN[] = true
 Reactant.Compiler.WHILE_CONCAT[] = true
 Reactant.Compiler.DUS_TO_CONCAT[] = true
-
-Reactant.Distributed.initialize()
 
 function factors(N)
     d = log2(N) / 2
