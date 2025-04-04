@@ -18,8 +18,6 @@ using Random
 using Printf
 using Reactant
 
-Reactant.Distributed.initialize(; single_gpu_per_process=false)
-
 using Libdl: dllist
 @show filter(contains("nccl"), dllist())
 
