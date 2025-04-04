@@ -90,20 +90,6 @@ model = HydrostaticFreeSurfaceModel(; grid, tracers=:c, free_surface)
 
 model.clock.last_Δt = ConcreteRNumber(60.0)
 
-function first_time_step!(model)
-    Δt = model.clock.last_Δt
-    Oceananigans.TimeSteppers.first_time_step!(model, Δt)
-    return nothing
-end
-
-function loop!(model, Ninner)
-    Δt = model.clock.last_Δt
-    @trace track_numbers=false for _ = 1:Ninner
-        Oceananigans.TimeSteppers.time_step!(model, Δt)
-    end
-    return nothing
-end
-
 @info "[$(process_id)] allocations" GordonBell25.allocatorstats()
 
 # @info "[$(process_id)] compiling first time step" now(UTC)
@@ -114,10 +100,10 @@ end
 # @info "[$(process_id)] allocations" GordonBell25.allocatorstats()
 
 @info "[$(process_id)] compiling first time step" now(UTC)
-compiled_first_time_step! = @compile sync=true raise=true first_time_step!(model)
+compiled_first_time_step! = @compile sync=true raise=true GordonBell25.first_time_step!(model)
 @info "[$(process_id)] compiling loop" now(UTC)
 Ninner = ConcreteRNumber(1024; sharding=Sharding.NamedSharding(arch.connectivity, ()))
-compiled_loop! = @compile sync=true raise=true loop!(model, Ninner)
+compiled_loop! = @compile sync=true raise=true GordonBell25.loop!(model, Ninner)
 @info "[$(process_id)] allocations" GordonBell25.allocatorstats()
 
 # #-------------------------------------------------------------------------------
@@ -142,32 +128,27 @@ compiled_loop! = @compile sync=true raise=true loop!(model, Ninner)
 profile_dir = joinpath(@__DIR__, "profiling", jobid_procid)
 mkpath(profile_dir)
 
-@info "[$(process_id)] running first time step" now(UTC)
-@info "[$(process_id)] allocations" GordonBell25.allocatorstats()
-
 mkpath(joinpath(profile_dir, "first_time_step"))
+@info "[$(process_id)] allocations" GordonBell25.allocatorstats()
+@info "[$(process_id)] running first time step" now(UTC)
 Reactant.with_profiler(joinpath(profile_dir, "first_time_step")) do
     @time "[$(process_id)] first time step" compiled_first_time_step!(model)
 end
 
-@info "[$(process_id)] allocations" GordonBell25.allocatorstats()
-
 mkpath(joinpath(profile_dir, "loop"))
+@info "[$(process_id)] allocations" GordonBell25.allocatorstats()
 @info "[$(process_id)] running loop" now(UTC)
 Reactant.with_profiler(joinpath(profile_dir, "loop")) do
     @time "[$(process_id)] loop" compiled_loop!(model, Ninner)
 end
 
-@info "[$(process_id)] running second loop" now(UTC)
-@info "[$(process_id)] allocations" GordonBell25.allocatorstats()
-
 mkpath(joinpath(profile_dir, "loop2"))
+@info "[$(process_id)] allocations" GordonBell25.allocatorstats()
+@info "[$(process_id)] running second loop" now(UTC)
 @info "[$(process_id)] running loop2" now(UTC)
 Reactant.with_profiler(joinpath(profile_dir, "loop2")) do
     @time "[$(process_id)] loop" compiled_loop!(model, Ninner)
 end
-
 @info "[$(process_id)] allocations" GordonBell25.allocatorstats()
-
 
 @info "Done!" now(UTC)

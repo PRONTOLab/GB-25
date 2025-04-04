@@ -12,6 +12,7 @@ jobid_procid = string(get(ENV, "SLURM_JOB_ID", Int(datetime2unix(now(UTC)) * 100
 using Oceananigans
 using SeawaterPolynomials.TEOS10: TEOS10EquationOfState
 using Reactant
+using GordonBell25: GordonBell25
 
 using Libdl: dllist
 
@@ -24,22 +25,7 @@ Reactant.Compiler.DEBUG_PRINT_CODEGEN[] = true
 Reactant.Compiler.WHILE_CONCAT[] = true
 Reactant.Compiler.DUS_TO_CONCAT[] = true
 
-Reactant.Distributed.initialize()
-
-function factors(N)
-    d = log2(N) / 2
-    D = exp2(ceil(Int, d)) |> Int
-
-    alternate = 1
-    tries = 1
-    while (N % D != 0)
-        D -= tries * alternate
-        tries += 1
-        alternate *= -1
-    end
-
-    return D, N ÷ D
-end
+GordonBell25.initialize(; single_gpu_per_process=false)
 
 ndevices = length(Reactant.devices())
 
@@ -80,7 +66,7 @@ gaussian_islands(λ, φ) = 2 * (mtn₁(λ, φ) + mtn₂(λ, φ))
 grid = ImmersedBoundaryGrid(grid, GridFittedBottom(gaussian_islands))
 =#
 
-@info "[$(process_id)] allocations" Reactant.XLA.allocatorstats()
+@info "[$(process_id)] allocations" GordonBell25.allocatorstats()
 
 ##### Latlong grid
 @info "[$(process_id)] creating latlong grid" now(UTC)
@@ -89,7 +75,7 @@ grid = LatitudeLongitudeGrid(arch, size=(Nx, Ny, Nz), halo=(H, H, H), z=(-4000, 
                              longitude = (0, 360)
                              )
 
-@info "[$(process_id)] allocations" Reactant.XLA.allocatorstats()
+@info "[$(process_id)] allocations" GordonBell25.allocatorstats()
 
 free_surface = SplitExplicitFreeSurface(substeps=32)
 momentum_advection = WENOVectorInvariant(order=5)
@@ -111,35 +97,21 @@ model = HydrostaticFreeSurfaceModel(; grid, tracers, free_surface,
 
 model.clock.last_Δt = ConcreteRNumber(60.0)
 
-function first_time_step!(model)
-    Δt = model.clock.last_Δt
-    Oceananigans.TimeSteppers.first_time_step!(model, Δt)
-    return nothing
-end
-
-function loop!(model, Ninner)
-    Δt = model.clock.last_Δt
-    @trace track_numbers=false for _ = 1:Ninner
-        Oceananigans.TimeSteppers.time_step!(model, Δt)
-    end
-    return nothing
-end
-
-@info "[$(process_id)] allocations" Reactant.XLA.allocatorstats()
+@info "[$(process_id)] allocations" GordonBell25.allocatorstats()
 
 # @info "[$(process_id)] compiling first time step" now(UTC)
 # compiled_first_time_step! = @compile sync=true Oceananigans.TimeSteppers.first_time_step!(model, model.clock.last_Δt)
 # @info "[$(process_id)] compiling second time step" now(UTC)
 # compiled_time_step! = @compile sync=true Oceananigans.TimeSteppers.time_step!(model, model.clock.last_Δt)
 # compiled_update_state! = @compile sync=true Oceananigans.TimeSteppers.update_state!(model)
-# @info "[$(process_id)] allocations" Reactant.XLA.allocatorstats()
+# @info "[$(process_id)] allocations" GordonBell25.allocatorstats()
 
 @info "[$(process_id)] compiling first time step" now(UTC)
-compiled_first_time_step! = @compile sync=true raise=true first_time_step!(model)
+compiled_first_time_step! = @compile sync=true raise=true GordonBell25.first_time_step!(model)
 @info "[$(process_id)] compiling loop" now(UTC)
-Ninner = ConcreteRNumber(2; sharding=Sharding.NamedSharding(arch.connectivity, ()))
-compiled_loop! = @compile sync=true raise=true loop!(model, Ninner)
-@info "[$(process_id)] allocations" Reactant.XLA.allocatorstats()
+Ninner = ConcreteRNumber(128; sharding=Sharding.NamedSharding(arch.connectivity, ()))
+compiled_loop! = @compile sync=true raise=true GordonBell25.loop!(model, Ninner)
+@info "[$(process_id)] allocations" GordonBell25.allocatorstats()
 
 # #-------------------------------------------------------------------------------
 # code = @code_hlo optimize=:before_raise first_time_step!(model)
@@ -162,30 +134,28 @@ compiled_loop! = @compile sync=true raise=true loop!(model, Ninner)
 
 profile_dir = joinpath(@__DIR__, "profiling", jobid_procid)
 mkpath(profile_dir)
-Reactant.with_profiler(profile_dir) do
 
-    # @info "[$(process_id)] running first time step" now(UTC)
-    # @info "[$(process_id)] allocations" Reactant.XLA.allocatorstats()
-    # @time "[$(process_id)] first time step" compiled_first_time_step!(model, model.clock.last_Δt)
-    # @info "[$(process_id)] allocations" Reactant.XLA.allocatorstats()
-    # @info "[$(process_id)] running loop" now(UTC)
-    # @time "[$(process_id)] loop" for iter in 2:10
-    #     @info "[$(process_id)] iterating" iter now(UTC)
-    #     @time "[$(process_id)] $(iter)-th timestep" compiled_update_state!(model)
-    #     if iter < 10 || iszero(iter % 50)
-    #         @info "[$(process_id)] allocations" iter Reactant.XLA.allocatorstats()
-    #     end
-    # end
-
-    Ninner = ConcreteRNumber(10; sharding=Sharding.NamedSharding(arch.connectivity, ()))
-    @info "[$(process_id)] running first time step" now(UTC)
-    @info "[$(process_id)] allocations" Reactant.XLA.allocatorstats()
+mkpath(joinpath(profile_dir, "first_time_step"))
+@info "[$(process_id)] allocations" GordonBell25.allocatorstats()
+@info "[$(process_id)] running first time step" now(UTC)
+Reactant.with_profiler(joinpath(profile_dir, "first_time_step")) do
     @time "[$(process_id)] first time step" compiled_first_time_step!(model)
-    @info "[$(process_id)] allocations" Reactant.XLA.allocatorstats()
-    @info "[$(process_id)] running loop" now(UTC)
-    @time "[$(process_id)] loop" compiled_loop!(model, Ninner)
-    @info "[$(process_id)] allocations" Reactant.XLA.allocatorstats()
-
 end
+
+mkpath(joinpath(profile_dir, "loop"))
+@info "[$(process_id)] allocations" GordonBell25.allocatorstats()
+@info "[$(process_id)] running loop" now(UTC)
+Reactant.with_profiler(joinpath(profile_dir, "loop")) do
+    @time "[$(process_id)] loop" compiled_loop!(model, Ninner)
+end
+
+mkpath(joinpath(profile_dir, "loop2"))
+@info "[$(process_id)] allocations" GordonBell25.allocatorstats()
+@info "[$(process_id)] running second loop" now(UTC)
+@info "[$(process_id)] running loop2" now(UTC)
+Reactant.with_profiler(joinpath(profile_dir, "loop2")) do
+    @time "[$(process_id)] loop" compiled_loop!(model, Ninner)
+end
+@info "[$(process_id)] allocations" GordonBell25.allocatorstats()
 
 @info "Done!" now(UTC)
