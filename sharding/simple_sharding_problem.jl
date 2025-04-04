@@ -1,5 +1,5 @@
 using Dates
-@info "This is where the fun begins" now(UTC)
+@info "This is when the fun begins" now(UTC)
 
 ENV["JULIA_DEBUG"] = "Reactant_jll,Reactant"
 jobid_procid = string(get(ENV, "SLURM_JOB_ID", Int(datetime2unix(now(UTC)) * 1000)), ".", get(ENV, "SLURM_PROCID", string(getpid())))
