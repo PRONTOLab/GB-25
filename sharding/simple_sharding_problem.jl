@@ -1,3 +1,8 @@
+# Unset environment variables which would cause XLA distributed to hang indefinitely.
+for key in ("no_proxy", "http_proxy", "https_proxy", "NO_PROXY", "HTTP_PROXY", "HTTPS_PROXY")
+    delete!(ENV, key)
+end
+
 using Dates
 @info "This is when the fun begins" now(UTC)
 
