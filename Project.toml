@@ -5,8 +5,9 @@ version = "0.1.0"
 
 [deps]
 CFTime = "179af706-886a-5703-950a-314cd64e0468"
-# Keep `CUDA_Runtime_jll` even if otherwise unused, we need to make local
-# preferences on this package effective.
+# Keep `CUDA` and `CUDA_Runtime_jll` even if otherwise unused, we need to make
+# local preferences on these packages effective.
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 CUDA_Runtime_jll = "76a88914-d11a-5bdc-97e0-2f5a05c973a2"
 ClimaOcean = "0376089a-ecfe-4b0e-a64f-9c555d74d754"
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
@@ -42,6 +43,7 @@ PrecompileInitializeF32 = ["Oceananigans", "Reactant"]
 
 [compat]
 CFTime = "0.1.4"
+CUDA = "5.7.1"
 ClimaOcean = "0.5.10"
 Dates = "1"
 HDF5_jll = "=1.14.3"
