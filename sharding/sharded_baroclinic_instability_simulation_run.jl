@@ -39,11 +39,11 @@ arch = Oceananigans.Distributed(
     partition=Partition(factors(ndevices)..., 1)
 )
 
-Nz = 128
+Nz = 16
 
 @info "[$(process_id)] allocations" GordonBell25.allocatorstats()
 model = GordonBell25.baroclinic_instability_model(arch; grid_type=:simple_lat_lon, Δt=1, Nz,
-                                                  resolution=1/0.25)
+                                                  resolution=4)
 @info "[$(process_id)] allocations" GordonBell25.allocatorstats()
 
 @show model
