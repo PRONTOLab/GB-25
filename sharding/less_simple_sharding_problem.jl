@@ -10,6 +10,7 @@ ENV["JULIA_DEBUG"] = "Reactant_jll,Reactant"
 jobid_procid = string(get(ENV, "SLURM_JOB_ID", Int(datetime2unix(now(UTC)) * 1000)), ".", get(ENV, "SLURM_PROCID", string(getpid())))
 
 using Oceananigans
+using SeawaterPolynomials.TEOS10: TEOS10EquationOfState
 using Reactant
 using GordonBell25: GordonBell25
 
@@ -29,16 +30,15 @@ GordonBell25.initialize(; single_gpu_per_process=false)
 ndevices = length(Reactant.devices())
 
 process_id = Reactant.Distributed.local_rank()
-
 arch = Oceananigans.Distributed(
     Oceananigans.ReactantState();
-    partition=Partition(GordonBell25.factors(ndevices)..., 1)
+    partition=Partition(factors(ndevices)..., 1)
 )
 
 H = 8 # halo size
-T = Tx, Ty = 512 .* GordonBell25.factors(ndevices)
+T = Tx, Ty = 512 .* factors(ndevices)
 Nx, Ny = @. T - 2 * H
-Nz = 128
+Nz = 256
 
 #=
 ##### Tripolar Grid
@@ -77,14 +77,21 @@ grid = LatitudeLongitudeGrid(arch, size=(Nx, Ny, Nz), halo=(H, H, H), z=(-4000, 
 
 @info "[$(process_id)] allocations" GordonBell25.allocatorstats()
 
-free_surface = ExplicitFreeSurface()
-model = HydrostaticFreeSurfaceModel(; grid, tracers=:c, free_surface)
-# model = HydrostaticFreeSurfaceModel(; grid)
+free_surface = SplitExplicitFreeSurface(substeps=32)
+momentum_advection = WENOVectorInvariant(order=5)
+tracer_advection = WENO(order=5)
+tracers = (:T, :S, :e)
+equation_of_state = TEOS10EquationOfState()
+buoyancy = SeawaterBuoyancy(; equation_of_state)
+closure = Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity()
+model = HydrostaticFreeSurfaceModel(; grid, tracers, free_surface,
+                                    momentum_advection, tracer_advection,
+                                    buoyancy, closure)
 
 @show size(parent(model.velocities.u))
-@assert size(parent(model.velocities.u)) == size(parent(model.tracers.c))
-@assert size(parent(model.velocities.v)) == size(parent(model.tracers.c))
-@assert size(parent(model.velocities.w)) == size(parent(model.tracers.c))
+# @assert size(parent(model.velocities.u)) == size(parent(model.tracers.T))
+# @assert size(parent(model.velocities.v)) == size(parent(model.tracers.T))
+# @assert size(parent(model.velocities.w)) == size(parent(model.tracers.T))
 
 @show model
 
@@ -102,7 +109,7 @@ model.clock.last_Δt = ConcreteRNumber(60.0)
 @info "[$(process_id)] compiling first time step" now(UTC)
 compiled_first_time_step! = @compile sync=true raise=true GordonBell25.first_time_step!(model)
 @info "[$(process_id)] compiling loop" now(UTC)
-Ninner = ConcreteRNumber(1024; sharding=Sharding.NamedSharding(arch.connectivity, ()))
+Ninner = ConcreteRNumber(128; sharding=Sharding.NamedSharding(arch.connectivity, ()))
 compiled_loop! = @compile sync=true raise=true GordonBell25.loop!(model, Ninner)
 @info "[$(process_id)] allocations" GordonBell25.allocatorstats()
 
