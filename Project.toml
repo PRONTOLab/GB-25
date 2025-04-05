@@ -42,14 +42,16 @@ PrecompileInitializeF32 = ["Oceananigans", "Reactant"]
 
 [compat]
 CFTime = "0.1.4"
-ClimaOcean = "0.5.6"
+ClimaOcean = "0.5.10"
 Dates = "1"
 HDF5_jll = "=1.14.3"
-Oceananigans = "0.96.12"
+MPI = "0.20.22"
+Oceananigans = "0.96.15"
 PrecompileTools = "1.2.1"
 Printf = "1"
 Profile = "1"
-Reactant = "0.2.62"
+Reactant = "0.2.64"
+SeawaterPolynomials = "0.3.9"
 Serialization = "1"
 
 [preferences.Reactant]
