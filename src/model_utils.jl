@@ -38,10 +38,7 @@ macro gbprofile(name::String, expr::Expr)
     end
 end
 
-function simple_latitude_longitude_grid(arch, resolution, Nz)
-    Nx = convert(Int, 384 / resolution)
-    Ny = convert(Int, 192 / resolution)
-
+function simple_latitude_longitude_grid(arch, Nx::Int, Ny::Int, Nz::Int)
     z_faces = exponential_z_faces(; Nz, depth=4000, h=30) # may need changing for very large Nz
 
     grid = LatitudeLongitudeGrid(arch, size=(Nx, Ny, Nz), halo=(7, 7, 7), z=z_faces,
@@ -84,10 +81,7 @@ function Sᵢ(λ, φ, z)
     return dSdz * z + rand()
 end
 
-function gaussian_islands_tripolar_grid(arch::Architectures.AbstractArchitecture, resolution, Nz)
-    Nx = convert(Int, 384 / resolution)
-    Ny = convert(Int, 192 / resolution)
-
+function gaussian_islands_tripolar_grid(arch::Architectures.AbstractArchitecture, Nx, Ny, Nz)
     # Grid setup
     z_faces = exponential_z_faces(; Nz, depth=4000, h=30) # may need changing for very large Nz
     underlying_grid = TripolarGrid(arch; size=(Nx, Ny, Nz), halo=(7, 7, 7), z=z_faces)

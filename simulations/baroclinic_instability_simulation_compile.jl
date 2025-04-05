@@ -7,11 +7,14 @@ using Oceananigans.Architectures: ReactantState
 PROFILE[] = true
 Oceananigans.defaults.FloatType = Float32
 
+Reactant.Compiler.WHILE_CONCAT[] = true
+Reactant.Compiler.DUS_TO_CONCAT[] = true
+
 preamble()
 
 @info "Generating model..."
 arch = ReactantState()
-model = baroclinic_instability_model(arch, resolution=8, Δt=60, Nz=10)
+model = baroclinic_instability_model(arch, Δt=60, Nx=256, Ny=256, Nz=128)
 
 GC.gc(true); GC.gc(false); GC.gc(true)
 
