@@ -14,12 +14,12 @@ MPI.Init()
 
 Reactant.Distributed.initialize(; single_gpu_per_process=false)
 
-@show ndevices = length(Reactant.devices())
+@show Ndev = length(Reactant.devices())
 
-if Ngpu == 1
+if Ndev == 1
     rank = 0
     arch = Oceananigans.ReactantState()
-elseif Ngpu == 2
+elseif Ndev == 2
     rank = Reactant.Distributed.local_rank()
 
     arch = Oceananigans.Distributed(
@@ -27,8 +27,8 @@ elseif Ngpu == 2
         partition = Partition(1, 2, 1)
     )
 else
-    Rx = floor(Int, sqrt(Ngpu))
-    Ry = Ngpu ÷ Rx
+    Rx = floor(Int, sqrt(Ndev))
+    Ry = Ndev ÷ Rx
     rank = Reactant.Distributed.local_rank()
 
     arch = Oceananigans.Distributed(
@@ -40,35 +40,16 @@ end
 using Dates
 @info "[$rank] Generating model..." now(UTC)
 
-grid_type_str = get(ENV, "grid_type", "simple_lat_lon")
-time_step_str = get(ENV, "time_step", "60")
-
-function factors(N)
-    d = log2(N) / 2
-    D = exp2(ceil(Int, d)) |> Int
-
-    alternate = 1
-    tries = 1
-    while (N % D != 0)
-        D -= tries * alternate
-        tries += 1
-        alternate *= -1
-    end
-
-    return D, N ÷ D
-end
-
-Rx, Ry = factors(ndevices)
-Nx = 16 * Rx
-Ny = 16 * Ry
+H = 8
+Rx, Ry = GordonBell25.factors(Ndev)
+Tx = 16 * Rx
+Ty = 16 * Ry
 Nz = 16
 
-@show grid_type = Symbol(grid_type_str)
-@show resolution_fraction = parse(Float64, resolution_fraction_str)
-@show time_step_str = parse(Float64, time_step_str)
-@show Nz = parse(Int, Nz_str)
+Nx = Tx - 2H
+Ny = Ty - 2H
 
-model = GordonBell25.baroclinic_instability_model(arch, Nx, Ny, Nz; grid_type, Δt=1)
+model = GordonBell25.baroclinic_instability_model(arch, Nx, Ny, Nz; halo=(H, H, H), Δt=1)
 
 @info "[$rank] Compiling first_time_step!..." 
 rfirst! = @compile first_time_step!(model)
