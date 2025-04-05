@@ -1,0 +1,11 @@
+image = "/capstor/scratch/cscs/mgiordan/santis/repo/GB-25/container-alps/reactant.sqsh"
+mounts = ["/capstor/scratch/cscs/mgiordan:/capstor/scratch/cscs/mgiordan"]
+workdir = "/capstor/scratch/cscs/mgiordan/santis/repo/GB-25"
+
+[env]
+#NCCL_DEBUG = "Info"
+NCCL_NET_GDR_LEVEL = "2"
+
+[annotations]
+com.hooks.aws_ofi_nccl.enabled = "true"
+com.hooks.aws_ofi_nccl.variant = "cuda12"

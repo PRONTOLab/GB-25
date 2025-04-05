@@ -1,0 +1,3 @@
+[Reactant_jll]
+cuda_version = "12.6"
+gpu = "cuda"

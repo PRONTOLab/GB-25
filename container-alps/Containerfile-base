@@ -1,0 +1,38 @@
+# -*- dockerfile -*-
+
+ARG BASE=docker.io/nvidia/cuda:12.8.1-devel-ubuntu22.04
+
+FROM $BASE
+
+ARG GDRCOPY_VER=2.3
+
+RUN apt-get update && \
+    apt-get install -y autoconf libtool git wget libhwloc-dev && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN git clone --depth=1 -b v${GDRCOPY_VER} https://github.com/NVIDIA/gdrcopy.git && \
+    cd gdrcopy && \
+    export CUDA_PATH=${CUDA_HOME:-$(echo $(which nvcc) | grep -o '.*cuda')} && \
+    make CC=gcc CUDA=$CUDA_PATH lib && \
+    make lib_install && \
+    cd ../ && rm -rf gdrcopy
+
+ENV JULIA_DEPOT_PATH=/usr/local/julia_depot
+ENV JULIAUP_DEPOT_PATH=/usr/local/julia
+
+RUN wget -O install.sh https://install.julialang.org && \
+    chmod +x ./install.sh && \
+    ./install.sh --yes --path /usr/local/julia --default-channel 1.11.4
+
+ENV PATH=/usr/local/julia/bin:$PATH
+
+RUN julia -E 'Base.current_image_targets()'
+RUN julia -E 'Base.DEPOT_PATH'
+
+RUN git clone --depth=1 https://github.com/PRONTOLab/GB-25 && \
+    cd GB-25 && \
+    export JULIA_DEBUG="Reactant_jll" && \
+    julia --project -O2 -e 'using Pkg; Pkg.instantiate()' && \
+    cd ../ && \
+    rm -rf GB-25

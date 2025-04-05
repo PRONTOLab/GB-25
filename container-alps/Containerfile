@@ -1,0 +1,16 @@
+# syntax=docker/dockerfile:1
+FROM ghcr.io/juliahpc/gb25-reactant-base:latest
+
+RUN mkdir -pv /workspace
+
+COPY Manifest.toml /workspace/Manifest.toml
+COPY Project.toml /workspace/Project.toml
+COPY container-alps/LocalPreferences.toml /workspace/LocalPreferences.toml
+COPY src /workspace/src
+COPY ext /workspace/ext
+
+RUN export JULIA_DEBUG="Reactant_jll" && \
+    export LD_LIBRARY_PATH="/usr/local/cuda-12.8/compat:${LD_LIBRARY_PATH}" && \
+    julia --project="/workspace" -O2 -e 'using Pkg; Pkg.instantiate()'
+
+RUN rm -rfv /workspace
