@@ -27,6 +27,7 @@ Reactant.Compiler.DEBUG_DISABLE_RESHARDING[] = true
 Reactant.Compiler.DEBUG_PRINT_CODEGEN[] = true
 Reactant.Compiler.WHILE_CONCAT[] = true
 Reactant.Compiler.DUS_TO_CONCAT[] = true
+Reactant.DEBUG_ENSURE_ALWAYS_SHARDED[] = true
 
 GordonBell25.initialize(; single_gpu_per_process=false)
 
