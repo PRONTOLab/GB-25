@@ -29,7 +29,6 @@ Reactant.Compiler.WHILE_CONCAT[] = true
 Reactant.Compiler.DUS_TO_CONCAT[] = true
 
 GordonBell25.initialize(; single_gpu_per_process=false)
-
 ndevices = length(Reactant.devices())
 
 process_id = Reactant.Distributed.local_rank()
