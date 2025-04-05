@@ -5,6 +5,9 @@ version = "0.1.0"
 
 [deps]
 CFTime = "179af706-886a-5703-950a-314cd64e0468"
+# Keep `CUDA_Runtime_jll` even if otherwise unused, we need to make local
+# preferences on this package effective.
+CUDA_Runtime_jll = "76a88914-d11a-5bdc-97e0-2f5a05c973a2"
 ClimaOcean = "0376089a-ecfe-4b0e-a64f-9c555d74d754"
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
 HDF5_jll = "0234f1f7-429e-5d53-9886-15a909be8d59"
