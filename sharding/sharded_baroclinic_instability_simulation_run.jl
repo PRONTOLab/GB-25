@@ -28,23 +28,7 @@ Reactant.Compiler.DEBUG_PRINT_CODEGEN[] = true
 Reactant.Compiler.WHILE_CONCAT[] = true
 Reactant.Compiler.DUS_TO_CONCAT[] = true
 
-function factors(N)
-    d = log2(N) / 2
-    D = exp2(ceil(Int, d)) |> Int
-
-    alternate = 1
-    tries = 1
-    while (N % D != 0)
-        D -= tries * alternate
-        tries += 1
-        alternate *= -1
-    end
-
-    return D, N ÷ D
-end
-
 GordonBell25.initialize(; single_gpu_per_process=false)
-
 ndevices = length(Reactant.devices())
 
 process_id = Reactant.Distributed.local_rank()
