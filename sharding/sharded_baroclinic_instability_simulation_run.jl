@@ -29,20 +29,40 @@ Reactant.Compiler.WHILE_CONCAT[] = true
 Reactant.Compiler.DUS_TO_CONCAT[] = true
 
 GordonBell25.initialize(; single_gpu_per_process=false)
+@show Ndev = length(Reactant.devices())
 
-ndevices = length(Reactant.devices())
+if Ndev == 1
+    rank = 0
+    arch = Oceananigans.ReactantState()
+elseif Ndev == 2
+    rank = Reactant.Distributed.local_rank()
 
-process_id = Reactant.Distributed.local_rank()
-arch = Oceananigans.Distributed(
-    Oceananigans.ReactantState();
-    partition=Partition(factors(ndevices)..., 1)
-)
+    arch = Oceananigans.Distributed(
+        Oceananigans.ReactantState();
+        partition = Partition(1, 2, 1)
+    )
+else
+    Rx, Ry = factors(Ndev)
+    arch = Oceananigans.Distributed(
+        Oceananigans.ReactantState();
+        partition = Partition(Rx, Ry, 1)
+    )
+    rank = Reactant.Distributed.local_rank()
+end
 
 Nz = 128
 
 @info "[$(process_id)] allocations" GordonBell25.allocatorstats()
-model = GordonBell25.baroclinic_instability_model(arch; grid_type=:simple_lat_lon, Δt=1, Nz,
-                                                  resolution=1/0.25)
+H = 8
+Tx = 16 * Rx
+Ty = 16 * Ry
+Nz = 16
+
+Nx = Tx - 2H
+Ny = Ty - 2H
+
+@info "[$rank] Generating model..." now(UTC)
+model = GordonBell25.baroclinic_instability_model(arch, Nx, Ny, Nz; halo=(H, H, H), Δt=1)
 @info "[$(process_id)] allocations" GordonBell25.allocatorstats()
 
 @show model
@@ -65,6 +85,9 @@ Reactant.with_profiler(joinpath(profile_dir, "first_time_step")) do
 end
 @info "[$(process_id)] allocations" GordonBell25.allocatorstats()
 
+@time "[$rank] Running first_time_step!..." rfirst!(model)
+@time "[$rank] Warming up..." rstep!(model)
+
 mkpath(joinpath(profile_dir, "loop"))
 @info "[$(process_id)] allocations" GordonBell25.allocatorstats()
 @info "[$(process_id)] running loop" now(UTC)
@@ -72,3 +95,4 @@ Reactant.with_profiler(joinpath(profile_dir, "loop")) do
     @time "[$(process_id)] loop" compiled_loop!(model, Ninner)
 end
 @info "[$(process_id)] allocations" GordonBell25.allocatorstats()
+
