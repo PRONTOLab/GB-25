@@ -78,14 +78,11 @@ compiled_loop! = @compile sync=true raise=true loop!(model, Ninner)
 profile_dir = joinpath(@__DIR__, "profiling", jobid_procid)
 mkpath(joinpath(profile_dir, "first_time_step"))
 @info "[$rank] allocations" GordonBell25.allocatorstats()
-@info "[$rank] running first time step" now(UTC)
+@time "[$rank] Running first_time_step!..." rfirst!(model)
 Reactant.with_profiler(joinpath(profile_dir, "first_time_step")) do
     @time "[$rank] first time step" rfirst!(model)
 end
 @info "[$rank] allocations" GordonBell25.allocatorstats()
-
-@time "[$rank] Running first_time_step!..." rfirst!(model)
-@time "[$rank] Warming up..." rstep!(model)
 
 mkpath(joinpath(profile_dir, "loop"))
 @info "[$rank] allocations" GordonBell25.allocatorstats()
