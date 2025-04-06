@@ -51,13 +51,11 @@ else
     rank = Reactant.Distributed.local_rank()
 end
 
-Nz = 4
-
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 H = 8
-Tx = 32 * Rx
-Ty = 16 * Ry
-Nz = 8
+Tx = 24 * Rx
+Ty = 12 * Ry
+Nz = 4
 
 Nx = Tx - 2H
 Ny = Ty - 2H
