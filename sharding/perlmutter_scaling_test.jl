@@ -7,8 +7,8 @@ out_dir = joinpath(ENV["SCRATCH"], "GB25")
 submit   = true
 run_name = "r_react_"
 time     = "01:00:00"
-# Ngpus    = [4, 8, 16, 32, 64]
-Ngpus    = [128, 256, 512, 1024, 2048]
+Ngpus    = [4, 8, 16, 32, 64]
+# Ngpus    = [128, 256, 512, 1024, 2048]
 type     = "weak"
 
 gpus_per_node = 4

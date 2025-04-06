@@ -2,6 +2,11 @@ using Dates, Random
 
 username = ENV["USER"]
 
+# Don't have a wide screen display => this'll help me keep to an 8 char limit
+macro W_str(s)
+    :(replace($(esc(s)), r"\n+" => " "))
+end
+
 @kwdef struct JobConfig
     username::String
     account::String
@@ -31,27 +36,32 @@ function generate_and_submit(submit_job_writer, cfg::JobConfig; caller_file::Str
 
     exe_path = Base.ARGS[1]
     input_file = joinpath(@__DIR__, exe_path)
+
     if !isfile(input_file)
-        error("File $(run_file) does not exist")
+        error("File $(input_file) does not exist")
     end
+
     # Some filesystems don't like colons in directory names
     timestamp = replace(string(now(UTC)), ':' => '-')
     out_path = joinpath(cfg.out_dir, "runs", "$(timestamp)_$(randstring(4))")
     project_path = dirname(@__DIR__)
 
-    if !isfile(joinpath("..", "Manifest.toml"))
-        error("Manifest.toml missing in the top-level directory of this repository! Instantiate the environment before submitting the job")
+    if !isfile(project_path, "Manifest.toml")
+        error(W"""
+            Manifest.toml missing in the top-level directory of this
+            repository! Instantiate the environment before submitting the job
+        """)
     end
 
     mkpath(out_path)
 
     # Copy environment files and run files for future reference.
     for filename in ("Project.toml", "Manifest.toml", "LocalPreferences.toml")
-        if filename == "LocalPreferences.toml" && !isfile(joinpath("..", filename))
+        if filename == "LocalPreferences.toml" && !isfile(joinpath(project_path, filename))
             @warn "LocalPreferences.toml missing, are you sure you selected the XLA runtime correctly?"
             continue
         end
-        cp(joinpath("..", filename), joinpath(out_path, filename))
+        cp(joinpath(project_path, filename), joinpath(out_path, filename))
     end
     run_file = joinpath(out_path, basename(input_file))
     cp(input_file, run_file)
