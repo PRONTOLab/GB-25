@@ -53,7 +53,7 @@ end
 
 Nz = 4
 
-@info "[$(process_id)] allocations" GordonBell25.allocatorstats()
+@info "[$rank] allocations" GordonBell25.allocatorstats()
 H = 8
 Tx = 32 * Rx
 Ty = 16 * Ry
@@ -64,36 +64,36 @@ Ny = Ty - 2H
 
 @info "[$rank] Generating model..." now(UTC)
 model = GordonBell25.baroclinic_instability_model(arch, Nx, Ny, Nz; halo=(H, H, H), Δt=1)
-@info "[$(process_id)] allocations" GordonBell25.allocatorstats()
+@info "[$rank] allocations" GordonBell25.allocatorstats()
 
 @show model
 
 Ninner = ConcreteRNumber(256; sharding=Sharding.NamedSharding(arch.connectivity, ()))
 
-@info "[$(process_id)] Compiling first_time_step!..."
+@info "[$rank] Compiling first_time_step!..."
 rfirst! = @compile sync=true raise=true first_time_step!(model)
-@info "[$(process_id)] allocations" GordonBell25.allocatorstats()
-@info "[$(process_id)] Compiling loop..."
+@info "[$rank] allocations" GordonBell25.allocatorstats()
+@info "[$rank] Compiling loop..."
 compiled_loop! = @compile sync=true raise=true loop!(model, Ninner)
-@info "[$(process_id)] allocations" GordonBell25.allocatorstats()
+@info "[$rank] allocations" GordonBell25.allocatorstats()
 
 profile_dir = joinpath(@__DIR__, "profiling", jobid_procid)
 mkpath(joinpath(profile_dir, "first_time_step"))
-@info "[$(process_id)] allocations" GordonBell25.allocatorstats()
-@info "[$(process_id)] running first time step" now(UTC)
+@info "[$rank] allocations" GordonBell25.allocatorstats()
+@info "[$rank] running first time step" now(UTC)
 Reactant.with_profiler(joinpath(profile_dir, "first_time_step")) do
-    @time "[$(process_id)] first time step" rfirst!(model)
+    @time "[$rank] first time step" rfirst!(model)
 end
-@info "[$(process_id)] allocations" GordonBell25.allocatorstats()
+@info "[$rank] allocations" GordonBell25.allocatorstats()
 
 @time "[$rank] Running first_time_step!..." rfirst!(model)
 @time "[$rank] Warming up..." rstep!(model)
 
 mkpath(joinpath(profile_dir, "loop"))
-@info "[$(process_id)] allocations" GordonBell25.allocatorstats()
-@info "[$(process_id)] running loop" now(UTC)
+@info "[$rank] allocations" GordonBell25.allocatorstats()
+@info "[$rank] running loop" now(UTC)
 Reactant.with_profiler(joinpath(profile_dir, "loop")) do
-    @time "[$(process_id)] loop" compiled_loop!(model, Ninner)
+    @time "[$rank] loop" compiled_loop!(model, Ninner)
 end
-@info "[$(process_id)] allocations" GordonBell25.allocatorstats()
+@info "[$rank] allocations" GordonBell25.allocatorstats()
 
