@@ -9,13 +9,15 @@ Tx, Ty = 128, 64
 Nx, Ny = (Tx, Ty) .- 2H
 Nz = 32
 
+vitd = VerticallyImplicitTimeDiscretization()
+vertical_diffusivity = VerticalScalarDiffusivity(vitd, κ=1e-5, ν=1e-4)
+
 kw = (
-    resolution = 8,
-    free_surface = SplitExplicitFreeSurface(substeps=32),
-    #free_surface = ExplicitFreeSurface(),
+    resolution = 32,
+    free_surface = SplitExplicitFreeSurface(substeps=2),
     coriolis = nothing,
-    buoyancy = BuoyancyTracer(),
-    closure = nothing,
+    buoyancy = nothing, # BuoyancyTracer(),
+    closure = nothing, # vertical_diffusivity,
     momentum_advection = nothing,
     tracer_advection = nothing,
     Δt = 60,
@@ -35,37 +37,17 @@ set!(vmodel, u=ui, v=vi)
 GordonBell25.sync_states!(rmodel, vmodel)
 GordonBell25.compare_states(rmodel, vmodel)
 
-function problem_kernel(model)
-    Oceananigans.Models.HydrostaticFreeSurfaceModels.update_hydrostatic_pressure!(
-        model.pressure.pHY′,
-        model.grid.architecture,
-        model.grid,
-        model.buoyancy,
-        model.tracers
-    )
-    return nothing
-end
-
-rproblem = @compile sync=true raise=true problem_kernel(rmodel)
-rproblem(rmodel)
-problem_kernel(vmodel)
-
-rp = rmodel.pressure.pHY′
-vp = vmodel.pressure.pHY′
-GordonBell25.compare_fields("pHY", rp, vp)
-
-#=
-Nt = 10
-rNt = ConcreteRNumber(Nt)
-
 rfirst! = @compile sync=true raise=true GordonBell25.first_time_step!(rmodel)
-rloop! = @compile sync=true raise=true GordonBell25.loop!(rmodel, rNt)
 
 @time rfirst!(rmodel)
 @time GordonBell25.first_time_step!(vmodel)
 GordonBell25.compare_states(rmodel, vmodel)
 
-# rloop!(rmodel, rNt)
-# @time GordonBell25.loop!(rmodel, Nt)
-# @time GordonBell25.compare_states(rmodel, vmodel)
+#=
+Nt = 10
+rNt = ConcreteRNumber(Nt)
+rloop! = @compile sync=true raise=true GordonBell25.loop!(rmodel, rNt)
+@time rloop!(rmodel, rNt)
+@time GordonBell25.loop!(vmodel, Nt)
+GordonBell25.compare_states(rmodel, vmodel)
 =#
