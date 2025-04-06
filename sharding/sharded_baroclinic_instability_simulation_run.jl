@@ -30,46 +30,65 @@ Reactant.Compiler.DUS_TO_CONCAT[] = true
 # Reactant.DEBUG_ENSURE_ALWAYS_SHARDED[] = true
 
 GordonBell25.initialize(; single_gpu_per_process=false)
+@show Ndev = length(Reactant.devices())
 
-ndevices = length(Reactant.devices())
+if Ndev == 1
+    rank = 0
+    arch = Oceananigans.ReactantState()
+elseif Ndev == 2
+    rank = Reactant.Distributed.local_rank()
 
-process_id = Reactant.Distributed.local_rank()
-arch = Oceananigans.Distributed(
-    Oceananigans.ReactantState();
-    partition=Partition(factors(ndevices)..., 1)
-)
+    arch = Oceananigans.Distributed(
+        Oceananigans.ReactantState();
+        partition = Partition(1, 2, 1)
+    )
+else
+    Rx, Ry = factors(Ndev)
+    arch = Oceananigans.Distributed(
+        Oceananigans.ReactantState();
+        partition = Partition(Rx, Ry, 1)
+    )
+    rank = Reactant.Distributed.local_rank()
+end
 
+@info "[$rank] allocations" GordonBell25.allocatorstats()
+H = 8
+Tx = 48 * Rx
+Ty = 24 * Ry
 Nz = 4
 
-@info "[$(process_id)] allocations" GordonBell25.allocatorstats()
-model = GordonBell25.baroclinic_instability_model(arch; grid_type=:simple_lat_lon, Δt=1, Nz,
-                                                  resolution=8)
-@info "[$(process_id)] allocations" GordonBell25.allocatorstats()
+Nx = Tx - 2H
+Ny = Ty - 2H
+
+@info "[$rank] Generating model..." now(UTC)
+model = GordonBell25.baroclinic_instability_model(arch, Nx, Ny, Nz; halo=(H, H, H), Δt=1)
+@info "[$rank] allocations" GordonBell25.allocatorstats()
 
 @show model
 
 Ninner = ConcreteRNumber(256; sharding=Sharding.NamedSharding(arch.connectivity, ()))
 
-@info "[$(process_id)] Compiling first_time_step!..."
+@info "[$rank] Compiling first_time_step!..."
 rfirst! = @compile sync=true raise=true first_time_step!(model)
-@info "[$(process_id)] allocations" GordonBell25.allocatorstats()
-@info "[$(process_id)] Compiling loop..."
+@info "[$rank] allocations" GordonBell25.allocatorstats()
+@info "[$rank] Compiling loop..."
 compiled_loop! = @compile sync=true raise=true loop!(model, Ninner)
-@info "[$(process_id)] allocations" GordonBell25.allocatorstats()
+@info "[$rank] allocations" GordonBell25.allocatorstats()
 
 profile_dir = joinpath(@__DIR__, "profiling", jobid_procid)
 mkpath(joinpath(profile_dir, "first_time_step"))
-@info "[$(process_id)] allocations" GordonBell25.allocatorstats()
-@info "[$(process_id)] running first time step" now(UTC)
+@info "[$rank] allocations" GordonBell25.allocatorstats()
+@time "[$rank] Running first_time_step!..." rfirst!(model)
 Reactant.with_profiler(joinpath(profile_dir, "first_time_step")) do
-    @time "[$(process_id)] first time step" rfirst!(model)
+    @time "[$rank] first time step" rfirst!(model)
 end
-@info "[$(process_id)] allocations" GordonBell25.allocatorstats()
+@info "[$rank] allocations" GordonBell25.allocatorstats()
 
 mkpath(joinpath(profile_dir, "loop"))
-@info "[$(process_id)] allocations" GordonBell25.allocatorstats()
-@info "[$(process_id)] running loop" now(UTC)
+@info "[$rank] allocations" GordonBell25.allocatorstats()
+@info "[$rank] running loop" now(UTC)
 Reactant.with_profiler(joinpath(profile_dir, "loop")) do
-    @time "[$(process_id)] loop" compiled_loop!(model, Ninner)
+    @time "[$rank] loop" compiled_loop!(model, Ninner)
 end
-@info "[$(process_id)] allocations" GordonBell25.allocatorstats()
+@info "[$rank] allocations" GordonBell25.allocatorstats()
+

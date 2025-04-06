@@ -8,7 +8,14 @@
     return N² * z + Δb * μ + 1e-2 * Δb * randn()
 end
 
-function baroclinic_instability_model(arch; resolution, Δt, Nz,
+
+function baroclinic_instability_model(arch; resolution, Nz, kw...)
+    Nx, Ny = resolution_to_points(resolution)
+    return baroclinic_instability_model(arch, Nx, Ny, Nz; kw...)
+end
+
+function baroclinic_instability_model(arch, Nx, Ny, Nz; Δt,
+    halo = (8, 8, 8),
     grid_type = :simple_lat_lon, # :gaussian_islands
 
     # Fewer substeps can be used at higher resolutions
@@ -50,9 +57,9 @@ function baroclinic_instability_model(arch; resolution, Δt, Nz,
     tracers = tuple(tracers...)
 
     grid = if grid_type === :gaussian_islands
-        gaussian_islands_tripolar_grid(arch, resolution, Nz)
+        gaussian_islands_tripolar_grid(arch, Nx, Ny, Nz; halo)
     elseif grid_type === :simple_lat_lon
-        simple_latitude_longitude_grid(arch, resolution, Nz)
+        simple_latitude_longitude_grid(arch, Nx, Ny, Nz; halo)
     else
         error("grid_type=$grid_type must be :gaussian_islands or :simple_lat_lon.")
     end
