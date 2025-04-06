@@ -8,6 +8,9 @@ using Printf
 using Reactant
 using MPI
 
+using Dates
+@info "This is when the fun begins" now(UTC)
+
 # Need this for sharding with non-openMPI implementations?
 # (GHA uses MPICH)
 MPI.Init()
@@ -39,16 +42,17 @@ else
     )
 end
 
-using Dates
 @info "[$rank] Generating model..." now(UTC)
+@info "[$rank] allocations" GordonBell25.allocatorstats()
+H = 8
+Tx = 48 * Rx
+Ty = 24 * Ry
+Nz = 4
 
-resolution_fraction_str = get(ENV, "resolution_fraction", "0.25")
-Nz_str = get(ENV, "Nz", "10")
+Nx = Tx - 2H
+Ny = Ty - 2H
 
-@show resolution_fraction = parse(Float64, resolution_fraction_str)
-@show Nz = parse(Int, Nz_str)
-
-model = GordonBell25.data_free_ocean_climate_model_init(arch; Nz, resolution=1/resolution_fraction)
+model = GordonBell25.data_free_ocean_climate_model_init(arch, Nx, Ny, Nz; halo=(H, H, H), Δt=10)
 
 @info "[$rank] Compiling first_time_step!..." 
 rfirst! = @compile first_time_step!(model)
