@@ -27,6 +27,7 @@ Reactant.Compiler.DEBUG_DISABLE_RESHARDING[] = true
 Reactant.Compiler.DEBUG_PRINT_CODEGEN[] = true
 Reactant.Compiler.WHILE_CONCAT[] = true
 Reactant.Compiler.DUS_TO_CONCAT[] = true
+# Reactant.DEBUG_ENSURE_ALWAYS_SHARDED[] = true
 
 GordonBell25.initialize(; single_gpu_per_process=false)
 
@@ -38,11 +39,11 @@ arch = Oceananigans.Distributed(
     partition=Partition(factors(ndevices)..., 1)
 )
 
-Nz = 128
+Nz = 4
 
 @info "[$(process_id)] allocations" GordonBell25.allocatorstats()
 model = GordonBell25.baroclinic_instability_model(arch; grid_type=:simple_lat_lon, Δt=1, Nz,
-                                                  resolution=1/0.25)
+                                                  resolution=8)
 @info "[$(process_id)] allocations" GordonBell25.allocatorstats()
 
 @show model
