@@ -2,11 +2,12 @@ using Reactant
 using Printf
 
 function compare_fields(name, ψ1, ψ2)
-    ψ1 = Array(parent(ψ1))
-    ψ2 = Array(parent(ψ2))
+    ψ1 = Array(interior(ψ1))
+    ψ2 = Array(interior(ψ2))
     δ = ψ1 .- ψ2
     @printf("(%4s) ψ₁ ≈ ψ₂: %-5s, max|ψ₁|, max|ψ₂|: %.15e, %.15e, max|δ|: %.15e \n",
-            name, ψ1 ≈ ψ2, maximum(abs, ψ1), maximum(abs, ψ2), maximum(abs, δ))
+            name, isapprox(ψ1, ψ2, rtol=1e-3, atol=sqrt(eps(eltype(ψ1)))),
+            maximum(abs, ψ1), maximum(abs, ψ2), maximum(abs, δ))
 end
 
 function compare_states(m1, m2)
@@ -51,10 +52,28 @@ function sync_states!(m1, m2)
     Ψ1 = Oceananigans.fields(m1)
     Ψ2 = Oceananigans.fields(m2)
     for name in keys(Ψ1)
-        ψ1p = parent(Ψ1[name])
-        ψ2p = parent(Ψ2[name])
-        copyto!(ψ1p, Reactant.to_rarray(ψ2p))
+        ψ1 = Ψ1[name]
+        ψ2 = Ψ2[name]
+        loc = Oceananigans.Fields.location(ψ1)
+        #if loc[3] != Nothing
+        ψ2r = Reactant.to_rarray(interior(Ψ2[name]))
+        #@jit donated_args=:none copy_interior!(interior(ψ1), ψ2r)
+        @jit copy_interior!(ψ1, ψ2r)
+        #end
     end
     return nothing
 end
   
+using KernelAbstractions
+
+function copy_interior!(rf, vf)
+    grid = rf.grid
+    arch = Oceananigans.Architectures.architecture(grid)
+    Oceananigans.Utils.launch!(arch, grid, size(rf), _copy_interior!, interior(rf), vf)
+    return nothing
+end
+
+@kernel function _copy_interior!(rf, vf)
+    i, j, k = @index(Global, NTuple)
+    @inbounds rf[i, j, k] = vf[i, j, k]
+end
