@@ -9,7 +9,7 @@ PROFILE[] = true
 preamble()
 
 @info "Generating model..."
-model = data_free_ocean_climate_model_init(ReactantState())
+model = data_free_ocean_climate_model_init(ReactantState(), resolution=8)
 
 GC.gc(true); GC.gc(false); GC.gc(true)
 
