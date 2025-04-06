@@ -45,7 +45,7 @@ export JULIA_CUDA_MEMORY_POOL=none
 module load cuda/12.3
 srun --cpu-bind=verbose,cores \
      --export=ALL,LD_PRELOAD="/leonardo/prod/spack/5.2/install/0.21/linux-rhel8-icelake/gcc-12.2.0/nccl-2.19.3-1-cuoct3jempfrtirmnjwtxwr2wwgqrrbv/lib/libnccl.so.2" \
-     $(job_dir)/launcher.sh $(Base.julia_cmd()[1]) --project=$(project_path) --startup-file=no --pkgimages=existing -O0 $(run_file)
+     $(job_dir)/launcher.sh $(Base.julia_cmd()[1]) --project=$(project_path) --startup-file=no --compiled-modules=strict -O0 $(run_file)
 """
 end
 
