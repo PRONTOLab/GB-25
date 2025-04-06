@@ -102,7 +102,7 @@ function gaussian_islands_tripolar_grid(arch::Architectures.AbstractArchitecture
     z = exponential_z_faces(; Nz, depth=4000, h=30) # may need changing for very large Nz
     underlying_grid = TripolarGrid(arch; size=(Nx, Ny, Nz), halo, z)
 
-    zb = z_faces[1]
+    zb = z[1]
     h = -zb + 100
     gaussian_islands(λ, φ) = zb + h * (mtn₁(λ, φ) + mtn₂(λ, φ))
 
