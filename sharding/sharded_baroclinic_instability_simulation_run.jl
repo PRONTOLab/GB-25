@@ -27,6 +27,7 @@ Reactant.Compiler.DEBUG_DISABLE_RESHARDING[] = true
 Reactant.Compiler.DEBUG_PRINT_CODEGEN[] = true
 Reactant.Compiler.WHILE_CONCAT[] = true
 Reactant.Compiler.DUS_TO_CONCAT[] = true
+# Reactant.DEBUG_ENSURE_ALWAYS_SHARDED[] = true
 
 GordonBell25.initialize(; single_gpu_per_process=false)
 @show Ndev = length(Reactant.devices())
@@ -50,13 +51,13 @@ else
     rank = Reactant.Distributed.local_rank()
 end
 
-Nz = 128
+Nz = 4
 
 @info "[$(process_id)] allocations" GordonBell25.allocatorstats()
 H = 8
-Tx = 16 * Rx
+Tx = 32 * Rx
 Ty = 16 * Ry
-Nz = 16
+Nz = 8
 
 Nx = Tx - 2H
 Ny = Ty - 2H
