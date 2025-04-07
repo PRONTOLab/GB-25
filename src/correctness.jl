@@ -55,7 +55,6 @@ function sync_states!(m1, m2)
         ψ1 = Ψ1[name]
         ψ2 = Ψ2[name]
         loc = Oceananigans.Fields.location(ψ1)
-        #if loc[3] != Nothing
         ψ2r = Reactant.to_rarray(interior(Ψ2[name]))
         #@jit donated_args=:none copy_interior!(interior(ψ1), ψ2r)
         @jit copy_interior!(ψ1, ψ2r)
