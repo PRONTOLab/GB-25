@@ -17,8 +17,7 @@ kw = (
     #free_surface = SplitExplicitFreeSurface(substeps=2),
     free_surface = ExplicitFreeSurface(),
     coriolis = nothing,
-    # buoyancy = nothing, # BuoyancyTracer(),
-    buoyancy = BuoyancyTracer(),
+    buoyancy = nothing, # BuoyancyTracer(),
     closure = nothing, # vertical_diffusivity,
     momentum_advection = nothing,
     tracer_advection = nothing,
@@ -45,11 +44,10 @@ rfirst! = @compile sync=true raise=true GordonBell25.first_time_step!(rmodel)
 @time GordonBell25.first_time_step!(vmodel)
 GordonBell25.compare_states(rmodel, vmodel)
 
-#=
 Nt = 10
 rNt = ConcreteRNumber(Nt)
 rloop! = @compile sync=true raise=true GordonBell25.loop!(rmodel, rNt)
 @time rloop!(rmodel, rNt)
 @time GordonBell25.loop!(vmodel, Nt)
 GordonBell25.compare_states(rmodel, vmodel)
-=#
+
