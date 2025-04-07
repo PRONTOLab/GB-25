@@ -1,7 +1,16 @@
 using Reactant
 using Printf
 
-function compare_fields(name, ψ1, ψ2; rtol=1e-8, atol=sqrt(eps(eltype(ψ1))))
+function compare_parent_fields(name, ψ1, ψ2; rtol=1e-8, atol=sqrt(eps(eltype(ψ1))))
+    ψ1 = Array(parent(ψ1))
+    ψ2 = Array(parent(ψ2))
+    δ = ψ1 .- ψ2
+    @printf("(%4s) ψ₁ ≈ ψ₂: %-5s, max|ψ₁|, max|ψ₂|: %.15e, %.15e, max|δ|: %.15e \n",
+            name, isapprox(ψ1, ψ2; rtol, atol),
+            maximum(abs, ψ1), maximum(abs, ψ2), maximum(abs, δ))
+end
+
+function compare_interior_fields(name, ψ1, ψ2; rtol=1e-8, atol=sqrt(eps(eltype(ψ1))))
     ψ1 = Array(interior(ψ1))
     ψ2 = Array(interior(ψ2))
     δ = ψ1 .- ψ2
@@ -10,7 +19,10 @@ function compare_fields(name, ψ1, ψ2; rtol=1e-8, atol=sqrt(eps(eltype(ψ1))))
             maximum(abs, ψ1), maximum(abs, ψ2), maximum(abs, δ))
 end
 
-function compare_states(m1, m2; rtol=1e-8, atol=sqrt(eps(eltype(m1.grid))))
+function compare_states(m1, m2; rtol=1e-8, atol=sqrt(eps(eltype(m1.grid))), include_halos=true)
+
+    compare_fields = include_halos ? compare_parent_fields : compare_interior_fields
+
     Ψ1 = Oceananigans.fields(m1)
     Ψ2 = Oceananigans.fields(m2)
     for name in keys(Ψ1)
@@ -56,7 +68,7 @@ function compare_states(m1, m2; rtol=1e-8, atol=sqrt(eps(eltype(m1.grid))))
 
     return nothing
 end
-
+  
 function sync_states!(m1, m2)
     Ψ1 = Oceananigans.fields(m1)
     Ψ2 = Oceananigans.fields(m2)
@@ -68,11 +80,19 @@ function sync_states!(m1, m2)
         ψ2r = Reactant.to_rarray(interior(Ψ2[name]))
         @jit copy_interior!(ψ1, ψ2r)
         #end
-
-        # Fill the halos of both fields
-        @jit Oceananigans.BoundaryConditions.fill_halo_regions!(ψ1)
-        Oceananigans.BoundaryConditions.fill_halo_regions!(ψ2)
     end
+    return nothing
+end
+
+function sync_parent_states!(m1, m2)
+    Ψ1 = Oceananigans.fields(m1)
+    Ψ2 = Oceananigans.fields(m2)
+    for name in keys(Ψ1)
+        ψ1p = parent(Ψ1[name])
+        ψ2p = parent(Ψ2[name])
+        copyto!(ψ1p, Reactant.to_rarray(ψ2p))	
+    end
+    
     return nothing
 end
   
