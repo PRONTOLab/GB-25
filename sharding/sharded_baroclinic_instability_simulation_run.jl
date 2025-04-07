@@ -33,18 +33,11 @@ Reactant.Compiler.DUS_TO_CONCAT[] = true
 GordonBell25.initialize(; single_gpu_per_process=false)
 @show Ndev = length(Reactant.devices())
 
+Rx, Ry = factors(Ndev)
 if Ndev == 1
     rank = 0
     arch = Oceananigans.ReactantState()
-elseif Ndev == 2
-    rank = Reactant.Distributed.local_rank()
-
-    arch = Oceananigans.Distributed(
-        Oceananigans.ReactantState();
-        partition = Partition(1, 2, 1)
-    )
 else
-    Rx, Ry = factors(Ndev)
     arch = Oceananigans.Distributed(
         Oceananigans.ReactantState();
         partition = Partition(Rx, Ry, 1)
