@@ -1,4 +1,4 @@
-function ocean_climate_model(arch, Nx, Ny, Nz; Δt,
+function ocean_climate_model(arch, Nx, Ny, Nz;
     # Time step, cannot be changed after initialization
     Δt = 10seconds,
 
