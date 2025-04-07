@@ -13,7 +13,7 @@ vitd = VerticallyImplicitTimeDiscretization()
 vertical_diffusivity = VerticalScalarDiffusivity(vitd, κ=1e-5, ν=1e-4)
 
 kw = (
-    resolution = 32,
+    resolution = 8,
     free_surface = SplitExplicitFreeSurface(substeps=2),
     coriolis = nothing,
     buoyancy = nothing, # BuoyancyTracer(),
