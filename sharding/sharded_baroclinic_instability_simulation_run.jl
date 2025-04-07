@@ -27,7 +27,7 @@ Reactant.Compiler.WHILE_CONCAT[] = true
 Reactant.Compiler.DUS_TO_CONCAT[] = true
 # Reactant.Compiler.SUM_TO_REDUCEWINDOW[] = true
 # Reactant.Compiler.AGGRESSIVE_SUM_TO_CONV[] = true
-Reactant.Compiler.AGGRESSIVE_PROPAGATION[] = false
+# Reactant.Compiler.AGGRESSIVE_PROPAGATION[] = false
 
 GordonBell25.initialize(; single_gpu_per_process=false)
 @show Ndev = length(Reactant.devices())
