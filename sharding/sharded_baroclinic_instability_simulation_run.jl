@@ -17,6 +17,10 @@ using Oceananigans.Architectures: ReactantState
 using Random
 using Printf
 using Reactant
+using Reactant_jll
+
+unsafe_store!(cglobal((:XLA_FIRST_CALL_RENDEZVOUS_WARN, libReactantExtra), Cint), 40)
+unsafe_store!(cglobal((:XLA_FIRST_CALL_RENDEZVOUS_TERMINATE, libReactantExtra), Cint), 80)
 
 using Libdl: dllist
 @show filter(contains("nccl"), dllist())
@@ -24,10 +28,12 @@ using Libdl: dllist
 Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
 Reactant.MLIR.IR.DUMP_MLIR_DIR[] = joinpath(@__DIR__, "mlir_dumps", jobid_procid)
 Reactant.Compiler.DEBUG_DISABLE_RESHARDING[] = true
-Reactant.Compiler.DEBUG_PRINT_CODEGEN[] = true
+# Reactant.Compiler.DEBUG_PRINT_CODEGEN[] = true
 Reactant.Compiler.WHILE_CONCAT[] = true
 Reactant.Compiler.DUS_TO_CONCAT[] = true
-# Reactant.DEBUG_ENSURE_ALWAYS_SHARDED[] = true
+# Reactant.Compiler.SUM_TO_REDUCEWINDOW[] = true
+# Reactant.Compiler.AGGRESSIVE_SUM_TO_CONV[] = true
+Reactant.Compiler.AGGRESSIVE_PROPAGATION[] = false
 
 GordonBell25.initialize(; single_gpu_per_process=false)
 @show Ndev = length(Reactant.devices())
@@ -68,10 +74,10 @@ model = GordonBell25.baroclinic_instability_model(arch, Nx, Ny, Nz; halo=(H, H, 
 
 Ninner = ConcreteRNumber(256; sharding=Sharding.NamedSharding(arch.connectivity, ()))
 
-@info "[$rank] Compiling first_time_step!..."
+@info "[$rank] Compiling first_time_step!..." now(UTC)
 rfirst! = @compile sync=true raise=true first_time_step!(model)
 @info "[$rank] allocations" GordonBell25.allocatorstats()
-@info "[$rank] Compiling loop..."
+@info "[$rank] Compiling loop..." now(UTC)
 compiled_loop! = @compile sync=true raise=true loop!(model, Ninner)
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 
@@ -90,5 +96,13 @@ mkpath(joinpath(profile_dir, "loop"))
 Reactant.with_profiler(joinpath(profile_dir, "loop")) do
     @time "[$rank] loop" compiled_loop!(model, Ninner)
 end
+
+mkpath(joinpath(profile_dir, "loop 2"))
+@info "[$rank] allocations" GordonBell25.allocatorstats()
+@info "[$rank] running second loop" now(UTC)
+Reactant.with_profiler(joinpath(profile_dir, "loop")) do
+    @time "[$rank] second loop" compiled_loop!(model, Ninner)
+end
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 
+@info "Done!" now(UTC)
