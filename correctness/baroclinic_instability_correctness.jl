@@ -2,6 +2,7 @@ using GordonBell25
 using Oceananigans
 using Oceananigans.Units
 using Oceananigans.Architectures: ReactantState
+using Oceananigans.TurbulenceClosures: ExplicitTimeDiscretization
 using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: CATKEVerticalDiffusivity
 using Reactant
 
@@ -10,13 +11,13 @@ Tx, Ty = 128, 64
 Nx, Ny = (Tx, Ty) .- 2H
 Nz = 32
 
-# vitd = VerticallyImplicitTimeDiscretization()
+vitd = VerticallyImplicitTimeDiscretization()
 vertical_diffusivity = VerticalScalarDiffusivity(κ=1e-5, ν=1e-4)
-# vertical_diffusivity = CATKEVerticalDiffusivity()
+vertical_diffusivity = CATKEVerticalDiffusivity(ExplicitTimeDiscretization())
 
 kw = (
     resolution = 2,
-    free_surface = SplitExplicitFreeSurface(substeps=2),
+    free_surface = SplitExplicitFreeSurface(substeps=10),
     coriolis = nothing,
     buoyancy = BuoyancyTracer(),
     closure = vertical_diffusivity,
