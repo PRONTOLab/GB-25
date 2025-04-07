@@ -29,6 +29,16 @@ Reactant.Compiler.WHILE_CONCAT[] = true
 Reactant.Compiler.DUS_TO_CONCAT[] = true
 # Reactant.DEBUG_ENSURE_ALWAYS_SHARDED[] = true
 
+using Reactant_jll
+unsafe_store!(
+    cglobal((:XLA_FIRST_CALL_RENDEZVOUS_WARN, libReactantExtra), Cint),
+    300
+)
+unsafe_store!(
+    cglobal((:XLA_FIRST_CALL_RENDEZVOUS_TERMINATE, libReactantExtra), Cint),
+    600
+)
+
 GordonBell25.initialize(; single_gpu_per_process=false)
 @show Ndev = length(Reactant.devices())
 
