@@ -10,7 +10,7 @@ preamble()
 Ninner = ConcreteRNumber(3)
 
 @info "Generating model..."
-model = data_free_ocean_climate_model_init(ReactantState(), resolution=8)
+model = data_free_ocean_climate_model_init(ReactantState())
 Ninner = ConcreteRNumber(2)
 
 GC.gc(true); GC.gc(false); GC.gc(true)
