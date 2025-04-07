@@ -94,7 +94,7 @@ function Sᵢ(λ, φ, z)
     return dSdz * z + rand()
 end
 
-@kernel function _set_baroclinic_instability!(T, S, grid)
+@kernel function set_baroclinic_instability_kernel!(T, S, grid)
     i, j, k = @index(Global, NTuple)
     φ = Oceananigans.Grids.φnode(i, j, k, grid, Center(), Center(), Center())
     z = Oceananigans.Grids.znode(i, j, k, grid, Center(), Center(), Center())
@@ -107,12 +107,21 @@ end
     end
 end
 
-function set_baroclinic_instability!(model)
+function _set_baroclinic_instability!(model)
     grid = model.grid
     arch = grid.architecture
-    Oceananigans.Utils.launch!(arch, grid, :xyz, _set_baroclinic_instability!,
+    Oceananigans.Utils.launch!(arch, grid, :xyz, set_baroclinic_instability_kernel!,
                                model.tracers.T, model.tracers.S, model.grid)
     return nothing
+end
+
+function set_baroclinic_instability!(model)
+    if model.architecture isa ReactantState
+        rset! = @compile sync=true raise=true _set_baroclinic_instability!(model)
+        rset!(model)
+    else
+        _set_baroclinic_instability!(model)
+    end
 end
 
 function gaussian_islands_tripolar_grid(arch::Architectures.AbstractArchitecture, resolution, Nz)

@@ -72,7 +72,7 @@ function baroclinic_instability_model(arch, Nx, Ny, Nz; Δt,
     Random.seed!(42)
 
     if buoyancy isa SeawaterBuoyancy
-        @jit set_baroclinic_instability!(model)
+        set_baroclinic_instability!(model)
     elseif buoyancy isa BuoyancyTracer
         # set!(model, b=initial_buoyancy)
     end
