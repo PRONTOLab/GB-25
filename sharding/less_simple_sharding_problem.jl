@@ -14,6 +14,9 @@ using SeawaterPolynomials.TEOS10: TEOS10EquationOfState
 using Reactant
 using GordonBell25: GordonBell25
 
+# This must be called before `GordonBell25.initialize`!
+GordonBell25.preamble(; rendezvous_warn=20, rendezvous_terminate=40)
+
 using Libdl: dllist
 
 @show filter(contains("nccl"), dllist())
