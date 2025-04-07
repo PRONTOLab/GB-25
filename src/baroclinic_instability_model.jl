@@ -71,11 +71,13 @@ function baroclinic_instability_model(arch, Nx, Ny, Nz; Δt,
 
     Random.seed!(42)
 
+    #=
     if buoyancy isa SeawaterBuoyancy
         set!(model, T=Tᵢ, S=Sᵢ)
     elseif buoyancy isa BuoyancyTracer
         set!(model, b=initial_buoyancy)
     end
+    =#
 
     model.clock.last_Δt = Δt
 
