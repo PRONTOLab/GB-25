@@ -27,6 +27,15 @@ function compare_states(m1, m2; rtol=1e-8, atol=sqrt(eps(eltype(m1.grid))))
         end
     end
 
+    if m1.free_surface isa Oceananigans.FreeSurfaces.SplitExplicitFreeSurface
+        names = (:U̅, :V̅, :η̅)
+        Φ1 = NamedTuple(name => getproperty(m1.free_surface.filtered_state, name) for name in names)
+        Φ2 = NamedTuple(name => getproperty(m2.free_surface.filtered_state, name) for name in names)
+        for name in keys(Φ1)
+            compare_fields(name, Φ1[name], Φ2[name]; rtol, atol)
+        end
+    end
+
     if m1.closure isa Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity
         names = (:κu, :κc, :κe, :Le, :Jᵇ)
         Φ1 = NamedTuple(name => getproperty(m1.diffusivity_fields, name) for name in names)
@@ -52,6 +61,7 @@ function sync_states!(m1, m2)
     Ψ1 = Oceananigans.fields(m1)
     Ψ2 = Oceananigans.fields(m2)
     for name in keys(Ψ1)
+        @show name
         ψ1 = Ψ1[name]
         ψ2 = Ψ2[name]
         loc = Oceananigans.Fields.location(ψ1)
