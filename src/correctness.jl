@@ -27,8 +27,8 @@ function compare_states(m1, m2; rtol=1e-8, atol=sqrt(eps(eltype(m1.grid))))
         end
     end
 
-    if m1.free_surface isa Oceananigans.FreeSurfaces.SplitExplicitFreeSurface
-        names = (:U̅, :V̅, :η̅)
+    if m1.free_surface isa Oceananigans.SplitExplicitFreeSurface
+        names = (:U, :V, :η)
         Φ1 = NamedTuple(name => getproperty(m1.free_surface.filtered_state, name) for name in names)
         Φ2 = NamedTuple(name => getproperty(m2.free_surface.filtered_state, name) for name in names)
         for name in keys(Φ1)
@@ -68,6 +68,10 @@ function sync_states!(m1, m2)
         ψ2r = Reactant.to_rarray(interior(Ψ2[name]))
         @jit copy_interior!(ψ1, ψ2r)
         #end
+
+        # Fill the halos of both fields
+        @jit Oceananigans.BoundaryConditions.fill_halo_regions!(ψ1)
+        Oceananigans.BoundaryConditions.fill_halo_regions!(ψ2)
     end
     return nothing
 end
