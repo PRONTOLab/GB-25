@@ -15,6 +15,8 @@ using Profile
 using Random
 using Serialization
 
+using KernelAbstractions: @index, @kernel
+
 const PROFILE = Ref(false)
 
 macro gbprofile(name::String, expr::Expr)
@@ -92,7 +94,7 @@ function Sᵢ(λ, φ, z)
     return dSdz * z + rand()
 end
 
-function _set_baroclinic_instability!(T, S, grid)
+@kernel function _set_baroclinic_instability!(T, S, grid)
     i, j, k = @index(Global, NTuple)
     φ = Oceananigans.Grids.φnode(i, j, k, grid, Center(), Center(), Center())
     z = Oceananigans.Grids.znode(i, j, k, grid, Center(), Center(), Center())
