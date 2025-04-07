@@ -32,6 +32,7 @@ function alps_submit_job_writer(cfg::JobConfig, job_name, Nnodes, job_dir, Ngpu,
 #SBATCH --gpu-bind=per_task:$(gpus_per_node)
 #SBATCH --constraint=gpu
 #SBATCH --account=$(account)
+#SBATCH --reservation=$(account)
 #SBATCH --exclusive
 
 export MPICH_GPU_SUPPORT_ENABLED=0
