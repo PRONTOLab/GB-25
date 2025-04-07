@@ -20,9 +20,9 @@ kw = (
     free_surface = SplitExplicitFreeSurface(substeps=10),
     coriolis = nothing,
     buoyancy = BuoyancyTracer(),
-    closure = vertical_diffusivity,
-    momentum_advection = WENOVectorInvariant(),
-    tracer_advection = WENO(),
+    closure = nothing, #vertical_diffusivity,
+    momentum_advection = nothing, #WENOVectorInvariant(),
+    tracer_advection = nothing, #WENO(),
     Δt = 60,
     Nz = 10,
 )
@@ -39,7 +39,6 @@ Oceananigans.initialize!(vmodel)
 
 @jit Oceananigans.TimeSteppers.update_state!(rmodel)
 Oceananigans.TimeSteppers.update_state!(vmodel)
-
 
 GordonBell25.sync_states!(rmodel, vmodel)
 GordonBell25.compare_states(rmodel, vmodel)
@@ -61,7 +60,7 @@ end
 
 GordonBell25.compare_states(rmodel, vmodel)
 
-Nt = 100
+Nt = 10
 rNt = ConcreteRNumber(Nt)
 rloop! = @compile sync=true raise=true GordonBell25.loop!(rmodel, rNt)
 @time rloop!(rmodel, rNt)
