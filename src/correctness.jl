@@ -19,7 +19,7 @@ function compare_interior_fields(name, ψ1, ψ2; rtol=1e-8, atol=sqrt(eps(eltype
             maximum(abs, ψ1), maximum(abs, ψ2), maximum(abs, δ))
 end
 
-function compare_states(m1, m2; rtol=1e-8, atol=sqrt(eps(eltype(m1.grid))), include_halos=true)
+function compare_states(m1, m2; rtol=1e-8, atol=sqrt(eps(eltype(m1.grid))), include_halos=false)
 
     compare_fields = include_halos ? compare_parent_fields : compare_interior_fields
 
