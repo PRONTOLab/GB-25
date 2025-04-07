@@ -11,8 +11,8 @@ Nx, Ny = (Tx, Ty) .- 2H
 Nz = 32
 
 # vitd = VerticallyImplicitTimeDiscretization()
-# vertical_diffusivity = VerticalScalarDiffusivity(vitd, κ=1e-5, ν=1e-4)
-vertical_diffusivity = CATKEVerticalDiffusivity()
+vertical_diffusivity = VerticalScalarDiffusivity(κ=1e-5, ν=1e-4)
+# vertical_diffusivity = CATKEVerticalDiffusivity()
 
 kw = (
     resolution = 2,
@@ -60,7 +60,7 @@ end
 
 GordonBell25.compare_states(rmodel, vmodel)
 
-Nt = 10
+Nt = 100
 rNt = ConcreteRNumber(Nt)
 rloop! = @compile sync=true raise=true GordonBell25.loop!(rmodel, rNt)
 @time rloop!(rmodel, rNt)
