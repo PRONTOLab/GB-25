@@ -53,12 +53,9 @@ end
 
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 H = 8
-Tx = 48 * Rx
-Ty = 24 * Ry
+Nx = 48 * Rx
+Ny = 24 * Ry
 Nz = 4
-
-Nx = Tx - 2H
-Ny = Ty - 2H
 
 @info "[$rank] Generating model..." now(UTC)
 model = GordonBell25.baroclinic_instability_model(arch, Nx, Ny, Nz; halo=(H, H, H), Δt=1)
