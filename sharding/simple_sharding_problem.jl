@@ -1,8 +1,3 @@
-# Unset environment variables which would cause XLA distributed to hang indefinitely.
-for key in ("no_proxy", "http_proxy", "https_proxy", "NO_PROXY", "HTTP_PROXY", "HTTPS_PROXY")
-    delete!(ENV, key)
-end
-
 using Dates
 @info "This is when the fun begins" now(UTC)
 
@@ -14,6 +9,9 @@ using Reactant_jll
 using Oceananigans
 using Reactant
 using GordonBell25: GordonBell25
+
+# This must be called before `GordonBell25.initialize`!
+GordonBell25.preamble(; rendezvous_warn=20, rendezvous_terminate=40)
 
 using Libdl: dllist
 
@@ -28,9 +26,6 @@ Reactant.Compiler.DUS_TO_CONCAT[] = true
 # Reactant.Compiler.SUM_TO_REDUCEWINDOW[] = true
 # Reactant.Compiler.AGGRESSIVE_SUM_TO_CONV[] = true
 Reactant.Compiler.AGGRESSIVE_PROPAGATION[] = true
-
-unsafe_store!(cglobal((:XLA_FIRST_CALL_RENDEZVOUS_WARN, libReactantExtra), Cint), 40)
-unsafe_store!(cglobal((:XLA_FIRST_CALL_RENDEZVOUS_TERMINATE, libReactantExtra), Cint), 80)
 
 GordonBell25.initialize(; single_gpu_per_process=false)
 
