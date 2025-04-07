@@ -14,8 +14,8 @@ vertical_diffusivity = VerticalScalarDiffusivity(vitd, κ=1e-5, ν=1e-4)
 
 kw = (
     resolution = 2,
-    #free_surface = SplitExplicitFreeSurface(substeps=2),
-    free_surface = ExplicitFreeSurface(),
+    free_surface = SplitExplicitFreeSurface(substeps=2),
+    # free_surface = ExplicitFreeSurface(),
     coriolis = nothing,
     buoyancy = nothing, # BuoyancyTracer(),
     closure = nothing, # vertical_diffusivity,
@@ -43,6 +43,17 @@ rfirst! = @compile sync=true raise=true GordonBell25.first_time_step!(rmodel)
 @time rfirst!(rmodel)
 @time GordonBell25.first_time_step!(vmodel)
 GordonBell25.compare_states(rmodel, vmodel)
+
+
+rfirst! = @compile sync=true raise=true GordonBell25.time_step!(rmodel)
+
+for _ in 1:10
+    @time rfirst!(rmodel)
+    @time GordonBell25.time_step!(vmodel)
+end
+
+GordonBell25.compare_states(rmodel, vmodel)
+
 
 Nt = 10
 rNt = ConcreteRNumber(Nt)
