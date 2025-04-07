@@ -8,7 +8,6 @@
     return N² * z + Δb * μ + 1e-2 * Δb * randn()
 end
 
-@inline random_velocity(λ, φ, z) = 1e-3 * randn()
 
 function baroclinic_instability_model(arch; resolution, Nz, kw...)
     Nx, Ny = resolution_to_points(resolution)
