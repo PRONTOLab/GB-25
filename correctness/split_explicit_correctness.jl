@@ -5,7 +5,7 @@ using Oceananigans.Architectures: ReactantState
 using Reactant
 
 using Oceananigans.Grids: architecture
-using Oceananigans.Operators: ∂xTᶠᶜᶠ, ∂yTᶜᶠᶠ
+using Oceananigans.Operators: ∂xTᶠᶜᶠ, ∂yTᶜᶠᶠ, ∂xᶠᶜᶠ, ∂yᶜᶠᶠ
 using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: η★
 
 using KernelAbstractions: @kernel, @index
@@ -53,8 +53,6 @@ vsefs = vmodel.free_surface
 vts   = vmodel.timestepper
 
 @show rsefs.substepping == vsefs.substepping
-Δτᴮ = 1.0
-g = 9.805665
 
 rgrid = rsefs.η.grid
 rη  = rsefs.η
@@ -63,8 +61,7 @@ rV  = rsefs.barotropic_velocities.V
 rU̅  = rsefs.filtered_state.U
 rV̅  = rsefs.filtered_state.V
 rη̅  = rsefs.filtered_state.η
-rts = rsefs.timestepper
-rargs = (rgrid, Δτᴮ, rη, rU, rV, rη̅, rU̅, rV̅, g, rts)
+rargs = (rgrid, rη, rU, rV, rη̅, rU̅, rV̅)
 
 vgrid = vsefs.η.grid
 vη  = vsefs.η
@@ -73,23 +70,23 @@ vV  = vsefs.barotropic_velocities.V
 vU̅  = vsefs.filtered_state.U
 vV̅  = vsefs.filtered_state.V
 vη̅  = vsefs.filtered_state.η
-vts = vsefs.timestepper
-vargs = (vgrid, Δτᴮ, vη, vU, vV, vη̅, vU̅, vV̅, g, vts)
+vargs = (vgrid, vη, vU, vV, vη̅, vU̅, vV̅)
 
-@kernel function _split_explicit_barotropic_velocity!(averaging_weight, grid, Δτ, 
+GordonBell25.compare_parent_fields("η", rη, vη)
+GordonBell25.compare_parent_fields("U", rU, vU)
+GordonBell25.compare_interior_fields("η", rη, vη)
+GordonBell25.compare_interior_fields("U", rU, vU)
+
+@kernel function _split_explicit_barotropic_velocity!(averaging_weight, grid,  
                                                       η, U, V, 
-                                                      η̅, U̅, V̅, g, 
-                                                      timestepper)
+                                                      η̅, U̅, V̅)
     i, j = @index(Global, NTuple)
     k_top = grid.Nz+1
-
-    Hᶠᶜ = grid.Lz
-    Hᶜᶠ = grid.Lz
     
     @inbounds begin
         # ∂τ(U) = - ∇η + G
-        U[i, j, 1] +=  Δτ * (- g * Hᶠᶜ * ∂xTᶠᶜᶠ(i, j, k_top, grid, η★, timestepper, η))
-        V[i, j, 1] +=  Δτ * (- g * Hᶜᶠ * ∂yTᶜᶠᶠ(i, j, k_top, grid, η★, timestepper, η))
+        U[i, j, 1] += η[i, j, k_top] - η[i-1, j,   k_top]
+        V[i, j, 1] += η[i, j, k_top] - η[i,   j-1, k_top]
 
         # time-averaging
         η̅[i, j, k_top] += averaging_weight * η[i, j, k_top]
@@ -112,7 +109,7 @@ rkernel! = @compile sync=true raise=true bad_kernel_launch!(rgrid, averaging_wei
 @time rkernel!(rgrid, averaging_weight, rargs)
 @time bad_kernel_launch!(vgrid, averaging_weight, vargs)
 
-GordonBell25.compare_fields("U", rU, vU)
-GordonBell25.compare_fields("V", rV, vV)
-GordonBell25.compare_fields("U̅", rU̅, vU̅)
-GordonBell25.compare_fields("V̅", rV̅, vV̅)
+GordonBell25.compare_interior_fields("U", rU, vU)
+GordonBell25.compare_interior_fields("V", rV, vV)
+GordonBell25.compare_interior_fields("U̅", rU̅, vU̅)
+GordonBell25.compare_interior_fields("V̅", rV̅, vV̅)

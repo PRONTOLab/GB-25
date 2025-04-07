@@ -5,18 +5,20 @@ function compare_parent_fields(name, ψ1, ψ2; rtol=1e-8, atol=sqrt(eps(eltype(�
     ψ1 = Array(parent(ψ1))
     ψ2 = Array(parent(ψ2))
     δ = ψ1 .- ψ2
-    @printf("(%4s) ψ₁ ≈ ψ₂: %-5s, max|ψ₁|, max|ψ₂|: %.15e, %.15e, max|δ|: %.15e \n",
+    idxs = findmax(abs, δ)[2]
+    @printf("(%4s) ψ₁ ≈ ψ₂: %-5s, max|ψ₁|, max|ψ₂|: %.15e, %.15e, max|δ|: %.15e at %d %d %d \n",
             name, isapprox(ψ1, ψ2; rtol, atol),
-            maximum(abs, ψ1), maximum(abs, ψ2), maximum(abs, δ))
+            maximum(abs, ψ1), maximum(abs, ψ2), maximum(abs, δ), idxs.I...)
 end
 
 function compare_interior_fields(name, ψ1, ψ2; rtol=1e-8, atol=sqrt(eps(eltype(ψ1))))
     ψ1 = Array(interior(ψ1))
     ψ2 = Array(interior(ψ2))
     δ = ψ1 .- ψ2
-    @printf("(%4s) ψ₁ ≈ ψ₂: %-5s, max|ψ₁|, max|ψ₂|: %.15e, %.15e, max|δ|: %.15e \n",
+    idxs = findmax(abs, δ)[2]
+    @printf("(%4s) ψ₁ ≈ ψ₂: %-5s, max|ψ₁|, max|ψ₂|: %.15e, %.15e, max|δ|: %.15e at %d %d %d \n",
             name, isapprox(ψ1, ψ2; rtol, atol),
-            maximum(abs, ψ1), maximum(abs, ψ2), maximum(abs, δ))
+            maximum(abs, ψ1), maximum(abs, ψ2), maximum(abs, δ), idxs.I...)
 end
 
 function compare_states(m1, m2; rtol=1e-8, atol=sqrt(eps(eltype(m1.grid))), include_halos=false)
