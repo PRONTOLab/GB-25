@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/Run.yml'
       - '.github/workflows/CompileOrRun.yml'
+      - 'sharding/sharded_baroclinic_instability_simulation_run.jl'
       - 'simulations/baroclinic_instability_simulation_run.jl'
       - 'simulations/ocean_climate_simulation_run.jl'
       - 'Project.toml'
@@ -17,6 +18,7 @@ on:
     paths:
       - '.github/workflows/Run.yml'
       - '.github/workflows/CompileOrRun.yml'
+      - 'sharding/sharded_baroclinic_instability_simulation_run.jl'
       - 'simulations/baroclinic_instability_simulation_run.jl'
       - 'simulations/ocean_climate_simulation_run.jl'
       - 'Project.toml'
