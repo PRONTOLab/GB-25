@@ -1,0 +1,11 @@
+image = "${WORKDIR}/container-alps/reactant.sqsh"
+mounts = ["${SCRATCH}:${SCRATCH}"]
+workdir = "${WORKDIR}"
+
+[env]
+#NCCL_DEBUG = "Info"
+NCCL_NET_GDR_LEVEL = "2"
+
+[annotations]
+com.hooks.aws_ofi_nccl.enabled = "true"
+com.hooks.aws_ofi_nccl.variant = "cuda12"

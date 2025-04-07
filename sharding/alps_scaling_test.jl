@@ -4,14 +4,14 @@ out_dir = @__DIR__
 
 # run params
 account  = "g191"
-submit   = false
+submit   = true
 run_name = "reactant_"
-time     = "00:40:00"
+time     = "00:30:00"
 Ngpus    = [4, 8] #[4, 8, 12, 16]
 type     = "weak"
 
 gpus_per_node = 4
-cpus_per_task = 16
+cpus_per_task = 288
 
 alps_config = JobConfig(; username, account, out_dir, time, cpus_per_task, Ngpus,
                         run_name, gpus_per_node, type, submit)
@@ -35,6 +35,7 @@ function alps_submit_job_writer(cfg::JobConfig, job_name, Nnodes, job_dir, Ngpu,
 #SBATCH --exclusive
 
 export MPICH_GPU_SUPPORT_ENABLED=0
+export JULIA_CUDA_USE_COMPAT=false
 export FI_MR_CACHE_MONITOR=disabled
 
 ulimit -s unlimited
@@ -44,7 +45,7 @@ ulimit -s unlimited
 # We only set it to `verbose` to record what's going on.
 srun --uenv=prgenv-gnu --preserve-env --cpu_bind=verbose \
     --export=ALL,LD_PRELOAD="/user-environment/linux-sles15-neoverse_v2/gcc-13.3.0/nccl-2.22.3-1-4j6h3ffzysukqpqbvriorrzk2lm762dd/lib/libnccl.so.2" \
-    $(job_dir)/launcher.sh $(Base.julia_cmd()[1]) --project=$(project_path) --startup-file=no --threads=$(cfg.cpus_per_task) -O0 $(run_file)
+    $(job_dir)/launcher.sh $(Base.julia_cmd()[1]) --project=$(project_path) --startup-file=no --threads=16 --compiled-modules=strict -O0 $(run_file)
 """
 end
 
