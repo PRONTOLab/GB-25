@@ -17,7 +17,7 @@ end
 function data_free_ocean_climate_model_init(arch, Nx, Ny, Nz;
     Δt = 30,
     halo = (8, 8, 8),
-    grid_type = :gaussian_islands) # :gaussian_islands
+    grid_type = :simple_lat_lon) # :gaussian_islands
 
     grid = if grid_type === :gaussian_islands
         gaussian_islands_tripolar_grid(arch, Nx, Ny, Nz; halo)
