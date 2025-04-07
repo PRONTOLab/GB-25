@@ -76,7 +76,7 @@ function mtn₂(λ, φ)
 end
 
 # Simple initial condition for producing pretty pictures
-function smooth_step(φ)
+@inline function smooth_step(φ)
     φ₀ = 40
     dφ = 5
     return (1 - tanh((abs(φ) - φ₀) / dφ)) / 2
@@ -90,6 +90,27 @@ end
 function Sᵢ(λ, φ, z)
     dSdz = - 5e-3
     return dSdz * z + rand()
+end
+
+function _set_baroclinic_instability!(T, S, grid)
+    i, j, k = @index(Global, NTuple)
+    φ = Oceananigans.Grids.φnode(i, j, k, grid, Center(), Center(), Center())
+    z = Oceananigans.Grids.znode(i, j, k, grid, Center(), Center(), Center())
+    @inbounds begin
+        dTdz = 1e-3
+        T[i, j, k] = (30 + dTdz * z) * smooth_step(φ)
+
+        dSdz = - 5e-3
+        S[i, j, k] = dSdz * z
+    end
+end
+
+function set_baroclinic_instability!(model)
+    grid = model.grid
+    arch = grid.architecture
+    Oceananigans.Utils.launch!(arch, grid, :xyz, _set_baroclinic_instability!,
+                               model.tracers.T, model.tracers.S, model.grid)
+    return nothing
 end
 
 function gaussian_islands_tripolar_grid(arch::Architectures.AbstractArchitecture, resolution, Nz)
@@ -110,3 +131,4 @@ function gaussian_islands_tripolar_grid(arch::Architectures.AbstractArchitecture
                                                                   GridFittedBottom(gaussian_islands);
                                                                   active_cells_map = false)
 end
+
