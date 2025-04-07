@@ -38,7 +38,8 @@ function factors(N::Int)
         alternate *= -1
     end
 
-    Dx, Dy = D, N ÷ D
+    # Always make Dy >= Dx
+    Dx, Dy = extrema((D, N ÷ D))
 
     Dx * Dy != N && error("The product $(Dx) * $(Dy) is not equal to the input argument $(N), there is a bug in this function!")
 
