@@ -26,13 +26,13 @@ kw = (
 rmodel = GordonBell25.baroclinic_instability_model(ReactantState(); kw...)
 vmodel = GordonBell25.baroclinic_instability_model(CPU(); kw...)
 
-ηi = rand(size(parent(vmodel.free_surface.η))...)
-Ui = rand(size(parent(vmodel.free_surface.barotropic_velocities.U))...)
-Vi = rand(size(parent(vmodel.free_surface.barotropic_velocities.V))...)
+ηi = rand(size(interior(vmodel.free_surface.η))...)
+Ui = rand(size(interior(vmodel.free_surface.barotropic_velocities.U))...)
+Vi = rand(size(interior(vmodel.free_surface.barotropic_velocities.V))...)
 
-parent(vmodel.free_surface.η) .= ηi
-parent(vmodel.free_surface.barotropic_velocities.U) .= Ui
-parent(vmodel.free_surface.barotropic_velocities.V) .= Vi
+interior(vmodel.free_surface.η) .= ηi
+interior(vmodel.free_surface.barotropic_velocities.U) .= Ui
+interior(vmodel.free_surface.barotropic_velocities.V) .= Vi
 
 Oceananigans.fill_halo_regions!(vmodel.free_surface.η)
 Oceananigans.fill_halo_regions!(vmodel.free_surface.barotropic_velocities.U)
@@ -43,9 +43,7 @@ GordonBell25.sync_states!(rmodel, vmodel)
 @jit Oceananigans.fill_halo_regions!(rmodel.free_surface.η)
 @jit Oceananigans.fill_halo_regions!(rmodel.free_surface.barotropic_velocities.U)
 @jit Oceananigans.fill_halo_regions!(rmodel.free_surface.barotropic_velocities.V)
-
 # The two models should be identical from here on.
-
 GordonBell25.compare_states(rmodel, vmodel)
 
 rsefs = rmodel.free_surface
