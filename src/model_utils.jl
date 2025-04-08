@@ -76,20 +76,20 @@ function mtn₂(λ, φ)
 end
 
 # Simple initial condition for producing pretty pictures
-function smooth_step(φ)
+@inline function smooth_step(φ)
     φ₀ = 40
     dφ = 5
     return (1 - tanh((abs(φ) - φ₀) / dφ)) / 2
 end
 
-function Tᵢ(λ, φ, z)
-    dTdz = 1e-3
-    return (30 + dTdz * z) * smooth_step(φ) + rand()
+@inline function Tᵢ(λ::FT, φ::FT, z::FT) where FT
+    dTdz = convert(FT, 1e-3)
+    return (30 + dTdz * z) * smooth_step(φ) + rand(FT)
 end
 
-function Sᵢ(λ, φ, z)
-    dSdz = - 5e-3
-    return dSdz * z + rand()
+@inline function Sᵢ(λ::FT, φ::FT, z::FT) where FT
+    dSdz = convert(FT, - 5e-3)
+    return dSdz * z + rand(FT)
 end
 
 function gaussian_islands_tripolar_grid(arch::Architectures.AbstractArchitecture, resolution, Nz)
