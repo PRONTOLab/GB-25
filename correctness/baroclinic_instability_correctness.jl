@@ -6,12 +6,12 @@ using Oceananigans.TurbulenceClosures: ExplicitTimeDiscretization
 using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: CATKEVerticalDiffusivity
 using Reactant
 
-vitd = VerticallyImplicitTimeDiscretization()
-vertical_diffusivity = VerticalScalarDiffusivity(κ=1e-5, ν=1e-4)
+# vitd = VerticallyImplicitTimeDiscretization()
+# vertical_diffusivity = VerticalScalarDiffusivity(κ=1e-5, ν=1e-4)
 vertical_diffusivity = CATKEVerticalDiffusivity(ExplicitTimeDiscretization())
 
 kw = (
-    halo = (2, 2, 2),
+    halo = (3, 3, 3),
     free_surface = ExplicitFreeSurface(), #SplitExplicitFreeSurface(substeps=20),
     buoyancy = nothing,
     closure = nothing, 
@@ -21,8 +21,7 @@ kw = (
     Δt = 60,
 )
 
-Nx = Ny = Nz = 2
-
+Nx = Ny = Nz = 4
 rmodel = GordonBell25.baroclinic_instability_model(ReactantState(), Nx, Ny, Nz; kw...)
 vmodel = GordonBell25.baroclinic_instability_model(CPU(), Nx, Ny, Nz; kw...)
 
@@ -63,13 +62,15 @@ for _ in 1:10
     @time GordonBell25.time_step!(vmodel)
 end
 
-# Everything is kind of correct till here (errors of about 1e-10)
+GordonBell25.compare_states(rmodel, vmodel, include_halos=true)
 
-GordonBell25.compare_states(rmodel, vmodel)
+GordonBell25.sync_states!(rmodel, vmodel)
+@jit Oceananigans.TimeSteppers.update_state!(rmodel)
+GordonBell25.compare_states(rmodel, vmodel, include_halos=true)
 
 function myloop!(model, Nt)
     @trace track_numbers=false for _ = 1:Nt
-        Oceananigans.BoundaryConditions.fill_halo_regions!(model.velocities.v)
+        Oceananigans.BoundaryConditions.fill_halo_regions!(model.velocities.w)
     end
 end
 
@@ -80,10 +81,9 @@ rloop! = @compile sync=true raise=true myloop!(rmodel, rNt)
 @time myloop!(vmodel, Nt)
 
 # Correctness does not work on loops apparently (only for w)
-GordonBell25.compare_parent("u", rmodel.velocities.u, vmodel.velocities.u)
-GordonBell25.compare_parent("v", rmodel.velocities.v, vmodel.velocities.v)
 GordonBell25.compare_parent("w", rmodel.velocities.w, vmodel.velocities.w)
 
+#=
 Nt = 100
 rNt = ConcreteRNumber(Nt)
 rloop! = @compile sync=true raise=true GordonBell25.loop!(rmodel, rNt)
@@ -94,4 +94,5 @@ rloop! = @compile sync=true raise=true GordonBell25.loop!(rmodel, rNt)
 GordonBell25.compare_parent("u", rmodel.velocities.u, vmodel.velocities.u)
 GordonBell25.compare_parent("v", rmodel.velocities.v, vmodel.velocities.v)
 GordonBell25.compare_parent("w", rmodel.velocities.w, vmodel.velocities.w)
+=#
 
