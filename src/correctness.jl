@@ -13,6 +13,8 @@ function compare_parent(name, ψ1, ψ2; rtol=1e-8, atol=sqrt(eps(eltype(ψ1))))
             maximum(abs, ψ1), maximum(abs, ψ2), maximum(abs, δ), idxs.I...)
 end
 
+compare_interior(name, ::Nothing, ::Nothing; kw...) = nothing
+
 function compare_interior(name, ψ1, ψ2; rtol=1e-8, atol=sqrt(eps(eltype(ψ1))))
     ψ1 = Array(interior(ψ1))
     ψ2 = Array(interior(ψ2))
@@ -77,13 +79,13 @@ function sync_states!(m1, m2)
     Ψ1 = Oceananigans.fields(m1)
     Ψ2 = Oceananigans.fields(m2)
     for name in keys(Ψ1)
-        @show name
         ψ1 = Ψ1[name]
         ψ2 = Ψ2[name]
         loc = Oceananigans.Fields.location(ψ1)
-        ψ2r = Reactant.to_rarray(interior(Ψ2[name]))
-        @jit copy_interior!(ψ1, ψ2r)
-        #end
+        if !isnothing(ψ2)
+            ψ2r = Reactant.to_rarray(interior(ψ2))
+            @jit copy_interior!(ψ1, ψ2r)
+        end
     end
     return nothing
 end
@@ -113,3 +115,4 @@ end
     i, j, k = @index(Global, NTuple)
     @inbounds rf[i, j, k] = vf[i, j, k]
 end
+

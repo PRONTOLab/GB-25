@@ -11,19 +11,21 @@ using Reactant
 vertical_diffusivity = CATKEVerticalDiffusivity(ExplicitTimeDiscretization())
 
 kw = (
-    halo = (3, 3, 3),
-    free_surface = ExplicitFreeSurface(), #SplitExplicitFreeSurface(substeps=20),
-    buoyancy = nothing,
-    closure = nothing, 
+    halo = (6, 6, 6),
+    # free_surface = SplitExplicitFreeSurface(substeps=20),
+    # buoyancy = nothing,
+    # closure = nothing, 
     coriolis = nothing,
     momentum_advection = nothing, #WENOVectorInvariant(),
     tracer_advection = nothing, #WENO(),
     Δt = 60,
 )
 
-Nx = Ny = Nz = 4
+Nx = Ny = Nz = 128
 rmodel = GordonBell25.baroclinic_instability_model(ReactantState(), Nx, Ny, Nz; kw...)
 vmodel = GordonBell25.baroclinic_instability_model(CPU(), Nx, Ny, Nz; kw...)
+@show vmodel
+@show rmodel
 
 ui = 1e-3 .* rand(size(vmodel.velocities.u)...)
 vi = 1e-3 .* rand(size(vmodel.velocities.v)...)
@@ -68,6 +70,7 @@ GordonBell25.sync_states!(rmodel, vmodel)
 @jit Oceananigans.TimeSteppers.update_state!(rmodel)
 GordonBell25.compare_states(rmodel, vmodel, include_halos=true)
 
+#=
 function myloop!(model, Nt)
     @trace track_numbers=false for _ = 1:Nt
         Oceananigans.BoundaryConditions.fill_halo_regions!(model.velocities.w)
@@ -82,8 +85,8 @@ rloop! = @compile sync=true raise=true myloop!(rmodel, rNt)
 
 # Correctness does not work on loops apparently (only for w)
 GordonBell25.compare_parent("w", rmodel.velocities.w, vmodel.velocities.w)
+=#
 
-#=
 Nt = 100
 rNt = ConcreteRNumber(Nt)
 rloop! = @compile sync=true raise=true GordonBell25.loop!(rmodel, rNt)
@@ -94,5 +97,6 @@ rloop! = @compile sync=true raise=true GordonBell25.loop!(rmodel, rNt)
 GordonBell25.compare_parent("u", rmodel.velocities.u, vmodel.velocities.u)
 GordonBell25.compare_parent("v", rmodel.velocities.v, vmodel.velocities.v)
 GordonBell25.compare_parent("w", rmodel.velocities.w, vmodel.velocities.w)
-=#
 
+@time rloop!(rmodel, rNt)
+@time GordonBell25.loop!(vmodel, Nt)
