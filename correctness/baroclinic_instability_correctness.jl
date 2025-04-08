@@ -13,7 +13,6 @@ vertical_diffusivity = CATKEVerticalDiffusivity(ExplicitTimeDiscretization())
 kw = (
     halo = (2, 2, 2),
     free_surface = ExplicitFreeSurface(), #SplitExplicitFreeSurface(substeps=20),
-    coriolis = nothing,
     buoyancy = nothing,
     closure = nothing, 
     coriolis = nothing,
