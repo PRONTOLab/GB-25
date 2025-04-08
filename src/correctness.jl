@@ -13,8 +13,6 @@ function compare_parent(name, ψ1, ψ2; rtol=1e-8, atol=sqrt(eps(eltype(ψ1))))
             maximum(abs, ψ1), maximum(abs, ψ2), maximum(abs, δ), idxs.I...)
 end
 
-compare_interior(name, ::Nothing, ::Nothing; kw...) = nothing
-
 function compare_interior(name, ψ1, ψ2; rtol=1e-8, atol=sqrt(eps(eltype(ψ1))))
     ψ1 = Array(interior(ψ1))
     ψ2 = Array(interior(ψ2))
@@ -82,10 +80,8 @@ function sync_states!(m1, m2)
         ψ1 = Ψ1[name]
         ψ2 = Ψ2[name]
         loc = Oceananigans.Fields.location(ψ1)
-        if !isnothing(ψ2)
-            ψ2r = Reactant.to_rarray(interior(ψ2))
-            @jit copy_interior!(ψ1, ψ2r)
-        end
+        ψ2r = Reactant.to_rarray(interior(ψ2))
+        @jit copy_interior!(ψ1, ψ2r)
     end
     return nothing
 end
