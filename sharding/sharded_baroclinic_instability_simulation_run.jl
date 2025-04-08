@@ -1,8 +1,3 @@
-# Unset environment variables which would cause XLA distributed to hang indefinitely.
-for key in ("no_proxy", "http_proxy", "https_proxy", "NO_PROXY", "HTTP_PROXY", "HTTPS_PROXY")
-    delete!(ENV, key)
-end
-
 using Dates
 @info "This is when the fun begins" now(UTC)
 
@@ -17,10 +12,9 @@ using Oceananigans.Architectures: ReactantState
 using Random
 using Printf
 using Reactant
-using Reactant_jll
 
-unsafe_store!(cglobal((:XLA_FIRST_CALL_RENDEZVOUS_WARN, libReactantExtra), Cint), 40)
-unsafe_store!(cglobal((:XLA_FIRST_CALL_RENDEZVOUS_TERMINATE, libReactantExtra), Cint), 80)
+# This must be called before `GordonBell25.initialize`!
+GordonBell25.preamble(; rendezvous_warn=20, rendezvous_terminate=40)
 
 using Libdl: dllist
 @show filter(contains("nccl"), dllist())
@@ -33,7 +27,7 @@ Reactant.Compiler.WHILE_CONCAT[] = true
 Reactant.Compiler.DUS_TO_CONCAT[] = true
 # Reactant.Compiler.SUM_TO_REDUCEWINDOW[] = true
 # Reactant.Compiler.AGGRESSIVE_SUM_TO_CONV[] = true
-Reactant.Compiler.AGGRESSIVE_PROPAGATION[] = false
+# Reactant.Compiler.AGGRESSIVE_PROPAGATION[] = false
 
 GordonBell25.initialize(; single_gpu_per_process=false)
 @show Ndev = length(Reactant.devices())
@@ -86,7 +80,7 @@ compiled_loop! = @compile sync=true raise=true loop!(model, Ninner)
 profile_dir = joinpath(@__DIR__, "profiling", jobid_procid)
 mkpath(joinpath(profile_dir, "first_time_step"))
 @info "[$rank] allocations" GordonBell25.allocatorstats()
-@time "[$rank] Running first_time_step!..." rfirst!(model)
+@info "[$rank] Running first_time_step!..." now(UTC)
 Reactant.with_profiler(joinpath(profile_dir, "first_time_step")) do
     @time "[$rank] first time step" rfirst!(model)
 end
