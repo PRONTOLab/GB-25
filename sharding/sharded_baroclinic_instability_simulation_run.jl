@@ -29,15 +29,6 @@ Reactant.Compiler.DUS_TO_CONCAT[] = true
 # Reactant.Compiler.AGGRESSIVE_SUM_TO_CONV[] = true
 # Reactant.Compiler.AGGRESSIVE_PROPAGATION[] = false
 
-using Reactant_jll
-unsafe_store!(
-    cglobal((:XLA_FIRST_CALL_RENDEZVOUS_WARN, libReactantExtra), Cint),
-    300
-)
-unsafe_store!(
-    cglobal((:XLA_FIRST_CALL_RENDEZVOUS_TERMINATE, libReactantExtra), Cint),
-    600
-)
 
 GordonBell25.initialize(; single_gpu_per_process=false)
 @show Ndev = length(Reactant.devices())
