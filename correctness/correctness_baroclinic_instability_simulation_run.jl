@@ -25,12 +25,12 @@ Oceananigans.initialize!(vmodel)
 
 @jit Oceananigans.TimeSteppers.update_state!(rmodel)
 Oceananigans.TimeSteppers.update_state!(vmodel)
-GordonBell25.compare_states(rmodel, vmodel, error=true)
+GordonBell25.compare_states(rmodel, vmodel, throw_error=true)
 
 rfirst! = @compile sync=true raise=true GordonBell25.first_time_step!(rmodel)
 @time rfirst!(rmodel)
 @time GordonBell25.first_time_step!(vmodel)
-GordonBell25.compare_states(rmodel, vmodel, error=true)
+GordonBell25.compare_states(rmodel, vmodel, throw_error=true)
 
 rstep! = @compile sync=true raise=true GordonBell25.time_step!(rmodel)
 
@@ -50,11 +50,11 @@ for _ in 1:10
     @time GordonBell25.time_step!(vmodel)
 end
 
-GordonBell25.compare_states(rmodel, vmodel, include_halos=true, error=true)
+GordonBell25.compare_states(rmodel, vmodel, include_halos=true, throw_error=true)
 
 GordonBell25.sync_states!(rmodel, vmodel)
 @jit Oceananigans.TimeSteppers.update_state!(rmodel)
-GordonBell25.compare_states(rmodel, vmodel, include_halos=true, error=true)
+GordonBell25.compare_states(rmodel, vmodel, include_halos=true, throw_error=true)
 
 Nt = 100
 rNt = ConcreteRNumber(Nt)
@@ -62,5 +62,5 @@ rloop! = @compile sync=true raise=true GordonBell25.loop!(rmodel, rNt)
 @time rloop!(rmodel, rNt)
 @time GordonBell25.loop!(vmodel, Nt)
 
-GordonBell25.compare_states(rmodel, vmodel, include_halos=true, error=true)
+GordonBell25.compare_states(rmodel, vmodel, include_halos=true, throw_error=true)
 
