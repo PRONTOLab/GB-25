@@ -18,6 +18,11 @@ on:
         required: false
         default: false
         type: boolean
+      run_dir:
+        description: 'Directory the run script lives in'
+        required: false
+        default: 'simulations'
+        type: string
       grid_type:
         description: 'What type of grid to use'
         required: false
@@ -109,7 +114,7 @@ jobs:
         env:
           grid_type: ${{ inputs.grid_type }}
           XLA_FLAGS: ${{ inputs.sharded && '--xla_force_host_platform_device_count=4 --xla_dump_to=xla_dump' || '--xla_dump_to=xla_dump' }}
-          RUNDIR: ${{ inputs.sharded && 'sharding' || 'simulations' }}
+          RUNDIR: ${{ inputs.run_dir }}
         run: |
           earlyoom -m ${{ inputs.earlyoom_threshold }} -s 100 -r 120 --prefer 'julia' &
           julia --color=yes --project -O${{ inputs.julia_optlevel }} $RUNDIR/${{ inputs.sim_type }}_simulation_${{ inputs.compile_or_run }}.jl
