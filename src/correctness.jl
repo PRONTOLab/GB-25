@@ -80,7 +80,7 @@ function compare_states(m1, m2; rtol=1e-8, atol=sqrt(eps(eltype(m1.grid))),
         end
     end
 
-    if error && !approx_equal
+    if throw_error && !approx_equal
         @info "A disrepancy was found."
         @info "Reactant model: $m1"
         @info "Vanilla model: $m2"
