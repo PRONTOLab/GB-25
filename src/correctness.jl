@@ -8,9 +8,10 @@ function compare_parent(name, ψ1, ψ2; rtol=1e-8, atol=sqrt(eps(eltype(ψ1))))
     ψ2 = view(ψ2, 1:Nx, 1:Ny, 1:Nz) # assuming that ψ1 is smaller than ψ2
     δ = ψ1 .- ψ2
     idxs = findmax(abs, δ)[2]
+    approx_equal = isapprox(ψ1, ψ2; rtol, atol)
     @printf("(%4s) ψ₁ ≈ ψ₂: %-5s, max|ψ₁|, max|ψ₂|: %.15e, %.15e, max|δ|: %.15e at %d %d %d \n",
-            name, isapprox(ψ1, ψ2; rtol, atol),
-            maximum(abs, ψ1), maximum(abs, ψ2), maximum(abs, δ), idxs.I...)
+            name, approx_equal, maximum(abs, ψ1), maximum(abs, ψ2), maximum(abs, δ), idxs.I...)
+    return approx_equal
 end
 
 function compare_interior(name, ψ1, ψ2; rtol=1e-8, atol=sqrt(eps(eltype(ψ1))))
@@ -18,28 +19,37 @@ function compare_interior(name, ψ1, ψ2; rtol=1e-8, atol=sqrt(eps(eltype(ψ1)))
     ψ2 = Array(interior(ψ2))
     δ = ψ1 .- ψ2
     idxs = findmax(abs, δ)[2]
+    approx_equal = isapprox(ψ1, ψ2; rtol, atol)
     @printf("(%4s) ψ₁ ≈ ψ₂: %-5s, max|ψ₁|, max|ψ₂|: %.15e, %.15e, max|δ|: %.15e at %d %d %d \n",
-            name, isapprox(ψ1, ψ2; rtol, atol),
-            maximum(abs, ψ1), maximum(abs, ψ2), maximum(abs, δ), idxs.I...)
+            name, approx_equal, maximum(abs, ψ1), maximum(abs, ψ2), maximum(abs, δ), idxs.I...)
+    return approx_equal
 end
 
-function compare_states(m1, m2; rtol=1e-8, atol=sqrt(eps(eltype(m1.grid))), include_halos=false)
+function compare_states(m1, m2; rtol=1e-8, atol=sqrt(eps(eltype(m1.grid))),
+                        include_halos=false, error=false)
+
+    approx_equal = true
 
     compare_fields = include_halos ? compare_parent : compare_interior
 
     Ψ1 = Oceananigans.fields(m1)
     Ψ2 = Oceananigans.fields(m2)
+
     for name in keys(Ψ1)
-        compare_fields(name, Ψ1[name], Ψ2[name]; rtol, atol)
+        if name === :w # ignore for now
+            compare_fields(name, Ψ1[name], Ψ2[name]; rtol, atol)
+        else
+            approx_equal *= compare_fields(name, Ψ1[name], Ψ2[name]; rtol, atol)
+        end
 
         if !(name ∈ (:w, :η))
             Gⁿ1 = m1.timestepper.Gⁿ
             Gⁿ2 = m2.timestepper.Gⁿ
-            compare_fields("Gⁿ.$name", Gⁿ1[name], Gⁿ2[name]; rtol, atol)
+            approx_equal *= compare_fields("Gⁿ.$name", Gⁿ1[name], Gⁿ2[name]; rtol, atol)
 
             G⁻1 = m1.timestepper.G⁻
             G⁻2 = m2.timestepper.G⁻
-            compare_fields("G⁻.$name", G⁻1[name], G⁻2[name]; rtol, atol)
+            approx_equal *= compare_fields("G⁻.$name", G⁻1[name], G⁻2[name]; rtol, atol)
         end
     end
 
@@ -48,7 +58,7 @@ function compare_states(m1, m2; rtol=1e-8, atol=sqrt(eps(eltype(m1.grid))), incl
         Φ1 = NamedTuple(name => getproperty(m1.free_surface.filtered_state, name) for name in names)
         Φ2 = NamedTuple(name => getproperty(m2.free_surface.filtered_state, name) for name in names)
         for name in keys(Φ1)
-            compare_fields(name, Φ1[name], Φ2[name]; rtol, atol)
+            approx_equal *= compare_fields(name, Φ1[name], Φ2[name]; rtol, atol)
         end
     end
 
@@ -57,7 +67,7 @@ function compare_states(m1, m2; rtol=1e-8, atol=sqrt(eps(eltype(m1.grid))), incl
         Φ1 = NamedTuple(name => getproperty(m1.diffusivity_fields, name) for name in names)
         Φ2 = NamedTuple(name => getproperty(m2.diffusivity_fields, name) for name in names)
         for name in keys(Φ1)
-            compare_fields(name, Φ1[name], Φ2[name]; rtol, atol)
+            approx_equal *= compare_fields(name, Φ1[name], Φ2[name]; rtol, atol)
         end
     end
 
@@ -66,8 +76,15 @@ function compare_states(m1, m2; rtol=1e-8, atol=sqrt(eps(eltype(m1.grid))), incl
         Φ1 = NamedTuple(name => getproperty(m1.diffusivity_fields, name) for name in names)
         Φ2 = NamedTuple(name => getproperty(m2.diffusivity_fields, name) for name in names)
         for name in keys(Φ1)
-            compare_fields(name, Φ1[name], Φ2[name]; rtol, atol)
+            approx_equal *= compare_fields(name, Φ1[name], Φ2[name]; rtol, atol)
         end
+    end
+
+    if error && !approx_equal
+        @info "A disrepancy was found."
+        @info "Reactant model: $m1"
+        @info "Vanilla model: $m2"
+        error("There is a discrepancy between the models!")
     end
 
     return nothing
