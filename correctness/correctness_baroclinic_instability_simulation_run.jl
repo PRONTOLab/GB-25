@@ -2,16 +2,21 @@ using GordonBell25
 using Oceananigans
 using Reactant
 
-kw = (
+throw_error = true
+include_halos = true
+rtol = 0
+atol = 1e-7
+
+model_kw = (
     halo = (6, 6, 6),
-    Δt = 60,
+    Δt = 1e-9,
 )
 
-Nx = Ny = Nz = 8
+Nx = Ny = Nz = 16
 rarch = Oceananigans.Architectures.ReactantState()
 varch = CPU()
-rmodel = GordonBell25.baroclinic_instability_model(rarch, Nx, Ny, Nz; kw...)
-vmodel = GordonBell25.baroclinic_instability_model(varch, Nx, Ny, Nz; kw...)
+rmodel = GordonBell25.baroclinic_instability_model(rarch, Nx, Ny, Nz; model_kw...)
+vmodel = GordonBell25.baroclinic_instability_model(varch, Nx, Ny, Nz; model_kw...)
 @show vmodel
 @show rmodel
 
@@ -25,12 +30,17 @@ Oceananigans.initialize!(vmodel)
 
 @jit Oceananigans.TimeSteppers.update_state!(rmodel)
 Oceananigans.TimeSteppers.update_state!(vmodel)
-GordonBell25.compare_states(rmodel, vmodel, throw_error=true)
 
+@info "After initialization and update state:"
+GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
+
+GordonBell25.sync_states!(rmodel, vmodel)
 rfirst! = @compile sync=true raise=true GordonBell25.first_time_step!(rmodel)
 @time rfirst!(rmodel)
 @time GordonBell25.first_time_step!(vmodel)
-GordonBell25.compare_states(rmodel, vmodel, throw_error=true)
+
+@info "After first time step:"
+GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
 rstep! = @compile sync=true raise=true GordonBell25.time_step!(rmodel)
 
@@ -50,11 +60,14 @@ for _ in 1:10
     @time GordonBell25.time_step!(vmodel)
 end
 
-GordonBell25.compare_states(rmodel, vmodel, include_halos=true, throw_error=true)
+@info "After 10 steps:"
+GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
 GordonBell25.sync_states!(rmodel, vmodel)
 @jit Oceananigans.TimeSteppers.update_state!(rmodel)
-GordonBell25.compare_states(rmodel, vmodel, include_halos=true, throw_error=true)
+
+@info "After syncing and updating state again:"
+GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
 Nt = 100
 rNt = ConcreteRNumber(Nt)
@@ -62,5 +75,5 @@ rloop! = @compile sync=true raise=true GordonBell25.loop!(rmodel, rNt)
 @time rloop!(rmodel, rNt)
 @time GordonBell25.loop!(vmodel, Nt)
 
-GordonBell25.compare_states(rmodel, vmodel, include_halos=true, throw_error=true)
-
+@info "After a loop of 100 steps:"
+GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
