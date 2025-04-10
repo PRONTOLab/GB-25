@@ -47,10 +47,10 @@ for optimize in (:before_raise, false, :before_jit), code_type in (:hlo, :xla)
         end
     elseif code_type === :xla
         first_code = try_compile_code() do
-            @code_xla optimize=optimize raise=true first_time_step!(model)
+            @code_xla raise=true first_time_step!(model)
         end
         loop_code = try_compile_code() do
-            @code_xla optimize=optimize raise=true loop!(model, Ninner)
+            @code_xla raise=true loop!(model, Ninner)
         end
     end
     for name in ("first", "loop"), debug in (true, false)
