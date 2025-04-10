@@ -138,21 +138,21 @@ mkpath(profile_dir)
 mkpath(joinpath(profile_dir, "first_time_step"))
 @info "[$(process_id)] allocations" GordonBell25.allocatorstats()
 @info "[$(process_id)] running first time step" now(UTC)
-Reactant.with_profiler(joinpath(profile_dir, "first_time_step"), trace_device=2) do
+Reactant.with_profiler(joinpath(profile_dir, "first_time_step")) do
     @time "[$(process_id)] first time step" compiled_first_time_step!(model)
 end
 
 mkpath(joinpath(profile_dir, "loop"))
 @info "[$(process_id)] allocations" GordonBell25.allocatorstats()
 @info "[$(process_id)] running loop" now(UTC)
-Reactant.with_profiler(joinpath(profile_dir, "loop"), trace_device=2) do
+Reactant.with_profiler(joinpath(profile_dir, "loop")) do
     @time "[$(process_id)] loop" compiled_loop!(model, Ninner)
 end
 
 mkpath(joinpath(profile_dir, "loop2"))
 @info "[$(process_id)] allocations" GordonBell25.allocatorstats()
 @info "[$(process_id)] running second loop" now(UTC)
-Reactant.with_profiler(joinpath(profile_dir, "loop2"), trace_device=2) do
+Reactant.with_profiler(joinpath(profile_dir, "loop2")) do
     @time "[$(process_id)] second loop" compiled_loop!(model, Ninner)
 end
 @info "[$(process_id)] allocations" GordonBell25.allocatorstats()

@@ -112,6 +112,10 @@ export JULIA_DEPOT_PATH=$(join(Base.DEPOT_PATH, ':'))
 # export XLA_FLAGS="--xla_dump_hlo_pass_re=.* \${XLA_FLAGS}"
 export XLA_REACTANT_GPU_MEM_FRACTION=0.9
 
+# Get the public IP (i.e. the one we resolve to from hostname) on the HSN
+export REACTANT_COORDINATOR_BIND_ADDRESS=\$(ip -f inet addr show hsn0 | grep chn | awk '/inet / {print \$2}' | cut -d/ -f1):75535
+echo "\${HOSTNAME}: REACTANT_COORDINATOR_BIND_ADDRESS=\${REACTANT_COORDINATOR_BIND_ADDRESS}"
+
 # Important else XLA might hang indefinitely
 unset no_proxy http_proxy https_proxy NO_PROXY HTTP_PROXY HTTPS_PROXY
 
