@@ -6,52 +6,42 @@ on:
       julia_version:
         description: 'Julia version'
         required: true
-        default: ''
         type: string
       os:
         description: 'OS/Runner'
         required: true
-        default: ''
         type: string
       sharded:
         description: 'Whether we are using sharding'
-        required: false
-        default: false
+        required: true
         type: boolean
       run_dir:
         description: 'Directory the run script lives in'
-        required: false
-        default: 'simulations'
+        required: true
         type: string
       grid_type:
         description: 'What type of grid to use'
-        required: false
-        default: ''
+        required: true
         type: string
       xla_runtime:
         description: 'The XLA runtime'
         required: true
-        default: ''
         type: string
       compile_or_run:
         description: 'We compile or run the code'
         required: true
-        default: ''
         type: string
       earlyoom_threshold:
         description: 'earlyoom threshold'
         required: true
-        default: 4
         type: number
       julia_optlevel:
         description: 'Julia optimization level'
         required: true
-        default: 2
         type: number
       sim_type:
         description: 'ocean_climate or baroclinic_instability'
         required: true
-        default: ''
         type: string
 
 jobs:
