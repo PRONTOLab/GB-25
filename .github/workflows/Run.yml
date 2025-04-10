@@ -81,6 +81,7 @@ jobs:
       sim_type: ${{ matrix.sim_type }}
       grid_type: ${{ matrix.sim_type == 'baroclinic_instability' && 'simple_lat_lon' || 'gaussian_islands' }}
       sharded: true
+      run_dir: 'sharding'
       julia_version: '1.11'
       os: ${{ matrix.os }}
       xla_runtime: 'IFRT'

@@ -26,8 +26,8 @@ function baroclinic_instability_model(arch, Nx, Ny, Nz; Δt,
     buoyancy = SeawaterBuoyancy(
         equation_of_state = SeawaterPolynomials.TEOS10EquationOfState(Oceananigans.defaults.FloatType)),
 
-    # CATKE correctness is not established yet, so we are using a simpler closure
-    closure = Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity(),
+    closure = nothing,    
+    # closure = Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity(),
     # closure = VerticalScalarDiffusivity(VerticallyImplicitTimeDiscretization(), κ=1e-5, ν=1e-4),
 
     # Coriolis forces for a rotating Earth
@@ -71,11 +71,13 @@ function baroclinic_instability_model(arch, Nx, Ny, Nz; Δt,
 
     Random.seed!(42)
 
+    #=
     if buoyancy isa SeawaterBuoyancy
-        set!(model, T=Tᵢ, S=Sᵢ)
+        set_baroclinic_instability!(model)
     elseif buoyancy isa BuoyancyTracer
-        set!(model, b=initial_buoyancy)
+        # set!(model, b=initial_buoyancy)
     end
+    =#
 
     model.clock.last_Δt = Δt
 
