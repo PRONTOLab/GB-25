@@ -81,10 +81,10 @@ jobs:
       sim_type: 'sharded_baroclinic_instability'
       grid_type: ${{ matrix.grid_type }}
       sharded: true
+      run_dir: 'sharding'
       julia_version: '1.11'
       os: ${{ matrix.os }}
       xla_runtime: 'IFRT'
       compile_or_run: 'run'
       earlyoom_threshold: 4
       julia_optlevel: 0
-
