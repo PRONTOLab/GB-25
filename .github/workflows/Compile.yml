@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/Compile.yml'
       - '.github/workflows/CompileOrRun.yml'
+      - 'sharding/sharded_baroclinic_instability_simulation_compile.jl'
       - 'simulations/baroclinic_instability_simulation_compile.jl'
       - 'simulations/ocean_climate_simulation_compile.jl'
       - 'Project.toml'
@@ -17,6 +18,7 @@ on:
     paths:
       - '.github/workflows/Compile.yml'
       - '.github/workflows/CompileOrRun.yml'
+      - 'sharding/sharded_baroclinic_instability_simulation_compile.jl'
       - 'simulations/baroclinic_instability_simulation_compile.jl'
       - 'simulations/ocean_climate_simulation_compile.jl'
       - 'Project.toml'
@@ -56,6 +58,26 @@ jobs:
       julia_version: ${{ matrix.julia_version }}
       os: ${{ matrix.os }}
       xla_runtime: ${{ matrix.xla_runtime }}
+      compile_or_run: 'compile'
+      earlyoom_threshold: 4
+      julia_optlevel: 0
+
+  compile_sharded:
+    name: Sharded - Julia ${{ matrix.julia_version }} - ${{ matrix.grid_type }} - ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+          os: ['ubuntu-24.04']
+          grid_type: ['simple_lat_lon']
+    uses: ./.github/workflows/CompileOrRun.yml
+    with:
+      sim_type: 'sharded_baroclinic_instability'
+      grid_type: ${{ matrix.grid_type }}
+      sharded: true
+      run_dir: 'sharding'
+      julia_version: '1.11'
+      os: ${{ matrix.os }}
+      xla_runtime: 'IFRT'
       compile_or_run: 'compile'
       earlyoom_threshold: 4
       julia_optlevel: 0
