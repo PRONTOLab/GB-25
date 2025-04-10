@@ -29,18 +29,13 @@ function compare_states(m1, m2; rtol=1e-8, atol=sqrt(eps(eltype(m1.grid))),
                         include_halos=false, throw_error=false)
 
     approx_equal = true
-
     compare_fields = include_halos ? compare_parent : compare_interior
 
     Ψ1 = Oceananigans.fields(m1)
     Ψ2 = Oceananigans.fields(m2)
 
     for name in keys(Ψ1)
-        if name === :w # ignore for now
-            compare_fields(name, Ψ1[name], Ψ2[name]; rtol, atol)
-        else
-            approx_equal *= compare_fields(name, Ψ1[name], Ψ2[name]; rtol, atol)
-        end
+        approx_equal *= compare_fields(name, Ψ1[name], Ψ2[name]; rtol, atol)
 
         if !(name ∈ (:w, :η))
             Gⁿ1 = m1.timestepper.Gⁿ
@@ -81,9 +76,6 @@ function compare_states(m1, m2; rtol=1e-8, atol=sqrt(eps(eltype(m1.grid))),
     end
 
     if throw_error && !approx_equal
-        @info "A disrepancy was found."
-        @info "Reactant model: $m1"
-        @info "Vanilla model: $m2"
         error("There is a discrepancy between the models!")
     end
 
