@@ -91,12 +91,12 @@ jobs:
         run: |
           using Pkg
           Pkg.Registry.update()
-          # Pkg.add([
-          #     PackageSpec(; name="Reactant", rev="main"),
+          Pkg.add([
+              PackageSpec(; name="Reactant", rev="af6951a9bf0a68007a6e7fba08946252f2ef50b5"), # https://github.com/EnzymeAD/Reactant.jl/pull/1167
           #     PackageSpec(; name="ReactantCore", rev="main"),
           #     PackageSpec(; name="Oceananigans", rev="main"),
           #     PackageSpec(; name="ClimaOcean", rev="main"),
-          # ])
+          ])
           Pkg.instantiate()
       - name: Upload project environment
         uses: actions/upload-artifact@v4
@@ -117,7 +117,7 @@ jobs:
           RUNDIR: ${{ inputs.run_dir }}
         run: |
           earlyoom -m ${{ inputs.earlyoom_threshold }} -s 100 -r 120 --prefer 'julia' &
-          julia --color=yes --project -O${{ inputs.julia_optlevel }} $RUNDIR/${{ inputs.sim_type }}_simulation_${{ inputs.compile_or_run }}.jl
+          timeout --signal=TERM --verbose 45m julia --color=yes --project -O${{ inputs.julia_optlevel }} $RUNDIR/${{ inputs.sim_type }}_simulation_${{ inputs.compile_or_run }}.jl
       - name: Show remaining jit calls
         if: ${{ inputs.compile_or_run == 'compile' }}
         timeout-minutes: 10

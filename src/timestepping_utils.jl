@@ -40,6 +40,7 @@ function preamble(; rendezvous_warn::Union{Nothing,Int}=nothing, rendezvous_term
     # If we are in GitHub Actions, make `TMPDIR` be a local directory from which we
     # can upload artifacts at the end.
     if get(ENV, "GITHUB_ACTIONS", "false") == "true"
+        Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
         ENV["TMPDIR"] = mkpath(joinpath(@__DIR__, "..", "tmp"))
     end
 
