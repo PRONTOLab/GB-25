@@ -110,7 +110,7 @@ jobs:
           retention-days: 90
           overwrite: false
       - name: Ocean climate simulation
-        timeout-minutes: 180
+        timeout-minutes: 60
         env:
           grid_type: ${{ inputs.grid_type }}
           XLA_FLAGS: ${{ inputs.sharded && '--xla_force_host_platform_device_count=4 --xla_dump_to=xla_dump' || '--xla_dump_to=xla_dump' }}
