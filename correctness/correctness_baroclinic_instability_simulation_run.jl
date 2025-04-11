@@ -50,17 +50,18 @@ rstep! = @compile sync=true raise=true GordonBell25.time_step!(rmodel)
 @time GordonBell25.time_step!(vmodel)
 @time GordonBell25.time_step!(vmodel)
 
+Nt = 10
 @info "Time step with Reactant:"
-for _ in 1:10
+for _ in 1:Nt
     @time rstep!(rmodel)
 end
 
 @info "Time step vanilla:"
-for _ in 1:10
+for _ in 1:Nt
     @time GordonBell25.time_step!(vmodel)
 end
 
-@info "After 10 steps:"
+@info "After $(Nt) steps:"
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
 GordonBell25.sync_states!(rmodel, vmodel)
@@ -75,5 +76,5 @@ rloop! = @compile sync=true raise=true GordonBell25.loop!(rmodel, rNt)
 @time rloop!(rmodel, rNt)
 @time GordonBell25.loop!(vmodel, Nt)
 
-@info "After a loop of 100 steps:"
+@info "After a loop of $(Nt) steps:"
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
