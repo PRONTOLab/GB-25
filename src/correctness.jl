@@ -75,8 +75,15 @@ function compare_states(m1, m2; rtol=1e-8, atol=sqrt(eps(eltype(m1.grid))),
         end
     end
 
-    if throw_error && !approx_equal
-        error("There is a discrepancy between the models!")
+    if approx_equal
+        @info "The two models are consistent within tolerance"
+    else
+        err_msg = "There is a discrepancy between the models!  See the details above"
+        if throw_error
+            error(err_msg)
+        else
+            @error err_msg
+        end
     end
 
     return nothing
