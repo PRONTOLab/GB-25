@@ -36,7 +36,7 @@ Nz = 4
 model = GordonBell25.baroclinic_instability_model(arch, Nx, Ny, Nz; halo=(H, H, H), Δt=1)
 @show model
 
-function compute_Gu!(model, Δt)
+function compute_Gu!(model)
     active_cell_map = nothing
     grid = model.grid
     arch = architecture(grid)
