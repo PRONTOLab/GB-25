@@ -9,3 +9,4 @@
 *.err
 *.out
 *.xla
+*.DS_Store
