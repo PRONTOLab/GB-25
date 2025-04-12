@@ -124,13 +124,15 @@ jobs:
               echo "----------"
               exit 1
           fi
-      - name: Upload MLIR modules
+      - name: Upload MLIR and XLA modules
         uses: actions/upload-artifact@v4
         timeout-minutes: 10
         if: ${{ always() }}
         with:
           name: 'simulation-mlir-${{ inputs.sim_type }}-${{ inputs.grid_type }}-${{ inputs.julia_version }}-${{ inputs.os }}-${{ inputs.xla_runtime }}'
-          path: '**/*.mlir'
+          path: |
+            **/*.mlir
+            **/optimised_*.xla
           retention-days: 90
           overwrite: false
       - name: Upload Julia profiler traces
