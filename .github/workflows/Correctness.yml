@@ -41,6 +41,7 @@ jobs:
     with:
       sim_type: 'correctness_baroclinic_instability'
       grid_type: ${{ matrix.grid_type }}
+      sharded: false
       run_dir: 'correctness'
       julia_version: '1.11'
       os: ${{ matrix.os }}
