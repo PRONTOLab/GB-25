@@ -74,6 +74,13 @@ function compute_Gu!(model, Δt)
     return nothing
 end
 
+function myloop!(model, Nt)
+    @trace track_numbers=false for _ = 1:Nt
+        compute_Gu!(model)
+    end
+    return nothing
+end
+
 if local_arch isa CPU
     compute_Gu!(model)
     error("done")
@@ -81,5 +88,10 @@ end
 
 compute_Gu_xla = @code_xla raise=true compute_Gu!(model)
 open("sharded_compute_Gu_$Ndev.xla", "w") do io
-    print(io, code)
+    print(io, compute_Gu_xla)
+end
+
+compute_Gu_loop_xla = @code_xla raise=true myloop!(model, ConcreteRNumber(3)))
+open("sharded_compute_Gu_loop_$Ndev.xla", "w") do io
+    print(io, compute_Gu_loop_xla)
 end
