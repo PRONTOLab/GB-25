@@ -9,15 +9,23 @@ function set_tracers(T, Ta, u, ua, shortwave, Qs)
     nothing
 end
 
-function data_free_ocean_climate_model_init(
-    arch::Architectures.AbstractArchitecture=Architectures.ReactantState();
-    # Horizontal resolution
-    resolution::Real = 2, # 1/4 for quarter degree
-    # Vertical resolution
-    Nz::Int = 20, # eventually we want to increase this to between 100-600
-    )
+function data_free_ocean_climate_model_init(arch; resolution=4, Nz=10, Δt=30, kw...)
+    Nx, Ny = resolution_to_points(resolution)
+    return data_free_ocean_climate_model_init(arch, Nx, Ny, Nz; Δt, kw...)
+end
 
-    grid = gaussian_islands_tripolar_grid(arch, resolution, Nz)
+function data_free_ocean_climate_model_init(arch, Nx, Ny, Nz;
+    Δt = 30,
+    halo = (8, 8, 8),
+    grid_type = :simple_lat_lon) # :gaussian_islands
+
+    grid = if grid_type === :gaussian_islands
+        gaussian_islands_tripolar_grid(arch, Nx, Ny, Nz; halo)
+    elseif grid_type === :simple_lat_lon
+        simple_latitude_longitude_grid(arch, Nx, Ny, Nz; halo)
+    else
+        error("grid_type=$grid_type must be :gaussian_islands or :simple_lat_lon.")
+    end
 
     # See visualize_ocean_climate_simulation.jl for information about how to
     # visualize the results of this run.

@@ -31,6 +31,7 @@ Reactant.Compiler.DUS_TO_CONCAT[] = true
 # Reactant.Compiler.AGGRESSIVE_PROPAGATION[] = false
 
 GordonBell25.initialize(; single_gpu_per_process=false)
+
 @show Ndev = length(Reactant.devices())
 
 if Ndev == 1
@@ -38,7 +39,6 @@ if Ndev == 1
     arch = Oceananigans.ReactantState()
 elseif Ndev == 2
     rank = Reactant.Distributed.local_rank()
-
     arch = Oceananigans.Distributed(
         Oceananigans.ReactantState();
         partition = Partition(1, 2, 1)
@@ -54,12 +54,9 @@ end
 
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 H = 8
-Tx = 48 * Rx
-Ty = 24 * Ry
+Nx = 48 * Rx
+Ny = 24 * Ry
 Nz = 4
-
-Nx = Tx - 2H
-Ny = Ty - 2H
 
 @info "[$rank] Generating model..." now(UTC)
 model = GordonBell25.baroclinic_instability_model(arch, Nx, Ny, Nz; halo=(H, H, H), Δt=1)

@@ -72,16 +72,16 @@ jobs:
       julia_optlevel: 0
 
   run_sharded:
-    name: Sharded - Julia ${{ matrix.julia_version }} - ${{ matrix.grid_type }} - ${{ matrix.os }}
+    name: Sharded - Julia ${{ matrix.julia_version }} - ${{ matrix.sim_type }} - ${{ matrix.grid_type }} - ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
           os: ['ubuntu-24.04', 'ubuntu-22.04-arm']
-          grid_type: ['simple_lat_lon']
+          sim_type: ['sharded_baroclinic_instability', 'sharded_ocean_climate']
     uses: ./.github/workflows/CompileOrRun.yml
     with:
-      sim_type: 'sharded_baroclinic_instability'
-      grid_type: ${{ matrix.grid_type }}
+      sim_type: ${{ matrix.sim_type }}
+      grid_type: ${{ matrix.sim_type == 'baroclinic_instability' && 'simple_lat_lon' || 'gaussian_islands' }}
       sharded: true
       run_dir: 'sharding'
       julia_version: '1.11'
