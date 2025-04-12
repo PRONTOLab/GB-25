@@ -9,19 +9,22 @@ using Printf
 GordonBell25.preamble(; rendezvous_warn=20, rendezvous_terminate=40)
 @show Ndev = length(Reactant.devices())
 
-Rx, Ry = GordonBell25.factors(Ndev)
-arch = Oceananigans.Distributed(
-    Oceananigans.ReactantState();
-    partition = Partition(Rx, Ry, 1)
-)
+local_arch = Oceananigans.ReactantState()
+#local_arch = CPU()
 
-rank = arch.local_rank
+if Ndev == 1
+    Rx = Ry = 1
+    rank = 0
+    arch = local_arch
+else
+    Rx, Ry = GordonBell25.factors(Ndev)
+    arch = Oceananigans.Distributed(
+        local_arch,
+        partition = Partition(Rx, Ry, 1)
+    )
 
-#=
-Rx = Ry = 1
-rank = 0
-arch = CPU()
-=#
+    rank = arch.local_rank
+end
 
 @show arch
 
@@ -82,6 +85,11 @@ end
 # time_step_xla          = @code_xla raise=true GordonBell25.time_step!(model)
 # compute_tendencies_xla = @code_xla raise=true Oceananigans.Models.HydrostaticFreeSurfaceModels.compute_tendencies!(model, [])
 # update_state_xla       = @code_xla raise=true Oceananigans.Models.HydrostaticFreeSurfaceModels.update_state!(model)
+
+if local_arch isa CPU
+    simple_ab2_step!(model, model.clock.last_Δt)
+    error("done")
+end
 
 ab2_step_xla = @code_xla raise=true simple_ab2_step!(model, model.clock.last_Δt)
 #simple_ab2_step!(model, model.clock.last_Δt)
