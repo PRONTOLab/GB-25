@@ -6,52 +6,42 @@ on:
       julia_version:
         description: 'Julia version'
         required: true
-        default: ''
         type: string
       os:
         description: 'OS/Runner'
         required: true
-        default: ''
         type: string
       sharded:
         description: 'Whether we are using sharding'
-        required: false
-        default: false
+        required: true
         type: boolean
       run_dir:
         description: 'Directory the run script lives in'
-        required: false
-        default: 'simulations'
+        required: true
         type: string
       grid_type:
         description: 'What type of grid to use'
-        required: false
-        default: ''
+        required: true
         type: string
       xla_runtime:
         description: 'The XLA runtime'
         required: true
-        default: ''
         type: string
       compile_or_run:
         description: 'We compile or run the code'
         required: true
-        default: ''
         type: string
       earlyoom_threshold:
         description: 'earlyoom threshold'
         required: true
-        default: 4
         type: number
       julia_optlevel:
         description: 'Julia optimization level'
         required: true
-        default: 2
         type: number
       sim_type:
         description: 'ocean_climate or baroclinic_instability'
         required: true
-        default: ''
         type: string
 
 jobs:
@@ -114,12 +104,11 @@ jobs:
         env:
           grid_type: ${{ inputs.grid_type }}
           XLA_FLAGS: ${{ inputs.sharded && '--xla_force_host_platform_device_count=4 --xla_dump_to=xla_dump' || '--xla_dump_to=xla_dump' }}
-          RUNDIR: ${{ inputs.run_dir }}
         run: |
           earlyoom -m ${{ inputs.earlyoom_threshold }} -s 100 -r 120 --prefer 'julia' &
           # `timeout` sends a SIGTERM, which gives a chance to read a more informative
           # stacktrace than when the step is forcibly terminated by GitHub Actions.
-          timeout --signal=TERM --verbose 180m julia --color=yes --project -O${{ inputs.julia_optlevel }} $RUNDIR/${{ inputs.sim_type }}_simulation_${{ inputs.compile_or_run }}.jl
+          timeout --signal=TERM --verbose 180m julia --color=yes --project -O${{ inputs.julia_optlevel }} ${{ inputs.run_dir }}/${{ inputs.sim_type }}_simulation_${{ inputs.compile_or_run }}.jl
       - name: Show remaining jit calls
         if: ${{ inputs.compile_or_run == 'compile' }}
         timeout-minutes: 10
