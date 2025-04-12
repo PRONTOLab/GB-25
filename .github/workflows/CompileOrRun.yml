@@ -82,7 +82,7 @@ jobs:
           using Pkg
           Pkg.Registry.update()
           Pkg.add([
-              PackageSpec(; name="Reactant", rev="4b096fad2986a8a8f09ed25d310ae3549de98d43"), # https://github.com/EnzymeAD/Reactant.jl/pull/1168
+              PackageSpec(; name="Reactant", rev="963d1d1899abc11efd545719dde2a170edceebf5"),
           #     PackageSpec(; name="ReactantCore", rev="main"),
           #     PackageSpec(; name="Oceananigans", rev="main"),
           #     PackageSpec(; name="ClimaOcean", rev="main"),
