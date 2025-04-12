@@ -1,15 +1,32 @@
 using GordonBell25: first_time_step!, loop!, try_compile_code, preamble, TRY_COMPILE_FAILED
-using GordonBell25: data_free_ocean_climate_model_init, PROFILE
+using GordonBell25: baroclinic_instability_model, PROFILE, GordonBell25
 using Reactant
 using Oceananigans
 using Oceananigans.Architectures: ReactantState
 
 PROFILE[] = true
+Oceananigans.defaults.FloatType = Float32
 
 preamble()
 
+GordonBell25.initialize(; single_gpu_per_process=false)
+@show Ndev = length(Reactant.devices())
+
+Rx, Ry = GordonBell25.factors(Ndev)
+if Ndev == 1
+    rank = 0
+    arch = Oceananigans.ReactantState()
+else
+    arch = Oceananigans.Distributed(
+        Oceananigans.ReactantState();
+        partition = Partition(Rx, Ry, 1)
+    )
+    rank = Reactant.Distributed.local_rank()
+end
+
 @info "Generating model..."
-model = data_free_ocean_climate_model_init(ReactantState())
+arch = ReactantState()
+model = baroclinic_instability_model(arch, resolution=8, Δt=60, Nz=10)
 
 GC.gc(true); GC.gc(false); GC.gc(true)
 
@@ -39,7 +56,7 @@ for optimize in (:before_raise, false, :before_jit), code_type in (:hlo, :xla)
     for name in ("first", "loop"), debug in (true, false)
         # No debug info for `@code_xla`
         code_type === :xla && debug && continue
-        open("$(kernel_type)_ocean_climate_simulation_$(name)$(debug ? "_debug" : "")_$(code_type).mlir", "w") do io
+        open("$(kernel_type)_baroclinic_instability_simulation_$(name)$(debug ? "_debug" : "")_$(code_type).mlir", "w") do io
             show(IOContext(io, :debug => debug), (Base.@locals())[Symbol(name, "_code")])
         end
     end

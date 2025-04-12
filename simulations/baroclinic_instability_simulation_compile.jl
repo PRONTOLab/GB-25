@@ -18,7 +18,7 @@ GC.gc(true); GC.gc(false); GC.gc(true)
 TRY_COMPILE_FAILED[] = false
 Ninner = ConcreteRNumber(2)
 
-for optimize in (:before_raise, false, :before_jit), code_type in (:hlo,)
+for optimize in (:before_raise, false, :before_jit), code_type in (:hlo, :xla)
     # We only want the optimised XLA code
     optimize in (:before_raise, false) && code_type === :xla && continue
     kernel_type = optimize === :before_raise ? "before_raise" : (optimize === false ? "unoptimised" : "optimised")
