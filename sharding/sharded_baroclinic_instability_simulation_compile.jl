@@ -15,8 +15,7 @@ arch = Oceananigans.Distributed(
 )
 
 @show arch
-
-rank = Reactant.Distributed.local_rank()
+rank = arch.local_rank
 
 H = 8
 Nx = 48 * Rx
