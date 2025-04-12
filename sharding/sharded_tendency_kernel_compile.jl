@@ -37,9 +37,9 @@ model = GordonBell25.baroclinic_instability_model(arch, Nx, Ny, Nz; halo=(H, H, 
 @show model
 
 function compute_Gu!(model)
-    active_cell_map = nothing
+    active_cells_map = nothing
     grid = model.grid
-    arch = architecture(grid)
+    arch = grid.architecture
     u_immersed_bc = nothing
     u_forcing = model.forcing.u
     kernel_parameters = Oceananigans.Models.HydrostaticFreeSurfaceModels.interior_tendency_kernel_parameters(arch, grid)
@@ -48,7 +48,7 @@ function compute_Gu!(model)
                                   model.coriolis,
                                   model.closure)
 
-    end_momentum_kernel_args = (velocities,
+    end_momentum_kernel_args = (model.velocities,
                                 model.free_surface,
                                 model.tracers,
                                 model.buoyancy,
@@ -91,7 +91,7 @@ open("sharded_compute_Gu_$Ndev.xla", "w") do io
     print(io, compute_Gu_xla)
 end
 
-compute_Gu_loop_xla = @code_xla raise=true myloop!(model, ConcreteRNumber(3)))
+compute_Gu_loop_xla = @code_xla raise=true myloop!(model, ConcreteRNumber(3))
 open("sharded_compute_Gu_loop_$Ndev.xla", "w") do io
     print(io, compute_Gu_loop_xla)
 end
