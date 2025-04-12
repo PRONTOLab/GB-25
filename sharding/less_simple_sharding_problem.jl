@@ -7,12 +7,13 @@ using Dates
 @info "This is when the fun begins" now(UTC)
 
 ENV["JULIA_DEBUG"] = "Reactant_jll,Reactant"
-jobid_procid = string(get(ENV, "SLURM_JOB_ID", Int(datetime2unix(now(UTC)) * 1000)), ".", get(ENV, "SLURM_PROCID", string(getpid())))
 
 using Oceananigans
 using SeawaterPolynomials.TEOS10: TEOS10EquationOfState
 using Reactant
 using GordonBell25: GordonBell25
+
+jobid_procid = GordonBell25.get_jobid_procid()
 
 # This must be called before `GordonBell25.initialize`!
 GordonBell25.preamble(; rendezvous_warn=20, rendezvous_terminate=40)
