@@ -1,4 +1,4 @@
-using GordonBell25: first_time_step!, loop!, try_code_hlo, preamble
+using GordonBell25: first_time_step!, loop!, try_compile_code, preamble, TRY_COMPILE_FAILED
 using GordonBell25: baroclinic_instability_model, PROFILE
 using Reactant
 using Oceananigans
@@ -15,45 +15,38 @@ model = baroclinic_instability_model(arch, resolution=8, Δt=60, Nz=10)
 
 GC.gc(true); GC.gc(false); GC.gc(true)
 
-failed = false
+TRY_COMPILE_FAILED[] = false
 Ninner = ConcreteRNumber(2)
 
-# Pre-raise IR
-@info "Compiling before raise kernels..."
-before_raise_first = try_code_hlo() do
-    @code_hlo optimize=:before_raise raise=true first_time_step!(model)
-end
-
-before_raise_loop = try_code_hlo() do
-    @code_hlo optimize=:before_raise raise=true loop!(model, Ninner)
-end
-
-# Unoptimized HLO
-@info "Compiling unoptimised kernel..."
-unopt_first = try_code_hlo() do
-    @code_hlo optimize=false raise=true first_time_step!(model)
-end
-
-unopt_loop = try_code_hlo() do
-    @code_hlo optimize=false raise=true loop!(model, Ninner)
-end
-
-# Optimized HLO
-@info "Compiling optimised kernel..."
-opt_first = try_code_hlo() do
-    @code_hlo optimize=:before_jit raise=true first_time_step!(model)
-end
-
-opt_loop = try_code_hlo() do
-    @code_hlo optimize=:before_jit raise=true loop!(model, Ninner)
-end
-
-for type in ("before_raise", "unopt", "opt"), name in ("first", "loop"), debug in (true, false)
-    open("$(type)_baroclinic_instability_simulation_$(name)$(debug ? "_debug" : "").mlir", "w") do io
-        show(IOContext(io, :debug => debug), getfield(Main, @eval Symbol($type, "_", $name)))
+for optimize in (:before_raise, false, :before_jit), code_type in (:hlo,)
+    # We only want the optimised XLA code
+    optimize in (:before_raise, false) && code_type === :xla && continue
+    kernel_type = optimize === :before_raise ? "before_raise" : (optimize === false ? "unoptimised" : "optimised")
+    @info "Compiling $(kernel_type) $(code_type) kernels..."
+    if code_type === :hlo
+        first_code = try_compile_code() do
+            @code_hlo optimize=optimize raise=true first_time_step!(model)
+        end
+        loop_code = try_compile_code() do
+            @code_hlo optimize=optimize raise=true loop!(model, Ninner)
+        end
+    elseif code_type === :xla
+        first_code = try_compile_code() do
+            @code_xla raise=true first_time_step!(model)
+        end
+        loop_code = try_compile_code() do
+            @code_xla raise=true loop!(model, Ninner)
+        end
+    end
+    for name in ("first", "loop"), debug in (true, false)
+        # No debug info for `@code_xla`
+        code_type === :xla && debug && continue
+        open("$(kernel_type)_baroclinic_instability_simulation_$(name)$(debug ? "_debug" : "")_$(code_type).mlir", "w") do io
+            show(IOContext(io, :debug => debug), (Base.@locals())[Symbol(name, "_code")])
+        end
     end
 end
 
-if failed
+if TRY_COMPILE_FAILED[]
     error("compilation failed")
 end

@@ -3,12 +3,14 @@ using Oceananigans
 import Oceananigans.TimeSteppers: first_time_step!, time_step!
 using Reactant_jll: libReactantExtra
 
-function try_code_hlo(f)
+const TRY_COMPILE_FAILED = Ref(false)
+
+function try_compile_code(f)
     try
         f()
     catch e
         @error "Failed to compile" exception=(e, catch_backtrace())
-        global failed = true
+        TRY_COMPILE_FAILED[] = true
         Text("""
         // Failed to compile
         //$e
