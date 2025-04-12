@@ -57,7 +57,7 @@ end
 
 function initialize(; kwargs...)
     # TODO: improve the condition by checking the device we're on?
-    if get(ENV, "CI", "false") != "true"
+    if !(get(ENV, "CI", "false") == "true" || contains(get(ENV, "XLA_FLAGS", ""), "--xla_force_host_platform_device_count"))
         Reactant.Distributed.initialize(; kwargs...)
     end
 end
