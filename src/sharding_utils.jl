@@ -1,4 +1,5 @@
 using Reactant
+using Dates
 
 struct TreeSharding{S} <: Sharding.AbstractSharding
     sharding::S
@@ -61,3 +62,10 @@ function initialize(; kwargs...)
         Reactant.Distributed.initialize(; kwargs...)
     end
 end
+
+get_jobid_procid() =
+    string(
+        get(ENV, "SLURM_JOB_ID", replace(string(now(UTC)), ':' => '-')),
+        ".",
+        get(ENV, "SLURM_PROCID", string(getpid()))
+    )
