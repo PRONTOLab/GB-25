@@ -113,7 +113,7 @@ jobs:
         if: ${{ inputs.compile_or_run == 'compile' }}
         timeout-minutes: 10
         run: |
-          JIT_CALLS=$(find . -name 'optimised_${{ inputs.sim_type }}*.mlir' -exec grep --with-filename 'enzymexla\.jit_call' '{}' \;)
+          JIT_CALLS=$(find . -name 'optimised_${{ inputs.sim_type }}*.mlir' -exec grep --with-filename --line-number 'enzymexla\.jit_call' '{}' \;)
           NUM_JIT_CALLS=$(echo "${JIT_CALLS}" | wc -l | xargs)
           if [[ -n "${JIT_CALLS}" ]]; then
               MSG="There are ${NUM_JIT_CALLS} remaining jit calls"
@@ -125,20 +125,24 @@ jobs:
               exit 1
           fi
       - name: Show remaining collective operations
-        if: ${{ inputs.compile_or_run == 'compile' }}
+        if: ${{ inputs.sharded && inputs.compile_or_run == 'compile' }}
         timeout-minutes: 10
         run: |
-          COLLECTIVES=$(find . -name 'optimised_${{ inputs.sim_type }}*.xla' -exec grep --with-filename --line-number --extended-regexp '(all-to-all|all-gather|all-reduce)' '{}' \;)
-          NUM_COLLECTIVES=$(echo "${COLLECTIVES}" | wc -l | xargs)
-          if [[ -n "${COLLECTIVES}" ]]; then
-              MSG="There are ${COLLECTIVES} remaining collective operations"
-              echo "::error title=Remaining Collective Operations:: ${MSG}"
-              echo
-              echo "----------"
-              echo "${COLLECTIVES}"
-              echo "----------"
-              exit 0 # TODO: eventually change this to 1
-          fi
+          OK="true"
+          for OP in all-to-all all-gather all-reduce; do
+              COLLECTIVES=$(find . -name 'optimised_${{ inputs.sim_type }}*.xla' -exec grep --with-filename --line-number --extended-regexp "${OP}" '{}' \;)
+              NUM_COLLECTIVES=$(echo "${COLLECTIVES}" | wc -l | xargs)
+              if [[ -n "${COLLECTIVES}" ]]; then
+                  MSG="There are ${NUM_COLLECTIVES} remaining ${OP} operations"
+                  echo "::error title=Remaining ${OP} Operations:: ${MSG}"
+                  echo
+                  echo "----------"
+                  echo "${COLLECTIVES}"
+                  echo "----------"
+                  OK="false"
+              fi
+          done
+          exit 0 # TODO: eventually change this to check the value of `${OK}`
       - name: Upload MLIR and XLA modules
         uses: actions/upload-artifact@v4
         timeout-minutes: 10
