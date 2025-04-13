@@ -39,7 +39,7 @@ for optimize in (:before_raise, false, :before_jit), code_type in (:hlo, :xla)
     for name in ("first", "loop"), debug in (true, false)
         # No debug info for `@code_xla`
         code_type === :xla && debug && continue
-        open("$(kernel_type)_ocean_climate_simulation_$(name)$(debug ? "_debug" : "")_$(code_type).mlir", "w") do io
+        open("$(kernel_type)_baroclinic_instability_simulation_$(name)$(debug ? "_debug" : "").$(code_type == :xla ? "xla" : "mlir")", "w") do io
             show(IOContext(io, :debug => debug), (Base.@locals())[Symbol(name, "_code")])
         end
     end

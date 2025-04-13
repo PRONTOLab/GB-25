@@ -24,9 +24,16 @@ else
     rank = Reactant.Distributed.local_rank()
 end
 
+H = 8
+Tx = 48 * Rx
+Ty = 24 * Ry
+Nz = 4
+
+Nx = Tx - 2H
+Ny = Ty - 2H
+
 @info "Generating model..."
-arch = ReactantState()
-model = baroclinic_instability_model(arch, resolution=8, Δt=60, Nz=10)
+model = GordonBell25.baroclinic_instability_model(arch, Nx, Ny, Nz; halo=(H, H, H), Δt=1)
 
 GC.gc(true); GC.gc(false); GC.gc(true)
 
@@ -56,7 +63,7 @@ for optimize in (:before_raise, false, :before_jit), code_type in (:hlo, :xla)
     for name in ("first", "loop"), debug in (true, false)
         # No debug info for `@code_xla`
         code_type === :xla && debug && continue
-        open("$(kernel_type)_baroclinic_instability_simulation_$(name)$(debug ? "_debug" : "")_$(code_type).mlir", "w") do io
+        open("$(kernel_type)_baroclinic_instability_simulation_$(name)$(debug ? "_debug" : "").$(code_type == :xla ? "xla" : "mlir")", "w") do io
             show(IOContext(io, :debug => debug), (Base.@locals())[Symbol(name, "_code")])
         end
     end
