@@ -8,3 +8,6 @@
 *.sqsh
 *.err
 *.out
+*.log
+*.mlir
+*.xla
