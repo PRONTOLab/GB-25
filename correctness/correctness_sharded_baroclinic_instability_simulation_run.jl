@@ -18,7 +18,7 @@ GordonBell25.initialize(; single_gpu_per_process=false)
 Rx, Ry = GordonBell25.factors(Ndev)
 if Ndev == 1
     rank = 0
-    arch = Oceananigans.ReactantState()
+    rarch = Oceananigans.ReactantState()
 else
     rarch = Oceananigans.Distributed(
         Oceananigans.ReactantState();
@@ -35,7 +35,6 @@ Nz = 16
 Nx = Tx - 2H
 Ny = Ty - 2H
 
-rarch = Oceananigans.Architectures.ReactantState()
 varch = CPU()
 rmodel = GordonBell25.baroclinic_instability_model(rarch, Nx, Ny, Nz; model_kw...)
 vmodel = GordonBell25.baroclinic_instability_model(varch, Nx, Ny, Nz; model_kw...)
