@@ -7,11 +7,6 @@ include_halos = true
 rtol = 0
 atol = 1e-7
 
-model_kw = (
-    halo = (6, 6, 6),
-    Δt = 1e-9,
-)
-
 GordonBell25.initialize(; single_gpu_per_process=false)
 @show Ndev = length(Reactant.devices())
 
@@ -31,6 +26,11 @@ Nz = 16
 
 Nx = Tx - 2H
 Ny = Ty - 2H
+
+model_kw = (
+    halo = (H, H, H),
+    Δt = 1e-9,
+)
 
 varch = CPU()
 rmodel = GordonBell25.baroclinic_instability_model(rarch, Nx, Ny, Nz; model_kw...)
