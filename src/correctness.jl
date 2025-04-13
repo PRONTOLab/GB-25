@@ -76,7 +76,7 @@ function compare_states(m1, m2; rtol=1e-8, atol=sqrt(eps(eltype(m1.grid))),
     end
 
     if approx_equal
-        @info "The two models are consistent within rtol=$rol and atol=$atol !"
+        @info "The two models are consistent within rtol=$(rtol) and atol=$(atol) !"
     else
         err_msg = "There is a discrepancy between the models!  See the details above"
         if throw_error

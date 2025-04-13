@@ -2,7 +2,6 @@ using Dates
 @info "This is when the fun begins" now(UTC)
 
 ENV["JULIA_DEBUG"] = "Reactant_jll,Reactant"
-jobid_procid = string(get(ENV, "SLURM_JOB_ID", Int(datetime2unix(now(UTC)) * 1000)), ".", get(ENV, "SLURM_PROCID", string(getpid())))
 
 using GordonBell25
 using GordonBell25: first_time_step!, time_step!, loop!, factors
@@ -12,6 +11,8 @@ using Oceananigans.Architectures: ReactantState
 using Random
 using Printf
 using Reactant
+
+jobid_procid = GordonBell25.get_jobid_procid()
 
 # This must be called before `GordonBell25.initialize`!
 GordonBell25.preamble(; rendezvous_warn=20, rendezvous_terminate=40)
@@ -32,18 +33,11 @@ Reactant.Compiler.DUS_TO_CONCAT[] = true
 GordonBell25.initialize(; single_gpu_per_process=false)
 @show Ndev = length(Reactant.devices())
 
+Rx, Ry = factors(Ndev)
 if Ndev == 1
     rank = 0
     arch = Oceananigans.ReactantState()
-elseif Ndev == 2
-    rank = Reactant.Distributed.local_rank()
-
-    arch = Oceananigans.Distributed(
-        Oceananigans.ReactantState();
-        partition = Partition(1, 2, 1)
-    )
 else
-    Rx, Ry = factors(Ndev)
     arch = Oceananigans.Distributed(
         Oceananigans.ReactantState();
         partition = Partition(Rx, Ry, 1)
