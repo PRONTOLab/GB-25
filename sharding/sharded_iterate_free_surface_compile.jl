@@ -9,7 +9,7 @@ using Printf
 GordonBell25.preamble(; rendezvous_warn=20, rendezvous_terminate=40)
 @show Ndev = length(Reactant.devices())
 local_arch = Oceananigans.ReactantState()
-#local_arch = CPU()
+# local_arch = CPU()
 
 if Ndev == 1
     Rx = Ry = 1
@@ -63,15 +63,55 @@ function free_surface_func!(model)
     return nothing
 end
     
-using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces:
-    _split_explicit_free_surface!,
-    _split_explicit_barotropic_velocity!
+# using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces:
+#     _split_explicit_free_surface!,
+#     _split_explicit_barotropic_velocity!
+
+using Oceananigans.Operators:
+    δxTᶜᵃᵃ,
+    δyTᵃᶜᵃ,
+    ∂xTᶠᶜᶠ,
+    ∂yTᶜᶠᶠ,
+    Δy_qᶠᶜᶠ,
+    Δx_qᶜᶠᶠ,
+    Azᶜᶜᶠ
+
+@kernel function _split_explicit_free_surface!(grid, Δτ, η, U, V)
+    i, j = @index(Global, NTuple)
+    k_top = grid.Nz+1
+        
+    @inbounds  η[i, j, k_top] -= Δτ * (δxTᶜᵃᵃ(i, j, grid.Nz, grid, Δy_qᶠᶜᶠ, U) +
+                                       δyTᵃᶜᵃ(i, j, grid.Nz, grid, Δx_qᶜᶠᶠ, V)) / Azᶜᶜᶠ(i, j, k_top, grid)
+end
+
+@kernel function _split_explicit_barotropic_velocity!(averaging_weight, grid, Δτ, η, U, V, η̅, U̅, V̅, Gᵁ, Gⱽ, g) 
+    i, j = @index(Global, NTuple)
+    k_top = grid.Nz+1
+
+    # Hᶠᶜ = column_depthᶠᶜᵃ(i, j, k_top, grid, η)
+    # Hᶜᶠ = column_depthᶜᶠᵃ(i, j, k_top, grid, η)
+    
+    @inbounds begin
+        # ∂τ(U) = - ∇η + G
+        # U[i, j, 1] +=  Δτ * (- g * Hᶠᶜ * ∂xTᶠᶜᶠ(i, j, k_top, grid, η) + Gᵁ[i, j, 1])
+        # V[i, j, 1] +=  Δτ * (- g * Hᶜᶠ * ∂yTᶜᶠᶠ(i, j, k_top, grid, η) + Gⱽ[i, j, 1])
+
+        U[i, j, 1] += Δτ * (Gᵁ[i, j, 1] - ∂xTᶠᶜᶠ(i, j, k_top, grid, η))
+        V[i, j, 1] += Δτ * (Gⱽ[i, j, 1] - ∂yTᶜᶠᶠ(i, j, k_top, grid, η))
+        # U[i, j, 1] += Δτ * Gᵁ[i, j, 1]
+        # V[i, j, 1] += Δτ * Gⱽ[i, j, 1] 
+                            
+        # time-averaging
+        η̅[i, j, k_top] += averaging_weight * η[i, j, k_top]
+        U̅[i, j, 1] += averaging_weight * U[i, j, 1]
+        V̅[i, j, 1] += averaging_weight * V[i, j, 1]
+    end
+end
 
 function simple_iterate_split_explicit!(free_surface, grid, GUⁿ, GVⁿ, Δτᴮ, weights, ::Val{Nsubsteps}) where Nsubsteps
     arch = grid.architecture
     η           = free_surface.η
     state       = free_surface.filtered_state
-    timestepper = free_surface.timestepper
     g           = free_surface.gravitational_acceleration
     parameters  = free_surface.kernel_parameters
 
@@ -82,8 +122,8 @@ function simple_iterate_split_explicit!(free_surface, grid, GUⁿ, GVⁿ, Δτ�
     free_surface_kernel!, _ = Oceananigans.Utils.configure_kernel(arch, grid, parameters, _split_explicit_free_surface!)
     barotropic_velocity_kernel!, _ = Oceananigans.Utils.configure_kernel(arch, grid, parameters, _split_explicit_barotropic_velocity!)
 
-    η_args = (grid, Δτᴮ, η, U, V, timestepper)
-    U_args = (grid, Δτᴮ, η, U, V, η̅, U̅, V̅, GUⁿ, GVⁿ, g, timestepper) 
+    η_args = (grid, Δτᴮ, η, U, V)
+    U_args = (grid, Δτᴮ, η, U, V, η̅, U̅, V̅, GUⁿ, GVⁿ, g) 
 
     GC.@preserve η_args U_args begin
         # We need to perform ~50 time-steps which means
@@ -91,14 +131,14 @@ function simple_iterate_split_explicit!(free_surface, grid, GUⁿ, GVⁿ, Δτ�
         # latency of argument conversion to GPU-compatible values.
         # To alleviate this penalty we convert first and then we substep!
         converted_η_args = Oceananigans.Architectures.convert_to_device(arch, η_args)
-        # converted_U_args = Oceananigans.Utils.convert_to_device(arch, U_args)
+        converted_U_args = Oceananigans.Architectures.convert_to_device(arch, U_args)
 
-        substep = 1
-        # @unroll for substep in 1:Nsubsteps
+        for substep in 1:Nsubsteps
             Base.@_inline_meta
             averaging_weight = weights[substep]
             free_surface_kernel!(converted_η_args...)
-            # barotropic_velocity_kernel!(averaging_weight, converted_U_args...)
+            barotropic_velocity_kernel!(averaging_weight, converted_U_args...)
+        end
     end
 
     return nothing
@@ -112,7 +152,7 @@ function myloop!(model, Nt)
 end
 
 if local_arch isa CPU
-    step_free_surface!(model)
+    free_surface_func!(model)
     error("done")
 end
 
