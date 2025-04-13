@@ -1,5 +1,5 @@
 using GordonBell25: first_time_step!, loop!, try_compile_code, preamble, TRY_COMPILE_FAILED
-using GordonBell25: baroclinic_instability_model, PROFILE
+using GordonBell25: baroclinic_instability_model, PROFILE, GordonBell25
 using Reactant
 using Oceananigans
 using Oceananigans.Architectures: ReactantState
@@ -9,9 +9,31 @@ Oceananigans.defaults.FloatType = Float32
 
 preamble()
 
+GordonBell25.initialize(; single_gpu_per_process=false)
+@show Ndev = length(Reactant.devices())
+
+Rx, Ry = GordonBell25.factors(Ndev)
+if Ndev == 1
+    rank = 0
+    arch = Oceananigans.ReactantState()
+else
+    arch = Oceananigans.Distributed(
+        Oceananigans.ReactantState();
+        partition = Partition(Rx, Ry, 1)
+    )
+    rank = Reactant.Distributed.local_rank()
+end
+
+H = 8
+Tx = 48 * Rx
+Ty = 24 * Ry
+Nz = 4
+
+Nx = Tx - 2H
+Ny = Ty - 2H
+
 @info "Generating model..."
-arch = ReactantState()
-model = baroclinic_instability_model(arch, resolution=8, Δt=60, Nz=10)
+model = GordonBell25.baroclinic_instability_model(arch, Nx, Ny, Nz; halo=(H, H, H), Δt=1)
 
 GC.gc(true); GC.gc(false); GC.gc(true)
 

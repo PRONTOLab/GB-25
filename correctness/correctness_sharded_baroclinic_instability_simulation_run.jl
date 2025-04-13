@@ -12,7 +12,29 @@ model_kw = (
     Δt = 1e-9,
 )
 
-Nx = Ny = Nz = 16
+GordonBell25.initialize(; single_gpu_per_process=false)
+@show Ndev = length(Reactant.devices())
+
+Rx, Ry = GordonBell25.factors(Ndev)
+if Ndev == 1
+    rank = 0
+    arch = Oceananigans.ReactantState()
+else
+    rarch = Oceananigans.Distributed(
+        Oceananigans.ReactantState();
+        partition = Partition(Rx, Ry, 1)
+    )
+    rank = Reactant.Distributed.local_rank()
+end
+
+H = 8
+Tx = 16 * Rx
+Ty = 16 * Ry
+Nz = 16
+
+Nx = Tx - 2H
+Ny = Ty - 2H
+
 rarch = Oceananigans.Architectures.ReactantState()
 varch = CPU()
 rmodel = GordonBell25.baroclinic_instability_model(rarch, Nx, Ny, Nz; model_kw...)
