@@ -82,7 +82,7 @@ jobs:
           using Pkg
           Pkg.Registry.update()
           Pkg.add([
-              PackageSpec(; name="Reactant", rev="963d1d1899abc11efd545719dde2a170edceebf5"),
+              PackageSpec(; name="Reactant", rev="2daeedecd8004b30166ca02ea7611b4081611a71"),
           #     PackageSpec(; name="ReactantCore", rev="main"),
           #     PackageSpec(; name="Oceananigans", rev="main"),
           #     PackageSpec(; name="ClimaOcean", rev="main"),
