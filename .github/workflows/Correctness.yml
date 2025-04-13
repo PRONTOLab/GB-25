@@ -6,6 +6,7 @@ on:
       - '.github/workflows/Correctness.yml'
       - '.github/workflows/CompileOrRun.yml'
       - 'correctness/correctness_baroclinic_instability_simulation_run.jl'
+      - 'correctness/correctness_sharded_baroclinic_instability_simulation_run.jl'
       - 'Project.toml'
       - 'src/**'
   push:
@@ -17,6 +18,7 @@ on:
       - '.github/workflows/Correctness.yml'
       - '.github/workflows/CompileOrRun.yml'
       - 'correctness/correctness_baroclinic_instability_simulation_run.jl'
+      - 'correctness/correctness_sharded_baroclinic_instability_simulation_run.jl'
       - 'Project.toml'
       - 'src/**'
   workflow_dispatch:
