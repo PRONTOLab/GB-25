@@ -125,13 +125,13 @@ jobs:
               exit 1
           fi
       - name: Show remaining collective operations
-        if: ${{ inputs.compile_or_run == 'compile' }}
+        if: ${{ inputs.sharded && inputs.compile_or_run == 'compile' }}
         timeout-minutes: 10
         run: |
           COLLECTIVES=$(find . -name 'optimised_${{ inputs.sim_type }}*.xla' -exec grep --with-filename --line-number --extended-regexp '(all-to-all|all-gather|all-reduce)' '{}' \;)
           NUM_COLLECTIVES=$(echo "${COLLECTIVES}" | wc -l | xargs)
           if [[ -n "${COLLECTIVES}" ]]; then
-              MSG="There are ${COLLECTIVES} remaining collective operations"
+              MSG="There are ${NUM_COLLECTIVES} remaining collective operations"
               echo "::error title=Remaining Collective Operations:: ${MSG}"
               echo
               echo "----------"
