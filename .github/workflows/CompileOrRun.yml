@@ -139,10 +139,14 @@ jobs:
                   echo "----------"
                   echo "${COLLECTIVES}"
                   echo "----------"
-                  OK="false"
+                  if [[ "${OP}" == "all-to-all" && ${NUM_COLLECTIVES} -gt 4 ]] || [[ "${OP}" == "all-gather" && ${NUM_COLLECTIVES} -gt 0 ]] || [[ "${OP}" == "all-reduce" && ${NUM_COLLECTIVES} -gt 299 ]]; then
+                      OK="false"
+                  fi
               fi
           done
-          exit 0 # TODO: eventually change this to check the value of `${OK}`
+          if [[ "${OK}" == "false" ]]; then
+              exit 1
+          fi
       - name: Upload MLIR and XLA modules
         uses: actions/upload-artifact@v4
         timeout-minutes: 10

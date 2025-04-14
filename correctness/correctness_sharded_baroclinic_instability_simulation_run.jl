@@ -7,25 +7,17 @@ include_halos = true
 rtol = 0
 atol = 1e-7
 
-model_kw = (
-    halo = (6, 6, 6),
-    Δt = 1e-9,
-)
-
 GordonBell25.initialize(; single_gpu_per_process=false)
 @show Ndev = length(Reactant.devices())
 
 Rx, Ry = GordonBell25.factors(Ndev)
-if Ndev == 1
-    rank = 0
-    arch = Oceananigans.ReactantState()
-else
-    rarch = Oceananigans.Distributed(
-        Oceananigans.ReactantState();
-        partition = Partition(Rx, Ry, 1)
-    )
-    rank = Reactant.Distributed.local_rank()
-end
+
+rarch = Oceananigans.Distributed(
+    Oceananigans.ReactantState();
+    partition = Partition(Rx, Ry, 1)
+)
+
+rank = Reactant.Distributed.local_rank()
 
 H = 8
 Tx = 16 * Rx
@@ -35,17 +27,25 @@ Nz = 16
 Nx = Tx - 2H
 Ny = Ty - 2H
 
-rarch = Oceananigans.Architectures.ReactantState()
+model_kw = (
+    halo = (H, H, H),
+    Δt = 1e-9,
+)
+
 varch = CPU()
 rmodel = GordonBell25.baroclinic_instability_model(rarch, Nx, Ny, Nz; model_kw...)
 vmodel = GordonBell25.baroclinic_instability_model(varch, Nx, Ny, Nz; model_kw...)
 @show vmodel
 @show rmodel
+@assert rmodel.architecture isa Distributed
 
 ui = 1e-3 .* rand(size(vmodel.velocities.u)...)
 vi = 1e-3 .* rand(size(vmodel.velocities.v)...)
 set!(vmodel, u=ui, v=vi)
 GordonBell25.sync_states!(rmodel, vmodel)
+
+@info "At the beginning:"
+GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
 @jit Oceananigans.initialize!(rmodel)
 Oceananigans.initialize!(vmodel)
