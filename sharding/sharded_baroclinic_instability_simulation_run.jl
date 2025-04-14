@@ -46,8 +46,8 @@ end
 
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 H = 8
-Tx = 48 * Rx
-Ty = 24 * Ry
+Tx = 64 * 48 * Rx
+Ty = 64 * 24 * Ry
 Nz = 4
 
 Nx = Tx - 2H
