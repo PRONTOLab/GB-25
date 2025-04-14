@@ -88,16 +88,16 @@ function compare_states(m1, m2; rtol=1e-8, atol=sqrt(eps(eltype(m1.grid))),
 
     return nothing
 end
-  
+
 function sync_states!(m1, m2)
     Ψ1 = Oceananigans.fields(m1)
     Ψ2 = Oceananigans.fields(m2)
     for name in keys(Ψ1)
-        ψ1 = Ψ1[name]
-        ψ2 = Ψ2[name]
-        loc = Oceananigans.Fields.location(ψ1)
-        ψ2r = Reactant.to_rarray(interior(ψ2))
-        @jit copy_interior!(ψ1, ψ2r)
+        ψ1 = parent(Ψ1[name])
+        x, y, z = size(ψ1)
+        ψ2 = parent(Ψ2[name])
+        ψ2 = view(ψ2, 1:x, 1:y, 1:z)
+        copyto!(ψ1, Array(ψ2))
     end
     return nothing
 end
@@ -108,18 +108,17 @@ function sync_parent_states!(m1, m2)
     for name in keys(Ψ1)
         ψ1p = parent(Ψ1[name])
         ψ2p = parent(Ψ2[name])
-        copyto!(ψ1p, Reactant.to_rarray(ψ2p))	
+        copyto!(ψ1p, Reactant.to_rarray(ψ2p))
     end
-    
+
     return nothing
 end
-  
+
 using KernelAbstractions
 
-function copy_interior!(rf, vf)
-    grid = rf.grid
+function copy_interior!(rf, vf, grid)
     arch = Oceananigans.Architectures.architecture(grid)
-    Oceananigans.Utils.launch!(arch, grid, size(rf), _copy_interior!, interior(rf), vf)
+    Oceananigans.Utils.launch!(arch, grid, size(rf), _copy_interior!, rf, vf)
     return nothing
 end
 
@@ -127,4 +126,3 @@ end
     i, j, k = @index(Global, NTuple)
     @inbounds rf[i, j, k] = vf[i, j, k]
 end
-

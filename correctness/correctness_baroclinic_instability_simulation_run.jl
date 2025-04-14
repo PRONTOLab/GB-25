@@ -25,6 +25,9 @@ vi = 1e-3 .* rand(size(vmodel.velocities.v)...)
 set!(vmodel, u=ui, v=vi)
 GordonBell25.sync_states!(rmodel, vmodel)
 
+@info "At the beginning:"
+GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
+
 @jit Oceananigans.initialize!(rmodel)
 Oceananigans.initialize!(vmodel)
 
