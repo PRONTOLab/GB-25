@@ -139,7 +139,7 @@ jobs:
                   echo "----------"
                   echo "${COLLECTIVES}"
                   echo "----------"
-                  if [[ "${OP}" == "all-to-all" && ${NUM_COLLECTIVES} -gt 4 ]] || [[ "${OP}" == "all-gather" && ${NUM_COLLECTIVES} -gt 0 ]] || [[ "${OP}" == "all-reduce" && ${NUM_COLLECTIVES} -gt 299 ]]; then
+                  if [[ "${OP}" == "all-to-all" && ${NUM_COLLECTIVES} -gt 0 ]] || [[ "${OP}" == "all-gather" && ${NUM_COLLECTIVES} -gt 0 ]] || [[ "${OP}" == "all-reduce" && ${NUM_COLLECTIVES} -gt 199 ]]; then
                       OK="false"
                   fi
               fi
