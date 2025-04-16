@@ -12,9 +12,9 @@ model_kw = (
     Δt = 1e-9,
 )
 
-Nx = Ny = Nz = 16
+Nx = Ny = Nz = 256
 rarch = Oceananigans.Architectures.ReactantState()
-varch = CPU()
+varch = GPU()
 rmodel = GordonBell25.baroclinic_instability_model(rarch, Nx, Ny, Nz; model_kw...)
 vmodel = GordonBell25.baroclinic_instability_model(varch, Nx, Ny, Nz; model_kw...)
 @show vmodel
