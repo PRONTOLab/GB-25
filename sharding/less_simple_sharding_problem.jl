@@ -25,9 +25,9 @@ using Libdl: dllist
 Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
 Reactant.MLIR.IR.DUMP_MLIR_DIR[] = joinpath(@__DIR__, "mlir_dumps", jobid_procid)
 Reactant.Compiler.DEBUG_DISABLE_RESHARDING[] = true
-Reactant.Compiler.DEBUG_PRINT_CODEGEN[] = true
+# Reactant.Compiler.DEBUG_PRINT_CODEGEN[] = true
 Reactant.Compiler.WHILE_CONCAT[] = true
-Reactant.Compiler.DUS_TO_CONCAT[] = true
+# Reactant.Compiler.DUS_TO_CONCAT[] = false
 
 GordonBell25.initialize(; single_gpu_per_process=false)
 
