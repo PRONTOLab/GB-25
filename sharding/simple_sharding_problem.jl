@@ -103,15 +103,11 @@ model.clock.last_Δt = ConcreteRNumber(60.0)
 # compiled_update_state! = @compile sync=true Oceananigans.TimeSteppers.update_state!(model)
 # @info "[$(process_id)] allocations" GordonBell25.allocatorstats()
 
-shardy_options = Sharding.ShardyPropagationOptions(
-    ;
-    enable_insert_explicit_collectives=true
-)
 @info "[$(process_id)] compiling first time step" now(UTC)
-compiled_first_time_step! = @compile shardy_passes=shardy_options sync=true raise=true GordonBell25.first_time_step!(model)
+compiled_first_time_step! = @compile sync=true raise=true GordonBell25.first_time_step!(model)
 @info "[$(process_id)] compiling loop" now(UTC)
 Ninner = ConcreteRNumber(10; sharding=Sharding.NamedSharding(arch.connectivity, ()))
-compiled_loop! = @compile shardy_passes=shardy_options sync=true raise=true GordonBell25.loop!(model, Ninner)
+compiled_loop! = @compile sync=true raise=true GordonBell25.loop!(model, Ninner)
 @info "[$(process_id)] allocations" GordonBell25.allocatorstats()
 
 # #-------------------------------------------------------------------------------
