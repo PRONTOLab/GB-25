@@ -116,7 +116,7 @@ function _set_baroclinic_instability!(model)
 end
 
 function set_baroclinic_instability!(model)
-    if model.architecture isa ReactantState
+    if model.architecture isa Oceananigans.Architectures.ReactantState
         rset! = @compile sync=true raise=true _set_baroclinic_instability!(model)
         rset!(model)
     else

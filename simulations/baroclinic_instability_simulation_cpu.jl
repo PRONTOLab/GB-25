@@ -6,10 +6,10 @@ using Reactant
 # Reactant.Compiler.SROA_ATTRIBUTOR[] = false
 # Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
 
-preamble()
+# GordonBell25.preamble()
 
 Ninner = ConcreteRNumber(3)
-Oceananigans.defaults.FloatType = Float32
+Oceananigans.defaults.FloatType = Float64
 
 @info "Generating model..."
 #arch = ReactantState()
