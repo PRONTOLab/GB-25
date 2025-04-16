@@ -23,10 +23,9 @@ Reactant.MLIR.IR.DUMP_MLIR_DIR[] = joinpath(@__DIR__, "mlir_dumps", jobid_procid
 Reactant.Compiler.DEBUG_DISABLE_RESHARDING[] = true
 # Reactant.Compiler.DEBUG_PRINT_CODEGEN[] = true
 Reactant.Compiler.WHILE_CONCAT[] = true
-Reactant.Compiler.DUS_TO_CONCAT[] = true
+# Reactant.Compiler.DUS_TO_CONCAT[] = false
 # Reactant.Compiler.SUM_TO_REDUCEWINDOW[] = true
 # Reactant.Compiler.AGGRESSIVE_SUM_TO_CONV[] = true
-Reactant.Compiler.AGGRESSIVE_PROPAGATION[] = true
 
 GordonBell25.initialize(; single_gpu_per_process=false)
 
