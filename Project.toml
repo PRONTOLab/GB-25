@@ -10,6 +10,7 @@ CUDA_Runtime_jll = "76a88914-d11a-5bdc-97e0-2f5a05c973a2"
 ClimaOcean = "0376089a-ecfe-4b0e-a64f-9c555d74d754"
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
 HDF5_jll = "0234f1f7-429e-5d53-9886-15a909be8d59"
+JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
 KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
 MPI = "da04e1cc-30fd-572f-bb4f-1f8673147195"
 Oceananigans = "9e8cae18-63c1-5223-a75c-80ca9d6e9a09"
@@ -23,15 +24,6 @@ SeawaterPolynomials = "d496a93d-167e-4197-9f49-d3af4ff8fe40"
 Serialization = "9e88b42a-f829-5b0c-bbe9-9e923198166b"
 
 [extensions]
-PrecompileAB2StepF32 = ["Oceananigans", "Reactant"]
-PrecompileCachePreviousTendenciesF32 = ["Oceananigans", "Reactant"]
-PrecompileComputeAuxiliariesF32 = ["Oceananigans", "Reactant"]
-PrecompileComputeBoundaryTendenciesF32 = ["Oceananigans", "Reactant"]
-PrecompileComputeInteriorMomentumTendenciesF32 = ["Oceananigans", "Reactant"]
-PrecompileComputeInteriorTracerTendenciesF32 = ["Oceananigans", "Reactant"]
-PrecompileFillHaloRegionsF32 = ["Oceananigans", "Reactant"]
-PrecompileInitializeF32 = ["Oceananigans", "Reactant"]
-PrecompileTupledFillHaloRegionsF32 = ["Oceananigans", "Reactant"]
 
 [compat]
 CFTime = "0.1.4"
@@ -39,6 +31,7 @@ CUDA = "5.7.1"
 ClimaOcean = "0.5.10"
 Dates = "1"
 HDF5_jll = "=1.14.3"
+JLD2 = "0.5.12"
 KernelAbstractions = "0.9.34"
 MPI = "0.20.22"
 Oceananigans = "0.96.19"
