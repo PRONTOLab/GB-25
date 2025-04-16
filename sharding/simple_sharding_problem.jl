@@ -23,10 +23,9 @@ Reactant.MLIR.IR.DUMP_MLIR_DIR[] = joinpath(@__DIR__, "mlir_dumps", jobid_procid
 Reactant.Compiler.DEBUG_DISABLE_RESHARDING[] = true
 # Reactant.Compiler.DEBUG_PRINT_CODEGEN[] = true
 Reactant.Compiler.WHILE_CONCAT[] = true
-Reactant.Compiler.DUS_TO_CONCAT[] = true
+# Reactant.Compiler.DUS_TO_CONCAT[] = false
 # Reactant.Compiler.SUM_TO_REDUCEWINDOW[] = true
 # Reactant.Compiler.AGGRESSIVE_SUM_TO_CONV[] = true
-Reactant.Compiler.AGGRESSIVE_PROPAGATION[] = true
 
 GordonBell25.initialize(; single_gpu_per_process=false)
 
@@ -103,15 +102,11 @@ model.clock.last_Δt = ConcreteRNumber(60.0)
 # compiled_update_state! = @compile sync=true Oceananigans.TimeSteppers.update_state!(model)
 # @info "[$(process_id)] allocations" GordonBell25.allocatorstats()
 
-shardy_options = Sharding.ShardyPropagationOptions(
-    ;
-    enable_insert_explicit_collectives=true
-)
 @info "[$(process_id)] compiling first time step" now(UTC)
-compiled_first_time_step! = @compile shardy_passes=shardy_options sync=true raise=true GordonBell25.first_time_step!(model)
+compiled_first_time_step! = @compile sync=true raise=true GordonBell25.first_time_step!(model)
 @info "[$(process_id)] compiling loop" now(UTC)
 Ninner = ConcreteRNumber(10; sharding=Sharding.NamedSharding(arch.connectivity, ()))
-compiled_loop! = @compile shardy_passes=shardy_options sync=true raise=true GordonBell25.loop!(model, Ninner)
+compiled_loop! = @compile sync=true raise=true GordonBell25.loop!(model, Ninner)
 @info "[$(process_id)] allocations" GordonBell25.allocatorstats()
 
 # #-------------------------------------------------------------------------------

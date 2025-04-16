@@ -108,6 +108,7 @@ export resolution_fraction=$(resolution_fraction)
 export JULIA_DEBUG="Reactant,Reactant_jll"
 export JULIA_DEPOT_PATH=$(join(Base.DEPOT_PATH, ':'))
 # export TF_CPP_MAX_VLOG_LEVEL=3
+export XLA_FLAGS="--xla_disable_hlo_passes=host-offload-legalize,hlo_constant_splitter \${XLA_FLAGS}"
 # export XLA_FLAGS="--xla_dump_to=$(job_dir)/xla_dump \${XLA_FLAGS}"
 # export XLA_FLAGS="--xla_dump_hlo_pass_re=.* \${XLA_FLAGS}"
 export XLA_REACTANT_GPU_MEM_FRACTION=0.9
