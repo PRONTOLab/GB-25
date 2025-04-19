@@ -1,25 +1,22 @@
 using Oceananigans
+using Reactant
 using Statistics: mean
 
 using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities:
     TKEDissipationVerticalDiffusivity,
     TKEDissipationEquations
 
-function turbulence_simulation!(model, parameters=NamedTuple())
+function bᵢ(z) # initial condition
     N² = 1e-5
-    bᵢ(z) = N² * z
-    set!(model, b=bᵢ)
+    return N² * z
+end
 
-    @show tke_dissipation_equations = TKEDissipationEquations(; parameters...)
+function turbulence_simulation!(model, b_initial, parameters=NamedTuple())
+    copyto!(parent(model.tracers.b), b_initial)
+    tke_dissipation_equations = TKEDissipationEquations(; parameters...)
     closure = TKEDissipationVerticalDiffusivity(; tke_dissipation_equations)
     model.closure = closure
-
-    @show model.closure
-
-    for n = 1:100
-        time_step!(model, model.clock.last_Δt)
-    end
-
+    time_step!(model, model.clock.last_Δt)
     return model
 end
 
@@ -28,8 +25,8 @@ function loss_function(b_test, b_truth)
     return sqrt(mean(δ))
 end
 
-function compute_loss_function(b_truth, model, parameters=NamedTuple())
-    turbulence_simulation!(model, parameters)
+function compute_loss_function(b_truth, model, b_initial, parameters=NamedTuple())
+    turbulence_simulation!(model, b_initial, parameters)
     b_test = parent(model.tracers.b)
     return loss_function(b_test, b_truth)
 end
@@ -46,17 +43,21 @@ function single_column_model(grid, Δt=10 * 60)
         tracers=(:b, :c, :e, :ϵ), buoyancy=BuoyancyTracer())
 
     model.clock.last_Δt = Δt
+    @jit set!(model, b = bᵢ)
 
     return model
 end
 
-grid = RectilinearGrid(size=32, z=(-256, 0), topology=(Flat, Flat, Bounded))
+arch = Oceananigans.Architectures.ReactantState()
+grid = RectilinearGrid(arch, size=32, z=(-256, 0), topology=(Flat, Flat, Bounded))
 model = single_column_model(grid)
-turbulence_simulation!(model)
+b_initial = deepcopy(parent(model.tracers.b))
+@jit turbulence_simulation!(model, b_initial)
 b_truth = deepcopy(parent(model.tracers.b))
 
 # Should be 0
-@show compute_loss_function(b_truth, model)
+@jit L₀ = compute_loss_function(b_truth, model, b_initial)
+@show L₀
 
 # parameter shenanigans
 defaults = (
@@ -76,4 +77,6 @@ naive_parameters = (
     Cᵇϵ⁻ = -1.0,
 )
 
-@show compute_loss_function(b_truth, model, naive_parameters)
+r_compute_loss_function = @compile sync=true raise=true compute_loss_function(b_truth, model, naive_parameters)
+L₁ = r_compute_loss_function(b_truth, model, b_initial, naive_parameters) 
+@show L₁
