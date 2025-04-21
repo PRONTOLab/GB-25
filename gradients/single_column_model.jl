@@ -1,8 +1,9 @@
 using Oceananigans
 using Reactant
 using Statistics: mean
+using Enzyme
 
-# Reactant.allowscalar(true)
+Reactant.allowscalar(true)
 
 using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities:
     TKEDissipationVerticalDiffusivity,
@@ -58,7 +59,7 @@ b_initial = deepcopy(parent(model.tracers.b))
 b_truth = deepcopy(parent(model.tracers.b))
 
 # Should be 0
-@jit L₀ = compute_loss_function(b_truth, model, b_initial)
+L₀ = @jit compute_loss_function(b_truth, model, b_initial)
 @show L₀
 
 # parameter shenanigans
@@ -80,11 +81,11 @@ naive_parameters = (
 )
 
 r_compute_loss_function = @compile sync=true raise=true compute_loss_function(b_truth, model, naive_parameters)
-L₁ = r_compute_loss_function(b_truth, model, b_initial, naive_parameters) 
+L₁ = r_compute_loss_function(b_truth, model, naive_parameters) 
 @show L₁
 
 function grad(b_truth, model, naive_parameters)
-    return Enzyme.gradient(compute_loss_function, Const(b_truth), Const(model), naive_parameters)
+    return Enzyme.gradient(Reverse, compute_loss_function, Const(b_truth), Const(model), naive_parameters)
 end
 
-@show @jit grad(b_truth, model, naive_parameters)
+@show @jit raise=true grad(b_truth, model, naive_parameters)
