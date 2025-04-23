@@ -88,4 +88,4 @@ function grad(b_truth, model, naive_parameters)
     return Enzyme.gradient(Reverse, compute_loss_function, Const(b_truth), Const(model), naive_parameters)
 end
 
-@show @jit raise=true grad(b_truth, model, naive_parameters)
+@show @jit raise_first=true raise=true grad(b_truth, model, naive_parameters)
