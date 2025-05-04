@@ -20,8 +20,8 @@ rarch = Oceananigans.Distributed(
 rank = Reactant.Distributed.local_rank()
 
 H = 8
-Tx = 16 * Rx
-Ty = 16 * Ry
+Tx = 64 * Rx
+Ty = 64 * Ry
 Nz = 16
 
 Nx = Tx - 2H
