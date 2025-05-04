@@ -34,6 +34,7 @@ Ny = Ty - 2H
 
 @info "Generating model..."
 model = GordonBell25.baroclinic_instability_model(arch, Nx, Ny, Nz; halo=(H, H, H), Δt=1)
+@show model
 
 GC.gc(true); GC.gc(false); GC.gc(true)
 
