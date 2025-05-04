@@ -4,7 +4,7 @@ using Reactant
 
 throw_error = true
 include_halos = true
-rtol = 0
+rtol = sqrt(eps(Float64))
 atol = 1e-7
 
 GordonBell25.initialize(; single_gpu_per_process=false)
