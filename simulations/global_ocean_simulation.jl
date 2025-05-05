@@ -41,7 +41,7 @@ tracer_advection   = WENO(order=5)
 free_surface = SplitExplicitFreeSurface(grid; substeps=70)
 
 ocean = ocean_simulation(
-    grid; 
+    grid;
     Δt = Δt₁,
     vertical_coordinate = Oceananigans.Models.HydrostaticFreeSurfaceModels.ZStar(),
     tracers = (:T, :S, :e, :C),
@@ -70,7 +70,7 @@ radiation  = Radiation()
 #####
 ##### Coupling
 #####
- 
+
 coupled_model = OceanSeaIceModel(ocean; atmosphere, radiation)
 
 compiled_time_step! = @compile raise=true sync=true Oceananigans.TimeSteppers.time_step!(coupled_model, Δt₁)
