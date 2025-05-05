@@ -7,6 +7,7 @@ on:
       - '.github/workflows/CompileOrRun.yml'
       - 'sharding/sharded_baroclinic_instability_simulation_run.jl'
       - 'simulations/baroclinic_instability_simulation_run.jl'
+      - 'simulations/global_ocean_simulation_run.jl'
       - 'simulations/ocean_climate_simulation_run.jl'
       - 'Project.toml'
       - 'src/**'
@@ -20,6 +21,7 @@ on:
       - '.github/workflows/CompileOrRun.yml'
       - 'sharding/sharded_baroclinic_instability_simulation_run.jl'
       - 'simulations/baroclinic_instability_simulation_run.jl'
+      - 'simulations/global_ocean_simulation_run.jl'
       - 'simulations/ocean_climate_simulation_run.jl'
       - 'Project.toml'
       - 'src/**'
@@ -42,6 +44,7 @@ jobs:
         sim_type:
           - 'baroclinic_instability'
           - 'ocean_climate'
+          - 'global_ocean'
         julia_version:
           - '1.11'
         os:
