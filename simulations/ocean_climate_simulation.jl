@@ -8,7 +8,6 @@ using ClimaOcean.DataWrangling: ECCO4Monthly
 using ClimaOcean.OceanSeaIceModels.InterfaceComputations: FixedIterations, ComponentInterfaces
 using OrthogonalSphericalShellGrids: TripolarGrid
 
-using CFTime
 using Dates
 using Printf
 
