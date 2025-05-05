@@ -5,7 +5,7 @@ using Reactant
 throw_error = true
 include_halos = true
 rtol = sqrt(eps(Float64))
-atol = 1e-7
+atol = 0
 
 model_kw = (
     halo = (6, 6, 6),

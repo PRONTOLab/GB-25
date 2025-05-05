@@ -5,7 +5,7 @@ using Reactant
 throw_error = true
 include_halos = true
 rtol = sqrt(eps(Float64))
-atol = 1e-7
+atol = 0
 
 GordonBell25.initialize(; single_gpu_per_process=false)
 @show Ndev = length(Reactant.devices())
