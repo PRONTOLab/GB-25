@@ -8,7 +8,6 @@ using SeawaterPolynomials
 using ClimaOcean
 using ClimaOcean.OceanSeaIceModels.InterfaceComputations: FixedIterations, ComponentInterfaces
 
-using CFTime
 using Dates
 using Printf
 using Profile
