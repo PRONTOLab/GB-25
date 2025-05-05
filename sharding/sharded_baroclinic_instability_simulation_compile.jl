@@ -25,8 +25,8 @@ else
 end
 
 H = 8
-Tx = 48 * Rx
-Ty = 24 * Ry
+Tx = 32 * 48 * Rx
+Ty = 32 * 24 * Ry
 Nz = 4
 
 Nx = Tx - 2H
@@ -34,6 +34,7 @@ Ny = Ty - 2H
 
 @info "Generating model..."
 model = GordonBell25.baroclinic_instability_model(arch, Nx, Ny, Nz; halo=(H, H, H), Δt=1)
+@show model
 
 GC.gc(true); GC.gc(false); GC.gc(true)
 

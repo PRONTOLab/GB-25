@@ -15,7 +15,7 @@ using Reactant
 jobid_procid = GordonBell25.get_jobid_procid()
 
 # This must be called before `GordonBell25.initialize`!
-GordonBell25.preamble(; rendezvous_warn=20, rendezvous_terminate=40)
+GordonBell25.preamble()
 
 using Libdl: dllist
 @show filter(contains("nccl"), dllist())
@@ -47,8 +47,8 @@ end
 
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 H = 8
-Tx = 48 * Rx
-Ty = 24 * Ry
+Tx = 32 * 48 * Rx
+Ty = 32 * 24 * Ry
 Nz = 4
 
 Nx = Tx - 2H

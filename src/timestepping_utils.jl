@@ -51,16 +51,11 @@ function preamble(; rendezvous_warn::Union{Nothing,Int}=nothing, rendezvous_term
         delete!(ENV, key)
     end
 
-    device = Reactant.XLA.default_device(Reactant.XLA.default_backend())
-    client = Reactant.XLA.platform_name(Reactant.XLA.client(device))
-    if client == "cuda"
-        # This currently relies on <https://github.com/openxla/xla/pull/24689>. Hopefully in
-        # the future there will be a better way to do this.
-        if rendezvous_warn isa Int
-            unsafe_store!(cglobal((:XLA_FIRST_CALL_RENDEZVOUS_WARN, libReactantExtra), Cint), rendezvous_warn)
-        end
-        if rendezvous_terminate isa Int
-            unsafe_store!(cglobal((:XLA_FIRST_CALL_RENDEZVOUS_TERMINATE, libReactantExtra), Cint), rendezvous_terminate)
-        end
+    if rendezvous_warn isa Int || rendezvous_terminate isa Int
+        error("""
+              Setting rendezvous timeouts in `preamble` is not supported anymore.
+              Use `XLA_FLAGS` instead, e.g.
+                  XLA_FLAGS="--xla_gpu_first_collective_call_warn_stuck_timeout_seconds=40 --xla_gpu_first_collective_call_terminate_timeout_seconds=80"
+              """)
     end
 end

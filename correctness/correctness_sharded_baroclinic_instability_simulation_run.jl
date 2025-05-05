@@ -4,8 +4,8 @@ using Reactant
 
 throw_error = true
 include_halos = true
-rtol = 0
-atol = 1e-7
+rtol = sqrt(eps(Float64))
+atol = 0
 
 GordonBell25.initialize(; single_gpu_per_process=false)
 @show Ndev = length(Reactant.devices())
@@ -20,8 +20,8 @@ rarch = Oceananigans.Distributed(
 rank = Reactant.Distributed.local_rank()
 
 H = 8
-Tx = 16 * Rx
-Ty = 16 * Ry
+Tx = 64 * Rx
+Ty = 64 * Ry
 Nz = 16
 
 Nx = Tx - 2H
@@ -58,8 +58,8 @@ GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, at
 
 GordonBell25.sync_states!(rmodel, vmodel)
 rfirst! = @compile sync=true raise=true GordonBell25.first_time_step!(rmodel)
-@time rfirst!(rmodel)
-@time GordonBell25.first_time_step!(vmodel)
+@showtime rfirst!(rmodel)
+@showtime GordonBell25.first_time_step!(vmodel)
 
 @info "After first time step:"
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
@@ -67,20 +67,20 @@ GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, at
 rstep! = @compile sync=true raise=true GordonBell25.time_step!(rmodel)
 
 @info "Warm up:"
-@time rstep!(rmodel)
-@time rstep!(rmodel)
-@time GordonBell25.time_step!(vmodel)
-@time GordonBell25.time_step!(vmodel)
+@showtime rstep!(rmodel)
+@showtime rstep!(rmodel)
+@showtime GordonBell25.time_step!(vmodel)
+@showtime GordonBell25.time_step!(vmodel)
 
 Nt = 10
 @info "Time step with Reactant:"
 for _ in 1:Nt
-    @time rstep!(rmodel)
+    @showtime rstep!(rmodel)
 end
 
 @info "Time step vanilla:"
 for _ in 1:Nt
-    @time GordonBell25.time_step!(vmodel)
+    @showtime GordonBell25.time_step!(vmodel)
 end
 
 @info "After $(Nt) steps:"
@@ -95,8 +95,8 @@ GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, at
 Nt = 100
 rNt = ConcreteRNumber(Nt)
 rloop! = @compile sync=true raise=true GordonBell25.loop!(rmodel, rNt)
-@time rloop!(rmodel, rNt)
-@time GordonBell25.loop!(vmodel, Nt)
+@showtime rloop!(rmodel, rNt)
+@showtime GordonBell25.loop!(vmodel, Nt)
 
 @info "After a loop of $(Nt) steps:"
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
