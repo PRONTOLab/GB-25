@@ -35,31 +35,18 @@ concurrency:
 
 jobs:
   run_simulations:
-    name: Serial - Julia ${{ matrix.julia_version }} - ${{ matrix.sim_type }} - ${{ matrix.os }} - ${{ matrix.xla_runtime }}
+    name: Serial - Julia ${{ matrix.julia_version }} - ${{ matrix.sim_type }} - ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        sim_type: ['baroclinic_instability', 'ocean_climate']
-        julia_version: ['1.11']
-        os: ['ubuntu-24.04']
-        xla_runtime: ['IFRT', 'PJRT']
-        earlyoom_threshold: [4]
-        include:
-          - os: ubuntu-22.04-arm
-            julia_version: '1.11'
-            xla_runtime: 'IFRT'
-            earlyoom_threshold: 4
-            sim_type: 'baroclinic_instability'
-          - os: ubuntu-22.04-arm
-            julia_version: '1.11'
-            xla_runtime: 'IFRT'
-            earlyoom_threshold: 4
-            sim_type: 'ocean_climate'
-        # include:
-        #   - os: mg
-        #     julia_version: '1.11'
-        #     xla_runtime: 'IFRT'
-        #     earlyoom_threshold: 20
+        sim_type:
+          - 'baroclinic_instability'
+          - 'ocean_climate'
+        julia_version:
+          - '1.11'
+        os:
+          - 'ubuntu-24.04'
+          - 'ubuntu-22.04-arm'
     uses: ./.github/workflows/CompileOrRun.yml
     with:
       sim_type: ${{ matrix.sim_type }}
@@ -68,9 +55,9 @@ jobs:
       run_dir: 'simulations'
       julia_version: ${{ matrix.julia_version }}
       os: ${{ matrix.os }}
-      xla_runtime: ${{ matrix.xla_runtime }}
+      xla_runtime: 'IFRT'
       compile_or_run: 'run'
-      earlyoom_threshold: ${{ matrix.earlyoom_threshold }}
+      earlyoom_threshold: 4
       julia_optlevel: 0
 
   run_sharded:
