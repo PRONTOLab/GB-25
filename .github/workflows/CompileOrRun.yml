@@ -85,7 +85,7 @@ jobs:
           #     PackageSpec(; name="Reactant", rev="main"),
           #     PackageSpec(; name="ReactantCore", rev="main"),
           #     PackageSpec(; name="Oceananigans", rev="main"),
-              PackageSpec(; name="ClimaOcean", rev="7623da800ca6e567c109c212ac04f3c5309f74db"),
+              PackageSpec(; name="ClimaOcean", rev="0d6d34c84de05428b1703dfb4043cebc37fa121a"),
           ])
           Pkg.instantiate()
       - name: Upload project environment
