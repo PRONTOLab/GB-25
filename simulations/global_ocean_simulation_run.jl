@@ -62,7 +62,7 @@ set!(ocean.model, T=T_meta, S=S_meta, C=initial_C)
 ##### Prescribed Atmosphere
 #####
 
-atmosphere_dataset = RepeatYearJRA55()
+atmosphere_dataset = JRA55RepeatYear()
 backend = JRA55NetCDFBackend(40)
 atmosphere = JRA55PrescribedAtmosphere(arch; dataset=atmosphere_dataset, backend)
 radiation  = Radiation()
