@@ -104,6 +104,7 @@ jobs:
         env:
           grid_type: ${{ inputs.grid_type }}
           XLA_FLAGS: ${{ inputs.sharded && '--xla_force_host_platform_device_count=4 --xla_dump_to=xla_dump' || '--xla_dump_to=xla_dump' }}
+          JULIA_NUM_THREADS: 4
         run: |
           earlyoom -m ${{ inputs.earlyoom_threshold }} -s 100 -r 120 --prefer 'julia' &
           # `timeout` sends a SIGTERM, which gives a chance to read a more informative
