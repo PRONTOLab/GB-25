@@ -4,3 +4,10 @@
 *.pdf
 *.mp4
 *.swp
+/Manifest.toml
+*.sqsh
+*.err
+*.out
+*.log
+*.mlir
+*.xla

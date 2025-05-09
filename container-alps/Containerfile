@@ -1,0 +1,36 @@
+# syntax=docker/dockerfile:1
+ARG BASE_IMAGE_TAG
+FROM $BASE_IMAGE_TAG
+
+# We *must* install the `GordonBell25` package in the same directory as where it is on the
+# host machine, because the path will be used at runtime to retrieve the precompile cache:
+# using a different path would invalidate the cache making this effort wasted.
+ARG DESTDIR
+
+RUN mkdir -pv $DESTDIR
+
+# Copy over the local environment, together with the source code and everything.
+COPY Manifest.toml $DESTDIR/Manifest.toml
+COPY Project.toml $DESTDIR/Project.toml
+# This time we use `LocalPreferences.toml` file to enable CUDA support in `Reactant_jll`,
+# because that's what we eventually need.
+COPY container-alps/LocalPreferences.toml /usr/local/julia_depot/environments/v1.11/LocalPreferences.toml
+COPY src $DESTDIR/src
+COPY ext $DESTDIR/ext
+
+# Add the global environment to the global path to make sure the preference file we put
+# there takes effect...
+ENV JULIA_LOAD_PATH=/usr/local/julia_depot/environments/v1.11:
+# ...and "install" `CUDA_Runtime_jll` and `Reactant_jll`, that's necessary too.
+RUN export JULIA_DEBUG="Reactant_jll" && \
+    export JULIA_PKG_PRECOMPILE_AUTO="false" && \
+    export LD_LIBRARY_PATH="/usr/local/cuda-12.8/compat:${LD_LIBRARY_PATH}" && \
+    julia -e 'using Pkg; Pkg.add(["CUDA_Runtime_jll", "Reactant_jll"])'
+
+# Finally instantiate the environment.
+RUN export JULIA_DEBUG="Reactant_jll" && \
+    export LD_LIBRARY_PATH="/usr/local/cuda-12.8/compat:${LD_LIBRARY_PATH}" && \
+    julia --project=$DESTDIR -O2 -e 'using Pkg; Pkg.instantiate()'
+
+# Cleanup.
+RUN rm -rfv $DESTDIR

@@ -1,0 +1,57 @@
+name: "Correctness"
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/Correctness.yml'
+      - '.github/workflows/CompileOrRun.yml'
+      - 'correctness/correctness_baroclinic_instability_simulation_run.jl'
+      - 'correctness/correctness_sharded_baroclinic_instability_simulation_run.jl'
+      - 'Project.toml'
+      - 'src/**'
+  push:
+    branches:
+      - main
+      - release-*
+    tags: '*'
+    paths:
+      - '.github/workflows/Correctness.yml'
+      - '.github/workflows/CompileOrRun.yml'
+      - 'correctness/correctness_baroclinic_instability_simulation_run.jl'
+      - 'correctness/correctness_sharded_baroclinic_instability_simulation_run.jl'
+      - 'Project.toml'
+      - 'src/**'
+  workflow_dispatch:
+  schedule:
+    - cron: '12 07,19 * * *'
+
+concurrency:
+  # Skip intermediate builds: always.
+  # Cancel intermediate builds: only if it is a pull request build.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ startsWith(github.ref, 'refs/pull/') }}
+
+jobs:
+  run_correctness:
+    name: ${{ contains(matrix.sym_type, 'sharded') && 'Sharded' || 'Serial' }} - Julia ${{ matrix.julia_version }} - ${{ matrix.grid_type }} - ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+          os: ['ubuntu-24.04', 'ubuntu-22.04-arm']
+          grid_type: ['simple_lat_lon']
+          sym_type:
+            - 'correctness_baroclinic_instability'
+            - 'correctness_sharded_baroclinic_instability'
+    uses: ./.github/workflows/CompileOrRun.yml
+    with:
+      sim_type: ${{ matrix.sym_type }}
+      grid_type: ${{ matrix.grid_type }}
+      sharded: ${{ contains(matrix.sym_type, 'sharded') }}
+      run_dir: 'correctness'
+      julia_version: '1.11'
+      os: ${{ matrix.os }}
+      xla_runtime: 'IFRT'
+      compile_or_run: 'run'
+      earlyoom_threshold: 4
+      julia_optlevel: 0
+
