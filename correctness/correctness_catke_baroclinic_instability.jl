@@ -6,7 +6,6 @@ function fake_time_step_catke_equation!(model)
 
     closure = model.closure
     diffusivity_fields = model.diffusivity_fields
-    e = model.tracers.e
     arch = model.architecture
     grid = model.grid
     Gⁿe = model.timestepper.Gⁿ.e
@@ -14,11 +13,7 @@ function fake_time_step_catke_equation!(model)
     κe = diffusivity_fields.κe
     Le = diffusivity_fields.Le
     previous_velocities = diffusivity_fields.previous_velocities
-    tracer_index = findfirst(k -> k == :e, keys(model.tracers))
-    implicit_solver = model.timestepper.implicit_solver
     Δt = model.clock.last_Δt
-    M = 1
-    FT = eltype(grid)
     χ = model.timestepper.χ
 
     Oceananigans.Utils.launch!(
@@ -27,7 +22,7 @@ function fake_time_step_catke_equation!(model)
         κe, Le, grid, closure,
         model.velocities, previous_velocities, # try this soon: model.velocities, model.velocities,
         model.tracers, model.buoyancy, diffusivity_fields,
-        Δτ, χ, Gⁿe, G⁻e)
+        Δt, χ, Gⁿe, G⁻e)
 
     return nothing
 end
