@@ -8,11 +8,11 @@ rtol = sqrt(eps(Float64))
 atol = 0
 
 model_kw = (
-    halo = (6, 6, 6),
+    halo = (8, 8, 8),
     Δt = 1e-9,
 )
 
-Nx = Ny = Nz = 16
+Nx, Ny, Nz = 112, 112, 16
 rarch = Oceananigans.Architectures.ReactantState()
 varch = CPU()
 rmodel = GordonBell25.baroclinic_instability_model(rarch, Nx, Ny, Nz; model_kw...)
