@@ -27,7 +27,7 @@ function fake_time_step_catke_equation!(model)
     return nothing
 end
     
-throw_error = true
+throw_error = false
 include_halos = true
 rtol = sqrt(eps(Float64))
 atol = 0
@@ -48,7 +48,7 @@ vmodel = GordonBell25.baroclinic_instability_model(varch, Nx, Ny, Nz; model_kw..
 
 ui = 1e-3 .* rand(size(vmodel.velocities.u)...)
 vi = 1e-3 .* rand(size(vmodel.velocities.v)...)
-set!(vmodel, u=ui, v=vi)
+set!(vmodel, u=ui, v=vi, e=1e-6)
 GordonBell25.sync_states!(rmodel, vmodel)
 
 @info "At the beginning:"
@@ -65,10 +65,13 @@ GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, at
 
 GordonBell25.sync_states!(rmodel, vmodel)
 
+# rfake! = @compile sync=true raise=true fake_time_step_catke_equation!(rmodel)
+# @showtime rfake!(rmodel)
+# @showtime fake_time_step_catke_equation!(vmodel)
 
-rfake! = @compile sync=true raise=true fake_time_step_catke_equation!(rmodel)
+rfirst! = @compile sync=true raise=true GordonBell25.first_time_step!(rmodel)
 @showtime rfirst!(rmodel)
-@showtime fake_time_step_catke_equation!(vmodel)
+@showtime GordonBell25.first_time_step!(vmodel)
 
 @info "After first time step:"
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
