@@ -15,14 +15,28 @@ function fake_time_step_catke_equation!(model)
     previous_velocities = diffusivity_fields.previous_velocities
     Δt = model.clock.last_Δt
     χ = model.timestepper.χ
+    M = 1
 
-    Oceananigans.Utils.launch!(
-        arch, grid, :xyz,
-        Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities.substep_turbulent_kinetic_energy!,
-        κe, Le, grid, closure,
-        model.velocities, previous_velocities, # try this soon: model.velocities, model.velocities,
-        model.tracers, model.buoyancy, diffusivity_fields,
-        Δt, χ, Gⁿe, G⁻e)
+    Δτ = Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities.get_time_step(closure)
+
+    if isnothing(Δτ)
+        Δτ = Δt
+        M = 1
+    else
+        M = ceil(Int, Δt / Δτ) # number of substeps
+        Δτ = Δt / M
+    end
+
+
+    for m in 1:M
+        Oceananigans.Utils.launch!(
+            arch, grid, :xyz,
+            Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities.substep_turbulent_kinetic_energy!,
+            κe, Le, grid, closure,
+            model.velocities, previous_velocities, # try this soon: model.velocities, model.velocities,
+            model.tracers, model.buoyancy, diffusivity_fields,
+            Δt, χ, Gⁿe, G⁻e)
+    end
 
     return nothing
 end
@@ -62,16 +76,19 @@ Oceananigans.TimeSteppers.update_state!(vmodel)
 
 @info "After initialization and update state:"
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
-
 GordonBell25.sync_states!(rmodel, vmodel)
+
+rfake! = @compile sync=true raise=true fake_time_step_catke_equation!(rmodel)
+@showtime rfake!(rmodel)
+@showtime fake_time_step_catke_equation!(vmodel)
 
 # rfake! = @compile sync=true raise=true fake_time_step_catke_equation!(rmodel)
 # @showtime rfake!(rmodel)
 # @showtime fake_time_step_catke_equation!(vmodel)
 
-rfirst! = @compile sync=true raise=true GordonBell25.first_time_step!(rmodel)
-@showtime rfirst!(rmodel)
-@showtime GordonBell25.first_time_step!(vmodel)
+# rfirst! = @compile sync=true raise=true GordonBell25.first_time_step!(rmodel)
+# @showtime rfirst!(rmodel)
+# @showtime GordonBell25.first_time_step!(vmodel)
 
 @info "After first time step:"
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
