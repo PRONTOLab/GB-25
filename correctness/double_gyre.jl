@@ -3,9 +3,7 @@ using Oceananigans.Architectures: ReactantState
 using ClimaOcean
 using Reactant
 #Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
-Reactant.allowscalar(true)
-
-using Enzyme
+#Reactant.allowscalar(true)
 
 using SeawaterPolynomials
 
@@ -17,8 +15,8 @@ function set_tracers(grid;
     Tᵢ = Field{Center, Center, Center}(grid)
     Sᵢ = Field{Center, Center, Center}(grid)
 
-    set!(Tᵢ, fₜ)
-    set!(Sᵢ, fₛ)
+    @allowscalar set!(Tᵢ, fₜ)
+    @allowscalar set!(Sᵢ, fₛ)
 
     return Tᵢ, Sᵢ
 end
@@ -159,10 +157,9 @@ function estimate_tracer_error(model, initial_temperature, initial_salinity, win
     # Compute the mean mixed layer depth:
     Nλ, Nφ, _ = size(model.grid)
     
-    #mean_sq_surface_u = sum(model.velocities.u.^2)
     mean_sq_surface_u = 0.0
     for j = 1:Nφ, i = 1:Nλ
-        mean_sq_surface_u += @inbounds model.velocities.u[i, j, 1]^2
+        @allowscalar mean_sq_surface_u += @inbounds model.velocities.u[i, j, 1]^2
     end
     mean_sq_surface_u = mean_sq_surface_u / (Nλ * Nφ)
     return mean_sq_surface_u
@@ -190,26 +187,20 @@ model = baroclinic_instability_model(arch, 62, 62, 15, 1200)
 Tᵢ, Sᵢ      = set_tracers(model.grid)
 wind_stress = wind_stress_init(model.grid)
 
-dmodel = Enzyme.make_zero(model)
-dTᵢ = Enzyme.make_zero(Tᵢ)
-dSᵢ = Enzyme.make_zero(Sᵢ)
-dJ = Enzyme.make_zero(wind_stress)
-
 @info "Compiling..."
 
 
 tic = time()
-#restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(model, Tᵢ, Sᵢ, wind_stress)
-rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true differentiate_tracer_error(model, Tᵢ, Sᵢ, wind_stress, dmodel, dTᵢ, dSᵢ, dJ)
+restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(model, Tᵢ, Sᵢ, wind_stress)
 compile_toc = time() - tic
 
 @show compile_toc
 
 
 @info "Running..."
-#restimate_tracer_error(model, Tᵢ, Sᵢ, wind_stress)
+restimate_tracer_error(model, Tᵢ, Sᵢ, wind_stress)
 
-#=
+
 @info "Running non-reactant for comparison..."
 old_arch = CPU()
 old_model = baroclinic_instability_model(old_arch, 62, 62, 15, 1200)
@@ -221,21 +212,5 @@ estimate_tracer_error(old_model, old_Tᵢ, old_Sᵢ, old_wind_stress)
 
 @show maximum((model.velocities.u[:] - old_model.velocities.u[:]) ./ (old_model.velocities.u[:] .+ 1))
 @show maximum((model.velocities.v[1:62,1:63,1:15] - old_model.velocities.v[1:62,1:63,1:15]) ./ (old_model.velocities.v[1:62,1:63,1:15] .+ 1))
-=#
-
-
-tic = time()
-dedν, dJ = rdifferentiate_tracer_error(model, Tᵢ, Sᵢ, wind_stress, dmodel, dTᵢ, dSᵢ, dJ)
-run_toc = time() - tic
-
-@show model.velocities.u[:,:,1]
-@show model.velocities.v[:,:,1]
-@show model.tracers.T[:,:,1]
-@show model.tracers.S[:,:,1]
-
-
-@show dedν
-@show dJ[:]
-@show run_toc
 
 @info "Done!"
