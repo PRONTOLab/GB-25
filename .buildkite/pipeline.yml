@@ -13,10 +13,13 @@ steps:
           export JULIA_DEBUG="Reactant,Reactant_jll"
           julia --project --color=yes -e 'using Pkg; Pkg.instantiate()'
           julia --project --color=yes -O0 simulations/ocean_climate_simulation_run.jl
+
+          # Create tarballs to be uploaded
+          tar czvf profile-traces.tar.gz plugins
         agents:
           queue: "juliagpu"
           cuda: "*"
         if: build.message !~ /\[skip tests\]/
         timeout_in_minutes: 120
         artifact_paths:
-          - "plugins/**/*"
+          - "profile-traces.tar.gz"
