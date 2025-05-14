@@ -2,10 +2,16 @@ using Oceananigans
 using Oceananigans.Architectures: ReactantState
 using ClimaOcean
 using Reactant
+using GordonBell25
 #Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
 #Reactant.allowscalar(true)
 
 using SeawaterPolynomials
+
+throw_error = true
+include_halos = true
+rtol = sqrt(eps(Float64))
+atol = 0
 
 function set_tracers(grid;
                      dTdz::Real = 30.0 / 1800.0)
@@ -44,7 +50,7 @@ function simple_latitude_longitude_grid(arch, Nx, Ny, Nz; halo=(8, 8, 8))
     return grid
 end
 
-function baroclinic_instability_model(arch, Nx, Ny, Nz, Δt)
+function double_gyre_model(arch, Nx, Ny, Nz, Δt)
 
     # Fewer substeps can be used at higher resolutions
     free_surface = SplitExplicitFreeSurface(substeps=30)
@@ -54,8 +60,8 @@ function baroclinic_instability_model(arch, Nx, Ny, Nz, Δt)
 
     # Closures:
     horizontal_closure = HorizontalScalarDiffusivity(ν = 5000.0, κ = 1000.0)
-    #vertical_closure   = VerticalScalarDiffusivity(ν = 1e-2, κ = 1e-5) 
-    vertical_closure   = Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity()
+    vertical_closure   = VerticalScalarDiffusivity(ν = 1e-2, κ = 1e-5) 
+    #vertical_closure   = Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity()
     #vertical_closure = Oceananigans.TurbulenceClosures.TKEDissipationVerticalDiffusivity()
     closure = (horizontal_closure, vertical_closure)
 
@@ -69,7 +75,6 @@ function baroclinic_instability_model(arch, Nx, Ny, Nz, Δt)
     momentum_advection = VectorInvariant() #WENOVectorInvariant(order=5)
     tracer_advection   = Centered(order=2) #WENO(order=5)
 
-    # HERE: Add boundary conditions
     #
     # Momentum BCs:
     #
@@ -90,9 +95,6 @@ function baroclinic_instability_model(arch, Nx, Ny, Nz, Δt)
                                           momentum_advection = momentum_advection,
                                           tracer_advection = tracer_advection,
                                           boundary_conditions = boundary_conditions)
-
-    # Temporarily removing until we set initial tracers:
-    #set!(model, T=Tᵢ, S=Sᵢ)
 
     model.clock.last_Δt = Δt
 
@@ -136,7 +138,6 @@ end
 
 function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
 
-    # This doesn't currently work with Reactant:
     set!(model.tracers.T, Tᵢ)
     set!(model.tracers.S, Sᵢ)
     set!(model.velocities.u.boundary_conditions.top.condition, wind_stress)
@@ -181,36 +182,39 @@ Ninner = ConcreteRNumber(3)
 Oceananigans.defaults.FloatType = Float32
 
 @info "Generating model..."
-arch = ReactantState()
-model = baroclinic_instability_model(arch, 62, 62, 15, 1200)
+rarch = ReactantState()
+rmodel = double_gyre_model(rarch, 62, 62, 15, 1200)
 
-Tᵢ, Sᵢ      = set_tracers(model.grid)
-wind_stress = wind_stress_init(model.grid)
+rTᵢ, rSᵢ      = set_tracers(rmodel.grid)
+rwind_stress = wind_stress_init(rmodel.grid)
 
 @info "Compiling..."
 
 
 tic = time()
-restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(model, Tᵢ, Sᵢ, wind_stress)
+restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress)
 compile_toc = time() - tic
 
 @show compile_toc
 
 
 @info "Running..."
-restimate_tracer_error(model, Tᵢ, Sᵢ, wind_stress)
+restimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress)
 
 
 @info "Running non-reactant for comparison..."
-old_arch = CPU()
-old_model = baroclinic_instability_model(old_arch, 62, 62, 15, 1200)
+varch = CPU()
+vmodel = double_gyre_model(varch, 62, 62, 15, 1200)
 
-old_Tᵢ, old_Sᵢ      = set_tracers(old_model.grid)
-old_wind_stress = wind_stress_init(old_model.grid)
+@info "Initialized non-reactant model"
 
-estimate_tracer_error(old_model, old_Tᵢ, old_Sᵢ, old_wind_stress)
+vTᵢ, vSᵢ      = set_tracers(vmodel.grid)
+vwind_stress = wind_stress_init(vmodel.grid)
 
-@show maximum((model.velocities.u[:] - old_model.velocities.u[:]) ./ (old_model.velocities.u[:] .+ 1))
-@show maximum((model.velocities.v[1:62,1:63,1:15] - old_model.velocities.v[1:62,1:63,1:15]) ./ (old_model.velocities.v[1:62,1:63,1:15] .+ 1))
+@info "Initialized non-reactant tracers and wind stress"
+
+estimate_tracer_error(vmodel, vTᵢ, vSᵢ, vwind_stress)
+
+GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
 @info "Done!"
