@@ -6,7 +6,7 @@ using ClimaOcean.ECCO
 using ClimaOcean.JRA55
 using Printf
 using Reactant
-Reactant.allowscalar(true)
+# Reactant.allowscalar(true)
 
 # Runs one time step of a coupled atmosphere/Ocean global simulation using Reactant.
 
