@@ -10,10 +10,6 @@ steps:
           - JuliaCI/julia#v1:
               version: "{{matrix.julia_version}}"
         commands: |
-          cat <<EOF > LocalPreferences.toml
-          [Reactant]
-          xla_runtime = "IFRT"
-          EOF
           export JULIA_DEBUG="Reactant,Reactant_jll"
           julia --project --color=yes -e 'using Pkg; Pkg.instantiate()'
           julia --project --color=yes -O0 simulations/ocean_climate_simulation_run.jl
