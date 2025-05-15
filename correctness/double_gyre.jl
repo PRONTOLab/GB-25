@@ -159,7 +159,7 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces
 
 using Oceananigans.Operators: Δzᶠᶜᶜ, Δzᶜᶠᶜ
 
-using Oceananigans.Grids: get_active_column_map, peripheral_node
+using Oceananigans.Grids: get_active_column_map, inactive_cell
 using Oceananigans.Architectures
 using Oceananigans.Utils: launch!
 
@@ -168,24 +168,12 @@ using KernelAbstractions: @kernel, @index
 @kernel function _compute_integrated_ab2_tendencies_bad!(Gᵁ, Gⱽ, grid, Gu⁻, Gv⁻, Guⁿ, Gvⁿ, χ)
     i, j  = @index(Global, NTuple)
 
-    locV = (Center(), Face(), Center())
+    immersed = inactive_cell(i, j, 1, grid) | inactive_cell(i, j-1, 1, grid)
 
-    @inbounds Gⱽ[i, j, 1] = 1000000 * bad_ab2_step_G(i, j, 1, grid, locV..., Gv⁻, Gvⁿ, χ)
+    @inbounds Gⱽ[i, j, 1] = 1000000 * ifelse(immersed, zero(grid), 1)
 end
 
-@inline function bad_ab2_step_G(i, j, k, grid, ℓx, ℓy, ℓz, G⁻, Gⁿ, χ)
-    C₁ = 3 * one(grid) / 2 + χ
-    C₂ =     one(grid) / 2 + χ
-
-    # multiply G⁻ by false if C₂ is zero to
-    # prevent propagationg possible NaNs
-    not_euler = C₂ != 0
-
-    Gⁿ⁺¹ = @inbounds C₁ * Gⁿ[i, j, k] - C₂ * G⁻[i, j, k] * not_euler
-    immersed = peripheral_node(i, j, k, grid, ℓx, ℓy, ℓz)
-
-    return ifelse(immersed, zero(grid), Gⁿ⁺¹)
-end
+@inline bad_peripheral_node(i, j, k, grid, LX, ::Face, LZ) = inactive_cell(i, j, k, grid) | inactive_cell(i, j-1, k, grid)
 
 function tolaunch(model)
 
