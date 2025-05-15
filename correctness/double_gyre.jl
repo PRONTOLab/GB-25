@@ -153,76 +153,28 @@ end
 
 using InteractiveUtils
 using Oceananigans.TimeSteppers
-using Oceananigans.TimeSteppers: ab2_step!, tick!, calculate_pressure_correction!, correct_velocities_and_cache_previous_tendencies!, update_state!, step_lagrangian_particles!
+using Oceananigans.TimeSteppers: calculate_pressure_correction!, correct_velocities_and_cache_previous_tendencies!, update_state!, step_lagrangian_particles!
+
+using Oceananigans.Models.HydrostaticFreeSurfaceModels:
+    step_free_surface!,
+    local_ab2_step!,
+    compute_free_surface_tendency!
 
 function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     Δt = model.clock.last_Δt
     @show @which Oceananigans.TimeSteppers.time_step!(model, Δt)
     @trace track_numbers=false for _ = 1:2
-        callbacks = []
-        # Note: Δt cannot change
-        if model.clock.last_Δt isa Reactant.TracedRNumber
-            model.clock.last_Δt.mlir_data = Δt.mlir_data
-        else
-            model.clock.last_Δt = Δt
-        end
 
-        #=
-        # Be paranoid and update state at iteration 0
-        @trace if model.clock.iteration == 0
-            update_state!(model, callbacks; compute_tendencies=true)
-        end
+        grid = model.grid
+        compute_free_surface_tendency!(grid, model, model.free_surface)
 
-        # Take an euler step if:
-        #   * We detect that the time-step size has changed.
-        #   * We detect that this is the "first" time-step, which means we
-        #     need to take an euler step. Note that model.clock.last_Δt is
-        #     initialized as Inf
-        #   * The user has passed euler=true to time_step!
-        @trace if Δt != model.clock.last_Δt
-            euler = true
-        end
-        =#
+        FT = Float32
+        χ = model.timestepper.χ
 
-        # If euler, then set χ = -0.5
-        euler = false
-        minus_point_five = convert(Float32, -0.5)
-        ab2_timestepper = model.timestepper
-        χ = ifelse(euler, minus_point_five, ab2_timestepper.χ)
-        χ₀ = ab2_timestepper.χ # Save initial value
-        ab2_timestepper.χ = χ
+        # Step locally velocity and tracers
+        @apply_regionally local_ab2_step!(model, Δt, χ)
 
-        # Full step for tracers, fractional step for velocities.
-        ab2_step!(model, Δt)
-
-        tick!(model.clock, Δt)
-
-        if model.clock.last_Δt isa Reactant.TracedRNumber
-            model.clock.last_Δt.mlir_data = Δt.mlir_data
-        else
-            model.clock.last_Δt = Δt
-        end
-
-        # 
-        # HERE IS WHERE G- ERROR OCCURS
-        #
-        if model.clock.last_stage_Δt isa Reactant.TracedRNumber
-            model.clock.last_stage_Δt.mlir_data = Δt.mlir_data
-        else
-            model.clock.last_stage_Δt = Δt
-        end
-        
-        calculate_pressure_correction!(model, Δt)
-        correct_velocities_and_cache_previous_tendencies!(model, Δt)
-
-        update_state!(model, callbacks; compute_tendencies=true)
-        step_lagrangian_particles!(model, Δt)
-
-        # Return χ to initial value
-        ab2_timestepper.χ = χ₀
-        #
-        # END OF WHERE IT OCCURS
-        #
+        step_free_surface!(model.free_surface, model, model.timestepper, Δt)
         
     end
 
