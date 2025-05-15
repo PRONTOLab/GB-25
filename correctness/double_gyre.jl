@@ -159,7 +159,7 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces
 
 using Oceananigans.Operators: Δzᶠᶜᶜ, Δzᶜᶠᶜ
 
-using Oceananigans.Grids: get_active_column_map
+using Oceananigans.Grids: get_active_column_map, peripheral_node
 using Oceananigans.Architectures
 using Oceananigans.Utils: launch!
 
@@ -170,11 +170,21 @@ using KernelAbstractions: @kernel, @index
 
     locV = (Center(), Face(), Center())
 
-    @inbounds Gⱽ[i, j, 1] = Δzᶜᶠᶜ(i, j, 1, grid) * ab2_step_G(i, j, 1, grid, locV..., Gv⁻, Gvⁿ, χ)
+    @inbounds Gⱽ[i, j, 1] = 1000000 * bad_ab2_step_G(i, j, 1, grid, locV..., Gv⁻, Gvⁿ, χ)
+end
 
-    for k in 2:grid.Nz
-        @inbounds Gⱽ[i, j, 1] += Δzᶜᶠᶜ(i, j, k, grid) * ab2_step_G(i, j, k, grid, locV..., Gv⁻, Gvⁿ, χ)
-    end
+@inline function bad_ab2_step_G(i, j, k, grid, ℓx, ℓy, ℓz, G⁻, Gⁿ, χ)
+    C₁ = 3 * one(grid) / 2 + χ
+    C₂ =     one(grid) / 2 + χ
+
+    # multiply G⁻ by false if C₂ is zero to
+    # prevent propagationg possible NaNs
+    not_euler = C₂ != 0
+
+    Gⁿ⁺¹ = @inbounds C₁ * Gⁿ[i, j, k] - C₂ * G⁻[i, j, k] * not_euler
+    immersed = peripheral_node(i, j, k, grid, ℓx, ℓy, ℓz)
+
+    return ifelse(immersed, zero(grid), Gⁿ⁺¹)
 end
 
 function tolaunch(model)
