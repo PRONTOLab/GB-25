@@ -155,10 +155,32 @@ using InteractiveUtils
 using Oceananigans.TimeSteppers
 using Oceananigans.TimeSteppers: calculate_pressure_correction!, correct_velocities_and_cache_previous_tendencies!, update_state!, step_lagrangian_particles!
 
-using Oceananigans.Models.HydrostaticFreeSurfaceModels:
-    step_free_surface!,
-    local_ab2_step!,
-    compute_free_surface_tendency!
+using Oceananigans.Models.HydrostaticFreeSurfaceModels: compute_free_surface_tendency!
+
+using Oceananigans.BoundaryConditions: fill_halo_regions!
+
+using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: compute_split_explicit_forcing!, initialize_free_surface_state!
+
+function bad_compute_free_surface_tendency!(grid, model, free_surface::SplitExplicitFreeSurface)
+
+    Guⁿ = model.timestepper.Gⁿ.u
+    Gvⁿ = model.timestepper.Gⁿ.v
+
+    GUⁿ = model.timestepper.Gⁿ.U
+    GVⁿ = model.timestepper.Gⁿ.V
+
+    barotropic_timestepper = free_surface.timestepper
+    baroclinic_timestepper = model.timestepper
+
+    stage = model.clock.stage
+
+    @apply_regionally begin
+        compute_split_explicit_forcing!(GUⁿ, GVⁿ, grid, Guⁿ, Gvⁿ, baroclinic_timestepper, Val(stage))
+        initialize_free_surface_state!(free_surface, baroclinic_timestepper, barotropic_timestepper, Val(stage))
+    end
+
+    return nothing
+end
 
 function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     Δt = model.clock.last_Δt
@@ -166,15 +188,7 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     @trace track_numbers=false for _ = 1:2
 
         grid = model.grid
-        compute_free_surface_tendency!(grid, model, model.free_surface)
-
-        FT = Float32
-        χ = model.timestepper.χ
-
-        # Step locally velocity and tracers
-        @apply_regionally local_ab2_step!(model, Δt, χ)
-
-        step_free_surface!(model.free_surface, model, model.timestepper, Δt)
+        bad_compute_free_surface_tendency!(grid, model, model.free_surface)
         
     end
 
