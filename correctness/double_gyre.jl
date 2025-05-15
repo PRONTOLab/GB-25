@@ -155,15 +155,27 @@ using InteractiveUtils
 using Oceananigans.TimeSteppers
 using Oceananigans.TimeSteppers: calculate_pressure_correction!, correct_velocities_and_cache_previous_tendencies!, update_state!, step_lagrangian_particles!
 
-using Oceananigans.Models.HydrostaticFreeSurfaceModels: compute_free_surface_tendency!
+using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: ab2_step_G
 
-using Oceananigans.BoundaryConditions: fill_halo_regions!
-
-using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: _compute_integrated_ab2_tendencies!
+using Oceananigans.Operators: Δzᶠᶜᶜ, Δzᶜᶠᶜ
 
 using Oceananigans.Grids: get_active_column_map
 using Oceananigans.Architectures
 using Oceananigans.Utils: launch!
+
+using KernelAbstractions: @kernel, @index
+
+@kernel function _compute_integrated_ab2_tendencies_bad!(Gᵁ, Gⱽ, grid, Gu⁻, Gv⁻, Guⁿ, Gvⁿ, χ)
+    i, j  = @index(Global, NTuple)
+
+    locV = (Center(), Face(), Center())
+
+    @inbounds Gⱽ[i, j, 1] = Δzᶜᶠᶜ(i, j, 1, grid) * ab2_step_G(i, j, 1, grid, locV..., Gv⁻, Gvⁿ, χ)
+
+    for k in 2:grid.Nz
+        @inbounds Gⱽ[i, j, 1] += Δzᶜᶠᶜ(i, j, k, grid) * ab2_step_G(i, j, k, grid, locV..., Gv⁻, Gvⁿ, χ)
+    end
+end
 
 function tolaunch(model)
 
@@ -179,14 +191,12 @@ function tolaunch(model)
 
     stage = model.clock.stage
 
-    #compute_split_explicit_forcing!(GUⁿ, GVⁿ, grid, Guⁿ, Gvⁿ, baroclinic_timestepper, Val(stage))
-
     active_cells_map = get_active_column_map(grid)
 
     Gu⁻ = baroclinic_timestepper.G⁻.u
     Gv⁻ = baroclinic_timestepper.G⁻.v
 
-    launch!(architecture(grid), grid, :xy, _compute_integrated_ab2_tendencies!, GUⁿ, GVⁿ, grid,
+    launch!(architecture(grid), grid, :xy, _compute_integrated_ab2_tendencies_bad!, GUⁿ, GVⁿ, grid,
             Gu⁻, Gv⁻, Guⁿ, Gvⁿ, baroclinic_timestepper.χ; active_cells_map)
 end
 
