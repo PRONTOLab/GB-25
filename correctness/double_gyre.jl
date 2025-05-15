@@ -159,9 +159,15 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels: compute_free_surface_ten
 
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 
-using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: compute_split_explicit_forcing!, initialize_free_surface_state!
+using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: _compute_integrated_ab2_tendencies!
 
-function bad_compute_free_surface_tendency!(grid, model, free_surface::SplitExplicitFreeSurface)
+using Oceananigans.Grids: get_active_column_map
+using Oceananigans.Architectures
+using Oceananigans.Utils: launch!
+
+function tolaunch(model)
+
+    grid = model.grid
 
     Guⁿ = model.timestepper.Gⁿ.u
     Gvⁿ = model.timestepper.Gⁿ.v
@@ -169,17 +175,19 @@ function bad_compute_free_surface_tendency!(grid, model, free_surface::SplitExpl
     GUⁿ = model.timestepper.Gⁿ.U
     GVⁿ = model.timestepper.Gⁿ.V
 
-    barotropic_timestepper = free_surface.timestepper
     baroclinic_timestepper = model.timestepper
 
     stage = model.clock.stage
 
-    @apply_regionally begin
-        compute_split_explicit_forcing!(GUⁿ, GVⁿ, grid, Guⁿ, Gvⁿ, baroclinic_timestepper, Val(stage))
-        initialize_free_surface_state!(free_surface, baroclinic_timestepper, barotropic_timestepper, Val(stage))
-    end
+    #compute_split_explicit_forcing!(GUⁿ, GVⁿ, grid, Guⁿ, Gvⁿ, baroclinic_timestepper, Val(stage))
 
-    return nothing
+    active_cells_map = get_active_column_map(grid)
+
+    Gu⁻ = baroclinic_timestepper.G⁻.u
+    Gv⁻ = baroclinic_timestepper.G⁻.v
+
+    launch!(architecture(grid), grid, :xy, _compute_integrated_ab2_tendencies!, GUⁿ, GVⁿ, grid,
+            Gu⁻, Gv⁻, Guⁿ, Gvⁿ, baroclinic_timestepper.χ; active_cells_map)
 end
 
 function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
@@ -187,8 +195,7 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     @show @which Oceananigans.TimeSteppers.time_step!(model, Δt)
     @trace track_numbers=false for _ = 1:2
 
-        grid = model.grid
-        bad_compute_free_surface_tendency!(grid, model, model.free_surface)
+        @apply_regionally tolaunch(model)
         
     end
 
