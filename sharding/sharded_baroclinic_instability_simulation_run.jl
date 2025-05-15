@@ -11,6 +11,7 @@ using Oceananigans.Architectures: ReactantState
 using Random
 using Printf
 using Reactant
+Reactant.Compiler.DEBUG_PRINT_CODEGEN[] = true
 
 jobid_procid = GordonBell25.get_jobid_procid()
 
