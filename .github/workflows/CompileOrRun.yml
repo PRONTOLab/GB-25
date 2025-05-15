@@ -84,7 +84,7 @@ jobs:
           Pkg.add([
           #     PackageSpec(; name="Reactant", rev="main"),
           #     PackageSpec(; name="ReactantCore", rev="main"),
-              PackageSpec(; name="Oceananigans", rev="7e46e80d010960c0732f1615dbf94d96d9a237ca"),
+              PackageSpec(; name="Oceananigans", rev="wsmoses-patch-1"),
           #     PackageSpec(; name="ClimaOcean", rev="main"),
           ])
           Pkg.instantiate()
