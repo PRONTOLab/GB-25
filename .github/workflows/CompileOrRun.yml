@@ -84,7 +84,7 @@ jobs:
           Pkg.add([
               PackageSpec(; name="Reactant", rev="main"),
           #     PackageSpec(; name="ReactantCore", rev="main"),
-              PackageSpec(; name="Oceananigans", rev="514db378507dcf4e1bc4c8a03099dc266010adc5"),
+              PackageSpec(; name="Oceananigans", rev="3e2c5910c08eb4fc74fd67e5a02e013642e3c7d5"),
           #     PackageSpec(; name="ClimaOcean", rev="main"),
           ])
           Pkg.instantiate()
