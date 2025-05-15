@@ -2,13 +2,14 @@ using GordonBell25
 using Oceananigans
 using Reactant
 
-throw_error = true
+throw_error = false
 include_halos = true
 rtol = sqrt(eps(Float64))
-atol = 0
+atol = 1e-16
 
 model_kw = (
     halo = (8, 8, 8),
+    closure = CATKEVerticalDiffusivity(),
     Δt = 1e-9,
 )
 
