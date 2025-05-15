@@ -10,17 +10,19 @@ steps:
           - JuliaCI/julia#v1:
               version: "{{matrix.julia_version}}"
         commands: |
-          cat <<EOF > LocalPreferences.toml
-          [Reactant]
-          xla_runtime = "IFRT"
-          EOF
           export JULIA_DEBUG="Reactant,Reactant_jll"
+          export XLA_FLAGS="--xla_dump_to=xla_dump"
           julia --project --color=yes -e 'using Pkg; Pkg.instantiate()'
           julia --project --color=yes -O0 simulations/ocean_climate_simulation_run.jl
+
+          # Create tarballs to be uploaded
+          tar czvf profile-traces.tar.gz plugins
+          tar czvf xla_dump.tar.gz xla_dump
         agents:
           queue: "juliagpu"
           cuda: "*"
         if: build.message !~ /\[skip tests\]/
         timeout_in_minutes: 120
         artifact_paths:
-          - "plugins/*"
+          - "profile-traces.tar.gz"
+          - "xla_dump.tar.gz"
