@@ -8,10 +8,13 @@ using GordonBell25
 
 using SeawaterPolynomials
 
-throw_error = true
-include_halos = true
-rtol = sqrt(eps(Float64))
-atol = 0
+throw_error = false
+include_halos = false
+rtol = sqrt(eps(Float32))
+atol = sqrt(eps(Float32))
+
+@info rtol
+@info atol
 
 function set_tracers(grid;
                      dTdz::Real = 30.0 / 1800.0)
@@ -88,7 +91,7 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
 
     model = HydrostaticFreeSurfaceModel(; grid,
                                           free_surface = free_surface,
-                                          closure = vertical_closure,
+                                          closure = closure,
                                           buoyancy = buoyancy,
                                           tracers = tracers,
                                           coriolis = coriolis,
@@ -122,13 +125,13 @@ function first_time_step!(model)
 end
 
 function time_step!(model)
-    Δt = model.clock.last_Δt + 0
+    Δt = model.clock.last_Δt
     Oceananigans.TimeSteppers.time_step!(model, Δt)
     return nothing
 end
 
 function loop!(model, Ninner)
-    Δt = model.clock.last_Δt + 0
+    Δt = model.clock.last_Δt
     Oceananigans.TimeSteppers.first_time_step!(model, Δt)
     @trace track_numbers=false for _ = 1:(Ninner-1)
         Oceananigans.TimeSteppers.time_step!(model, Δt)
@@ -136,8 +139,7 @@ function loop!(model, Ninner)
     return nothing
 end
 
-function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
-
+function first_ts(model, Tᵢ, Sᵢ, wind_stress)
     set!(model.tracers.T, Tᵢ)
     set!(model.tracers.S, Sᵢ)
     set!(model.velocities.u.boundary_conditions.top.condition, wind_stress)
@@ -145,10 +147,84 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     # Initialize the model
     model.clock.iteration = 0
     model.clock.time = 0
-    model.clock.last_Δt = 1200
 
-    # Step it forward
-    loop!(model, 10)
+    Oceananigans.TimeSteppers.first_time_step!(model, Δt)
+end
+
+using InteractiveUtils
+using Oceananigans.TimeSteppers
+using Oceananigans.TimeSteppers: ab2_step!, tick!, calculate_pressure_correction!, correct_velocities_and_cache_previous_tendencies!, update_state!, step_lagrangian_particles!
+
+function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
+    Δt = model.clock.last_Δt
+    @show @which Oceananigans.TimeSteppers.time_step!(model, Δt)
+    @trace track_numbers=false for _ = 1:2
+        callbacks = []
+        # Note: Δt cannot change
+        if model.clock.last_Δt isa Reactant.TracedRNumber
+            model.clock.last_Δt.mlir_data = Δt.mlir_data
+        else
+            model.clock.last_Δt = Δt
+        end
+
+        #=
+        # Be paranoid and update state at iteration 0
+        @trace if model.clock.iteration == 0
+            update_state!(model, callbacks; compute_tendencies=true)
+        end
+
+        # Take an euler step if:
+        #   * We detect that the time-step size has changed.
+        #   * We detect that this is the "first" time-step, which means we
+        #     need to take an euler step. Note that model.clock.last_Δt is
+        #     initialized as Inf
+        #   * The user has passed euler=true to time_step!
+        @trace if Δt != model.clock.last_Δt
+            euler = true
+        end
+        =#
+
+        # If euler, then set χ = -0.5
+        euler = false
+        minus_point_five = convert(Float32, -0.5)
+        ab2_timestepper = model.timestepper
+        χ = ifelse(euler, minus_point_five, ab2_timestepper.χ)
+        χ₀ = ab2_timestepper.χ # Save initial value
+        ab2_timestepper.χ = χ
+
+        # Full step for tracers, fractional step for velocities.
+        ab2_step!(model, Δt)
+
+        tick!(model.clock, Δt)
+
+        if model.clock.last_Δt isa Reactant.TracedRNumber
+            model.clock.last_Δt.mlir_data = Δt.mlir_data
+        else
+            model.clock.last_Δt = Δt
+        end
+
+        # 
+        # HERE IS WHERE G- ERROR OCCURS
+        #
+        if model.clock.last_stage_Δt isa Reactant.TracedRNumber
+            model.clock.last_stage_Δt.mlir_data = Δt.mlir_data
+        else
+            model.clock.last_stage_Δt = Δt
+        end
+        
+        calculate_pressure_correction!(model, Δt)
+        correct_velocities_and_cache_previous_tendencies!(model, Δt)
+
+        update_state!(model, callbacks; compute_tendencies=true)
+        step_lagrangian_particles!(model, Δt)
+
+        # Return χ to initial value
+        ab2_timestepper.χ = χ₀
+        #
+        # END OF WHERE IT OCCURS
+        #
+        
+    end
 
     return nothing
 end
@@ -158,6 +234,8 @@ function estimate_tracer_error(model, initial_temperature, initial_salinity, win
     # Compute the mean mixed layer depth:
     Nλ, Nφ, _ = size(model.grid)
     
+    return nothing
+
     mean_sq_surface_u = 0.0
     for j = 1:Nφ, i = 1:Nλ
         @allowscalar mean_sq_surface_u += @inbounds model.velocities.u[i, j, 1]^2
@@ -181,39 +259,48 @@ end
 Ninner = ConcreteRNumber(3)
 Oceananigans.defaults.FloatType = Float32
 
+Nx = 62
+Ny = 62
+Nz = 15
+Δt = 1200
+
 @info "Generating model..."
 rarch = ReactantState()
-rmodel = double_gyre_model(rarch, 62, 62, 15, 1200)
+rmodel = double_gyre_model(rarch, Nx, Ny, Nz, Δt)
 
-rTᵢ, rSᵢ      = set_tracers(rmodel.grid)
-rwind_stress = wind_stress_init(rmodel.grid)
 
 @info "Compiling..."
 
 
-tic = time()
-restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress)
-compile_toc = time() - tic
-
-@show compile_toc
-
-
-@info "Running..."
-restimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress)
-
 
 @info "Running non-reactant for comparison..."
 varch = CPU()
-vmodel = double_gyre_model(varch, 62, 62, 15, 1200)
+vmodel = double_gyre_model(varch, Nx, Ny, Nz, Δt)
 
 @info "Initialized non-reactant model"
+GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
+
+rTᵢ, rSᵢ      = set_tracers(rmodel.grid)
+rwind_stress = wind_stress_init(rmodel.grid)
 
 vTᵢ, vSᵢ      = set_tracers(vmodel.grid)
 vwind_stress = wind_stress_init(vmodel.grid)
 
 @info "Initialized non-reactant tracers and wind stress"
+GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
+@info "Running..."
+@jit raise_first=true raise=true sync=true first_ts(rmodel, rTᵢ, rSᵢ, rwind_stress)
+first_ts(vmodel, vTᵢ, vSᵢ, vwind_stress)
+
+GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
+
+@info "Running..."
+@jit raise_first=true raise=true sync=true estimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress)
 estimate_tracer_error(vmodel, vTᵢ, vSᵢ, vwind_stress)
+
+@info Oceananigans.fields(rmodel)
+@info Oceananigans.fields(vmodel)
 
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
