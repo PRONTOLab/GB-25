@@ -159,7 +159,7 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces
 
 using Oceananigans.Operators: Δzᶠᶜᶜ, Δzᶜᶠᶜ
 
-using Oceananigans.Grids: get_active_column_map, peripheral_node
+using Oceananigans.Grids: get_active_column_map, peripheral_node, inactive_cell
 using Oceananigans.Architectures
 using Oceananigans.Utils: launch!
 
@@ -168,20 +168,18 @@ using KernelAbstractions: @kernel, @index
 @kernel function _compute_integrated_ab2_tendencies_bad!(Gᵁ, Gⱽ, grid, Gu⁻, Gv⁻, Guⁿ, Gvⁿ, χ)
     i, j  = @index(Global, NTuple)
 
-    locV = (Center(), Face(), Center())
+    Gⁿ⁺¹ = @inbounds Gvⁿ[i, j, 1] - Gv⁻[i, j, 1]
+    immersed = bad_peripheral_node(i, j, 1, grid, Center(), Face(), Center())
 
-    @inbounds Gⱽ[i, j, 1] = peripheral_node(i, j, 1, grid, locV...)
+    @inbounds Gⱽ[i, j, 1] = 1000000 * ifelse(immersed, zero(grid), Gⁿ⁺¹)
 end
 
-@inline function bad_ab2_step_G(i, j, k, grid, ℓx, ℓy, ℓz, G⁻, Gⁿ, χ)
-    immersed = peripheral_node(i, j, k, grid, ℓx, ℓy, ℓz)
-
-    return ifelse(immersed, 0, 1)
-end
+@inline bad_peripheral_node(i, j, k, grid, LX, ::Face, LZ) = inactive_cell(i, j, k, grid) | inactive_cell(i, j-1, k, grid)
 
 function tolaunch(model)
-
     grid = model.grid
+
+    #@show @which peripheral_node(1, 1, 1, grid, Center(), Face(), Center())
 
     Guⁿ = model.timestepper.Gⁿ.u
     Gvⁿ = model.timestepper.Gⁿ.v
