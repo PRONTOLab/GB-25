@@ -90,12 +90,12 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
 
     model = HydrostaticFreeSurfaceModel(; grid,
                                           free_surface = free_surface,
-                                          #closure = vertical_closure,
+                                          closure = vertical_closure,
                                           #buoyancy = buoyancy,
                                           tracers = tracers,
-                                          #coriolis = coriolis,
-                                          #momentum_advection = momentum_advection,
-                                          #tracer_advection = tracer_advection,
+                                          coriolis = coriolis,
+                                          momentum_advection = momentum_advection,
+                                          tracer_advection = tracer_advection,
                                           boundary_conditions = boundary_conditions)
 
     model.clock.last_Δt = Δt
