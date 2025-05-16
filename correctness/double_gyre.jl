@@ -1,6 +1,5 @@
 using Oceananigans
 using Oceananigans.Architectures: ReactantState
-using ClimaOcean
 using Reactant
 using GordonBell25
 #Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
@@ -29,53 +28,23 @@ function set_tracers(grid;
     return Tᵢ, Sᵢ
 end
 
-function resolution_to_points(resolution)
-    Nx = convert(Int, 384 / resolution)
-    Ny = convert(Int, 192 / resolution)
-    return Nx, Ny
-end
-
-function simple_latitude_longitude_grid(arch, resolution, Nz)
-    Nx, Ny = resolution_to_points(resolution)
-    return simple_latitude_longitude_grid(arch, Nx, Ny, Nz)
-end
-
-function simple_latitude_longitude_grid(arch, Nx, Ny, Nz; halo=(8, 8, 8))
-    z = exponential_z_faces(; Nz, depth=1800) # may need changing for very large Nz
-
-    grid = LatitudeLongitudeGrid(arch; size=(Nx, Ny, Nz), halo, z,
-        longitude = (0, 360), # Problem is here: when longitude is not periodic we get error
-        latitude = (15, 75),
-        topology = (Periodic, Bounded, Bounded)
-    )
-
-    return grid
-end
-
 function double_gyre_model(arch, Nx, Ny, Nz, Δt)
 
     # Fewer substeps can be used at higher resolutions
     free_surface = SplitExplicitFreeSurface(substeps=30)
 
     # TEOS10 is a 54-term polynomial that relates temperature (T) and salinity (S) to buoyancy
-    buoyancy = SeawaterBuoyancy(equation_of_state = LinearEquationOfState(Oceananigans.defaults.FloatType))
-
-    # Closures:
-    horizontal_closure = HorizontalScalarDiffusivity(ν = 5000.0, κ = 1000.0)
-    vertical_closure   = VerticalScalarDiffusivity(ν = 1e-2, κ = 1e-5) 
-    #vertical_closure   = Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity()
-    #vertical_closure = Oceananigans.TurbulenceClosures.TKEDissipationVerticalDiffusivity()
-    closure = (horizontal_closure, vertical_closure)
-
-    # Coriolis forces for a rotating Earth
-    coriolis = HydrostaticSphericalCoriolis()
+    buoyancy = SeawaterBuoyancy(equation_of_state = SeawaterPolynomials.TEOS10EquationOfState(Oceananigans.defaults.FloatType), constant_salinity=0)
 
     tracers = (:T, :S)
 
-    grid = simple_latitude_longitude_grid(arch, Nx, Ny, Nz)
+    z = [-1800.0, -570.7183557141329, -171.62903681839708, -42.06370474253316, 0.0] # hardcoded for MWE
 
-    momentum_advection = VectorInvariant() #WENOVectorInvariant(order=5)
-    tracer_advection   = Centered(order=2) #WENO(order=5)
+    grid = LatitudeLongitudeGrid(arch; size=(Nx, Ny, Nz), halo=(8, 8, 8), z,
+        longitude = (0, 360), # Problem is here: when longitude is not periodic we get error
+        latitude = (15, 75),
+        topology = (Periodic, Bounded, Bounded)
+    )
 
     #
     # Momentum BCs:
@@ -84,18 +53,17 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     u_top_bc   = FluxBoundaryCondition(Field{Face, Center, Nothing}(grid))
 
     u_bcs = FieldBoundaryConditions(north=no_slip_bc, south=no_slip_bc, top=u_top_bc)
-    v_bcs = FieldBoundaryConditions(east=no_slip_bc, west=no_slip_bc)
 
     boundary_conditions = (u=u_bcs, )
 
     model = HydrostaticFreeSurfaceModel(; grid,
                                           free_surface = free_surface,
-                                          closure = vertical_closure,
+                                          closure = nothing, #vertical_closure,
                                           buoyancy = buoyancy,
                                           tracers = tracers,
-                                          coriolis = coriolis,
-                                          momentum_advection = momentum_advection,
-                                          tracer_advection = tracer_advection,
+                                          coriolis = nothing, #coriolis,
+                                          momentum_advection = nothing, #momentum_advection,
+                                          tracer_advection = nothing, #tracer_advection,
                                           boundary_conditions = boundary_conditions)
 
     model.clock.last_Δt = Δt
@@ -110,23 +78,10 @@ function wind_stress_init(grid;
                             )
     wind_stress = Field{Face, Center, Nothing}(grid)
 
-    τ₀ = 0.1 / ρₒ # N m⁻² / density of seawater
-    @inline τx(λ, φ) = τ₀ * cos(2π * (φ - φ₀) / Lφ)
+    @inline τx(λ, φ) = cos(2π * (φ - φ₀) / Lφ)
 
     set!(wind_stress, τx)
     return wind_stress
-end
-
-function first_time_step!(model)
-    Δt = model.clock.last_Δt
-    Oceananigans.TimeSteppers.first_time_step!(model, Δt)
-    return nothing
-end
-
-function time_step!(model)
-    Δt = model.clock.last_Δt + 0
-    Oceananigans.TimeSteppers.time_step!(model, Δt)
-    return nothing
 end
 
 function loop!(model, Ninner)
@@ -138,10 +93,8 @@ function loop!(model, Ninner)
     return nothing
 end
 
-function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
+function time_step_double_gyre!(model, wind_stress)
 
-    set!(model.tracers.T, Tᵢ)
-    set!(model.tracers.S, Sᵢ)
     set!(model.velocities.u.boundary_conditions.top.condition, wind_stress)
 
     # Initialize the model
@@ -155,8 +108,8 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     return nothing
 end
 
-function estimate_tracer_error(model, initial_temperature, initial_salinity, wind_stress)
-    time_step_double_gyre!(model, initial_temperature, initial_salinity, wind_stress)
+function estimate_tracer_error(model, wind_stress)
+    time_step_double_gyre!(model, wind_stress)
     # Compute the mean mixed layer depth:
     Nλ, Nφ, _ = size(model.grid)
     
@@ -170,83 +123,53 @@ function estimate_tracer_error(model, initial_temperature, initial_salinity, win
     return mean_sq_surface_u
 end
 
-function differentiate_tracer_error(model, Tᵢ, Sᵢ, J, dmodel, dTᵢ, dSᵢ, dJ)
+function differentiate_tracer_error(model, J, dmodel, dJ)
 
     dedν = autodiff(set_runtime_activity(Enzyme.Reverse),
                     estimate_tracer_error, Active,
                     Duplicated(model, dmodel),
-                    Duplicated(Tᵢ, dTᵢ),
-                    Duplicated(Sᵢ, dSᵢ),
                     Duplicated(J, dJ))
 
     return dedν, dJ
 end
 
-Ninner = ConcreteRNumber(3)
 Oceananigans.defaults.FloatType = Float64
 
 @info "Generating model..."
 rarch = ReactantState()
-rmodel = double_gyre_model(rarch, 62, 62, 15, 1200)
-
-@info rmodel.buoyancy
+rmodel = double_gyre_model(rarch, 62, 62, 4, 1200)
 
 rTᵢ, rSᵢ      = set_tracers(rmodel.grid)
 rwind_stress = wind_stress_init(rmodel.grid)
 
-@info "Compiling..."
+set!(rmodel.tracers.T, rTᵢ)
 
 dmodel = Enzyme.make_zero(rmodel)
-dTᵢ = Field{Center, Center, Center}(rmodel.grid)
-dSᵢ = Field{Center, Center, Center}(rmodel.grid)
 dJ  = Field{Face, Center, Nothing}(rmodel.grid)
 
-@info dmodel.buoyancy
+@info "Compiling..."
 
 tic = time()
-restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress)
-rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true differentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, dmodel, dTᵢ, dSᵢ, dJ)
+restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(rmodel, rwind_stress)
+rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true differentiate_tracer_error(rmodel, rwind_stress, dmodel, dJ)
 compile_toc = time() - tic
 
 @show compile_toc
 
-#=
-@info "Running..."
-restimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress)
-
-
-@info "Running non-reactant for comparison..."
-varch = CPU()
-vmodel = double_gyre_model(varch, 62, 62, 15, 1200)
-
-@info "Initialized non-reactant model"
-
-vTᵢ, vSᵢ      = set_tracers(vmodel.grid)
-vwind_stress = wind_stress_init(vmodel.grid)
-
-@info "Initialized non-reactant tracers and wind stress"
-
-estimate_tracer_error(vmodel, vTᵢ, vSᵢ, vwind_stress)
-
-GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
-
-@info "Done!"
-=#
-
 i = 10
 j = 10
 
-dedν, dJ = rdifferentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, dmodel, dTᵢ, dSᵢ, dJ)
+dedν, dJ = rdifferentiate_tracer_error(rmodel, rwind_stress, dmodel, dJ)
 
 @allowscalar @show dJ[i, j]
 
 # Produce finite-difference gradients for comparison:
-ϵ_list = [1e-1, 1e-2, 1e-3, 1e-4] #, 1e-5, 1e-6, 1e-7, 1e-8]
+ϵ_list = [1e-1, 1e-2, 1e-3] #, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8]
 
 @allowscalar gradient_list = Array{Float64}[]
 
 for ϵ in ϵ_list
-    rmodelP = double_gyre_model(rarch, 62, 62, 15, 1200)
+    rmodelP = double_gyre_model(rarch, 62, 62, 4, 1200)
     rTᵢP, rSᵢP      = set_tracers(rmodelP.grid)
     rwind_stressP = wind_stress_init(rmodelP.grid)
 
@@ -254,14 +177,16 @@ for ϵ in ϵ_list
 
     @allowscalar rwind_stressP[i, j] = rwind_stressP[i, j] + ϵ * abs(rwind_stressP[i, j])
 
-    sq_surface_uP = restimate_tracer_error(rmodelP, rTᵢP, rSᵢP, rwind_stressP)
+    set!(rmodelP.tracers.T, rTᵢP)
+    sq_surface_uP = restimate_tracer_error(rmodelP, rwind_stressP)
 
-    rmodelM = double_gyre_model(rarch, 62, 62, 15, 1200)
+    rmodelM = double_gyre_model(rarch, 62, 62, 4, 1200)
     rTᵢM, rSᵢM      = set_tracers(rmodelM.grid)
     rwind_stressM = wind_stress_init(rmodelM.grid)
     @allowscalar rwind_stressM[i, j] = rwind_stressM[i, j] - ϵ * abs(rwind_stressM[i, j])
 
-    sq_surface_uM = restimate_tracer_error(rmodelM, rTᵢM, rSᵢM, rwind_stressM)
+    set!(rmodelM.tracers.T, rTᵢM)
+    sq_surface_uM = restimate_tracer_error(rmodelM, rwind_stressM)
 
     dsq_surface_u = (sq_surface_uP - sq_surface_uM) / diff
 
