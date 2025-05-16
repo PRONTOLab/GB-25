@@ -18,9 +18,16 @@ function try_compile_code(f)
     end
 end
 
+function red_first_time_step!(model, Δt)
+    # Oceananigans.TimeSteppers.initialize!(model)
+    # Oceananigans.TimeSteppers.update_state!(model)
+    Oceananigans.TimeSteppers.time_step!(model, Δt)
+    return nothing
+end
+
 function first_time_step!(model)
     Δt = model.clock.last_Δt
-    Oceananigans.TimeSteppers.first_time_step!(model, Δt)
+    red_first_time_step!(model, Δt)
     return nothing
 end
 
@@ -32,9 +39,9 @@ end
 
 function loop!(model, Ninner)
     Δt = model.clock.last_Δt + 0
-    @trace track_numbers=false for _ = 1:Ninner
+    # @trace track_numbers=false for _ = 1:Ninner
         Oceananigans.TimeSteppers.time_step!(model, Δt)
-    end
+    # end
     return nothing
 end
 
