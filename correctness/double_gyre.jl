@@ -58,7 +58,7 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     free_surface = SplitExplicitFreeSurface(substeps=30)
 
     # TEOS10 is a 54-term polynomial that relates temperature (T) and salinity (S) to buoyancy
-    buoyancy = SeawaterBuoyancy(equation_of_state = SeawaterPolynomials.TEOS10EquationOfState(Oceananigans.defaults.FloatType))
+    buoyancy = SeawaterBuoyancy(equation_of_state = LinearEquationOfState(Oceananigans.defaults.FloatType))
 
     # Closures:
     horizontal_closure = HorizontalScalarDiffusivity(ν = 5000.0, κ = 1000.0)
@@ -91,7 +91,7 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     model = HydrostaticFreeSurfaceModel(; grid,
                                           free_surface = free_surface,
                                           closure = vertical_closure,
-                                          #buoyancy = buoyancy,
+                                          buoyancy = buoyancy,
                                           tracers = tracers,
                                           coriolis = coriolis,
                                           momentum_advection = momentum_advection,
@@ -189,6 +189,8 @@ Oceananigans.defaults.FloatType = Float64
 rarch = ReactantState()
 rmodel = double_gyre_model(rarch, 62, 62, 15, 1200)
 
+@info rmodel.buoyancy
+
 rTᵢ, rSᵢ      = set_tracers(rmodel.grid)
 rwind_stress = wind_stress_init(rmodel.grid)
 
@@ -198,6 +200,8 @@ dmodel = Enzyme.make_zero(rmodel)
 dTᵢ = Field{Center, Center, Center}(rmodel.grid)
 dSᵢ = Field{Center, Center, Center}(rmodel.grid)
 dJ  = Field{Face, Center, Nothing}(rmodel.grid)
+
+@info dmodel.buoyancy
 
 tic = time()
 restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress)
