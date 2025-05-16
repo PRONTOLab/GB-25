@@ -159,7 +159,7 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces
 
 using Oceananigans.Operators: Δzᶠᶜᶜ, Δzᶜᶠᶜ
 
-using Oceananigans.Grids: get_active_column_map, peripheral_node, inactive_cell, build_condition, AbstractGrid, LeftConnected, RightConnected
+using Oceananigans.Grids: get_active_column_map, peripheral_node, inactive_cell, build_condition, AbstractGrid
 using Oceananigans.Architectures
 using Oceananigans.Utils: launch!
 
@@ -174,27 +174,19 @@ using KernelAbstractions: @kernel, @index
     @inbounds Gⱽ[i, j, 1] = 1000000 * ifelse(immersed, zero(grid), Gⁿ⁺¹)
 end
 
-Topos = (:Bounded, :LeftConnected, :RightConnected)
-for PrimaryTopo in Topos
-    xcondition = build_condition(PrimaryTopo, :i, :Nx, false)
-    for SecondaryTopo in Topos
-        xycondition = :( $xcondition | $(build_condition(SecondaryTopo, :j, :Ny, false)))
-        for TertiaryTopo in Topos
-            xyzcondition = :( $xycondition | $(build_condition(TertiaryTopo, :k, :Nz, false)))
-
-            @eval begin
-                XYZBoundedGrid = AbstractGrid{<:Any, <:$PrimaryTopo, <:$SecondaryTopo, <:$TertiaryTopo}
-                @inline bad_inactive_cell(i, j, k, grid::XYZBoundedGrid) = $xyzcondition
-            end
-        end
-    end
+xcondition = build_condition(:Bounded, :i, :Nx, false)
+xycondition = :( $xcondition | $(build_condition(:Bounded, :j, :Ny, false)))
+xyzcondition = :( $xycondition | $(build_condition(:Bounded, :k, :Nz, false)))
+        
+@show xyzcondition
+@eval begin
+    XYZBoundedGrid = AbstractGrid{<:Any, <:Bounded, <:Bounded, <:Bounded}
+    @inline bad_inactive_cell(i, j, k, grid::XYZBoundedGrid) = $xyzcondition
 end
 
 
 function tolaunch(model)
     grid = model.grid
-
-    @show @which inactive_cell(1, 1, 1, grid)
 
     Guⁿ = model.timestepper.Gⁿ.u
     Gvⁿ = model.timestepper.Gⁿ.v
