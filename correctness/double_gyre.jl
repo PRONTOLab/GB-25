@@ -168,10 +168,9 @@ using KernelAbstractions: @kernel, @index
 @kernel function _compute_integrated_ab2_tendencies_bad!(Gᵁ, Gⱽ, grid, Gu⁻, Gv⁻, Guⁿ, Gvⁿ, χ)
     i, j  = @index(Global, NTuple)
 
-    Gⁿ⁺¹ = @inbounds Gvⁿ[i, j, 1] - Gv⁻[i, j, 1]
-    immersed = bad_inactive_cell(i, j, 1, grid) | bad_inactive_cell(i, j-1, 1, grid)
+    immersed = bad_inactive_cell(i, j-1, 1, grid)
 
-    @inbounds Gⱽ[i, j, 1] = 1000000 * ifelse(immersed, zero(grid), Gⁿ⁺¹)
+    @inbounds Gⱽ[i, j, 1] = 1000000 * (!immersed * Gvⁿ[i, j, 1])
 end
 
 function bad_build_condition(Topo, side, dim, array::Bool)
