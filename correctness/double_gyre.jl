@@ -91,7 +91,7 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     model = HydrostaticFreeSurfaceModel(; grid,
                                           free_surface = free_surface,
                                           #closure = vertical_closure,
-                                          buoyancy = buoyancy,
+                                          #buoyancy = buoyancy,
                                           tracers = tracers,
                                           #coriolis = coriolis,
                                           #momentum_advection = momentum_advection,
@@ -140,8 +140,8 @@ end
 
 function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
 
-    set!(model.tracers.T, Tᵢ)
-    set!(model.tracers.S, Sᵢ)
+    #set!(model.tracers.T, Tᵢ)
+    #set!(model.tracers.S, Sᵢ)
     set!(model.velocities.u.boundary_conditions.top.condition, wind_stress)
 
     # Initialize the model
@@ -160,11 +160,13 @@ function estimate_tracer_error(model, initial_temperature, initial_salinity, win
     # Compute the mean mixed layer depth:
     Nλ, Nφ, _ = size(model.grid)
     
-    mean_sq_surface_u = 0.0
+    @allowscalar mean_sq_surface_u = model.velocities.u[10, 10, 1]^2 # 0.0
+    #=
     for j = 1:Nφ, i = 1:Nλ
         @allowscalar mean_sq_surface_u += @inbounds model.velocities.u[i, j, 1]^2
     end
     mean_sq_surface_u = mean_sq_surface_u / (Nλ * Nφ)
+    =#
     return mean_sq_surface_u
 end
 
@@ -196,6 +198,11 @@ dmodel = Enzyme.make_zero(rmodel)
 dTᵢ = Enzyme.make_zero(rTᵢ)
 dSᵢ = Enzyme.make_zero(rSᵢ)
 dJ = Enzyme.make_zero(rwind_stress)
+
+@allowscalar @info dmodel
+@allowscalar @show dTᵢ[:]
+@allowscalar @show dSᵢ[:]
+@allowscalar @show dJ[:]
 
 tic = time()
 restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress)
