@@ -174,9 +174,13 @@ using KernelAbstractions: @kernel, @index
     @inbounds Gⱽ[i, j, 1] = 1000000 * ifelse(immersed, zero(grid), Gⁿ⁺¹)
 end
 
-xcondition = build_condition(:Bounded, :i, :Nx, false)
-xycondition = :( $xcondition | $(build_condition(:Bounded, :j, :Ny, false)))
-xyzcondition = :( $xycondition | $(build_condition(:Bounded, :k, :Nz, false)))
+function bad_build_condition(Topo, side, dim, array::Bool)
+    return :(($side < 1) | ($side > grid.$dim))
+end
+
+xcondition = bad_build_condition(:Bounded, :i, :Nx, false)
+xycondition = :( $xcondition | $(bad_build_condition(:Bounded, :j, :Ny, false)))
+xyzcondition = :( $xycondition | $(bad_build_condition(:Bounded, :k, :Nz, false)))
         
 @show xyzcondition
 @eval begin
