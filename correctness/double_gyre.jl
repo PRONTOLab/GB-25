@@ -1,5 +1,6 @@
 using Oceananigans
 using Oceananigans.Architectures: ReactantState
+using Oceananigans.TurbulenceClosures: CATKEVerticalDiffusivity, VerticallyImplicitTimeDiscretization
 using ClimaOcean
 using Reactant
 using GordonBell25
@@ -8,10 +9,10 @@ using GordonBell25
 
 using SeawaterPolynomials
 
-throw_error = true
+throw_error = false
 include_halos = true
 rtol = sqrt(eps(Float64))
-atol = 0
+atol = sqrt(eps(Float64))
 
 function set_tracers(grid;
                      dTdz::Real = 30.0 / 1800.0)
@@ -60,8 +61,8 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
 
     # Closures:
     horizontal_closure = HorizontalScalarDiffusivity(ν = 5000.0, κ = 1000.0)
-    vertical_closure   = VerticalScalarDiffusivity(ν = 1e-2, κ = 1e-5) 
-    #vertical_closure   = Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity()
+    #vertical_closure   = VerticalScalarDiffusivity(ν = 1e-2, κ = 1e-5) 
+    vertical_closure   = CATKEVerticalDiffusivity(VerticallyImplicitTimeDiscretization())
     #vertical_closure = Oceananigans.TurbulenceClosures.TKEDissipationVerticalDiffusivity()
     closure = (horizontal_closure, vertical_closure)
 
@@ -95,6 +96,8 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
                                           momentum_advection = momentum_advection,
                                           tracer_advection = tracer_advection,
                                           boundary_conditions = boundary_conditions)
+
+    set!(model.tracers.e, 1e-6)
 
     model.clock.last_Δt = Δt
 
@@ -148,7 +151,7 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     model.clock.last_Δt = 1200
 
     # Step it forward
-    loop!(model, 10)
+    loop!(model, 10) #26000)
 
     return nothing
 end
@@ -179,7 +182,7 @@ function differentiate_tracer_error(model, Tᵢ, Sᵢ, J, dmodel, dTᵢ, dSᵢ, 
 end
 
 Ninner = ConcreteRNumber(3)
-Oceananigans.defaults.FloatType = Float32
+Oceananigans.defaults.FloatType = Float64
 
 @info "Generating model..."
 rarch = ReactantState()
