@@ -60,16 +60,9 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     buoyancy = SeawaterBuoyancy(equation_of_state = SeawaterPolynomials.TEOS10EquationOfState(Oceananigans.defaults.FloatType))
 
     # Closures:
-    horizontal_closure = HorizontalScalarDiffusivity(ν = 5000.0, κ = 1000.0)
-    #vertical_closure   = VerticalScalarDiffusivity(ν = 1e-2, κ = 1e-5) 
     vertical_closure   = CATKEVerticalDiffusivity(VerticallyImplicitTimeDiscretization())
-    #vertical_closure = Oceananigans.TurbulenceClosures.TKEDissipationVerticalDiffusivity()
-    closure = (horizontal_closure, vertical_closure)
 
-    # Coriolis forces for a rotating Earth
-    coriolis = HydrostaticSphericalCoriolis()
-
-    tracers = (:T, :S, :e, :ϵ)
+    tracers = (:T, :S, :e)
 
     grid = simple_latitude_longitude_grid(arch, Nx, Ny, Nz)
 
@@ -83,7 +76,6 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     u_top_bc   = FluxBoundaryCondition(Field{Face, Center, Nothing}(grid))
 
     u_bcs = FieldBoundaryConditions(north=no_slip_bc, south=no_slip_bc, top=u_top_bc)
-    v_bcs = FieldBoundaryConditions(east=no_slip_bc, west=no_slip_bc)
 
     boundary_conditions = (u=u_bcs, )
 
@@ -92,7 +84,7 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
                                           closure = vertical_closure,
                                           buoyancy = buoyancy,
                                           tracers = tracers,
-                                          coriolis = coriolis,
+                                          coriolis = nothing,
                                           momentum_advection = momentum_advection,
                                           tracer_advection = tracer_advection,
                                           boundary_conditions = boundary_conditions)
@@ -118,31 +110,8 @@ function wind_stress_init(grid;
     return wind_stress
 end
 
-function first_time_step!(model)
-    Δt = model.clock.last_Δt
-    Oceananigans.TimeSteppers.first_time_step!(model, Δt)
-    return nothing
-end
-
-function time_step!(model)
-    Δt = model.clock.last_Δt + 0
-    Oceananigans.TimeSteppers.time_step!(model, Δt)
-    return nothing
-end
-
-function loop!(model, Ninner)
-    Δt = model.clock.last_Δt + 0
-    Oceananigans.TimeSteppers.first_time_step!(model, Δt)
-    @trace track_numbers=false for _ = 1:(Ninner-1)
-        Oceananigans.TimeSteppers.time_step!(model, Δt)
-    end
-    return nothing
-end
-
 function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
-
     set!(model.tracers.T, Tᵢ)
-    set!(model.tracers.S, Sᵢ)
     set!(model.velocities.u.boundary_conditions.top.condition, wind_stress)
 
     # Initialize the model
@@ -151,37 +120,17 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     model.clock.last_Δt = 1200
 
     # Step it forward
-    loop!(model, 10) #26000)
+    Δt = model.clock.last_Δt
+    Oceananigans.TimeSteppers.first_time_step!(model, Δt)
+    Oceananigans.TimeSteppers.time_step!(model, Δt)
 
     return nothing
 end
 
 function estimate_tracer_error(model, initial_temperature, initial_salinity, wind_stress)
     time_step_double_gyre!(model, initial_temperature, initial_salinity, wind_stress)
-    # Compute the mean mixed layer depth:
-    Nλ, Nφ, _ = size(model.grid)
-    
-    mean_sq_surface_u = 0.0
-    for j = 1:Nφ, i = 1:Nλ
-        @allowscalar mean_sq_surface_u += @inbounds model.velocities.u[i, j, 1]^2
-    end
-    mean_sq_surface_u = mean_sq_surface_u / (Nλ * Nφ)
-    return mean_sq_surface_u
 end
 
-function differentiate_tracer_error(model, Tᵢ, Sᵢ, J, dmodel, dTᵢ, dSᵢ, dJ)
-
-    dedν = autodiff(set_runtime_activity(Enzyme.Reverse),
-                    estimate_tracer_error, Active,
-                    Duplicated(model, dmodel),
-                    Duplicated(Tᵢ, dTᵢ),
-                    Duplicated(Sᵢ, dSᵢ),
-                    Duplicated(J, dJ))
-
-    return dedν, dJ
-end
-
-Ninner = ConcreteRNumber(3)
 Oceananigans.defaults.FloatType = Float64
 
 @info "Generating model..."
