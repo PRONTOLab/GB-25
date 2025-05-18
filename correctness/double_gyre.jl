@@ -45,7 +45,7 @@ function simple_latitude_longitude_grid(arch, Nx, Ny, Nz; halo=(8, 8, 8))
     grid = LatitudeLongitudeGrid(arch; size=(Nx, Ny, Nz), halo, z,
         longitude = (0, 360), # Problem is here: when longitude is not periodic we get error
         latitude = (15, 75),
-        topology = (Bounded, Bounded, Bounded)
+        topology = (Periodic, Bounded, Bounded)
     )
 
     return grid
