@@ -79,8 +79,7 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
                                           tracers = tracers,
                                           coriolis = nothing,
                                           momentum_advection = momentum_advection,
-                                          tracer_advection = tracer_advection,
-                                          boundary_conditions = boundary_conditions)
+                                          tracer_advection = tracer_advection)
 
     set!(model.tracers.e, 1e-6)
 
@@ -89,23 +88,9 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     return model
 end
 
-function wind_stress_init(grid;
-                            ρₒ::Real = 1026.0, # kg m⁻³, average density at the surface of the world ocean
-                            Lφ::Real = 60, # Meridional length in degrees
-                            φ₀::Real = 15.0 # Degrees north of equator for the southern edge
-                            )
-    wind_stress = Field{Face, Center, Nothing}(grid)
-
-    τ₀ = 0.1 / ρₒ # N m⁻² / density of seawater
-    @inline τx(λ, φ) = τ₀ * cos(2π * (φ - φ₀) / Lφ)
-
-    set!(wind_stress, τx)
-    return wind_stress
-end
-
-function time_step_double_gyre!(model, Tᵢ, wind_stress)
+function time_step_double_gyre!(model, Tᵢ)
     set!(model.tracers.T, Tᵢ)
-    set!(model.velocities.u.boundary_conditions.top.condition, wind_stress)
+    set!(model.velocities.u, 1)
 
     # Initialize the model
     model.clock.iteration = 0
@@ -120,8 +105,8 @@ function time_step_double_gyre!(model, Tᵢ, wind_stress)
     return nothing
 end
 
-function estimate_tracer_error(model, initial_temperature, wind_stress)
-    time_step_double_gyre!(model, initial_temperature, wind_stress)
+function estimate_tracer_error(model, initial_temperature)
+    time_step_double_gyre!(model, initial_temperature)
 end
 
 Oceananigans.defaults.FloatType = Float64
@@ -130,21 +115,20 @@ Oceananigans.defaults.FloatType = Float64
 rarch = ReactantState()
 rmodel = double_gyre_model(rarch, 62, 62, 15, 1200)
 
-rTᵢ          = set_tracers(rmodel.grid)
-rwind_stress = wind_stress_init(rmodel.grid)
+rTᵢ = set_tracers(rmodel.grid)
 
 @info "Compiling..."
 
 
 tic = time()
-restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(rmodel, rTᵢ, rwind_stress)
+restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(rmodel, rTᵢ)
 compile_toc = time() - tic
 
 @show compile_toc
 
 
 @info "Running..."
-restimate_tracer_error(rmodel, rTᵢ, rwind_stress)
+restimate_tracer_error(rmodel, rTᵢ)
 
 
 @info "Running non-reactant for comparison..."
@@ -153,12 +137,11 @@ vmodel = double_gyre_model(varch, 62, 62, 15, 1200)
 
 @info "Initialized non-reactant model"
 
-vTᵢ          = set_tracers(vmodel.grid)
-vwind_stress = wind_stress_init(vmodel.grid)
+vTᵢ = set_tracers(vmodel.grid)
 
 @info "Initialized non-reactant tracers and wind stress"
 
-estimate_tracer_error(vmodel, vTᵢ, vwind_stress)
+estimate_tracer_error(vmodel, vTᵢ)
 
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
