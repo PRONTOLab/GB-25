@@ -59,7 +59,7 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     buoyancy = SeawaterBuoyancy(equation_of_state = SeawaterPolynomials.TEOS10EquationOfState(Oceananigans.defaults.FloatType))
 
     # Closures:
-    horizontal_closure = HorizontalScalarDiffusivity(ν = 5000.0, κ = 1000.0)
+    horizontal_closure = HorizontalScalarDiffusivity(ν = 5000, κ = 1000)
     #vertical_closure   = VerticalScalarDiffusivity(ν = 1e-2, κ = 1e-5) 
     vertical_closure   = Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity()
     #vertical_closure = Oceananigans.TurbulenceClosures.TKEDissipationVerticalDiffusivity()
@@ -117,31 +117,13 @@ function wind_stress_init(grid;
     return wind_stress
 end
 
-function first_time_step!(model)
-    Δt = model.clock.last_Δt
-    Oceananigans.TimeSteppers.first_time_step!(model, Δt)
-    return nothing
-end
-
-function time_step!(model)
-    Δt = model.clock.last_Δt + 0
-    Oceananigans.TimeSteppers.time_step!(model, Δt)
-    return nothing
-end
-
-function loop!(model, Ninner)
-    Δt = model.clock.last_Δt + 0
-    Oceananigans.TimeSteppers.first_time_step!(model, Δt)
-    @trace track_numbers=false for _ = 1:(Ninner-1)
-        Oceananigans.TimeSteppers.time_step!(model, Δt)
-    end
-    return nothing
-end
+using Oceananigans: initialize!
+using Oceananigans.TimeSteppers: update_state!, ab2_step!, tick!, calculate_pressure_correction!, correct_velocities_and_cache_previous_tendencies!, step_lagrangian_particles!
+using Oceananigans.Utils: @apply_regionally
 
 function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
 
     set!(model.tracers.T, Tᵢ)
-    set!(model.tracers.S, Sᵢ)
     set!(model.velocities.u.boundary_conditions.top.condition, wind_stress)
 
     # Initialize the model
@@ -150,7 +132,112 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     model.clock.last_Δt = 1200
 
     # Step it forward
-    loop!(model, 10)
+    Δt = model.clock.last_Δt
+    update_state!(model)
+    bad_time_step!(model, Δt, euler=true)
+
+    return nothing
+end
+
+function bad_time_step!(model, Δt; callbacks=[], euler=false)
+
+    if model.architecture == ReactantState()
+        # Note: Δt cannot change
+        if model.clock.last_Δt isa Reactant.TracedRNumber
+            model.clock.last_Δt.mlir_data = Δt.mlir_data
+        else
+            model.clock.last_Δt = Δt
+        end
+
+        #=
+        # Be paranoid and update state at iteration 0
+        @trace if model.clock.iteration == 0
+            update_state!(model, callbacks; compute_tendencies=true)
+        end
+
+        # Take an euler step if:
+        #   * We detect that the time-step size has changed.
+        #   * We detect that this is the "first" time-step, which means we
+        #     need to take an euler step. Note that model.clock.last_Δt is
+        #     initialized as Inf
+        #   * The user has passed euler=true to time_step!
+        @trace if Δt != model.clock.last_Δt
+            euler = true
+        end
+        =#
+
+        # If euler, then set χ = -0.5
+        minus_point_five = convert(Float64, -0.5)
+        ab2_timestepper = model.timestepper
+        χ = ifelse(euler, minus_point_five, ab2_timestepper.χ)
+        χ₀ = ab2_timestepper.χ # Save initial value
+        ab2_timestepper.χ = χ
+
+        # Full step for tracers, fractional step for velocities.
+        ab2_step!(model, Δt)
+
+        tick!(model.clock, Δt)
+
+        if model.clock.last_Δt isa Reactant.TracedRNumber
+            model.clock.last_Δt.mlir_data = Δt.mlir_data
+        else
+            model.clock.last_Δt = Δt
+        end
+
+        # just one stage
+        if model.clock.last_stage_Δt isa Reactant.TracedRNumber
+            model.clock.last_stage_Δt.mlir_data = Δt.mlir_data
+        else
+            model.clock.last_stage_Δt = Δt
+        end
+
+        calculate_pressure_correction!(model, Δt)
+        correct_velocities_and_cache_previous_tendencies!(model, Δt)
+
+        update_state!(model, callbacks; compute_tendencies=true)
+        step_lagrangian_particles!(model, Δt)
+
+        # Return χ to initial value
+        ab2_timestepper.χ = χ₀
+
+    elseif model.architecture == CPU()
+        Δt == 0 && @warn "Δt == 0 may cause model blowup!"
+
+        # Be paranoid and update state at iteration 0
+        #model.clock.iteration == 0 && update_state!(model, callbacks; compute_tendencies=true)
+
+        # Take an euler step if:
+        #   * We detect that the time-step size has changed.
+        #   * We detect that this is the "first" time-step, which means we
+        #     need to take an euler step. Note that model.clock.last_Δt is
+        #     initialized as Inf
+        #   * The user has passed euler=true to time_step!
+        euler = euler || (Δt != model.clock.last_Δt)
+        euler && @debug "Taking a forward Euler step."
+
+        # If euler, then set χ = -0.5
+        minus_point_five = convert(eltype(model.grid), -0.5)
+        ab2_timestepper = model.timestepper
+        χ = ifelse(euler, minus_point_five, ab2_timestepper.χ)
+        χ₀ = ab2_timestepper.χ # Save initial value
+        ab2_timestepper.χ = χ
+
+        # Full step for tracers, fractional step for velocities.
+        ab2_step!(model, Δt)
+
+        tick!(model.clock, Δt)
+        model.clock.last_Δt = Δt
+        model.clock.last_stage_Δt = Δt # just one stage
+
+        calculate_pressure_correction!(model, Δt)
+        @apply_regionally correct_velocities_and_cache_previous_tendencies!(model, Δt)
+
+        update_state!(model, callbacks; compute_tendencies=true)
+        step_lagrangian_particles!(model, Δt)
+
+        # Return χ to initial value
+        ab2_timestepper.χ = χ₀
+    end
 
     return nothing
 end
@@ -194,14 +281,14 @@ rwind_stress = wind_stress_init(rmodel.grid)
 
 
 tic = time()
-restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress)
+rtime_step_double_gyre! = @compile raise_first=true raise=true sync=true time_step_double_gyre!(rmodel, rTᵢ, rSᵢ, rwind_stress)
 compile_toc = time() - tic
 
 @show compile_toc
 
 
 @info "Running..."
-restimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress)
+rtime_step_double_gyre!(rmodel, rTᵢ, rSᵢ, rwind_stress)
 
 
 @info "Running non-reactant for comparison..."
@@ -215,7 +302,7 @@ vwind_stress = wind_stress_init(vmodel.grid)
 
 @info "Initialized non-reactant tracers and wind stress"
 
-estimate_tracer_error(vmodel, vTᵢ, vSᵢ, vwind_stress)
+time_step_double_gyre!(vmodel, vTᵢ, vSᵢ, vwind_stress)
 
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 

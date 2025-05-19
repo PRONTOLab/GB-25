@@ -22,15 +22,6 @@ SeawaterPolynomials = "d496a93d-167e-4197-9f49-d3af4ff8fe40"
 Serialization = "9e88b42a-f829-5b0c-bbe9-9e923198166b"
 
 [extensions]
-PrecompileAB2StepF32 = ["Oceananigans", "Reactant"]
-PrecompileCachePreviousTendenciesF32 = ["Oceananigans", "Reactant"]
-PrecompileComputeAuxiliariesF32 = ["Oceananigans", "Reactant"]
-PrecompileComputeBoundaryTendenciesF32 = ["Oceananigans", "Reactant"]
-PrecompileComputeInteriorMomentumTendenciesF32 = ["Oceananigans", "Reactant"]
-PrecompileComputeInteriorTracerTendenciesF32 = ["Oceananigans", "Reactant"]
-PrecompileFillHaloRegionsF32 = ["Oceananigans", "Reactant"]
-PrecompileInitializeF32 = ["Oceananigans", "Reactant"]
-PrecompileTupledFillHaloRegionsF32 = ["Oceananigans", "Reactant"]
 
 [compat]
 CUDA = "5.7.1"
