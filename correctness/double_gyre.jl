@@ -4,16 +4,15 @@ using Oceananigans.TurbulenceClosures: CATKEVerticalDiffusivity, VerticallyImpli
 using Reactant
 using GordonBell25
 #Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
-#Reactant.allowscalar(true)
 
 throw_error = false
-include_halos = true
+include_halos = false
 rtol = sqrt(eps(Float64))
 atol = sqrt(eps(Float64))
 
 using Oceananigans: initialize!
 using Oceananigans.TimeSteppers: update_state!
-
+using Oceananigans.Models.HydrostaticFreeSurfaceModels: initialize_free_surface!
 
 function set_tracers(grid;
                      dTdz::Real = 30.0 / 1800.0)
@@ -75,10 +74,7 @@ function time_step_double_gyre!(model, Tᵢ)
 
     # Step it forward
     Δt = model.clock.last_Δt
-    #Oceananigans.TimeSteppers.first_time_step!(model, Δt)
-
-    #initialize!(model)
-    #update_state!(model)
+    update_state!(model)
     time_step!(model, Δt)
 
 
