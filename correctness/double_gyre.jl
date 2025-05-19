@@ -11,7 +11,7 @@ using SeawaterPolynomials
 throw_error = true
 include_halos = true
 rtol = sqrt(eps(Float64))
-atol = 0
+atol = sqrt(eps(Float64))
 
 function set_tracers(grid;
                      dTdz::Real = 30.0 / 1800.0)
@@ -148,7 +148,7 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     model.clock.last_Δt = 1200
 
     # Step it forward
-    loop!(model, 10)
+    loop!(model, 26000)
 
     return nothing
 end
@@ -179,7 +179,7 @@ function differentiate_tracer_error(model, Tᵢ, Sᵢ, J, dmodel, dTᵢ, dSᵢ, 
 end
 
 Ninner = ConcreteRNumber(3)
-Oceananigans.defaults.FloatType = Float32
+Oceananigans.defaults.FloatType = Float64
 
 @info "Generating model..."
 rarch = ReactantState()
@@ -198,7 +198,7 @@ compile_toc = time() - tic
 @show compile_toc
 
 
-@info "Running..."
+@info "Running... for 26000 timesteps..."
 restimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress)
 
 
