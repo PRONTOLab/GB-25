@@ -1,7 +1,6 @@
 using Oceananigans
 using Oceananigans.Architectures: ReactantState
 using Oceananigans.TurbulenceClosures: CATKEVerticalDiffusivity, VerticallyImplicitTimeDiscretization
-using ClimaOcean
 using Reactant
 using GordonBell25
 #Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
@@ -21,29 +20,6 @@ function set_tracers(grid;
     return Tᵢ
 end
 
-function resolution_to_points(resolution)
-    Nx = convert(Int, 384 / resolution)
-    Ny = convert(Int, 192 / resolution)
-    return Nx, Ny
-end
-
-function simple_latitude_longitude_grid(arch, resolution, Nz)
-    Nx, Ny = resolution_to_points(resolution)
-    return simple_latitude_longitude_grid(arch, Nx, Ny, Nz)
-end
-
-function simple_latitude_longitude_grid(arch, Nx, Ny, Nz; halo=(8, 8, 8))
-    z = exponential_z_faces(; Nz, depth=1800) # may need changing for very large Nz
-
-    grid = LatitudeLongitudeGrid(arch; size=(Nx, Ny, Nz), halo, z,
-        longitude = (0, 360), # Problem is here: when longitude is not periodic we get error
-        latitude = (15, 75),
-        topology = (Periodic, Bounded, Bounded)
-    )
-
-    return grid
-end
-
 function double_gyre_model(arch, Nx, Ny, Nz, Δt)
 
     # Fewer substeps can be used at higher resolutions
@@ -57,20 +33,16 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
 
     tracers = (:T, :e)
 
-    grid = simple_latitude_longitude_grid(arch, Nx, Ny, Nz)
+    z = [-1800.0, -1328.231927341071, -978.7375431794401, -719.8257353665673, -528.019150589148, -385.9253377393035, -280.6596521340005, -202.67691422503887, -144.90588108343317, -102.10804710452429, -70.4026318872374, -46.914682599991906, -29.51438180155227, -16.62392192472553, -7.07443437500568, 0.0] # Hardcoded for MWE
+
+    grid = LatitudeLongitudeGrid(arch; size=(Nx, Ny, Nz), halo=(8, 8, 8), z,
+        longitude = (0, 360), # Problem is here: when longitude is not periodic we get error
+        latitude = (15, 75),
+        topology = (Periodic, Bounded, Bounded)
+    )
 
     momentum_advection = VectorInvariant() #WENOVectorInvariant(order=5)
     tracer_advection   = Centered(order=2) #WENO(order=5)
-
-    #
-    # Momentum BCs:
-    #
-    no_slip_bc = ValueBoundaryCondition(Field{Face, Center, Nothing}(grid))
-    u_top_bc   = FluxBoundaryCondition(Field{Face, Center, Nothing}(grid))
-
-    u_bcs = FieldBoundaryConditions(north=no_slip_bc, south=no_slip_bc, top=u_top_bc)
-
-    boundary_conditions = (u=u_bcs, )
 
     model = HydrostaticFreeSurfaceModel(; grid,
                                           free_surface = free_surface,
@@ -100,13 +72,8 @@ function time_step_double_gyre!(model, Tᵢ)
     # Step it forward
     Δt = model.clock.last_Δt
     Oceananigans.TimeSteppers.first_time_step!(model, Δt)
-    Oceananigans.TimeSteppers.time_step!(model, Δt)
 
     return nothing
-end
-
-function estimate_tracer_error(model, initial_temperature)
-    time_step_double_gyre!(model, initial_temperature)
 end
 
 Oceananigans.defaults.FloatType = Float64
@@ -121,14 +88,14 @@ rTᵢ = set_tracers(rmodel.grid)
 
 
 tic = time()
-restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(rmodel, rTᵢ)
+rtime_step_double_gyre! = @compile raise_first=true raise=true sync=true time_step_double_gyre!(rmodel, rTᵢ)
 compile_toc = time() - tic
 
 @show compile_toc
 
 
 @info "Running..."
-restimate_tracer_error(rmodel, rTᵢ)
+rtime_step_double_gyre!(rmodel, rTᵢ)
 
 
 @info "Running non-reactant for comparison..."
@@ -141,7 +108,7 @@ vTᵢ = set_tracers(vmodel.grid)
 
 @info "Initialized non-reactant tracers and wind stress"
 
-estimate_tracer_error(vmodel, vTᵢ)
+time_step_double_gyre!(vmodel, vTᵢ)
 
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
