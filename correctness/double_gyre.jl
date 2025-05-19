@@ -11,6 +11,10 @@ include_halos = true
 rtol = sqrt(eps(Float64))
 atol = sqrt(eps(Float64))
 
+using Oceananigans: initialize!
+using Oceananigans.TimeSteppers: update_state!
+
+
 function set_tracers(grid;
                      dTdz::Real = 30.0 / 1800.0)
     fₜ(λ, φ, z) = 30 + dTdz * z # + dTdz * model.grid.Lz * 1e-6 * Ξ(z)
@@ -71,7 +75,12 @@ function time_step_double_gyre!(model, Tᵢ)
 
     # Step it forward
     Δt = model.clock.last_Δt
-    Oceananigans.TimeSteppers.first_time_step!(model, Δt)
+    #Oceananigans.TimeSteppers.first_time_step!(model, Δt)
+
+    #initialize!(model)
+    #update_state!(model)
+    time_step!(model, Δt)
+
 
     return nothing
 end
