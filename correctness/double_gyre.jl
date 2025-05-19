@@ -8,7 +8,7 @@ using GordonBell25
 
 using SeawaterPolynomials
 
-throw_error = true
+throw_error = false
 include_halos = true
 rtol = sqrt(eps(Float64))
 atol = sqrt(eps(Float64))
@@ -44,7 +44,7 @@ function simple_latitude_longitude_grid(arch, Nx, Ny, Nz; halo=(8, 8, 8))
     grid = LatitudeLongitudeGrid(arch; size=(Nx, Ny, Nz), halo, z,
         longitude = (0, 360), # Problem is here: when longitude is not periodic we get error
         latitude = (15, 75),
-        topology = (Bounded, Bounded, Bounded)
+        topology = (Periodic, Bounded, Bounded)
     )
 
     return grid
@@ -60,8 +60,8 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
 
     # Closures:
     horizontal_closure = HorizontalScalarDiffusivity(ν = 5000.0, κ = 1000.0)
-    vertical_closure   = VerticalScalarDiffusivity(ν = 1e-2, κ = 1e-5) 
-    #vertical_closure   = Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity()
+    #vertical_closure   = VerticalScalarDiffusivity(ν = 1e-2, κ = 1e-5) 
+    vertical_closure   = Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity()
     #vertical_closure = Oceananigans.TurbulenceClosures.TKEDissipationVerticalDiffusivity()
     closure = (horizontal_closure, vertical_closure)
 
@@ -95,6 +95,8 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
                                           momentum_advection = momentum_advection,
                                           tracer_advection = tracer_advection,
                                           boundary_conditions = boundary_conditions)
+
+    set!(model.tracers.e, 1e-6)
 
     model.clock.last_Δt = Δt
 
@@ -148,7 +150,7 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     model.clock.last_Δt = 1200
 
     # Step it forward
-    loop!(model, 26000)
+    loop!(model, 10)
 
     return nothing
 end
@@ -198,7 +200,7 @@ compile_toc = time() - tic
 @show compile_toc
 
 
-@info "Running... for 26000 timesteps..."
+@info "Running..."
 restimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress)
 
 
