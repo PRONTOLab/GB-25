@@ -7,8 +7,6 @@ using GordonBell25
 #Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
 #Reactant.allowscalar(true)
 
-using SeawaterPolynomials
-
 throw_error = false
 include_halos = true
 rtol = sqrt(eps(Float64))
@@ -17,15 +15,10 @@ atol = sqrt(eps(Float64))
 function set_tracers(grid;
                      dTdz::Real = 30.0 / 1800.0)
     fₜ(λ, φ, z) = 30 + dTdz * z # + dTdz * model.grid.Lz * 1e-6 * Ξ(z)
-    fₛ(λ, φ, z) = 0 #35
-
     Tᵢ = Field{Center, Center, Center}(grid)
-    Sᵢ = Field{Center, Center, Center}(grid)
-
     @allowscalar set!(Tᵢ, fₜ)
-    @allowscalar set!(Sᵢ, fₛ)
 
-    return Tᵢ, Sᵢ
+    return Tᵢ
 end
 
 function resolution_to_points(resolution)
@@ -57,12 +50,12 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     free_surface = SplitExplicitFreeSurface(substeps=30)
 
     # TEOS10 is a 54-term polynomial that relates temperature (T) and salinity (S) to buoyancy
-    buoyancy = SeawaterBuoyancy(equation_of_state = SeawaterPolynomials.TEOS10EquationOfState(Oceananigans.defaults.FloatType))
+    buoyancy = SeawaterBuoyancy(equation_of_state = LinearEquationOfState(Oceananigans.defaults.FloatType), constant_salinity=0)
 
     # Closures:
     vertical_closure   = CATKEVerticalDiffusivity(VerticallyImplicitTimeDiscretization())
 
-    tracers = (:T, :S, :e)
+    tracers = (:T, :e)
 
     grid = simple_latitude_longitude_grid(arch, Nx, Ny, Nz)
 
@@ -110,7 +103,7 @@ function wind_stress_init(grid;
     return wind_stress
 end
 
-function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
+function time_step_double_gyre!(model, Tᵢ, wind_stress)
     set!(model.tracers.T, Tᵢ)
     set!(model.velocities.u.boundary_conditions.top.condition, wind_stress)
 
@@ -127,8 +120,8 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     return nothing
 end
 
-function estimate_tracer_error(model, initial_temperature, initial_salinity, wind_stress)
-    time_step_double_gyre!(model, initial_temperature, initial_salinity, wind_stress)
+function estimate_tracer_error(model, initial_temperature, wind_stress)
+    time_step_double_gyre!(model, initial_temperature, wind_stress)
 end
 
 Oceananigans.defaults.FloatType = Float64
@@ -137,21 +130,21 @@ Oceananigans.defaults.FloatType = Float64
 rarch = ReactantState()
 rmodel = double_gyre_model(rarch, 62, 62, 15, 1200)
 
-rTᵢ, rSᵢ      = set_tracers(rmodel.grid)
+rTᵢ          = set_tracers(rmodel.grid)
 rwind_stress = wind_stress_init(rmodel.grid)
 
 @info "Compiling..."
 
 
 tic = time()
-restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress)
+restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(rmodel, rTᵢ, rwind_stress)
 compile_toc = time() - tic
 
 @show compile_toc
 
 
 @info "Running..."
-restimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress)
+restimate_tracer_error(rmodel, rTᵢ, rwind_stress)
 
 
 @info "Running non-reactant for comparison..."
@@ -160,12 +153,12 @@ vmodel = double_gyre_model(varch, 62, 62, 15, 1200)
 
 @info "Initialized non-reactant model"
 
-vTᵢ, vSᵢ      = set_tracers(vmodel.grid)
+vTᵢ          = set_tracers(vmodel.grid)
 vwind_stress = wind_stress_init(vmodel.grid)
 
 @info "Initialized non-reactant tracers and wind stress"
 
-estimate_tracer_error(vmodel, vTᵢ, vSᵢ, vwind_stress)
+estimate_tracer_error(vmodel, vTᵢ, vwind_stress)
 
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
