@@ -10,10 +10,6 @@ include_halos = false
 rtol = sqrt(eps(Float64))
 atol = sqrt(eps(Float64))
 
-using Oceananigans: initialize!
-using Oceananigans.TimeSteppers: update_state!
-using Oceananigans.Models.HydrostaticFreeSurfaceModels: initialize_free_surface!
-
 function set_tracers(grid;
                      dTdz::Real = 30.0 / 1800.0)
     fₜ(λ, φ, z) = 30 + dTdz * z # + dTdz * model.grid.Lz * 1e-6 * Ξ(z)
@@ -63,6 +59,91 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     return model
 end
 
+using Oceananigans: AbstractModel
+using Oceananigans.TimeSteppers: update_state!, QuasiAdamsBashforth2TimeStepper, ReactantModel, ab2_step!, tick!, calculate_pressure_correction!, correct_velocities_and_cache_previous_tendencies!, step_lagrangian_particles!
+using Oceananigans.Utils: @apply_regionally
+
+
+function bad_time_step!(model, Δt;
+                    callbacks=[], euler=false)
+
+    if model.architecture == CPU()
+        Δt == 0 && @warn "Δt == 0 may cause model blowup!"
+
+        # Be paranoid and update state at iteration 0
+        #model.clock.iteration == 0 && update_state!(model, callbacks; compute_tendencies=true)
+
+        # Take an euler step if:
+        #   * We detect that the time-step size has changed.
+        #   * We detect that this is the "first" time-step, which means we
+        #     need to take an euler step. Note that model.clock.last_Δt is
+        #     initialized as Inf
+        #   * The user has passed euler=true to time_step!
+        euler = euler || (Δt != model.clock.last_Δt)
+        euler && @debug "Taking a forward Euler step."
+
+        # If euler, then set χ = -0.5
+        minus_point_five = convert(eltype(model.grid), -0.5)
+        ab2_timestepper = model.timestepper
+        χ = ifelse(euler, minus_point_five, ab2_timestepper.χ)
+        χ₀ = ab2_timestepper.χ # Save initial value
+        ab2_timestepper.χ = χ
+
+        # Full step for tracers, fractional step for velocities.
+        ab2_step!(model, Δt)
+
+        tick!(model.clock, Δt)
+        model.clock.last_Δt = Δt
+        model.clock.last_stage_Δt = Δt # just one stage
+
+        calculate_pressure_correction!(model, Δt)
+        @apply_regionally correct_velocities_and_cache_previous_tendencies!(model, Δt)
+    elseif model.architecture == ReactantState()
+        # Note: Δt cannot change
+        if model.clock.last_Δt isa Reactant.TracedRNumber
+            model.clock.last_Δt.mlir_data = Δt.mlir_data
+        else
+            model.clock.last_Δt = Δt
+        end
+
+        # If euler, then set χ = -0.5
+        minus_point_five = convert(Float64, -0.5)
+        ab2_timestepper = model.timestepper
+        χ = ifelse(euler, minus_point_five, ab2_timestepper.χ)
+        χ₀ = ab2_timestepper.χ # Save initial value
+        ab2_timestepper.χ = χ
+
+        # Full step for tracers, fractional step for velocities.
+        ab2_step!(model, Δt)
+
+        tick!(model.clock, Δt)
+
+        if model.clock.last_Δt isa Reactant.TracedRNumber
+            model.clock.last_Δt.mlir_data = Δt.mlir_data
+        else
+            model.clock.last_Δt = Δt
+        end
+
+        # just one stage
+        if model.clock.last_stage_Δt isa Reactant.TracedRNumber
+            model.clock.last_stage_Δt.mlir_data = Δt.mlir_data
+        else
+            model.clock.last_stage_Δt = Δt
+        end
+
+        calculate_pressure_correction!(model, Δt)
+        correct_velocities_and_cache_previous_tendencies!(model, Δt)
+    end
+
+    update_state!(model, callbacks; compute_tendencies=true)
+    step_lagrangian_particles!(model, Δt)
+
+    # Return χ to initial value
+    ab2_timestepper.χ = χ₀
+
+    return nothing
+end
+
 function time_step_double_gyre!(model, Tᵢ)
     set!(model.tracers.T, Tᵢ)
     set!(model.velocities.u, 1)
@@ -75,8 +156,7 @@ function time_step_double_gyre!(model, Tᵢ)
     # Step it forward
     Δt = model.clock.last_Δt
     update_state!(model)
-    time_step!(model, Δt)
-
+    bad_time_step!(model, Δt)
 
     return nothing
 end
