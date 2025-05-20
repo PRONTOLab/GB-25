@@ -189,21 +189,6 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     @apply_regionally begin
         # Solve for the free surface at tⁿ⁺¹
         iterate_split_explicit!(free_surface, free_surface_grid, GUⁿ, GVⁿ, Δτᴮ, weights, Val(Nsubsteps))
-
-        # Update eta and velocities for the next timestep
-        # The halos are updated in the `update_state!` function
-        launch!(architecture(free_surface_grid), free_surface_grid, :xy,
-                _update_split_explicit_state!, η, U, V, free_surface_grid, η̅, U̅, V̅)
-
-        # Preparing velocities for the barotropic correction
-        mask_immersed_field!(model.velocities.u)
-        mask_immersed_field!(model.velocities.v)
-    end
-
-    # Needed for Mutable to compute the barotropic correction.
-    # TODO: Would it be possible to remove it in some way?
-    if model.grid isa MutableGridOfSomeKind
-        fill_halo_regions!(η)
     end
 
     return nothing
