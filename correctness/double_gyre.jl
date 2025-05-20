@@ -128,32 +128,6 @@ using Oceananigans.Fields: tupled_fill_halo_regions!
 using Oceananigans.Models.NonhydrostaticModels: compute_auxiliaries!
 using Oceananigans.Biogeochemistry: update_biogeochemical_state!
 
-function bad_update_state!(model::HydrostaticFreeSurfaceModel, grid, callbacks; compute_tendencies = true)
-
-    @apply_regionally mask_immersed_model_fields!(model, grid)
-
-    # Update possible FieldTimeSeries used in the model
-    @apply_regionally update_model_field_time_series!(model, model.clock)
-
-    # Update the boundary conditions
-    @apply_regionally update_boundary_condition!(fields(model), model)
-
-    tupled_fill_halo_regions!(prognostic_fields(model), grid, model.clock, fields(model), async=true)
-
-    @apply_regionally replace_horizontal_vector_halos!(model.velocities, model.grid)
-    @apply_regionally compute_auxiliaries!(model)
-
-    fill_halo_regions!(model.diffusivity_fields; only_local_halos = true)
-
-    [callback(model) for callback in callbacks if callback.callsite isa UpdateStateCallsite]
-
-    update_biogeochemical_state!(model.biogeochemistry, model)
-
-    @apply_regionally compute_tendencies!(model, callbacks)
-
-    return nothing
-end
-
 
 function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
 
@@ -167,30 +141,8 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
 
     # Step it forward
     Δt = model.clock.last_Δt
-    grid = model.grid
-    callbacks = []
 
-
-    @apply_regionally mask_immersed_model_fields!(model, grid)
-
-    # Update possible FieldTimeSeries used in the model
-    @apply_regionally update_model_field_time_series!(model, model.clock)
-
-    # Update the boundary conditions
-    @apply_regionally update_boundary_condition!(fields(model), model)
-
-    tupled_fill_halo_regions!(prognostic_fields(model), grid, model.clock, fields(model), async=true)
-
-    @apply_regionally replace_horizontal_vector_halos!(model.velocities, model.grid)
-    @apply_regionally compute_auxiliaries!(model)
-
-    fill_halo_regions!(model.diffusivity_fields; only_local_halos = true)
-
-    [callback(model) for callback in callbacks if callback.callsite isa UpdateStateCallsite]
-
-    update_biogeochemical_state!(model.biogeochemistry, model)
-
-    @apply_regionally compute_tendencies!(model, callbacks)
+    compute_tendencies!(model, [])
 
     ab2_step!(model, Δt)
 
