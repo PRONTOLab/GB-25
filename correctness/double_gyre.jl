@@ -206,7 +206,7 @@ function bad_iterate_split_explicit!(free_surface, grid, GUⁿ, GVⁿ, Δτᴮ, 
     η̅, U̅, V̅ = state.η, state.U, state.V
 
     free_surface_kernel!, _        = configure_kernel(arch, grid, parameters, _split_explicit_free_surface!)
-    barotropic_velocity_kernel!, _ = configure_kernel(arch, grid, parameters, _split_explicit_barotropic_velocity!)
+    barotropic_velocity_kernel!, _ = configure_kernel(arch, grid, parameters, _bad_split_explicit_barotropic_velocity!)
 
     η_args = (grid, Δτᴮ, η, U, V,
               timestepper)
@@ -239,26 +239,7 @@ end
     i, j = @index(Global, NTuple)
     k_top = grid.Nz+1
 
-    cache_previous_velocities!(timestepper, i, j, 1, U)
-    cache_previous_velocities!(timestepper, i, j, 1, V)
-
-    Hᶠᶜ = column_depthᶠᶜᵃ(i, j, k_top, grid, η)
-    Hᶜᶠ = column_depthᶜᶠᵃ(i, j, k_top, grid, η)
-
-    @inbounds begin
-        # ∂τ(U) = - ∇η + G
-        Uᵐ⁺¹ = U[i, j, 1] + Δτ * (- g * Hᶠᶜ * ∂xTᶠᶜᶠ(i, j, k_top, grid, η★, timestepper, η) + Gᵁ[i, j, 1])
-        Vᵐ⁺¹ = V[i, j, 1] + Δτ * (- g * Hᶜᶠ * ∂yTᶜᶠᶠ(i, j, k_top, grid, η★, timestepper, η) + Gⱽ[i, j, 1])
-
-        # time-averaging
-        η̅[i, j, k_top] += averaging_weight * η[i, j, k_top]
-        U̅[i, j, 1]     += averaging_weight * Uᵐ⁺¹
-        V̅[i, j, 1]     += averaging_weight * Vᵐ⁺¹
-
-        # Updating the velocities
-        U[i, j, 1] = Uᵐ⁺¹
-        V[i, j, 1] = Vᵐ⁺¹
-    end
+    @inbounds V[i, j, 1] = V[i, j, 1]
 end
 
 function estimate_tracer_error(model, initial_temperature, initial_salinity, wind_stress)
