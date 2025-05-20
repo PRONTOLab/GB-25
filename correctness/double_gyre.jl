@@ -137,7 +137,10 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces
                                                                                   _split_explicit_free_surface!,
                                                                                   _split_explicit_barotropic_velocity!,
                                                                                   cache_previous_velocities!,
-                                                                                  η★
+                                                                                  η★,
+                                                                                  compute_split_explicit_forcing!,
+                                                                                  initialize_free_surface_state!
+
 
 using Oceananigans.Grids: column_depthᶠᶜᵃ, column_depthᶜᶠᵃ
 using Oceananigans.Utils: launch!, configure_kernel
@@ -163,23 +166,15 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     compute_tendencies!(model, [])
 
     grid = model.grid
-    compute_free_surface_tendency!(grid, model, model.free_surface)
+    bad_compute_free_surface_tendency!(grid, model, model.free_surface)
 
     free_surface      = model.free_surface
     free_surface_grid = free_surface.η.grid
-    substepping       = free_surface.substepping
     
     # All hardcoded for mwe
     weights       = (-0.0027616325569592756, -0.003862908196820046, -0.0033054695005112497, -0.0010957042827565292, 0.0027497791381626267, 0.008196486562738532, 0.015182182424663676, 0.023604844197351794, 0.033308426692553815, 0.044066436251068465, 0.05556331482554762, 0.06737363395539638, 0.07893909863376815, 0.08954336106665389, 0.09828464432406694, 0.1040461758833218, 0.10546443106440806, 0.10089518635745921, 0.08837738264231575, 0.06559479830018361, 0.029835532217386728)
     Nsubsteps     = 21
     Δτᴮ           = 80.0
-
-    #Nsubsteps = calculate_substeps(substepping, Δt)
-    #fractional_Δt, weights = calculate_adaptive_settings(substepping, Nsubsteps)
-    #Nsubsteps = length(weights)
-
-    # barotropic time step in seconds
-    #Δτᴮ = fractional_Δt * Δt
 
     # Slow forcing terms
     GUⁿ = model.timestepper.Gⁿ.U
@@ -187,6 +182,30 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
 
     # reset free surface averages
     bad_iterate_split_explicit!(free_surface, free_surface_grid, GUⁿ, GVⁿ, Δτᴮ, weights, Val(Nsubsteps))
+
+    return nothing
+end
+
+function bad_compute_free_surface_tendency!(grid, model, free_surface::SplitExplicitFreeSurface)
+
+    Guⁿ = model.timestepper.Gⁿ.u
+    Gvⁿ = model.timestepper.Gⁿ.v
+
+    GUⁿ = model.timestepper.Gⁿ.U
+    GVⁿ = model.timestepper.Gⁿ.V
+
+    barotropic_timestepper = free_surface.timestepper
+    baroclinic_timestepper = model.timestepper
+
+    stage = model.clock.stage
+
+    @apply_regionally begin
+        compute_split_explicit_forcing!(GUⁿ, GVⁿ, grid, Guⁿ, Gvⁿ, baroclinic_timestepper, Val(stage))
+        initialize_free_surface_state!(free_surface, baroclinic_timestepper, barotropic_timestepper, Val(stage))
+    end
+
+    fields_to_fill = (GUⁿ, GVⁿ)
+    fill_halo_regions!(fields_to_fill; async = true)
 
     return nothing
 end
@@ -205,27 +224,14 @@ function bad_iterate_split_explicit!(free_surface, grid, GUⁿ, GVⁿ, Δτᴮ, 
     U, V    = free_surface.barotropic_velocities
     η̅, U̅, V̅ = state.η, state.U, state.V
 
-    free_surface_kernel!, _        = configure_kernel(arch, grid, parameters, _split_explicit_free_surface!)
     barotropic_velocity_kernel!, _ = configure_kernel(arch, grid, parameters, _bad_split_explicit_barotropic_velocity!)
-
-    η_args = (grid, Δτᴮ, η, U, V,
-              timestepper)
 
     U_args = (grid, Δτᴮ, η, U, V,
               η̅, U̅, V̅, GUⁿ, GVⁿ, g,
               timestepper)
 
-    GC.@preserve η_args U_args begin
-
-        converted_η_args = convert_to_device(arch, η_args)
-        converted_U_args = convert_to_device(arch, U_args)
-
-        @unroll for substep in 1:Nsubsteps
-            Base.@_inline_meta
-            averaging_weight = weights[substep]
-            free_surface_kernel!(converted_η_args...)
-            barotropic_velocity_kernel!(averaging_weight, converted_U_args...)
-        end
+    GC.@preserve U_args begin
+        barotropic_velocity_kernel!(1.0, U_args...)
     end
 
     return nothing
