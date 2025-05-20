@@ -1,5 +1,5 @@
 using Oceananigans
-using Oceananigans.Architectures: ReactantState, architecture
+using Oceananigans.Architectures: ReactantState, architecture, convert_to_device
 using ClimaOcean
 using Reactant
 using GordonBell25
@@ -130,10 +130,11 @@ using Oceananigans.Biogeochemistry: update_biogeochemical_state!
 
 using Oceananigans.ImmersedBoundaries: MutableGridOfSomeKind, mask_immersed_field!
 
-using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: calculate_substeps, calculate_adaptive_settings, iterate_split_explicit!, _update_split_explicit_state!
+using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: calculate_substeps, calculate_adaptive_settings, iterate_split_explicit!, _update_split_explicit_state!, _split_explicit_free_surface!, _split_explicit_barotropic_velocity!
 
-using Oceananigans.Utils: launch!
+using Oceananigans.Utils: launch!, configure_kernel
 
+using KernelAbstractions.Extras.LoopInfo: @unroll
 
 function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
 
@@ -153,41 +154,63 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     grid = model.grid
     compute_free_surface_tendency!(grid, model, model.free_surface)
 
-    free_surface = model.free_surface
-
-    # Note: free_surface.η.grid != model.grid for DistributedSplitExplicitFreeSurface
-    # since halo_size(free_surface.η.grid) != halo_size(model.grid)
+    free_surface      = model.free_surface
     free_surface_grid = free_surface.η.grid
-    filtered_state    = free_surface.filtered_state
-    substepping       = free_surface.substepping
-
-    barotropic_velocities = free_surface.barotropic_velocities
-
-    # Calculate the substepping parameterers
-    # barotropic time step as fraction of baroclinic step and averaging weights
-    Nsubsteps = calculate_substeps(substepping, Δt)
-    fractional_Δt, weights = calculate_adaptive_settings(substepping, Nsubsteps)
-    Nsubsteps = length(weights)
-
-    # barotropic time step in seconds
-    Δτᴮ = fractional_Δt * Δt
+    
+    # All hardcoded for mwe
+    weights       = (-0.0027616325569592756, -0.003862908196820046, -0.0033054695005112497, -0.0010957042827565292, 0.0027497791381626267, 0.008196486562738532, 0.015182182424663676, 0.023604844197351794, 0.033308426692553815, 0.044066436251068465, 0.05556331482554762, 0.06737363395539638, 0.07893909863376815, 0.08954336106665389, 0.09828464432406694, 0.1040461758833218, 0.10546443106440806, 0.10089518635745921, 0.08837738264231575, 0.06559479830018361, 0.029835532217386728)
+    Nsubsteps     = 21
+    Δτᴮ           = 80.0
 
     # Slow forcing terms
     GUⁿ = model.timestepper.Gⁿ.U
     GVⁿ = model.timestepper.Gⁿ.V
 
-    #free surface state
-    η = free_surface.η
-    U = barotropic_velocities.U
-    V = barotropic_velocities.V
-    η̅ = filtered_state.η
-    U̅ = filtered_state.U
-    V̅ = filtered_state.V
-
     # reset free surface averages
-    @apply_regionally begin
-        # Solve for the free surface at tⁿ⁺¹
-        iterate_split_explicit!(free_surface, free_surface_grid, GUⁿ, GVⁿ, Δτᴮ, weights, Val(Nsubsteps))
+    bad_iterate_split_explicit!(free_surface, free_surface_grid, GUⁿ, GVⁿ, Δτᴮ, weights, Val(Nsubsteps))
+
+    return nothing
+end
+
+function bad_iterate_split_explicit!(free_surface, grid, GUⁿ, GVⁿ, Δτᴮ, weights, ::Val{Nsubsteps}) where Nsubsteps
+    arch = architecture(grid)
+
+    η           = free_surface.η
+    grid        = free_surface.η.grid
+    state       = free_surface.filtered_state
+    timestepper = free_surface.timestepper
+    g           = free_surface.gravitational_acceleration
+    parameters  = free_surface.kernel_parameters
+
+    # unpack state quantities, parameters and forcing terms
+    U, V    = free_surface.barotropic_velocities
+    η̅, U̅, V̅ = state.η, state.U, state.V
+
+    free_surface_kernel!, _        = configure_kernel(arch, grid, parameters, _split_explicit_free_surface!)
+    barotropic_velocity_kernel!, _ = configure_kernel(arch, grid, parameters, _split_explicit_barotropic_velocity!)
+
+    η_args = (grid, Δτᴮ, η, U, V,
+              timestepper)
+
+    U_args = (grid, Δτᴮ, η, U, V,
+              η̅, U̅, V̅, GUⁿ, GVⁿ, g,
+              timestepper)
+
+    GC.@preserve η_args U_args begin
+
+        # We need to perform ~50 time-steps which means
+        # launching ~100 very small kernels: we are limited by
+        # latency of argument conversion to GPU-compatible values.
+        # To alleviate this penalty we convert first and then we substep!
+        converted_η_args = convert_to_device(arch, η_args)
+        converted_U_args = convert_to_device(arch, U_args)
+
+        @unroll for substep in 1:Nsubsteps
+            Base.@_inline_meta
+            averaging_weight = weights[substep]
+            free_surface_kernel!(converted_η_args...)
+            barotropic_velocity_kernel!(averaging_weight, converted_U_args...)
+        end
     end
 
     return nothing
