@@ -217,14 +217,11 @@ function bad_iterate_split_explicit!(free_surface, grid, GUⁿ, GVⁿ, Δτᴮ, 
 
     GC.@preserve η_args U_args begin
 
-        converted_η_args = convert_to_device(arch, η_args)
-        converted_U_args = convert_to_device(arch, U_args)
-
         @unroll for substep in 1:Nsubsteps
             Base.@_inline_meta
             averaging_weight = weights[substep]
-            free_surface_kernel!(converted_η_args...)
-            barotropic_velocity_kernel!(averaging_weight, converted_U_args...)
+            free_surface_kernel!(η_args...)
+            barotropic_velocity_kernel!(averaging_weight, U_args...)
         end
     end
 
@@ -239,7 +236,15 @@ end
     i, j = @index(Global, NTuple)
     k_top = grid.Nz+1
 
-    @inbounds V[i, j, 1] = V[i, j, 1]
+    @inbounds begin
+        # ∂τ(U) = - ∇η + G
+        Uᵐ⁺¹ = U[i, j, 1] + 10000 * (Oceananigans.Operators.∂xTᶠᶜᶠ(i, j, k_top, grid, η★, timestepper, η) + Gᵁ[i, j, 1])
+        Vᵐ⁺¹ = V[i, j, 1] + 10000 * (Oceananigans.Operators.∂yTᶜᶠᶠ(i, j, k_top, grid, η★, timestepper, η) + Gⱽ[i, j, 1])
+
+        # Updating the velocities
+        U[i, j, 1] = Uᵐ⁺¹
+        V[i, j, 1] = Vᵐ⁺¹
+    end
 end
 
 function estimate_tracer_error(model, initial_temperature, initial_salinity, wind_stress)
