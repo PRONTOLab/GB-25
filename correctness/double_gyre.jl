@@ -122,7 +122,7 @@ using Oceananigans.TimeSteppers: update_state!, ab2_step!, tick!, calculate_pres
 using Oceananigans.Utils: @apply_regionally
 
 using Oceananigans.Models: update_model_field_time_series!
-using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fields!, compute_tendencies!
+using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fields!, compute_tendencies!, local_ab2_step!, compute_free_surface_tendency!, step_free_surface!
 using Oceananigans.BoundaryConditions: update_boundary_condition!, replace_horizontal_vector_halos!, fill_halo_regions!
 using Oceananigans.Fields: tupled_fill_halo_regions!
 using Oceananigans.Models.NonhydrostaticModels: compute_auxiliaries!
@@ -144,7 +144,10 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
 
     compute_tendencies!(model, [])
 
-    ab2_step!(model, Δt)
+    grid = model.grid
+    compute_free_surface_tendency!(grid, model, model.free_surface)
+
+    step_free_surface!(model.free_surface, model, model.timestepper, Δt)
 
     return nothing
 end
