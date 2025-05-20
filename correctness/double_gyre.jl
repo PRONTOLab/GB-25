@@ -153,7 +153,6 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     grid = model.grid
     compute_free_surface_tendency!(grid, model, model.free_surface)
 
-    step_free_surface!(model.free_surface, model, model.timestepper, Δt)
     free_surface = model.free_surface
 
     # Note: free_surface.η.grid != model.grid for DistributedSplitExplicitFreeSurface
