@@ -139,7 +139,8 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces
                                                                                   cache_previous_velocities!,
                                                                                   η★,
                                                                                   compute_split_explicit_forcing!,
-                                                                                  initialize_free_surface_state!
+                                                                                  initialize_free_surface_state!,
+                                                                                  _compute_integrated_ab2_tendencies!
 
 
 using Oceananigans.Grids: column_depthᶠᶜᵃ, column_depthᶜᶠᵃ
@@ -166,9 +167,22 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     compute_tendencies!(model, [])
 
     grid = model.grid
-    bad_compute_free_surface_tendency!(grid, model, model.free_surface)
-
     free_surface      = model.free_surface
+    free_surface_grid = free_surface.η.grid
+
+
+    Guⁿ = model.timestepper.Gⁿ.u
+    Gvⁿ = model.timestepper.Gⁿ.v
+
+    GUⁿ = model.timestepper.Gⁿ.U
+    GVⁿ = model.timestepper.Gⁿ.V
+
+    baroclinic_timestepper = model.timestepper
+
+    stage = model.clock.stage
+
+    bad_compute_split_explicit_forcing!(GUⁿ, GVⁿ, grid, Guⁿ, Gvⁿ, baroclinic_timestepper, Val(stage))
+
     free_surface_grid = free_surface.η.grid
     
     # All hardcoded for mwe
@@ -186,26 +200,13 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     return nothing
 end
 
-function bad_compute_free_surface_tendency!(grid, model, free_surface::SplitExplicitFreeSurface)
+@inline function bad_compute_split_explicit_forcing!(GUⁿ, GVⁿ, grid, Guⁿ, Gvⁿ, timestepper, stage)
 
-    Guⁿ = model.timestepper.Gⁿ.u
-    Gvⁿ = model.timestepper.Gⁿ.v
+    Gu⁻ = timestepper.G⁻.u
+    Gv⁻ = timestepper.G⁻.v
 
-    GUⁿ = model.timestepper.Gⁿ.U
-    GVⁿ = model.timestepper.Gⁿ.V
-
-    barotropic_timestepper = free_surface.timestepper
-    baroclinic_timestepper = model.timestepper
-
-    stage = model.clock.stage
-
-    @apply_regionally begin
-        compute_split_explicit_forcing!(GUⁿ, GVⁿ, grid, Guⁿ, Gvⁿ, baroclinic_timestepper, Val(stage))
-        initialize_free_surface_state!(free_surface, baroclinic_timestepper, barotropic_timestepper, Val(stage))
-    end
-
-    fields_to_fill = (GUⁿ, GVⁿ)
-    fill_halo_regions!(fields_to_fill; async = true)
+    launch!(architecture(grid), grid, :xy, _compute_integrated_ab2_tendencies!, GUⁿ, GVⁿ, grid,
+            Gu⁻, Gv⁻, Guⁿ, Gvⁿ, timestepper.χ; active_cells_map=nothing)
 
     return nothing
 end
