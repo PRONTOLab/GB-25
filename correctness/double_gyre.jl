@@ -140,8 +140,8 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces
                                                                                   η★,
                                                                                   compute_split_explicit_forcing!,
                                                                                   initialize_free_surface_state!,
-                                                                                  _compute_integrated_ab2_tendencies!
-
+                                                                                  _compute_integrated_ab2_tendencies!,
+                                                                                  ab2_step_G
 
 using Oceananigans.Grids: column_depthᶠᶜᵃ, column_depthᶜᶠᵃ
 using Oceananigans.Utils: launch!, configure_kernel
@@ -179,9 +179,11 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
 
     baroclinic_timestepper = model.timestepper
 
-    stage = model.clock.stage
+    Gu⁻ = baroclinic_timestepper.G⁻.u
+    Gv⁻ = baroclinic_timestepper.G⁻.v
 
-    bad_compute_split_explicit_forcing!(GUⁿ, GVⁿ, grid, Guⁿ, Gvⁿ, baroclinic_timestepper, Val(stage))
+    launch!(architecture(grid), grid, :xy, _bad_compute_integrated_ab2_tendencies!, GUⁿ, GVⁿ, grid,
+            Gu⁻, Gv⁻, Guⁿ, Gvⁿ, baroclinic_timestepper.χ; active_cells_map=nothing)
 
     free_surface_grid = free_surface.η.grid
     
@@ -200,15 +202,12 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     return nothing
 end
 
-@inline function bad_compute_split_explicit_forcing!(GUⁿ, GVⁿ, grid, Guⁿ, Gvⁿ, timestepper, stage)
+@kernel function _bad_compute_integrated_ab2_tendencies!(Gᵁ, Gⱽ, grid, Gu⁻, Gv⁻, Guⁿ, Gvⁿ, χ)
+    i, j  = @index(Global, NTuple)
 
-    Gu⁻ = timestepper.G⁻.u
-    Gv⁻ = timestepper.G⁻.v
+    locU = (Face(), Center(), Center())
 
-    launch!(architecture(grid), grid, :xy, _compute_integrated_ab2_tendencies!, GUⁿ, GVⁿ, grid,
-            Gu⁻, Gv⁻, Guⁿ, Gvⁿ, timestepper.χ; active_cells_map=nothing)
-
-    return nothing
+    @inbounds Gᵁ[i, j, 1] = 1.0
 end
 
 function bad_iterate_split_explicit!(free_surface, grid, GUⁿ, GVⁿ, Δτᴮ, weights, ::Val{Nsubsteps}) where Nsubsteps
