@@ -1,5 +1,5 @@
 using Oceananigans
-using Oceananigans.Architectures: ReactantState
+using Oceananigans.Architectures: ReactantState, architecture
 using ClimaOcean
 using Reactant
 using GordonBell25
@@ -128,6 +128,12 @@ using Oceananigans.Fields: tupled_fill_halo_regions!
 using Oceananigans.Models.NonhydrostaticModels: compute_auxiliaries!
 using Oceananigans.Biogeochemistry: update_biogeochemical_state!
 
+using Oceananigans.ImmersedBoundaries: MutableGridOfSomeKind, mask_immersed_field!
+
+using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: calculate_substeps, calculate_adaptive_settings, iterate_split_explicit!, _update_split_explicit_state!
+
+using Oceananigans.Utils: launch!
+
 
 function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
 
@@ -148,6 +154,57 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     compute_free_surface_tendency!(grid, model, model.free_surface)
 
     step_free_surface!(model.free_surface, model, model.timestepper, Δt)
+    free_surface = model.free_surface
+
+    # Note: free_surface.η.grid != model.grid for DistributedSplitExplicitFreeSurface
+    # since halo_size(free_surface.η.grid) != halo_size(model.grid)
+    free_surface_grid = free_surface.η.grid
+    filtered_state    = free_surface.filtered_state
+    substepping       = free_surface.substepping
+
+    barotropic_velocities = free_surface.barotropic_velocities
+
+    # Calculate the substepping parameterers
+    # barotropic time step as fraction of baroclinic step and averaging weights
+    Nsubsteps = calculate_substeps(substepping, Δt)
+    fractional_Δt, weights = calculate_adaptive_settings(substepping, Nsubsteps)
+    Nsubsteps = length(weights)
+
+    # barotropic time step in seconds
+    Δτᴮ = fractional_Δt * Δt
+
+    # Slow forcing terms
+    GUⁿ = model.timestepper.Gⁿ.U
+    GVⁿ = model.timestepper.Gⁿ.V
+
+    #free surface state
+    η = free_surface.η
+    U = barotropic_velocities.U
+    V = barotropic_velocities.V
+    η̅ = filtered_state.η
+    U̅ = filtered_state.U
+    V̅ = filtered_state.V
+
+    # reset free surface averages
+    @apply_regionally begin
+        # Solve for the free surface at tⁿ⁺¹
+        iterate_split_explicit!(free_surface, free_surface_grid, GUⁿ, GVⁿ, Δτᴮ, weights, Val(Nsubsteps))
+
+        # Update eta and velocities for the next timestep
+        # The halos are updated in the `update_state!` function
+        launch!(architecture(free_surface_grid), free_surface_grid, :xy,
+                _update_split_explicit_state!, η, U, V, free_surface_grid, η̅, U̅, V̅)
+
+        # Preparing velocities for the barotropic correction
+        mask_immersed_field!(model.velocities.u)
+        mask_immersed_field!(model.velocities.v)
+    end
+
+    # Needed for Mutable to compute the barotropic correction.
+    # TODO: Would it be possible to remove it in some way?
+    if model.grid isa MutableGridOfSomeKind
+        fill_halo_regions!(η)
+    end
 
     return nothing
 end
