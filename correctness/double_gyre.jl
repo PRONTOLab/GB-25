@@ -170,8 +170,6 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     grid = model.grid
     callbacks = []
 
-    bad_update_state!(model, grid, callbacks)
-    ab2_step!(model, Δt)
 
     @apply_regionally mask_immersed_model_fields!(model, grid)
 
@@ -187,6 +185,14 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     @apply_regionally compute_auxiliaries!(model)
 
     fill_halo_regions!(model.diffusivity_fields; only_local_halos = true)
+
+    [callback(model) for callback in callbacks if callback.callsite isa UpdateStateCallsite]
+
+    update_biogeochemical_state!(model.biogeochemistry, model)
+
+    @apply_regionally compute_tendencies!(model, callbacks)
+
+    ab2_step!(model, Δt)
 
     return nothing
 end
