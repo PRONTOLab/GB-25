@@ -117,9 +117,43 @@ function wind_stress_init(grid;
     return wind_stress
 end
 
-using Oceananigans: initialize!
+using Oceananigans: initialize!, prognostic_fields
 using Oceananigans.TimeSteppers: update_state!, ab2_step!, tick!, calculate_pressure_correction!, correct_velocities_and_cache_previous_tendencies!, step_lagrangian_particles!
 using Oceananigans.Utils: @apply_regionally
+
+using Oceananigans.Models: update_model_field_time_series!
+using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fields!, compute_tendencies!
+using Oceananigans.BoundaryConditions: update_boundary_condition!, replace_horizontal_vector_halos!, fill_halo_regions!
+using Oceananigans.Fields: tupled_fill_halo_regions!
+using Oceananigans.Models.NonhydrostaticModels: compute_auxiliaries!
+using Oceananigans.Biogeochemistry: update_biogeochemical_state!
+
+function bad_update_state!(model::HydrostaticFreeSurfaceModel, grid, callbacks; compute_tendencies = true)
+
+    @apply_regionally mask_immersed_model_fields!(model, grid)
+
+    # Update possible FieldTimeSeries used in the model
+    @apply_regionally update_model_field_time_series!(model, model.clock)
+
+    # Update the boundary conditions
+    @apply_regionally update_boundary_condition!(fields(model), model)
+
+    tupled_fill_halo_regions!(prognostic_fields(model), grid, model.clock, fields(model), async=true)
+
+    @apply_regionally replace_horizontal_vector_halos!(model.velocities, model.grid)
+    @apply_regionally compute_auxiliaries!(model)
+
+    fill_halo_regions!(model.diffusivity_fields; only_local_halos = true)
+
+    [callback(model) for callback in callbacks if callback.callsite isa UpdateStateCallsite]
+
+    update_biogeochemical_state!(model.biogeochemistry, model)
+
+    @apply_regionally compute_tendencies!(model, callbacks)
+
+    return nothing
+end
+
 
 function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
 
@@ -132,37 +166,51 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     model.clock.last_Δt = 1200
 
     # Step it forward
-    Δt = model.clock.last_Δt
-    update_state!(model)
-    bad_time_step!(model, Δt, euler=true)
+    Δt = model.clock.last_stage_Δt
+    grid = model.grid
+    callbacks = []
 
-    return nothing
-end
+    @apply_regionally mask_immersed_model_fields!(model, grid)
 
-function bad_time_step!(model, Δt; callbacks=[], euler=false)
+    # Update possible FieldTimeSeries used in the model
+    @apply_regionally update_model_field_time_series!(model, model.clock)
 
-    # If euler, then set χ = -0.5
-    minus_point_five = convert(Float64, -0.5)
-    ab2_timestepper = model.timestepper
-    χ = ifelse(euler, minus_point_five, ab2_timestepper.χ)
-    χ₀ = ab2_timestepper.χ # Save initial value
-    ab2_timestepper.χ = χ
+    # Update the boundary conditions
+    @apply_regionally update_boundary_condition!(fields(model), model)
 
-    # Full step for tracers, fractional step for velocities.
+    tupled_fill_halo_regions!(prognostic_fields(model), grid, model.clock, fields(model), async=true)
+
+    @apply_regionally replace_horizontal_vector_halos!(model.velocities, model.grid)
+    @apply_regionally compute_auxiliaries!(model)
+
+    fill_halo_regions!(model.diffusivity_fields; only_local_halos = true)
+
+    update_biogeochemical_state!(model.biogeochemistry, model)
+
+    @apply_regionally compute_tendencies!(model, callbacks)
+
+
     ab2_step!(model, Δt)
 
-    tick!(model.clock, Δt)
-    model.clock.last_Δt = Δt
-    model.clock.last_stage_Δt = Δt # just one stage
 
-    calculate_pressure_correction!(model, Δt)
-    correct_velocities_and_cache_previous_tendencies!(model, Δt)
+    @apply_regionally mask_immersed_model_fields!(model, grid)
 
-    update_state!(model, callbacks; compute_tendencies=true)
-    step_lagrangian_particles!(model, Δt)
+    # Update possible FieldTimeSeries used in the model
+    @apply_regionally update_model_field_time_series!(model, model.clock)
 
-    # Return χ to initial value
-    ab2_timestepper.χ = χ₀
+    # Update the boundary conditions
+    @apply_regionally update_boundary_condition!(fields(model), model)
+
+    tupled_fill_halo_regions!(prognostic_fields(model), grid, model.clock, fields(model), async=true)
+
+    @apply_regionally replace_horizontal_vector_halos!(model.velocities, model.grid)
+    @apply_regionally compute_auxiliaries!(model)
+
+    fill_halo_regions!(model.diffusivity_fields; only_local_halos = true)
+
+    update_biogeochemical_state!(model.biogeochemistry, model)
+
+    @apply_regionally compute_tendencies!(model, callbacks)
 
     return nothing
 end
