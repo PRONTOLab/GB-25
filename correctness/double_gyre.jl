@@ -130,11 +130,22 @@ using Oceananigans.Biogeochemistry: update_biogeochemical_state!
 
 using Oceananigans.ImmersedBoundaries: MutableGridOfSomeKind, mask_immersed_field!
 
-using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: calculate_substeps, calculate_adaptive_settings, iterate_split_explicit!, _update_split_explicit_state!, _split_explicit_free_surface!, _split_explicit_barotropic_velocity!
+using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: calculate_substeps,
+                                                                                  calculate_adaptive_settings,
+                                                                                  iterate_split_explicit!,
+                                                                                  _update_split_explicit_state!,
+                                                                                  _split_explicit_free_surface!,
+                                                                                  _split_explicit_barotropic_velocity!,
+                                                                                  cache_previous_velocities!,
+                                                                                  η★
 
+using Oceananigans.Grids: column_depthᶠᶜᵃ, column_depthᶜᶠᵃ
 using Oceananigans.Utils: launch!, configure_kernel
-
+using KernelAbstractions: @kernel, @index
 using KernelAbstractions.Extras.LoopInfo: @unroll
+
+using Oceananigans.Operators: ∂xTᶠᶜᶠ, ∂yTᶜᶠᶠ
+
 
 function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
 
@@ -156,11 +167,19 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
 
     free_surface      = model.free_surface
     free_surface_grid = free_surface.η.grid
+    substepping       = free_surface.substepping
     
     # All hardcoded for mwe
     weights       = (-0.0027616325569592756, -0.003862908196820046, -0.0033054695005112497, -0.0010957042827565292, 0.0027497791381626267, 0.008196486562738532, 0.015182182424663676, 0.023604844197351794, 0.033308426692553815, 0.044066436251068465, 0.05556331482554762, 0.06737363395539638, 0.07893909863376815, 0.08954336106665389, 0.09828464432406694, 0.1040461758833218, 0.10546443106440806, 0.10089518635745921, 0.08837738264231575, 0.06559479830018361, 0.029835532217386728)
     Nsubsteps     = 21
     Δτᴮ           = 80.0
+
+    #Nsubsteps = calculate_substeps(substepping, Δt)
+    #fractional_Δt, weights = calculate_adaptive_settings(substepping, Nsubsteps)
+    #Nsubsteps = length(weights)
+
+    # barotropic time step in seconds
+    #Δτᴮ = fractional_Δt * Δt
 
     # Slow forcing terms
     GUⁿ = model.timestepper.Gⁿ.U
@@ -198,10 +217,6 @@ function bad_iterate_split_explicit!(free_surface, grid, GUⁿ, GVⁿ, Δτᴮ, 
 
     GC.@preserve η_args U_args begin
 
-        # We need to perform ~50 time-steps which means
-        # launching ~100 very small kernels: we are limited by
-        # latency of argument conversion to GPU-compatible values.
-        # To alleviate this penalty we convert first and then we substep!
         converted_η_args = convert_to_device(arch, η_args)
         converted_U_args = convert_to_device(arch, U_args)
 
@@ -214,6 +229,36 @@ function bad_iterate_split_explicit!(free_surface, grid, GUⁿ, GVⁿ, Δτᴮ, 
     end
 
     return nothing
+end
+
+@kernel function _bad_split_explicit_barotropic_velocity!(averaging_weight, grid, Δτ,
+                                                      η, U, V,
+                                                      η̅, U̅, V̅,
+                                                      Gᵁ, Gⱽ, g,
+                                                      timestepper)
+    i, j = @index(Global, NTuple)
+    k_top = grid.Nz+1
+
+    cache_previous_velocities!(timestepper, i, j, 1, U)
+    cache_previous_velocities!(timestepper, i, j, 1, V)
+
+    Hᶠᶜ = column_depthᶠᶜᵃ(i, j, k_top, grid, η)
+    Hᶜᶠ = column_depthᶜᶠᵃ(i, j, k_top, grid, η)
+
+    @inbounds begin
+        # ∂τ(U) = - ∇η + G
+        Uᵐ⁺¹ = U[i, j, 1] + Δτ * (- g * Hᶠᶜ * ∂xTᶠᶜᶠ(i, j, k_top, grid, η★, timestepper, η) + Gᵁ[i, j, 1])
+        Vᵐ⁺¹ = V[i, j, 1] + Δτ * (- g * Hᶜᶠ * ∂yTᶜᶠᶠ(i, j, k_top, grid, η★, timestepper, η) + Gⱽ[i, j, 1])
+
+        # time-averaging
+        η̅[i, j, k_top] += averaging_weight * η[i, j, k_top]
+        U̅[i, j, 1]     += averaging_weight * Uᵐ⁺¹
+        V̅[i, j, 1]     += averaging_weight * Vᵐ⁺¹
+
+        # Updating the velocities
+        U[i, j, 1] = Uᵐ⁺¹
+        V[i, j, 1] = Vᵐ⁺¹
+    end
 end
 
 function estimate_tracer_error(model, initial_temperature, initial_salinity, wind_stress)
