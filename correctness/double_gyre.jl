@@ -287,7 +287,6 @@ end
 
     # Compute TKE diffusivity.
     κe★ = κeᶜᶜᶠ(i, j, k, grid, closure_ij, next_velocities, tracers, buoyancy, Jᵇ)
-    κe★ = mask_diffusivity(i, j, k, grid, κe★)
     @inbounds κe[i, j, k] = κe★
 
     # Compute fast TKE RHS
@@ -298,10 +297,9 @@ end
     κu = diffusivities.κu
 
     P = shear_production(i, j, k, grid, κu, uⁿ, u⁺, vⁿ, v⁺)
-    fast_Gⁿe = P
 
     @inbounds begin
-        total_Gⁿe = slow_Gⁿe[i, j, k] + fast_Gⁿe
+        total_Gⁿe = slow_Gⁿe[i, j, k] + P
         e[i, j, k] += 10 * (100 * total_Gⁿe - 100 * G⁻e[i, j, k])
         G⁻e[i, j, k] = total_Gⁿe
     end
