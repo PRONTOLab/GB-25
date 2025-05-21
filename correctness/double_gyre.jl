@@ -175,39 +175,8 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
 
     χ = model.timestepper.χ
 
-    bad_time_step_catke_equation!(model)
-
-    launch!(arch, grid, :xyz,
-            compute_CATKE_diffusivities!,
-            diffusivities, grid, closure, velocities, tracers, buoyancy)
-
-    compute_tendencies!(model, callbacks)
-
-    Gⁿ = model.timestepper.Gⁿ.u
-    G⁻ = model.timestepper.G⁻.u
-
-    launch!(model.architecture, model.grid, :xyz,
-            ab2_step_field!, model.velocities.u, Δt, χ, Gⁿ, G⁻)
-
-    bad_time_step_catke_equation!(model)
-
-    launch!(arch, grid, :xyz,
-            compute_CATKE_diffusivities!,
-            diffusivities, grid, closure, velocities, tracers, buoyancy)
-
-    return nothing
-end
-
-function bad_time_step_catke_equation!(model)
-
-    # TODO: properly handle closure tuples
-    if model.closure isa Tuple
-        closure = first(model.closure)
-        diffusivity_fields = first(model.diffusivity_fields)
-    else
-        closure = model.closure
-        diffusivity_fields = model.diffusivity_fields
-    end
+    closure = model.closure
+    diffusivity_fields = model.diffusivity_fields
 
     e = model.tracers.e
     arch = model.architecture
@@ -221,25 +190,91 @@ function bad_time_step_catke_equation!(model)
     tracer_index = findfirst(k -> k == :e, keys(model.tracers))
     implicit_solver = model.timestepper.implicit_solver
 
-    Δt = model.clock.last_Δt
-    Δτ = get_time_step(closure)
+    Δτ = model.clock.last_Δt
+    χ  = model.timestepper.χ
 
-    if isnothing(Δτ)
-        Δτ = Δt
-        M = 1
-    else
-        M = ceil(Int, Δt / Δτ) # number of substeps
-        Δτ = Δt / M
-    end
+    # Compute the linear implicit component of the RHS (diffusivities, L)
+    # and step forward
+    launch!(arch, grid, :xyz,
+            substep_turbulent_kinetic_energy!,
+            κe, Le, grid, closure,
+            model.velocities, previous_velocities, # try this soon: model.velocities, model.velocities,
+            model.tracers, model.buoyancy, diffusivity_fields,
+            Δτ, χ, Gⁿe, G⁻e)
 
-    FT = eltype(grid)
+    implicit_step!(e, implicit_solver, closure,
+                   diffusivity_fields, Val(tracer_index),
+                   model.clock, Δτ)
 
-    m = 1
-    if m == 1 && M != 1
-        χ = convert(FT, -0.5) # Euler step for the first substep
-    else
-        χ = model.timestepper.χ
-    end
+    launch!(arch, grid, :xyz,
+            compute_CATKE_diffusivities!,
+            diffusivities, grid, closure, velocities, tracers, buoyancy)
+
+    compute_tendencies!(model, callbacks)
+
+    Gⁿ = model.timestepper.Gⁿ.u
+    G⁻ = model.timestepper.G⁻.u
+
+    launch!(model.architecture, model.grid, :xyz,
+            ab2_step_field!, model.velocities.u, Δt, χ, Gⁿ, G⁻)
+
+    closure = model.closure
+    diffusivity_fields = model.diffusivity_fields
+
+    e = model.tracers.e
+    arch = model.architecture
+    grid = model.grid
+    Gⁿe = model.timestepper.Gⁿ.e
+    G⁻e = model.timestepper.G⁻.e
+
+    κe = diffusivity_fields.κe
+    Le = diffusivity_fields.Le
+    previous_velocities = diffusivity_fields.previous_velocities
+    tracer_index = findfirst(k -> k == :e, keys(model.tracers))
+    implicit_solver = model.timestepper.implicit_solver
+
+    Δτ = model.clock.last_Δt
+    χ  = model.timestepper.χ
+
+    # Compute the linear implicit component of the RHS (diffusivities, L)
+    # and step forward
+    launch!(arch, grid, :xyz,
+            substep_turbulent_kinetic_energy!,
+            κe, Le, grid, closure,
+            model.velocities, previous_velocities, # try this soon: model.velocities, model.velocities,
+            model.tracers, model.buoyancy, diffusivity_fields,
+            Δτ, χ, Gⁿe, G⁻e)
+
+    implicit_step!(e, implicit_solver, closure,
+                   diffusivity_fields, Val(tracer_index),
+                   model.clock, Δτ)
+
+    launch!(arch, grid, :xyz,
+            compute_CATKE_diffusivities!,
+            diffusivities, grid, closure, velocities, tracers, buoyancy)
+
+    return nothing
+end
+
+function bad_time_step_catke_equation!(model)
+
+    closure = model.closure
+    diffusivity_fields = model.diffusivity_fields
+
+    e = model.tracers.e
+    arch = model.architecture
+    grid = model.grid
+    Gⁿe = model.timestepper.Gⁿ.e
+    G⁻e = model.timestepper.G⁻.e
+
+    κe = diffusivity_fields.κe
+    Le = diffusivity_fields.Le
+    previous_velocities = diffusivity_fields.previous_velocities
+    tracer_index = findfirst(k -> k == :e, keys(model.tracers))
+    implicit_solver = model.timestepper.implicit_solver
+
+    Δτ = model.clock.last_Δt
+    χ  = model.timestepper.χ
 
     # Compute the linear implicit component of the RHS (diffusivities, L)
     # and step forward
