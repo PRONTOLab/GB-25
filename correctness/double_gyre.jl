@@ -289,15 +289,9 @@ end
     κe★ = κeᶜᶜᶠ(i, j, k, grid, closure_ij, next_velocities, tracers, buoyancy, Jᵇ)
     κe★ = mask_diffusivity(i, j, k, grid, κe★)
     @inbounds κe[i, j, k] = κe★
-    
-    # Compute additional diagonal component of the linear TKE operator
-    wb = explicit_buoyancy_flux(i, j, k, grid, closure_ij, next_velocities, tracers, buoyancy, diffusivities)
-    wb⁻ = min(zero(grid), wb)
 
     on_bottom = !inactive_cell(i, j, k, grid) & inactive_cell(i, j, k-1, grid)
     active = !inactive_cell(i, j, k, grid)
-
-    #@inbounds Le[i, j, k] = (wb⁻_e - ω + div_Jᵉ_e) * active
 
     # Compute fast TKE RHS
     u⁺ = next_velocities.u
