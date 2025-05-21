@@ -245,18 +245,33 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     launch!(model.architecture, model.grid, :xyz,
             ab2_step_field!, model.velocities.u, Δt, χ, Gⁿ, G⁻)
 
-    # Compute the linear implicit component of the RHS (diffusivities, L)
-    # and step forward
+    return nothing
+end
+
+function time_step_double_gyre1!(model, Tᵢ, Sᵢ, wind_stress)
+    diffusivity_fields = model.diffusivity_fields
+    arch = model.architecture
+    grid = model.grid
+
+    κe = diffusivity_fields.κe
+    Le = diffusivity_fields.Le
+
+    closure = model.closure
+
+    previous_velocities = diffusivity_fields.previous_velocities
+    Δτ = model.clock.last_Δt
+    χ = model.timestepper.χ
+
+    Gⁿe = model.timestepper.Gⁿ.e
+    G⁻e = model.timestepper.G⁻.e
+
     launch!(arch, grid, :xyz,
             substep_turbulent_kinetic_energy!,
             κe, Le, grid, closure,
             model.velocities, previous_velocities, # try this soon: model.velocities, model.velocities,
             model.tracers, model.buoyancy, diffusivity_fields,
             Δτ, χ, Gⁿe, G⁻e)
-
-    return nothing
 end
-
 
 function time_step_double_gyre2!(model, Tᵢ, Sᵢ, wind_stress)
 
@@ -444,6 +459,7 @@ rwind_stress = wind_stress_init(rmodel.grid)
 
 tic = time()
 rtime_step_double_gyre! = @compile raise_first=true raise=true sync=true time_step_double_gyre!(rmodel, rTᵢ, rSᵢ, rwind_stress)
+rtime_step_double_gyre1! = @compile raise_first=true raise=true sync=true time_step_double_gyre1!(rmodel, rTᵢ, rSᵢ, rwind_stress)
 #rtime_step_double_gyre2! = @compile raise_first=true raise=true sync=true time_step_double_gyre2!(rmodel, rTᵢ, rSᵢ, rwind_stress)
 compile_toc = time() - tic
 
@@ -452,6 +468,7 @@ compile_toc = time() - tic
 
 @info "Running..."
 rtime_step_double_gyre!(rmodel, rTᵢ, rSᵢ, rwind_stress)
+rtime_step_double_gyre1!(rmodel, rTᵢ, rSᵢ, rwind_stress)
 #rtime_step_double_gyre2!(rmodel, rTᵢ, rSᵢ, rwind_stress)
 
 
@@ -467,6 +484,7 @@ vwind_stress = wind_stress_init(vmodel.grid)
 @info "Initialized non-reactant tracers and wind stress"
 
 time_step_double_gyre!(vmodel, vTᵢ, vSᵢ, vwind_stress)
+time_step_double_gyre1!(vmodel, vTᵢ, vSᵢ, vwind_stress)
 #time_step_double_gyre2!(vmodel, vTᵢ, vSᵢ, vwind_stress)
 
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
