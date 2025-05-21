@@ -291,7 +291,7 @@ end
     @inbounds κe[i, j, k] = κeᶜᶜᶠ(i, j, k, grid, closure_ij, next_velocities, tracers, buoyancy, Jᵇ)
 
     # Compute fast TKE RHS
-    P = Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities.Δz⁻¹ᶠᶜᶜ(i, j, k, grid)
+    @inbounds P = 1 / grid.z.Δᵃᵃᶜ[k]
 
     @inbounds begin
         e[i, j, k] += 1000 * (P - G⁻e[i, j, k])
