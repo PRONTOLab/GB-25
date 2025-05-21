@@ -254,22 +254,6 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
             model.tracers, model.buoyancy, diffusivity_fields,
             Δτ, χ, Gⁿe, G⁻e)
 
-    launch!(architecture(implicit_solver), implicit_solver.grid, :xy,
-            solve_batched_tridiagonal_system_kernel!, e,
-            implicit_solver.a,
-            implicit_solver.b,
-            implicit_solver.c,
-            e,
-            implicit_solver.t,
-            implicit_solver.grid,
-            implicit_solver.parameters,
-            solver_args,
-            implicit_solver.tridiagonal_direction)
-
-    launch!(arch, grid, :xyz,
-            bad_compute_CATKE_diffusivities2!,
-            diffusivities, grid, closure, velocities, tracers, buoyancy)
-
     return nothing
 end
 
@@ -460,7 +444,7 @@ rwind_stress = wind_stress_init(rmodel.grid)
 
 tic = time()
 rtime_step_double_gyre! = @compile raise_first=true raise=true sync=true time_step_double_gyre!(rmodel, rTᵢ, rSᵢ, rwind_stress)
-rtime_step_double_gyre2! = @compile raise_first=true raise=true sync=true time_step_double_gyre2!(rmodel, rTᵢ, rSᵢ, rwind_stress)
+#rtime_step_double_gyre2! = @compile raise_first=true raise=true sync=true time_step_double_gyre2!(rmodel, rTᵢ, rSᵢ, rwind_stress)
 compile_toc = time() - tic
 
 @show compile_toc
@@ -468,7 +452,7 @@ compile_toc = time() - tic
 
 @info "Running..."
 rtime_step_double_gyre!(rmodel, rTᵢ, rSᵢ, rwind_stress)
-rtime_step_double_gyre2!(rmodel, rTᵢ, rSᵢ, rwind_stress)
+#rtime_step_double_gyre2!(rmodel, rTᵢ, rSᵢ, rwind_stress)
 
 
 @info "Running non-reactant for comparison..."
@@ -483,7 +467,7 @@ vwind_stress = wind_stress_init(vmodel.grid)
 @info "Initialized non-reactant tracers and wind stress"
 
 time_step_double_gyre!(vmodel, vTᵢ, vSᵢ, vwind_stress)
-time_step_double_gyre2!(vmodel, vTᵢ, vSᵢ, vwind_stress)
+#time_step_double_gyre2!(vmodel, vTᵢ, vSᵢ, vwind_stress)
 
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
