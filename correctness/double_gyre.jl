@@ -338,19 +338,17 @@ rwind_stress = wind_stress_init(rmodel.grid)
 
 @info "Compiling..."
 
+optimize="""
+mark-func-memory-effects{assume_no_memory_effects=false max_iterations=8},inline{default-pipeline=canonicalize inlining-threshold=4294967295 max-iterations=4 },propagate-constant-bounds,sroa-wrappers{attributor=true dump_postllvm=false dump_prellvm=false instcombine=false instsimplify=true sroa=true},canonicalize{  max-iterations=10 max-num-rewrites=-1 region-simplify=normal test-convergence=false top-down=true},sroa-wrappers{attributor=true dump_postllvm=false dump_prellvm=false instcombine=false instsimplify=true sroa=true},libdevice-funcs-raise{remove_freeze=true},canonicalize{  max-iterations=10 max-num-rewrites=-1 region-simplify=normal test-convergence=false top-down=true},remove-duplicate-func-def,lower-kernel{backend=cpu},canonicalize{  max-iterations=10 max-num-rewrites=-1 region-simplify=normal test-convergence=false top-down=true},canonicalize{  max-iterations=10 max-num-rewrites=-1 region-simplify=normal test-convergence=false top-down=true},llvm-to-memref-access,canonicalize{  max-iterations=10 max-num-rewrites=-1 region-simplify=normal test-convergence=false top-down=true},convert-llvm-to-cf,canonicalize{  max-iterations=10 max-num-rewrites=-1 region-simplify=normal test-convergence=false top-down=true},enzyme-lift-cf-to-scf,canonicalize{  max-iterations=10 max-num-rewrites=-1 region-simplify=normal test-convergence=false top-down=true},func.func(canonicalize-loops),canonicalize-scf-for,canonicalize{  max-iterations=10 max-num-rewrites=-1 region-simplify=normal test-convergence=false top-down=true},libdevice-funcs-raise{remove_freeze=true},canonicalize{  max-iterations=10 max-num-rewrites=-1 region-simplify=normal test-convergence=false top-down=true},affine-cfg,canonicalize{  max-iterations=10 max-num-rewrites=-1 region-simplify=normal test-convergence=false top-down=true},func.func(canonicalize-loops),canonicalize{  max-iterations=10 max-num-rewrites=-1 region-simplify=normal test-convergence=false top-down=true},llvm-to-affine-access,canonicalize{  max-iterations=10 max-num-rewrites=-1 region-simplify=normal test-convergence=false top-down=true},delinearize-indexing,canonicalize{  max-iterations=10 max-num-rewrites=-1 region-simplify=normal test-convergence=false top-down=true},simplify-affine-exprs,affine-cfg,canonicalize{  max-iterations=10 max-num-rewrites=-1 region-simplify=normal test-convergence=false top-down=true},func.func(affine-loop-invariant-code-motion),canonicalize{  max-iterations=10 max-num-rewrites=-1 region-simplify=normal test-convergence=false top-down=true},sort-memory,raise-affine-to-stablehlo{dump_failed_lockstep=false enable_lockstep_for=true err_if_not_fully_raised=true prefer_while_raising=false},canonicalize{  max-iterations=10 max-num-rewrites=-1 region-simplify=normal test-convergence=false top-down=true},arith-raise{stablehlo=true},print,enzyme-hlo-generate-td{create-module=false flags= patterns=broadcast_in_dim_op_canon<16> radix=10},transform-interpreter,
+lower-jit{openmp=false backend=cpu},symbol-dce
+"""
+
 
 tic = time()
-rtime_step_double_gyre! = @compile raise_first=true raise=true sync=true time_step_double_gyre!(rmodel, rTᵢ, rSᵢ, rwind_stress)
-rtime_step_double_gyre1! = @compile raise_first=true raise=true sync=true time_step_double_gyre1!(rmodel, rTᵢ, rSᵢ, rwind_stress)
+rtime_step_double_gyre! = @compile sync=true time_step_double_gyre!(rmodel, rTᵢ, rSᵢ, rwind_stress)
+rtime_step_double_gyre1! = @compile optimize=optimize sync=true time_step_double_gyre1!(rmodel, rTᵢ, rSᵢ, rwind_stress)
 compile_toc = time() - tic
-
 @show compile_toc
-
-
-@info "Running..."
-rtime_step_double_gyre!(rmodel, rTᵢ, rSᵢ, rwind_stress)
-rtime_step_double_gyre1!(rmodel, rTᵢ, rSᵢ, rwind_stress)
-
 
 @info "Running non-reactant for comparison..."
 varch = CPU()
@@ -363,7 +361,16 @@ vwind_stress = wind_stress_init(vmodel.grid)
 
 @info "Initialized non-reactant tracers and wind stress"
 
+
+
+@info "Running..."
+rtime_step_double_gyre!(rmodel, rTᵢ, rSᵢ, rwind_stress)
 time_step_double_gyre!(vmodel, vTᵢ, vSᵢ, vwind_stress)
+
+GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
+
+@info "Running...1"
+rtime_step_double_gyre1!(rmodel, rTᵢ, rSᵢ, rwind_stress)
 time_step_double_gyre1!(vmodel, vTᵢ, vSᵢ, vwind_stress)
 
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
