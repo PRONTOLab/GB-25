@@ -159,7 +159,9 @@ using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: get_top_tra
                                                                      κuᶜᶜᶠ, κcᶜᶜᶠ, κeᶜᶜᶠ,
                                                                      mask_diffusivity,
                                                                      explicit_buoyancy_flux,
-                                                                     dissipation_rate
+                                                                     dissipation_rate,
+                                                                     TKE_mixing_lengthᶜᶜᶠ,
+                                                                     turbulent_velocityᶜᶜᶜ
 
 
 using Oceananigans.Solvers: solve!, solve_batched_tridiagonal_system_kernel!
@@ -288,7 +290,7 @@ end
     closure_ij = getclosure(i, j, closure)
 
     # Compute TKE diffusivity.
-    @inbounds κe[i, j, k] = κeᶜᶜᶠ(i, j, k, grid, closure_ij, next_velocities, tracers, buoyancy, Jᵇ)
+    @inbounds κe[i, j, k] = Oceananigans.Operators.ℑzᵃᵃᶠ(i, j, k, grid, turbulent_velocityᶜᶜᶜ, closure_ij, tracers.e)
 
     # Compute fast TKE RHS
     @inbounds P = 1 / grid.z.Δᵃᵃᶜ[k]
