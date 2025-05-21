@@ -121,11 +121,12 @@ using Oceananigans: initialize!, prognostic_fields
 using Oceananigans.TimeSteppers: update_state!, ab2_step!, tick!, calculate_pressure_correction!, correct_velocities_and_cache_previous_tendencies!, step_lagrangian_particles!, ab2_step_field!, implicit_step!
 using Oceananigans.Utils: @apply_regionally, launch!
 
-using Oceananigans.Models: update_model_field_time_series!
+using Oceananigans.Models: update_model_field_time_series!, interior_tendency_kernel_parameters, complete_communication_and_compute_buffer!
+
 using Oceananigans.BoundaryConditions: update_boundary_condition!, replace_horizontal_vector_halos!, fill_halo_regions!
 using Oceananigans.Fields: tupled_fill_halo_regions!
 using Oceananigans.Models.NonhydrostaticModels: compute_auxiliaries!, update_hydrostatic_pressure!
-using Oceananigans.Biogeochemistry: update_biogeochemical_state!
+using Oceananigans.Biogeochemistry: update_biogeochemical_state!, update_tendencies!
 
 using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fields!,
                                                         compute_tendencies!,
@@ -138,9 +139,13 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fiel
                                                         compute_free_surface_tendency!,
                                                         local_ab2_step!,
                                                         ab2_step_velocities!,
-                                                        ab2_step_tracers!
+                                                        ab2_step_tracers!,
+                                                        compute_hydrostatic_boundary_tendency_contributions!,
+                                                        compute_hydrostatic_free_surface_tendency_contributions!
 
 using Oceananigans.TurbulenceClosures: compute_diffusivities!
+
+using Oceananigans.ImmersedBoundaries: get_active_cells_map
 
 using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: get_top_tracer_bcs,
                                                                      update_previous_compute_time!,
@@ -210,31 +215,13 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
             compute_CATKE_diffusivities!,
             diffusivities, grid, closure, velocities, tracers, buoyancy)
 
-    compute_tendencies!(model, callbacks)
+    bad_compute_tendencies!(model, callbacks)
 
     Gⁿ = model.timestepper.Gⁿ.u
     G⁻ = model.timestepper.G⁻.u
 
     launch!(model.architecture, model.grid, :xyz,
             ab2_step_field!, model.velocities.u, Δt, χ, Gⁿ, G⁻)
-
-    closure = model.closure
-    diffusivity_fields = model.diffusivity_fields
-
-    e = model.tracers.e
-    arch = model.architecture
-    grid = model.grid
-    Gⁿe = model.timestepper.Gⁿ.e
-    G⁻e = model.timestepper.G⁻.e
-
-    κe = diffusivity_fields.κe
-    Le = diffusivity_fields.Le
-    previous_velocities = diffusivity_fields.previous_velocities
-    tracer_index = findfirst(k -> k == :e, keys(model.tracers))
-    implicit_solver = model.timestepper.implicit_solver
-
-    Δτ = model.clock.last_Δt
-    χ  = model.timestepper.χ
 
     # Compute the linear implicit component of the RHS (diffusivities, L)
     # and step forward
@@ -256,42 +243,39 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     return nothing
 end
 
-function bad_time_step_catke_equation!(model)
+function bad_compute_tendencies!(model::HydrostaticFreeSurfaceModel, callbacks)
 
-    closure = model.closure
-    diffusivity_fields = model.diffusivity_fields
-
-    e = model.tracers.e
-    arch = model.architecture
     grid = model.grid
-    Gⁿe = model.timestepper.Gⁿ.e
-    G⁻e = model.timestepper.G⁻.e
+    arch = architecture(grid)
 
-    κe = diffusivity_fields.κe
-    Le = diffusivity_fields.Le
-    previous_velocities = diffusivity_fields.previous_velocities
-    tracer_index = findfirst(k -> k == :e, keys(model.tracers))
-    implicit_solver = model.timestepper.implicit_solver
+    # Calculate contributions to momentum and tracer tendencies from fluxes and volume terms in the
+    # interior of the domain. The active cells map restricts the computation to the active cells in the
+    # interior if the grid is _immersed_ and the `active_cells_map` kwarg is active
+    active_cells_map = get_active_cells_map(model.grid, Val(:interior))
+    kernel_parameters = interior_tendency_kernel_parameters(arch, grid)
 
-    Δτ = model.clock.last_Δt
-    χ  = model.timestepper.χ
+    compute_hydrostatic_free_surface_tendency_contributions!(model, kernel_parameters; active_cells_map)
+    complete_communication_and_compute_buffer!(model, grid, arch)
 
-    # Compute the linear implicit component of the RHS (diffusivities, L)
-    # and step forward
-    launch!(arch, grid, :xyz,
-            substep_turbulent_kinetic_energy!,
-            κe, Le, grid, closure,
-            model.velocities, previous_velocities, # try this soon: model.velocities, model.velocities,
-            model.tracers, model.buoyancy, diffusivity_fields,
-            Δτ, χ, Gⁿe, G⁻e)
+    # Calculate contributions to momentum and tracer tendencies from user-prescribed fluxes across the
+    # boundaries of the domain
+    compute_hydrostatic_boundary_tendency_contributions!(model.timestepper.Gⁿ,
+                                                         model.architecture,
+                                                         model.velocities,
+                                                         model.tracers,
+                                                         model.clock,
+                                                         fields(model),
+                                                         model.closure,
+                                                         model.buoyancy)
 
-    implicit_step!(e, implicit_solver, closure,
-                   diffusivity_fields, Val(tracer_index),
-                   model.clock, Δτ)
+    for callback in callbacks
+        callback.callsite isa TendencyCallsite && callback(model)
+    end
+
+    update_tendencies!(model.biogeochemistry, model)
 
     return nothing
 end
-
 
 function estimate_tracer_error(model, initial_temperature, initial_salinity, wind_stress)
     time_step_double_gyre!(model, initial_temperature, initial_salinity, wind_stress)
