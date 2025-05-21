@@ -1,5 +1,5 @@
 using Oceananigans
-using Oceananigans.Architectures: ReactantState
+using Oceananigans.Architectures: ReactantState, architecture
 using ClimaOcean
 using Reactant
 using GordonBell25
@@ -122,12 +122,20 @@ using Oceananigans.TimeSteppers: update_state!, ab2_step!, tick!, calculate_pres
 using Oceananigans.Utils: @apply_regionally
 
 using Oceananigans.Models: update_model_field_time_series!
-using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fields!, compute_tendencies!
 using Oceananigans.BoundaryConditions: update_boundary_condition!, replace_horizontal_vector_halos!, fill_halo_regions!
 using Oceananigans.Fields: tupled_fill_halo_regions!
-using Oceananigans.Models.NonhydrostaticModels: compute_auxiliaries!
+using Oceananigans.Models.NonhydrostaticModels: compute_auxiliaries!, update_hydrostatic_pressure!
 using Oceananigans.Biogeochemistry: update_biogeochemical_state!
 
+using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fields!,
+                                                        compute_tendencies!,
+                                                        update_grid!,
+                                                        unscale_tracers!,
+                                                        compute_w_from_continuity!,
+                                                        w_kernel_parameters,
+                                                        p_kernel_parameters
+
+using Oceananigans.TurbulenceClosures: compute_diffusivities!
 
 function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
 
@@ -143,13 +151,33 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     Δt = model.clock.last_Δt
     grid = model.grid
     callbacks = []
-    @apply_regionally compute_auxiliaries!(model)
 
-    @apply_regionally compute_tendencies!(model, callbacks)
+    compute_diffusivities!(model.diffusivity_fields, model.closure, model; parameters = :xyz)
+
+    compute_tendencies!(model, callbacks)
 
     ab2_step!(model, Δt)
 
-    compute_auxiliaries!(model)
+    compute_diffusivities!(model.diffusivity_fields, model.closure, model; parameters = :xyz)
+
+    return nothing
+end
+
+function bad_compute_auxiliaries!(model::HydrostaticFreeSurfaceModel; w_parameters = w_kernel_parameters(model.grid),
+                                                                  p_parameters = p_kernel_parameters(model.grid),
+                                                                  κ_parameters = :xyz)
+
+    grid        = model.grid
+    closure     = model.closure
+    tracers     = model.tracers
+    diffusivity = model.diffusivity_fields
+    buoyancy    = model.buoyancy
+
+    P    = model.pressure.pHY′
+    arch = architecture(grid)
+
+    # Update closure diffusivities
+    compute_diffusivities!(diffusivity, closure, model; parameters = κ_parameters)
 
     return nothing
 end
