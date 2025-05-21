@@ -118,14 +118,14 @@ function wind_stress_init(grid;
 end
 
 using Oceananigans: initialize!, prognostic_fields, instantiated_location
-using Oceananigans.Grids: AbstractGrid
+using Oceananigans.Grids: AbstractGrid, XDirection, YDirection, ZDirection
 using Oceananigans.TimeSteppers: update_state!, ab2_step!, tick!, calculate_pressure_correction!, correct_velocities_and_cache_previous_tendencies!, step_lagrangian_particles!, ab2_step_field!, implicit_step!
 using Oceananigans.Utils: @apply_regionally, launch!
 
 using Oceananigans.Models: update_model_field_time_series!, interior_tendency_kernel_parameters, complete_communication_and_compute_buffer!
 
 using Oceananigans.BoundaryConditions: update_boundary_condition!, replace_horizontal_vector_halos!, fill_halo_regions!, apply_x_bcs!, apply_y_bcs!, apply_z_bcs!, _apply_z_bcs!
-using Oceananigans.Fields: tupled_fill_halo_regions!
+using Oceananigans.Fields: tupled_fill_halo_regions!, location
 using Oceananigans.Models.NonhydrostaticModels: compute_auxiliaries!, update_hydrostatic_pressure!
 using Oceananigans.Biogeochemistry: update_biogeochemical_state!, update_tendencies!
 
@@ -156,6 +156,8 @@ using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: get_top_tra
                                                                      compute_CATKE_diffusivities!,
                                                                      substep_turbulent_kinetic_energy!,
                                                                      get_time_step
+
+using Oceananigans.Solvers: solve!, solve_batched_tridiagonal_system_kernel!
 
 function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
 
@@ -205,9 +207,19 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
             model.tracers, model.buoyancy, diffusivity_fields,
             Δτ, χ, Gⁿe, G⁻e)
 
-    implicit_step!(e, implicit_solver, closure,
-                   diffusivity_fields, Val(tracer_index),
-                   model.clock, Δτ)
+    solver_args = (closure, diffusivity_fields, Val(tracer_index), Center(), Center(), Center(), Δτ, model.clock)
+
+    launch!(architecture(implicit_solver), implicit_solver.grid, :xy,
+            solve_batched_tridiagonal_system_kernel!, e,
+            implicit_solver.a,
+            implicit_solver.b,
+            implicit_solver.c,
+            e,
+            implicit_solver.t,
+            implicit_solver.grid,
+            implicit_solver.parameters,
+            solver_args,
+            implicit_solver.tridiagonal_direction)
 
     launch!(arch, grid, :xyz,
             compute_CATKE_diffusivities!,
@@ -234,9 +246,17 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
             model.tracers, model.buoyancy, diffusivity_fields,
             Δτ, χ, Gⁿe, G⁻e)
 
-    implicit_step!(e, implicit_solver, closure,
-                   diffusivity_fields, Val(tracer_index),
-                   model.clock, Δτ)
+    launch!(architecture(implicit_solver), implicit_solver.grid, :xy,
+            solve_batched_tridiagonal_system_kernel!, e,
+            implicit_solver.a,
+            implicit_solver.b,
+            implicit_solver.c,
+            e,
+            implicit_solver.t,
+            implicit_solver.grid,
+            implicit_solver.parameters,
+            solver_args,
+            implicit_solver.tridiagonal_direction)
 
     launch!(arch, grid, :xyz,
             compute_CATKE_diffusivities!,
@@ -245,8 +265,22 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     return nothing
 end
 
-bad_apply_z_bcs!(Gc, grid::AbstractGrid, c, bottom_bc, top_bc, arch::AbstractArchitecture, args...) =
-    launch!(arch, grid, :xy, _apply_z_bcs!, Gc, instantiated_location(Gc), grid, bottom_bc, top_bc, Tuple(args))
+function bad_solve!(ϕ, solver, rhs, args...)
+
+    launch!(architecture(solver), solver.grid, :xy,
+            solve_batched_tridiagonal_system_kernel!, ϕ,
+            solver.a,
+            solver.b,
+            solver.c,
+            rhs,
+            solver.t,
+            solver.grid,
+            solver.parameters,
+            Tuple(args),
+            solver.tridiagonal_direction)
+
+    return nothing
+end
 
 function estimate_tracer_error(model, initial_temperature, initial_salinity, wind_stress)
     time_step_double_gyre!(model, initial_temperature, initial_salinity, wind_stress)
