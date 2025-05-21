@@ -266,67 +266,15 @@ function time_step_double_gyre1!(model, Tᵢ, Sᵢ, wind_stress)
     G⁻e = model.timestepper.G⁻.e
 
     launch!(arch, grid, :xyz,
-            substep_turbulent_kinetic_energy!,
+            bad_substep_turbulent_kinetic_energy!,
             κe, Le, grid, closure,
             model.velocities, previous_velocities, # try this soon: model.velocities, model.velocities,
             model.tracers, model.buoyancy, diffusivity_fields,
             Δτ, χ, Gⁿe, G⁻e)
 end
 
-function time_step_double_gyre2!(model, Tᵢ, Sᵢ, wind_stress)
 
-    # Step it forward
-    Δt = model.clock.last_Δt
-    callbacks = []
-
-    diffusivities = model.diffusivity_fields
-    closure = model.closure
-
-    arch = model.architecture
-    grid = model.grid
-    velocities = model.velocities
-    tracers = model.tracers
-    buoyancy = model.buoyancy
-
-    χ = model.timestepper.χ
-
-    diffusivity_fields = model.diffusivity_fields
-
-    e = model.tracers.e
-    Gⁿe = model.timestepper.Gⁿ.e
-    G⁻e = model.timestepper.G⁻.e
-
-    κe = diffusivity_fields.κe
-    Le = diffusivity_fields.Le
-    previous_velocities = diffusivity_fields.previous_velocities
-    tracer_index = findfirst(k -> k == :e, keys(model.tracers))
-    implicit_solver = model.timestepper.implicit_solver
-
-    Δτ = model.clock.last_Δt
-
-    solver_args = (closure, diffusivity_fields, Val(tracer_index), Center(), Center(), Center(), Δτ, model.clock)
-
-    launch!(architecture(implicit_solver), implicit_solver.grid, :xy,
-            solve_batched_tridiagonal_system_kernel!, e,
-            implicit_solver.a,
-            implicit_solver.b,
-            implicit_solver.c,
-            e,
-            implicit_solver.t,
-            implicit_solver.grid,
-            implicit_solver.parameters,
-            solver_args,
-            implicit_solver.tridiagonal_direction)
-
-    launch!(arch, grid, :xyz,
-            bad_compute_CATKE_diffusivities2!,
-            diffusivities, grid, closure, velocities, tracers, buoyancy)
-
-    return nothing
-end
-
-#=
-@kernel function substep_turbulent_kinetic_energy!(κe, Le, grid, closure,
+@kernel function bad_substep_turbulent_kinetic_energy!(κe, Le, grid, closure,
                                                    next_velocities, previous_velocities,
                                                    tracers, buoyancy, diffusivities,
                                                    Δτ, χ, slow_Gⁿe, G⁻e)
@@ -341,7 +289,7 @@ end
     κe★ = κeᶜᶜᶠ(i, j, k, grid, closure_ij, next_velocities, tracers, buoyancy, Jᵇ)
     κe★ = mask_diffusivity(i, j, k, grid, κe★)
     @inbounds κe[i, j, k] = κe★
-
+    
     # Compute additional diagonal component of the linear TKE operator
     wb = explicit_buoyancy_flux(i, j, k, grid, closure_ij, next_velocities, tracers, buoyancy, diffusivities)
     wb⁻ = min(zero(grid), wb)
@@ -387,44 +335,17 @@ end
     # TODO: correctly handle closure / diffusivity tuples
     # TODO: the shear_production is actually a slow term so we _could_ precompute.
     P = shear_production(i, j, k, grid, κu, uⁿ, u⁺, vⁿ, v⁺)
-    ϵ = dissipation(i, j, k, grid, closure_ij, next_velocities, tracers, buoyancy, diffusivities)
-    fast_Gⁿe = P + wb⁺ - ϵ
-
-    # Advance TKE and store tendency
-    FT = eltype(χ)
-    Δτ = convert(FT, Δτ)
-
-    # See below.
-    α = convert(FT, 1.5) + χ
-    β = convert(FT, 0.5) + χ
+    fast_Gⁿe = P + wb⁺
 
     @inbounds begin
         total_Gⁿe = slow_Gⁿe[i, j, k] + fast_Gⁿe
-        e[i, j, k] += Δτ * (α * total_Gⁿe - β * G⁻e[i, j, k]) * active
+        e[i, j, k] += 10 * (100 * total_Gⁿe - 100 * G⁻e[i, j, k]) * active
         G⁻e[i, j, k] = total_Gⁿe * active
     end
 end
-=#
+
 
 @kernel function bad_compute_CATKE_diffusivities1!(diffusivities, grid, closure, velocities, tracers, buoyancy)
-    i, j, k = @index(Global, NTuple)
-
-    # Ensure this works with "ensembles" of closures, in addition to ordinary single closures
-    closure_ij = getclosure(i, j, closure)
-    Jᵇ = diffusivities.Jᵇ
-
-    # Note: we also compute the TKE diffusivity here for diagnostic purposes, even though it
-    # is recomputed in time_step_turbulent_kinetic_energy.
-    κu★ = κuᶜᶜᶠ(i, j, k, grid, closure_ij, velocities, tracers, buoyancy, Jᵇ)
-    κc★ = κcᶜᶜᶠ(i, j, k, grid, closure_ij, velocities, tracers, buoyancy, Jᵇ)
-
-    @inbounds begin
-        diffusivities.κu[i, j, k] = κu★
-        diffusivities.κc[i, j, k] = κc★
-    end
-end
-
-@kernel function bad_compute_CATKE_diffusivities2!(diffusivities, grid, closure, velocities, tracers, buoyancy)
     i, j, k = @index(Global, NTuple)
 
     # Ensure this works with "ensembles" of closures, in addition to ordinary single closures
@@ -460,7 +381,6 @@ rwind_stress = wind_stress_init(rmodel.grid)
 tic = time()
 rtime_step_double_gyre! = @compile raise_first=true raise=true sync=true time_step_double_gyre!(rmodel, rTᵢ, rSᵢ, rwind_stress)
 rtime_step_double_gyre1! = @compile raise_first=true raise=true sync=true time_step_double_gyre1!(rmodel, rTᵢ, rSᵢ, rwind_stress)
-#rtime_step_double_gyre2! = @compile raise_first=true raise=true sync=true time_step_double_gyre2!(rmodel, rTᵢ, rSᵢ, rwind_stress)
 compile_toc = time() - tic
 
 @show compile_toc
@@ -469,7 +389,6 @@ compile_toc = time() - tic
 @info "Running..."
 rtime_step_double_gyre!(rmodel, rTᵢ, rSᵢ, rwind_stress)
 rtime_step_double_gyre1!(rmodel, rTᵢ, rSᵢ, rwind_stress)
-#rtime_step_double_gyre2!(rmodel, rTᵢ, rSᵢ, rwind_stress)
 
 
 @info "Running non-reactant for comparison..."
@@ -485,7 +404,6 @@ vwind_stress = wind_stress_init(vmodel.grid)
 
 time_step_double_gyre!(vmodel, vTᵢ, vSᵢ, vwind_stress)
 time_step_double_gyre1!(vmodel, vTᵢ, vSᵢ, vwind_stress)
-#time_step_double_gyre2!(vmodel, vTᵢ, vSᵢ, vwind_stress)
 
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
