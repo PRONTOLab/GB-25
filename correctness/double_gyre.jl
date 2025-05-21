@@ -119,7 +119,7 @@ end
 
 using Oceananigans: initialize!, prognostic_fields
 using Oceananigans.TimeSteppers: update_state!, ab2_step!, tick!, calculate_pressure_correction!, correct_velocities_and_cache_previous_tendencies!, step_lagrangian_particles!
-using Oceananigans.Utils: @apply_regionally
+using Oceananigans.Utils: @apply_regionally, launch!
 
 using Oceananigans.Models: update_model_field_time_series!
 using Oceananigans.BoundaryConditions: update_boundary_condition!, replace_horizontal_vector_halos!, fill_halo_regions!
@@ -137,6 +137,12 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fiel
 
 using Oceananigans.TurbulenceClosures: compute_diffusivities!
 
+using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: get_top_tracer_bcs,
+                                                                     update_previous_compute_time!,
+                                                                     time_step_catke_equation!,
+                                                                     compute_average_surface_buoyancy_flux!,
+                                                                     compute_CATKE_diffusivities!
+
 function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
 
     set!(model.tracers.T, Tᵢ)
@@ -149,35 +155,42 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
 
     # Step it forward
     Δt = model.clock.last_Δt
-    grid = model.grid
     callbacks = []
 
-    compute_diffusivities!(model.diffusivity_fields, model.closure, model; parameters = :xyz)
+    bad_compute_diffusivities!(model.diffusivity_fields, model.closure, model; parameters = :xyz)
 
     compute_tendencies!(model, callbacks)
 
     ab2_step!(model, Δt)
 
-    compute_diffusivities!(model.diffusivity_fields, model.closure, model; parameters = :xyz)
+    bad_compute_diffusivities!(model.diffusivity_fields, model.closure, model; parameters = :xyz)
 
     return nothing
 end
 
-function bad_compute_auxiliaries!(model::HydrostaticFreeSurfaceModel; w_parameters = w_kernel_parameters(model.grid),
-                                                                  p_parameters = p_kernel_parameters(model.grid),
-                                                                  κ_parameters = :xyz)
+function bad_compute_diffusivities!(diffusivities, closure, model; parameters = :xyz)
+    arch = model.architecture
+    grid = model.grid
+    velocities = model.velocities
+    tracers = model.tracers
+    buoyancy = model.buoyancy
+    clock = model.clock
+    top_tracer_bcs = get_top_tracer_bcs(model.buoyancy.formulation, tracers)
+    Δt = update_previous_compute_time!(diffusivities, model)
 
-    grid        = model.grid
-    closure     = model.closure
-    tracers     = model.tracers
-    diffusivity = model.diffusivity_fields
-    buoyancy    = model.buoyancy
+    # Update "previous velocities"
+    u, v, w = model.velocities
+    u⁻, v⁻ = diffusivities.previous_velocities
+    parent(u⁻) .= parent(u)
+    parent(v⁻) .= parent(v)
 
-    P    = model.pressure.pHY′
-    arch = architecture(grid)
+    launch!(arch, grid, :xy,
+            compute_average_surface_buoyancy_flux!,
+            diffusivities.Jᵇ, grid, closure, velocities, tracers, buoyancy, top_tracer_bcs, clock, Δt)
 
-    # Update closure diffusivities
-    compute_diffusivities!(diffusivity, closure, model; parameters = κ_parameters)
+    launch!(arch, grid, parameters,
+            compute_CATKE_diffusivities!,
+            diffusivities, grid, closure, velocities, tracers, buoyancy)
 
     return nothing
 end
