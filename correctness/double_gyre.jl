@@ -290,9 +290,6 @@ end
     κe★ = mask_diffusivity(i, j, k, grid, κe★)
     @inbounds κe[i, j, k] = κe★
 
-    on_bottom = !inactive_cell(i, j, k, grid) & inactive_cell(i, j, k-1, grid)
-    active = !inactive_cell(i, j, k, grid)
-
     # Compute fast TKE RHS
     u⁺ = next_velocities.u
     v⁺ = next_velocities.v
@@ -305,8 +302,8 @@ end
 
     @inbounds begin
         total_Gⁿe = slow_Gⁿe[i, j, k] + fast_Gⁿe
-        e[i, j, k] += 10 * (100 * total_Gⁿe - 100 * G⁻e[i, j, k]) * active
-        G⁻e[i, j, k] = total_Gⁿe * active
+        e[i, j, k] += 10 * (100 * total_Gⁿe - 100 * G⁻e[i, j, k])
+        G⁻e[i, j, k] = total_Gⁿe
     end
 end
 
