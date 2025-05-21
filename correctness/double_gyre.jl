@@ -293,7 +293,6 @@ end
     # Compute additional diagonal component of the linear TKE operator
     wb = explicit_buoyancy_flux(i, j, k, grid, closure_ij, next_velocities, tracers, buoyancy, diffusivities)
     wb⁻ = min(zero(grid), wb)
-    wb⁺ = max(zero(grid), wb)
 
     eⁱʲᵏ = @inbounds e[i, j, k]
     eᵐⁱⁿ = closure_ij.minimum_tke
@@ -305,25 +304,8 @@ end
     Cᵂϵ = closure_ij.turbulent_kinetic_energy_equation.Cᵂϵ
     e⁺ = clip(eⁱʲᵏ)
     w★ = sqrt(e⁺)
-    div_Jᵉ_e = - on_bottom * Cᵂϵ * w★ / Δz
 
-    # Implicit TKE dissipation
-    ω = dissipation_rate(i, j, k, grid, closure_ij, next_velocities, tracers, buoyancy, diffusivities)
-
-    # The interior contributions to the linear implicit term `L` are defined via
-    #
-    #       ∂t e = Lⁱ e + ⋯,
-    #
-    # So
-    #
-    #       Lⁱ e = wb - ϵ
-    #            = (wb / e - ω) e,
-    #               ↖--------↗
-    #                  = Lⁱ
-    #
-    # where ω = ϵ / e ∼ √e / ℓ.
-
-    @inbounds Le[i, j, k] = (wb⁻_e - ω + div_Jᵉ_e) * active
+    #@inbounds Le[i, j, k] = (wb⁻_e - ω + div_Jᵉ_e) * active
 
     # Compute fast TKE RHS
     u⁺ = next_velocities.u
@@ -332,10 +314,8 @@ end
     vⁿ = previous_velocities.v
     κu = diffusivities.κu
 
-    # TODO: correctly handle closure / diffusivity tuples
-    # TODO: the shear_production is actually a slow term so we _could_ precompute.
     P = shear_production(i, j, k, grid, κu, uⁿ, u⁺, vⁿ, v⁺)
-    fast_Gⁿe = P + wb⁺
+    fast_Gⁿe = P
 
     @inbounds begin
         total_Gⁿe = slow_Gⁿe[i, j, k] + fast_Gⁿe
