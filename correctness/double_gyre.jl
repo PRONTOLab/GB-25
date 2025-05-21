@@ -136,7 +136,9 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fiel
                                                         p_kernel_parameters,
                                                         step_free_surface!,
                                                         compute_free_surface_tendency!,
-                                                        local_ab2_step!
+                                                        local_ab2_step!,
+                                                        ab2_step_velocities!,
+                                                        ab2_step_tracers!
 
 using Oceananigans.TurbulenceClosures: compute_diffusivities!
 
@@ -169,6 +171,8 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     tracers = model.tracers
     buoyancy = model.buoyancy
 
+    χ = model.timestepper.χ
+
     time_step_catke_equation!(model)
 
     launch!(arch, grid, :xyz,
@@ -177,30 +181,14 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
 
     compute_tendencies!(model, callbacks)
 
-    bad_ab2_step!(model, Δt)
+    ab2_step_velocities!(model.velocities, model, Δt, χ)
+    ab2_step_tracers!(model.tracers, model, Δt, χ)
 
     time_step_catke_equation!(model)
 
     launch!(arch, grid, :xyz,
             compute_CATKE_diffusivities!,
             diffusivities, grid, closure, velocities, tracers, buoyancy)
-
-    return nothing
-end
-
-function bad_ab2_step!(model::HydrostaticFreeSurfaceModel, Δt)
-
-    grid = model.grid
-    compute_free_surface_tendency!(grid, model, model.free_surface)
-
-    FT = eltype(grid)
-    χ = convert(FT, model.timestepper.χ)
-    Δt = convert(FT, Δt)
-
-    # Step locally velocity and tracers
-    @apply_regionally local_ab2_step!(model, Δt, χ)
-
-    step_free_surface!(model.free_surface, model, model.timestepper, Δt)
 
     return nothing
 end
