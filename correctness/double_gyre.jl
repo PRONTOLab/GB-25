@@ -141,7 +141,8 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fiel
                                                         ab2_step_velocities!,
                                                         ab2_step_tracers!,
                                                         compute_hydrostatic_boundary_tendency_contributions!,
-                                                        compute_hydrostatic_free_surface_tendency_contributions!
+                                                        compute_hydrostatic_free_surface_tendency_contributions!,
+                                                        apply_flux_bcs!
 
 using Oceananigans.TurbulenceClosures: compute_diffusivities!
 
@@ -215,7 +216,10 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
             compute_CATKE_diffusivities!,
             diffusivities, grid, closure, velocities, tracers, buoyancy)
 
-    bad_compute_tendencies!(model, callbacks)
+    args = (model.clock, fields(model), model.closure, model.buoyancy)
+
+    apply_flux_bcs!(model.timestepper.Gⁿ.u, model.velocities.u, model.architecture, args)
+    apply_flux_bcs!(model.timestepper.Gⁿ.e, model.tracers.e, model.architecture, args)
 
     Gⁿ = model.timestepper.Gⁿ.u
     G⁻ = model.timestepper.G⁻.u
@@ -239,40 +243,6 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     launch!(arch, grid, :xyz,
             compute_CATKE_diffusivities!,
             diffusivities, grid, closure, velocities, tracers, buoyancy)
-
-    return nothing
-end
-
-function bad_compute_tendencies!(model::HydrostaticFreeSurfaceModel, callbacks)
-
-    grid = model.grid
-    arch = architecture(grid)
-
-    # Calculate contributions to momentum and tracer tendencies from fluxes and volume terms in the
-    # interior of the domain. The active cells map restricts the computation to the active cells in the
-    # interior if the grid is _immersed_ and the `active_cells_map` kwarg is active
-    active_cells_map = get_active_cells_map(model.grid, Val(:interior))
-    kernel_parameters = interior_tendency_kernel_parameters(arch, grid)
-
-    compute_hydrostatic_free_surface_tendency_contributions!(model, kernel_parameters; active_cells_map)
-    complete_communication_and_compute_buffer!(model, grid, arch)
-
-    # Calculate contributions to momentum and tracer tendencies from user-prescribed fluxes across the
-    # boundaries of the domain
-    compute_hydrostatic_boundary_tendency_contributions!(model.timestepper.Gⁿ,
-                                                         model.architecture,
-                                                         model.velocities,
-                                                         model.tracers,
-                                                         model.clock,
-                                                         fields(model),
-                                                         model.closure,
-                                                         model.buoyancy)
-
-    for callback in callbacks
-        callback.callsite isa TendencyCallsite && callback(model)
-    end
-
-    update_tendencies!(model.biogeochemistry, model)
 
     return nothing
 end
