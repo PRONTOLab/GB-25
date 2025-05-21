@@ -118,7 +118,7 @@ function wind_stress_init(grid;
 end
 
 using Oceananigans: initialize!, prognostic_fields, instantiated_location
-using Oceananigans.Grids: AbstractGrid, XDirection, YDirection, ZDirection
+using Oceananigans.Grids: AbstractGrid, XDirection, YDirection, ZDirection, inactive_cell
 using Oceananigans.TimeSteppers: update_state!, ab2_step!, tick!, calculate_pressure_correction!, correct_velocities_and_cache_previous_tendencies!, step_lagrangian_particles!, ab2_step_field!, implicit_step!
 using Oceananigans.Utils: @apply_regionally, launch!
 
@@ -145,7 +145,7 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fiel
                                                         compute_hydrostatic_free_surface_tendency_contributions!,
                                                         apply_flux_bcs!
 
-using Oceananigans.TurbulenceClosures: compute_diffusivities!
+using Oceananigans.TurbulenceClosures: compute_diffusivities!, getclosure, clip, shear_production, dissipation
 
 using Oceananigans.ImmersedBoundaries: get_active_cells_map
 
@@ -155,9 +155,16 @@ using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: get_top_tra
                                                                      compute_average_surface_buoyancy_flux!,
                                                                      compute_CATKE_diffusivities!,
                                                                      substep_turbulent_kinetic_energy!,
-                                                                     get_time_step
+                                                                     get_time_step,
+                                                                     κuᶜᶜᶠ, κcᶜᶜᶠ, κeᶜᶜᶠ,
+                                                                     mask_diffusivity,
+                                                                     explicit_buoyancy_flux,
+                                                                     dissipation_rate
+
 
 using Oceananigans.Solvers: solve!, solve_batched_tridiagonal_system_kernel!
+
+using KernelAbstractions: @kernel, @index
 
 function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
 
@@ -222,7 +229,7 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
             implicit_solver.tridiagonal_direction)
 
     launch!(arch, grid, :xyz,
-            compute_CATKE_diffusivities!,
+            bad_compute_CATKE_diffusivities1!,
             diffusivities, grid, closure, velocities, tracers, buoyancy)
 
     args = (model.clock, fields(model), model.closure, model.buoyancy)
@@ -259,28 +266,135 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
             implicit_solver.tridiagonal_direction)
 
     launch!(arch, grid, :xyz,
-            compute_CATKE_diffusivities!,
+            bad_compute_CATKE_diffusivities2!,
             diffusivities, grid, closure, velocities, tracers, buoyancy)
 
     return nothing
 end
 
-function bad_solve!(ϕ, solver, rhs, args...)
+#=
+@kernel function substep_turbulent_kinetic_energy!(κe, Le, grid, closure,
+                                                   next_velocities, previous_velocities,
+                                                   tracers, buoyancy, diffusivities,
+                                                   Δτ, χ, slow_Gⁿe, G⁻e)
 
-    launch!(architecture(solver), solver.grid, :xy,
-            solve_batched_tridiagonal_system_kernel!, ϕ,
-            solver.a,
-            solver.b,
-            solver.c,
-            rhs,
-            solver.t,
-            solver.grid,
-            solver.parameters,
-            Tuple(args),
-            solver.tridiagonal_direction)
+    i, j, k = @index(Global, NTuple)
 
-    return nothing
+    Jᵇ = diffusivities.Jᵇ
+    e = tracers.e
+    closure_ij = getclosure(i, j, closure)
+
+    # Compute TKE diffusivity.
+    κe★ = κeᶜᶜᶠ(i, j, k, grid, closure_ij, next_velocities, tracers, buoyancy, Jᵇ)
+    κe★ = mask_diffusivity(i, j, k, grid, κe★)
+    @inbounds κe[i, j, k] = κe★
+
+    # Compute additional diagonal component of the linear TKE operator
+    wb = explicit_buoyancy_flux(i, j, k, grid, closure_ij, next_velocities, tracers, buoyancy, diffusivities)
+    wb⁻ = min(zero(grid), wb)
+    wb⁺ = max(zero(grid), wb)
+
+    eⁱʲᵏ = @inbounds e[i, j, k]
+    eᵐⁱⁿ = closure_ij.minimum_tke
+    wb⁻_e = wb⁻ / eⁱʲᵏ * (eⁱʲᵏ > eᵐⁱⁿ)
+
+    on_bottom = !inactive_cell(i, j, k, grid) & inactive_cell(i, j, k-1, grid)
+    active = !inactive_cell(i, j, k, grid)
+    Δz = Oceananigans.Operators.Δzᶜᶜᶜ(i, j, k, grid)
+    Cᵂϵ = closure_ij.turbulent_kinetic_energy_equation.Cᵂϵ
+    e⁺ = clip(eⁱʲᵏ)
+    w★ = sqrt(e⁺)
+    div_Jᵉ_e = - on_bottom * Cᵂϵ * w★ / Δz
+
+    # Implicit TKE dissipation
+    ω = dissipation_rate(i, j, k, grid, closure_ij, next_velocities, tracers, buoyancy, diffusivities)
+
+    # The interior contributions to the linear implicit term `L` are defined via
+    #
+    #       ∂t e = Lⁱ e + ⋯,
+    #
+    # So
+    #
+    #       Lⁱ e = wb - ϵ
+    #            = (wb / e - ω) e,
+    #               ↖--------↗
+    #                  = Lⁱ
+    #
+    # where ω = ϵ / e ∼ √e / ℓ.
+
+    @inbounds Le[i, j, k] = (wb⁻_e - ω + div_Jᵉ_e) * active
+
+    # Compute fast TKE RHS
+    u⁺ = next_velocities.u
+    v⁺ = next_velocities.v
+    uⁿ = previous_velocities.u
+    vⁿ = previous_velocities.v
+    κu = diffusivities.κu
+
+    # TODO: correctly handle closure / diffusivity tuples
+    # TODO: the shear_production is actually a slow term so we _could_ precompute.
+    P = shear_production(i, j, k, grid, κu, uⁿ, u⁺, vⁿ, v⁺)
+    ϵ = dissipation(i, j, k, grid, closure_ij, next_velocities, tracers, buoyancy, diffusivities)
+    fast_Gⁿe = P + wb⁺ - ϵ
+
+    # Advance TKE and store tendency
+    FT = eltype(χ)
+    Δτ = convert(FT, Δτ)
+
+    # See below.
+    α = convert(FT, 1.5) + χ
+    β = convert(FT, 0.5) + χ
+
+    @inbounds begin
+        total_Gⁿe = slow_Gⁿe[i, j, k] + fast_Gⁿe
+        e[i, j, k] += Δτ * (α * total_Gⁿe - β * G⁻e[i, j, k]) * active
+        G⁻e[i, j, k] = total_Gⁿe * active
+    end
 end
+=#
+
+@kernel function bad_compute_CATKE_diffusivities1!(diffusivities, grid, closure, velocities, tracers, buoyancy)
+    i, j, k = @index(Global, NTuple)
+
+    # Ensure this works with "ensembles" of closures, in addition to ordinary single closures
+    closure_ij = getclosure(i, j, closure)
+    Jᵇ = diffusivities.Jᵇ
+
+    # Note: we also compute the TKE diffusivity here for diagnostic purposes, even though it
+    # is recomputed in time_step_turbulent_kinetic_energy.
+    κu★ = κuᶜᶜᶠ(i, j, k, grid, closure_ij, velocities, tracers, buoyancy, Jᵇ)
+    κc★ = κcᶜᶜᶠ(i, j, k, grid, closure_ij, velocities, tracers, buoyancy, Jᵇ)
+
+    @inbounds begin
+        diffusivities.κu[i, j, k] = κu★
+        diffusivities.κc[i, j, k] = κc★
+    end
+end
+
+@kernel function bad_compute_CATKE_diffusivities2!(diffusivities, grid, closure, velocities, tracers, buoyancy)
+    i, j, k = @index(Global, NTuple)
+
+    # Ensure this works with "ensembles" of closures, in addition to ordinary single closures
+    closure_ij = getclosure(i, j, closure)
+    Jᵇ = diffusivities.Jᵇ
+
+    # Note: we also compute the TKE diffusivity here for diagnostic purposes, even though it
+    # is recomputed in time_step_turbulent_kinetic_energy.
+    κu★ = κuᶜᶜᶠ(i, j, k, grid, closure_ij, velocities, tracers, buoyancy, Jᵇ)
+    κc★ = κcᶜᶜᶠ(i, j, k, grid, closure_ij, velocities, tracers, buoyancy, Jᵇ)
+
+    @inbounds begin
+        diffusivities.κu[i, j, k] = κu★
+        diffusivities.κc[i, j, k] = κc★
+    end
+end
+
+
+
+
+
+
+
 
 function estimate_tracer_error(model, initial_temperature, initial_salinity, wind_stress)
     time_step_double_gyre!(model, initial_temperature, initial_salinity, wind_stress)
