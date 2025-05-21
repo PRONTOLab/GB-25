@@ -157,38 +157,28 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     Δt = model.clock.last_Δt
     callbacks = []
 
-    bad_compute_diffusivities!(model.diffusivity_fields, model.closure, model; parameters = :xyz)
+    diffusivities = model.diffusivity_fields
+    closure = model.closure
 
-    compute_tendencies!(model, callbacks)
-
-    ab2_step!(model, Δt)
-
-    bad_compute_diffusivities!(model.diffusivity_fields, model.closure, model; parameters = :xyz)
-
-    return nothing
-end
-
-function bad_compute_diffusivities!(diffusivities, closure, model; parameters = :xyz)
     arch = model.architecture
     grid = model.grid
     velocities = model.velocities
     tracers = model.tracers
     buoyancy = model.buoyancy
-    clock = model.clock
-    top_tracer_bcs = get_top_tracer_bcs(model.buoyancy.formulation, tracers)
-    Δt = update_previous_compute_time!(diffusivities, model)
 
-    # Update "previous velocities"
-    u, v, w = model.velocities
-    u⁻, v⁻ = diffusivities.previous_velocities
-    parent(u⁻) .= parent(u)
-    parent(v⁻) .= parent(v)
+    time_step_catke_equation!(model)
 
-    launch!(arch, grid, :xy,
-            compute_average_surface_buoyancy_flux!,
-            diffusivities.Jᵇ, grid, closure, velocities, tracers, buoyancy, top_tracer_bcs, clock, Δt)
+    launch!(arch, grid, :xyz,
+            compute_CATKE_diffusivities!,
+            diffusivities, grid, closure, velocities, tracers, buoyancy)
 
-    launch!(arch, grid, parameters,
+    compute_tendencies!(model, callbacks)
+
+    ab2_step!(model, Δt)
+
+    time_step_catke_equation!(model)
+
+    launch!(arch, grid, :xyz,
             compute_CATKE_diffusivities!,
             diffusivities, grid, closure, velocities, tracers, buoyancy)
 
