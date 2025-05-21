@@ -287,11 +287,9 @@ end
 
     Jᵇ = diffusivities.Jᵇ
     e = tracers.e
-    closure_ij = getclosure(i, j, closure)
 
-    # Compute TKE diffusivity.
     eᵐⁱⁿ = closure.minimum_tke
-    @inbounds κe[i, j, k] = bad_turbulent_velocityᶜᶜᶜ(i, j, k-1, grid, closure_ij, tracers.e) + bad_turbulent_velocityᶜᶜᶜ(i, j, k, grid, closure_ij, tracers.e)
+    @inbounds κe[i, j, k] = sqrt(max(eᵐⁱⁿ, e[i, j, k-1])) + sqrt(max(eᵐⁱⁿ, e[i, j, k]))
 
     # Compute fast TKE RHS
     @inbounds P = 1 / grid.z.Δᵃᵃᶜ[k]
