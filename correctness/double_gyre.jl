@@ -118,7 +118,7 @@ function wind_stress_init(grid;
 end
 
 using Oceananigans: initialize!, prognostic_fields
-using Oceananigans.TimeSteppers: update_state!, ab2_step!, tick!, calculate_pressure_correction!, correct_velocities_and_cache_previous_tendencies!, step_lagrangian_particles!
+using Oceananigans.TimeSteppers: update_state!, ab2_step!, tick!, calculate_pressure_correction!, correct_velocities_and_cache_previous_tendencies!, step_lagrangian_particles!, ab2_step_field!, implicit_step!
 using Oceananigans.Utils: @apply_regionally, launch!
 
 using Oceananigans.Models: update_model_field_time_series!
@@ -146,7 +146,9 @@ using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: get_top_tra
                                                                      update_previous_compute_time!,
                                                                      time_step_catke_equation!,
                                                                      compute_average_surface_buoyancy_flux!,
-                                                                     compute_CATKE_diffusivities!
+                                                                     compute_CATKE_diffusivities!,
+                                                                     substep_turbulent_kinetic_energy!,
+                                                                     get_time_step
 
 function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
 
@@ -173,7 +175,7 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
 
     χ = model.timestepper.χ
 
-    time_step_catke_equation!(model)
+    bad_time_step_catke_equation!(model)
 
     launch!(arch, grid, :xyz,
             compute_CATKE_diffusivities!,
@@ -181,10 +183,13 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
 
     compute_tendencies!(model, callbacks)
 
-    ab2_step_velocities!(model.velocities, model, Δt, χ)
-    ab2_step_tracers!(model.tracers, model, Δt, χ)
+    Gⁿ = model.timestepper.Gⁿ.u
+    G⁻ = model.timestepper.G⁻.u
 
-    time_step_catke_equation!(model)
+    launch!(model.architecture, model.grid, :xyz,
+            ab2_step_field!, model.velocities.u, Δt, χ, Gⁿ, G⁻)
+
+    bad_time_step_catke_equation!(model)
 
     launch!(arch, grid, :xyz,
             compute_CATKE_diffusivities!,
@@ -192,6 +197,66 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
 
     return nothing
 end
+
+function bad_time_step_catke_equation!(model)
+
+    # TODO: properly handle closure tuples
+    if model.closure isa Tuple
+        closure = first(model.closure)
+        diffusivity_fields = first(model.diffusivity_fields)
+    else
+        closure = model.closure
+        diffusivity_fields = model.diffusivity_fields
+    end
+
+    e = model.tracers.e
+    arch = model.architecture
+    grid = model.grid
+    Gⁿe = model.timestepper.Gⁿ.e
+    G⁻e = model.timestepper.G⁻.e
+
+    κe = diffusivity_fields.κe
+    Le = diffusivity_fields.Le
+    previous_velocities = diffusivity_fields.previous_velocities
+    tracer_index = findfirst(k -> k == :e, keys(model.tracers))
+    implicit_solver = model.timestepper.implicit_solver
+
+    Δt = model.clock.last_Δt
+    Δτ = get_time_step(closure)
+
+    if isnothing(Δτ)
+        Δτ = Δt
+        M = 1
+    else
+        M = ceil(Int, Δt / Δτ) # number of substeps
+        Δτ = Δt / M
+    end
+
+    FT = eltype(grid)
+
+    m = 1
+    if m == 1 && M != 1
+        χ = convert(FT, -0.5) # Euler step for the first substep
+    else
+        χ = model.timestepper.χ
+    end
+
+    # Compute the linear implicit component of the RHS (diffusivities, L)
+    # and step forward
+    launch!(arch, grid, :xyz,
+            substep_turbulent_kinetic_energy!,
+            κe, Le, grid, closure,
+            model.velocities, previous_velocities, # try this soon: model.velocities, model.velocities,
+            model.tracers, model.buoyancy, diffusivity_fields,
+            Δτ, χ, Gⁿe, G⁻e)
+
+    implicit_step!(e, implicit_solver, closure,
+                   diffusivity_fields, Val(tracer_index),
+                   model.clock, Δτ)
+
+    return nothing
+end
+
 
 function estimate_tracer_error(model, initial_temperature, initial_salinity, wind_stress)
     time_step_double_gyre!(model, initial_temperature, initial_salinity, wind_stress)
