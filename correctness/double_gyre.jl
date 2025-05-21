@@ -1,5 +1,5 @@
 using Oceananigans
-using Oceananigans.Architectures: ReactantState, architecture
+using Oceananigans.Architectures: ReactantState, architecture, AbstractArchitecture
 using ClimaOcean
 using Reactant
 using GordonBell25
@@ -117,13 +117,14 @@ function wind_stress_init(grid;
     return wind_stress
 end
 
-using Oceananigans: initialize!, prognostic_fields
+using Oceananigans: initialize!, prognostic_fields, instantiated_location
+using Oceananigans.Grids: AbstractGrid
 using Oceananigans.TimeSteppers: update_state!, ab2_step!, tick!, calculate_pressure_correction!, correct_velocities_and_cache_previous_tendencies!, step_lagrangian_particles!, ab2_step_field!, implicit_step!
 using Oceananigans.Utils: @apply_regionally, launch!
 
 using Oceananigans.Models: update_model_field_time_series!, interior_tendency_kernel_parameters, complete_communication_and_compute_buffer!
 
-using Oceananigans.BoundaryConditions: update_boundary_condition!, replace_horizontal_vector_halos!, fill_halo_regions!
+using Oceananigans.BoundaryConditions: update_boundary_condition!, replace_horizontal_vector_halos!, fill_halo_regions!, apply_x_bcs!, apply_y_bcs!, apply_z_bcs!, _apply_z_bcs!
 using Oceananigans.Fields: tupled_fill_halo_regions!
 using Oceananigans.Models.NonhydrostaticModels: compute_auxiliaries!, update_hydrostatic_pressure!
 using Oceananigans.Biogeochemistry: update_biogeochemical_state!, update_tendencies!
@@ -181,12 +182,9 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
 
     χ = model.timestepper.χ
 
-    closure = model.closure
     diffusivity_fields = model.diffusivity_fields
 
     e = model.tracers.e
-    arch = model.architecture
-    grid = model.grid
     Gⁿe = model.timestepper.Gⁿ.e
     G⁻e = model.timestepper.G⁻.e
 
@@ -197,7 +195,6 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     implicit_solver = model.timestepper.implicit_solver
 
     Δτ = model.clock.last_Δt
-    χ  = model.timestepper.χ
 
     # Compute the linear implicit component of the RHS (diffusivities, L)
     # and step forward
@@ -218,8 +215,9 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
 
     args = (model.clock, fields(model), model.closure, model.buoyancy)
 
-    apply_flux_bcs!(model.timestepper.Gⁿ.u, model.velocities.u, model.architecture, args)
-    apply_flux_bcs!(model.timestepper.Gⁿ.e, model.tracers.e, model.architecture, args)
+    launch!(model.architecture, model.timestepper.Gⁿ.u.grid, :xy, _apply_z_bcs!, model.timestepper.Gⁿ.u, instantiated_location(model.timestepper.Gⁿ.u), model.timestepper.Gⁿ.u.grid, model.velocities.u.boundary_conditions.bottom, model.velocities.u.boundary_conditions.top, args)
+    launch!(model.architecture, model.timestepper.Gⁿ.e.grid, :xy, _apply_z_bcs!, model.timestepper.Gⁿ.e, instantiated_location(model.timestepper.Gⁿ.e), model.timestepper.Gⁿ.e.grid, model.tracers.e.boundary_conditions.bottom, model.tracers.e.boundary_conditions.top, args)
+
 
     Gⁿ = model.timestepper.Gⁿ.u
     G⁻ = model.timestepper.G⁻.u
@@ -246,6 +244,9 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
 
     return nothing
 end
+
+bad_apply_z_bcs!(Gc, grid::AbstractGrid, c, bottom_bc, top_bc, arch::AbstractArchitecture, args...) =
+    launch!(arch, grid, :xy, _apply_z_bcs!, Gc, instantiated_location(Gc), grid, bottom_bc, top_bc, Tuple(args))
 
 function estimate_tracer_error(model, initial_temperature, initial_salinity, wind_stress)
     time_step_double_gyre!(model, initial_temperature, initial_salinity, wind_stress)
