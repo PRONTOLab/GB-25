@@ -294,16 +294,8 @@ end
     wb = explicit_buoyancy_flux(i, j, k, grid, closure_ij, next_velocities, tracers, buoyancy, diffusivities)
     wb⁻ = min(zero(grid), wb)
 
-    eⁱʲᵏ = @inbounds e[i, j, k]
-    eᵐⁱⁿ = closure_ij.minimum_tke
-    wb⁻_e = wb⁻ / eⁱʲᵏ * (eⁱʲᵏ > eᵐⁱⁿ)
-
     on_bottom = !inactive_cell(i, j, k, grid) & inactive_cell(i, j, k-1, grid)
     active = !inactive_cell(i, j, k, grid)
-    Δz = Oceananigans.Operators.Δzᶜᶜᶜ(i, j, k, grid)
-    Cᵂϵ = closure_ij.turbulent_kinetic_energy_equation.Cᵂϵ
-    e⁺ = clip(eⁱʲᵏ)
-    w★ = sqrt(e⁺)
 
     #@inbounds Le[i, j, k] = (wb⁻_e - ω + div_Jᵉ_e) * active
 
