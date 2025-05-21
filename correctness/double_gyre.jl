@@ -290,7 +290,8 @@ end
     closure_ij = getclosure(i, j, closure)
 
     # Compute TKE diffusivity.
-    @inbounds κe[i, j, k] = Oceananigans.Operators.ℑzᵃᵃᶠ(i, j, k, grid, turbulent_velocityᶜᶜᶜ, closure_ij, tracers.e)
+    eᵐⁱⁿ = closure.minimum_tke
+    @inbounds κe[i, j, k] = bad_turbulent_velocityᶜᶜᶜ(i, j, k-1, grid, closure_ij, tracers.e) + bad_turbulent_velocityᶜᶜᶜ(i, j, k, grid, closure_ij, tracers.e)
 
     # Compute fast TKE RHS
     @inbounds P = 1 / grid.z.Δᵃᵃᶜ[k]
@@ -299,6 +300,12 @@ end
         e[i, j, k] += 1000 * (P - G⁻e[i, j, k])
         G⁻e[i, j, k] = P
     end
+end
+
+@inline function bad_turbulent_velocityᶜᶜᶜ(i, j, k, grid, closure, e)
+    eᵢ = @inbounds e[i, j, k]
+    eᵐⁱⁿ = closure.minimum_tke
+    return sqrt(max(eᵐⁱⁿ, eᵢ))
 end
 
 
