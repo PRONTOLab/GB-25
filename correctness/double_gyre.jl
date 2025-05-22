@@ -6,6 +6,8 @@ using GordonBell25
 #Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
 #Reactant.allowscalar(true)
 
+using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity
+
 using SeawaterPolynomials
 
 throw_error = false
@@ -59,11 +61,26 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     buoyancy = SeawaterBuoyancy(equation_of_state = SeawaterPolynomials.TEOS10EquationOfState(Oceananigans.defaults.FloatType))
 
     # Closures:
+    # diffusivity scheme we need for GM/Redi.
+    # κ_symmetric is the parameter we need to train for (can be scalar or a spatial field),
+    # κ_skew is GM parameter (also scalar or spatial field),
+    # we might want to use the Isopycnal Tensor instead of small slope (small slope common),
+    # unsure of slope limiter and time disc.
+    redi_diffusivity = IsopycnalSkewSymmetricDiffusivity(VerticallyImplicitTimeDiscretization(), Float64;
+                                                        κ_skew = 0.0,
+                                                        κ_symmetric = 0.0)
+                                                        #isopycnal_tensor = IsopycnalTensor(),
+                                                        #slope_limiter = FluxTapering(1e-2))
+
+    
+
+
+
     horizontal_closure = HorizontalScalarDiffusivity(ν = 5000.0, κ = 1000.0)
     #vertical_closure   = VerticalScalarDiffusivity(ν = 1e-2, κ = 1e-5) 
     vertical_closure   = Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity()
     #vertical_closure = Oceananigans.TurbulenceClosures.TKEDissipationVerticalDiffusivity()
-    closure = (horizontal_closure, vertical_closure)
+    closure = (redi_diffusivity, vertical_closure)
 
     # Coriolis forces for a rotating Earth
     coriolis = HydrostaticSphericalCoriolis()
