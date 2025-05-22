@@ -6,6 +6,8 @@ using GordonBell25
 #Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
 #Reactant.allowscalar(true)
 
+using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity
+
 using SeawaterPolynomials
 
 using Enzyme
@@ -61,6 +63,17 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     buoyancy = SeawaterBuoyancy(equation_of_state = LinearEquationOfState(Oceananigans.defaults.FloatType))
 
     # Closures:
+    # diffusivity scheme we need for GM/Redi.
+    # κ_symmetric is the parameter we need to train for (can be scalar or a spatial field),
+    # κ_skew is GM parameter (also scalar or spatial field),
+    # we might want to use the Isopycnal Tensor instead of small slope (small slope common),
+    # unsure of slope limiter and time disc.
+    redi_diffusivity = IsopycnalSkewSymmetricDiffusivity(VerticallyImplicitTimeDiscretization(), Float64;
+                                                        κ_skew = 0.0,
+                                                        κ_symmetric = 0.0)
+                                                        #isopycnal_tensor = IsopycnalTensor(),
+                                                        #slope_limiter = FluxTapering(1e-2))
+
     horizontal_closure = HorizontalScalarDiffusivity(ν = 5000.0, κ = 1000.0)
     vertical_closure   = VerticalScalarDiffusivity(ν = 1e-2, κ = 1e-5) 
     #vertical_closure   = Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity()
@@ -90,7 +103,7 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
 
     model = HydrostaticFreeSurfaceModel(; grid,
                                           free_surface = free_surface,
-                                          closure = vertical_closure,
+                                          closure = closure,
                                           buoyancy = buoyancy,
                                           tracers = tracers,
                                           coriolis = coriolis,
@@ -201,7 +214,8 @@ dTᵢ = Field{Center, Center, Center}(rmodel.grid)
 dSᵢ = Field{Center, Center, Center}(rmodel.grid)
 dJ  = Field{Face, Center, Nothing}(rmodel.grid)
 
-@info dmodel.buoyancy
+@info dmodel
+@info dmodel.closure
 
 tic = time()
 restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress)
