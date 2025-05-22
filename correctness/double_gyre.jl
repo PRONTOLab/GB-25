@@ -46,7 +46,7 @@ function simple_latitude_longitude_grid(arch, Nx, Ny, Nz; halo=(8, 8, 8))
     grid = LatitudeLongitudeGrid(arch; size=(Nx, Ny, Nz), halo, z,
         longitude = (0, 360), # Problem is here: when longitude is not periodic we get error
         latitude = (15, 75),
-        topology = (Periodic, Bounded, Bounded)
+        topology = (Bounded, Bounded, Bounded)
     )
 
     return grid
@@ -105,7 +105,7 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
 
     model = HydrostaticFreeSurfaceModel(; grid,
                                           free_surface = free_surface,
-                                          closure = closure,
+                                          closure = vertical_closure,
                                           buoyancy = buoyancy,
                                           tracers = tracers,
                                           coriolis = coriolis,
