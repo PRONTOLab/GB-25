@@ -7,12 +7,16 @@ using Dates
 @info "This is when the fun begins" now(UTC)
 
 ENV["JULIA_DEBUG"] = "Reactant_jll,Reactant"
-jobid_procid = string(get(ENV, "SLURM_JOB_ID", Int(datetime2unix(now(UTC)) * 1000)), ".", get(ENV, "SLURM_PROCID", string(getpid())))
 
 using Oceananigans
 using SeawaterPolynomials.TEOS10: TEOS10EquationOfState
 using Reactant
 using GordonBell25: GordonBell25
+
+jobid_procid = GordonBell25.get_jobid_procid()
+
+# This must be called before `GordonBell25.initialize`!
+GordonBell25.preamble(; rendezvous_warn=20, rendezvous_terminate=40)
 
 using Libdl: dllist
 
@@ -21,9 +25,9 @@ using Libdl: dllist
 Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
 Reactant.MLIR.IR.DUMP_MLIR_DIR[] = joinpath(@__DIR__, "mlir_dumps", jobid_procid)
 Reactant.Compiler.DEBUG_DISABLE_RESHARDING[] = true
-Reactant.Compiler.DEBUG_PRINT_CODEGEN[] = true
+# Reactant.Compiler.DEBUG_PRINT_CODEGEN[] = true
 Reactant.Compiler.WHILE_CONCAT[] = true
-Reactant.Compiler.DUS_TO_CONCAT[] = true
+# Reactant.Compiler.DUS_TO_CONCAT[] = false
 
 GordonBell25.initialize(; single_gpu_per_process=false)
 
@@ -32,11 +36,11 @@ ndevices = length(Reactant.devices())
 process_id = Reactant.Distributed.local_rank()
 arch = Oceananigans.Distributed(
     Oceananigans.ReactantState();
-    partition=Partition(factors(ndevices)..., 1)
+    partition=Partition(GordonBell25.factors(ndevices)..., 1)
 )
 
 H = 8 # halo size
-T = Tx, Ty = 512 .* factors(ndevices)
+T = Tx, Ty = 512 .* GordonBell25.factors(ndevices)
 Nx, Ny = @. T - 2 * H
 Nz = 256
 
@@ -106,11 +110,16 @@ model.clock.last_Δt = ConcreteRNumber(60.0)
 # compiled_update_state! = @compile sync=true Oceananigans.TimeSteppers.update_state!(model)
 # @info "[$(process_id)] allocations" GordonBell25.allocatorstats()
 
+shardy_options = Sharding.ShardyPropagationOptions(
+    ;
+    enable_insert_explicit_collectives=true
+)
+
 @info "[$(process_id)] compiling first time step" now(UTC)
-compiled_first_time_step! = @compile sync=true raise=true GordonBell25.first_time_step!(model)
+compiled_first_time_step! = @compile shardy_passes = shardy_options sync=true raise=true GordonBell25.first_time_step!(model)
 @info "[$(process_id)] compiling loop" now(UTC)
 Ninner = ConcreteRNumber(128; sharding=Sharding.NamedSharding(arch.connectivity, ()))
-compiled_loop! = @compile sync=true raise=true GordonBell25.loop!(model, Ninner)
+compiled_loop! = @compile shardy_passes = shardy_options sync=true raise=true GordonBell25.loop!(model, Ninner)
 @info "[$(process_id)] allocations" GordonBell25.allocatorstats()
 
 # #-------------------------------------------------------------------------------
@@ -152,9 +161,8 @@ end
 mkpath(joinpath(profile_dir, "loop2"))
 @info "[$(process_id)] allocations" GordonBell25.allocatorstats()
 @info "[$(process_id)] running second loop" now(UTC)
-@info "[$(process_id)] running loop2" now(UTC)
 Reactant.with_profiler(joinpath(profile_dir, "loop2")) do
-    @time "[$(process_id)] loop" compiled_loop!(model, Ninner)
+    @time "[$(process_id)] second loop" compiled_loop!(model, Ninner)
 end
 @info "[$(process_id)] allocations" GordonBell25.allocatorstats()
 

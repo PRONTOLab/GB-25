@@ -8,12 +8,13 @@ using SeawaterPolynomials
 using ClimaOcean
 using ClimaOcean.OceanSeaIceModels.InterfaceComputations: FixedIterations, ComponentInterfaces
 
-using CFTime
 using Dates
 using Printf
 using Profile
 using Random
 using Serialization
+
+using KernelAbstractions: @index, @kernel
 
 const PROFILE = Ref(false)
 
@@ -76,7 +77,7 @@ function mtn₂(λ, φ)
 end
 
 # Simple initial condition for producing pretty pictures
-function smooth_step(φ)
+@inline function smooth_step(φ)
     φ₀ = 40
     dφ = 5
     return (1 - tanh((abs(φ) - φ₀) / dφ)) / 2
@@ -90,6 +91,36 @@ end
 function Sᵢ(λ, φ, z)
     dSdz = - 5e-3
     return dSdz * z + rand()
+end
+
+@kernel function set_baroclinic_instability_kernel!(T, S, grid)
+    i, j, k = @index(Global, NTuple)
+    φ = Oceananigans.Grids.φnode(i, j, k, grid, Center(), Center(), Center())
+    z = Oceananigans.Grids.znode(i, j, k, grid, Center(), Center(), Center())
+    @inbounds begin
+        dTdz = 1e-3
+        T[i, j, k] = (30 + dTdz * z) * smooth_step(φ)
+
+        dSdz = - 5e-3
+        S[i, j, k] = dSdz * z
+    end
+end
+
+function _set_baroclinic_instability!(model)
+    grid = model.grid
+    arch = grid.architecture
+    Oceananigans.Utils.launch!(arch, grid, :xyz, set_baroclinic_instability_kernel!,
+                               model.tracers.T, model.tracers.S, model.grid)
+    return nothing
+end
+
+function set_baroclinic_instability!(model)
+    if model.architecture isa ReactantState
+        rset! = @compile sync=true raise=true _set_baroclinic_instability!(model)
+        rset!(model)
+    else
+        _set_baroclinic_instability!(model)
+    end
 end
 
 function gaussian_islands_tripolar_grid(arch::Architectures.AbstractArchitecture, resolution, Nz)
@@ -123,4 +154,3 @@ function earth_tripolar_grid(arch::Architectures.AbstractArchitecture, Nx, Ny, N
                                                                   GridFittedBottom(bathymetry);
                                                                   active_cells_map = false)
 end
-

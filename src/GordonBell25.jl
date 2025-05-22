@@ -8,6 +8,7 @@ include("data_free_model.jl")
 include("ocean_climate_model.jl")
 include("baroclinic_instability_model.jl")
 include("sharding_utils.jl")
+include("correctness.jl")
 include("precompile.jl")
 
 end # module

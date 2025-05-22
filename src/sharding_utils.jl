@@ -1,4 +1,5 @@
 using Reactant
+using Dates
 
 struct TreeSharding{S} <: Sharding.AbstractSharding
     sharding::S
@@ -38,7 +39,8 @@ function factors(N::Int)
         alternate *= -1
     end
 
-    Dx, Dy = D, N ÷ D
+    # Always make Dy >= Dx
+    Dx, Dy = extrema((D, N ÷ D))
 
     Dx * Dy != N && error("The product $(Dx) * $(Dy) is not equal to the input argument $(N), there is a bug in this function!")
 
@@ -57,7 +59,14 @@ end
 
 function initialize(; kwargs...)
     # TODO: improve the condition by checking the device we're on?
-    if get(ENV, "CI", "false") != "true"
+    if !(get(ENV, "CI", "false") == "true" || contains(get(ENV, "XLA_FLAGS", ""), "--xla_force_host_platform_device_count"))
         Reactant.Distributed.initialize(; kwargs...)
     end
 end
+
+get_jobid_procid() =
+    string(
+        get(ENV, "SLURM_JOB_ID", replace(string(now(UTC)), ':' => '-')),
+        ".",
+        get(ENV, "SLURM_PROCID", string(getpid()))
+    )
