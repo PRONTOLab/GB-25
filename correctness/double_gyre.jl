@@ -105,7 +105,7 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
 
     model = HydrostaticFreeSurfaceModel(; grid,
                                           free_surface = free_surface,
-                                          closure = vertical_closure,
+                                          closure = closure,
                                           buoyancy = buoyancy,
                                           tracers = tracers,
                                           coriolis = coriolis,
