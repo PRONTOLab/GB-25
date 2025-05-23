@@ -175,7 +175,7 @@ end
 
 function loop!(model)
     Δt = model.clock.last_Δt
-    @trace track_numbers=false for _ = 1:11
+    @trace track_numbers=false for _ = 1:10
         grid = model.grid
         Guⁿ  = model.timestepper.Gⁿ.u
         Gvⁿ  = model.timestepper.Gⁿ.v
