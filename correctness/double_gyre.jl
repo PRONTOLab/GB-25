@@ -130,7 +130,8 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces
                                                                                   _split_explicit_barotropic_velocity!,
                                                                                   compute_split_explicit_forcing!,
                                                                                   initialize_free_surface_state!,
-                                                                                  initialize_free_surface_timestepper!
+                                                                                  initialize_free_surface_timestepper!,
+                                                                                  _compute_integrated_ab2_tendencies!
 
 using Oceananigans.TurbulenceClosures: compute_diffusivities!, getclosure, clip, shear_production, dissipation
 
@@ -186,8 +187,9 @@ function loop!(model)
 
         stage = model.clock.stage
 
-        compute_split_explicit_forcing!(GUⁿ, GVⁿ, grid, Guⁿ, Gvⁿ, baroclinic_timestepper, Val(stage))
-        bad_initialize_free_surface_state!(model.free_surface, baroclinic_timestepper, barotropic_timestepper, Val(stage))
+        bad_compute_split_explicit_forcing!(GUⁿ, GVⁿ, grid, Guⁿ, Gvⁿ, baroclinic_timestepper, Val(stage))
+
+        fill!(model.free_surface.filtered_state.U, 0)
 
         Gⁿ = model.timestepper.Gⁿ.u
         G⁻ = model.timestepper.G⁻.u
@@ -293,16 +295,15 @@ function loop!(model)
     return nothing
 end
 
-function bad_initialize_free_surface_state!(free_surface, baroclinic_timestepper, timestepper, stage)
+@inline function bad_compute_split_explicit_forcing!(GUⁿ, GVⁿ, grid, Guⁿ, Gvⁿ,
+                                                 timestepper, stage)
+    active_cells_map = get_active_column_map(grid)
 
-    η = free_surface.η
-    U, V = free_surface.barotropic_velocities
+    Gu⁻ = timestepper.G⁻.u
+    Gv⁻ = timestepper.G⁻.v
 
-    initialize_free_surface_timestepper!(timestepper, η, U, V)
-
-    fill!(free_surface.filtered_state.η, 0)
-    fill!(free_surface.filtered_state.U, 0)
-    fill!(free_surface.filtered_state.V, 0)
+    launch!(architecture(grid), grid, :xy, _compute_integrated_ab2_tendencies!, GUⁿ, GVⁿ, grid,
+            Gu⁻, Gv⁻, Guⁿ, Gvⁿ, timestepper.χ; active_cells_map)
 
     return nothing
 end
