@@ -175,8 +175,23 @@ function loop!(model)
         grid = model.grid
         compute_free_surface_tendency!(grid, model, model.free_surface)
         
-        ab2_step_velocities!(model.velocities, model, Δt, model.timestepper.χ)
-        bad_ab2_step_tracers!(model.tracers, model, Δt, model.timestepper.χ)
+        bad_ab2_step_velocities!(model.velocities, model, Δt, model.timestepper.χ)
+
+        Gⁿ = model.timestepper.Gⁿ.T
+        G⁻ = model.timestepper.G⁻.T
+        tracer_field = model.tracers.T
+        closure = model.closure
+        grid = model.grid
+
+        launch!(architecture(grid), grid, :xyz, _ab2_step_tracer_field!, tracer_field, grid, Δt, model.timestepper.χ, Gⁿ, G⁻)
+
+        implicit_step!(tracer_field,
+                        model.timestepper.implicit_solver,
+                        closure,
+                        model.diffusivity_fields,
+                        Val(1),
+                        model.clock,
+                        Δt)
 
         free_surface = model.free_surface
         baroclinic_timestepper = model.timestepper
@@ -251,23 +266,24 @@ function loop!(model)
     return nothing
 end
 
-function bad_ab2_step_tracers!(tracers, model, Δt, χ)
+function bad_ab2_step_velocities!(velocities, model, Δt, χ)
 
-    Gⁿ = model.timestepper.Gⁿ.T
-    G⁻ = model.timestepper.G⁻.T
-    tracer_field = tracers.T
-    closure = model.closure
-    grid = model.grid
+    for (i, name) in enumerate((:u, :v))
+        Gⁿ = model.timestepper.Gⁿ[name]
+        G⁻ = model.timestepper.G⁻[name]
+        velocity_field = model.velocities[name]
 
-    launch!(architecture(grid), grid, :xyz, _ab2_step_tracer_field!, tracer_field, grid, Δt, χ, Gⁿ, G⁻)
+        launch!(model.architecture, model.grid, :xyz,
+                ab2_step_field!, velocity_field, Δt, χ, Gⁿ, G⁻)
 
-    implicit_step!(tracer_field,
-                    model.timestepper.implicit_solver,
-                    closure,
-                    model.diffusivity_fields,
-                    Val(1),
-                    model.clock,
-                    Δt)
+        implicit_step!(velocity_field,
+                       model.timestepper.implicit_solver,
+                       model.closure,
+                       model.diffusivity_fields,
+                       nothing,
+                       model.clock,
+                       Δt)
+    end
 
     return nothing
 end
