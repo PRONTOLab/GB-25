@@ -113,7 +113,10 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fiel
                                                         ab2_step_tracers!,
                                                         compute_hydrostatic_boundary_tendency_contributions!,
                                                         compute_hydrostatic_free_surface_tendency_contributions!,
-                                                        apply_flux_bcs!
+                                                        apply_flux_bcs!,
+                                                        compute_hydrostatic_momentum_tendencies!,
+                                                        compute_hydrostatic_free_surface_Gc!,
+                                                        hydrostatic_free_surface_tracer_tendency
 
 using Oceananigans.TurbulenceClosures: compute_diffusivities!, getclosure, clip, shear_production, dissipation
 
@@ -159,13 +162,71 @@ function loop!(model)
     @trace track_numbers=false for _ = 1:10
         ab2_step!(model, Δt)
         correct_velocities_and_cache_previous_tendencies!(model, Δt)
-        compute_auxiliaries!(model)
+        #bad_compute_auxiliaries!(model)
         compute_hydrostatic_free_surface_tendency_contributions!(model, :xyz; active_cells_map=nothing)
         launch!(model.architecture, model.timestepper.Gⁿ.u.grid, :xy, _apply_z_bcs!, model.timestepper.Gⁿ.u, instantiated_location(model.timestepper.Gⁿ.u), model.timestepper.Gⁿ.u.grid, model.velocities.u.boundary_conditions.bottom, model.velocities.u.boundary_conditions.top, (model.buoyancy,))
     end
     return nothing
 end
 
+function bad_compute_auxiliaries!(model; w_parameters = w_kernel_parameters(model.grid),
+                                                                  p_parameters = p_kernel_parameters(model.grid),
+                                                                  κ_parameters = :xyz)
+
+    grid        = model.grid
+    closure     = model.closure
+    tracers     = model.tracers
+    diffusivity = model.diffusivity_fields
+    buoyancy    = model.buoyancy
+
+    P    = model.pressure.pHY′
+    arch = architecture(grid)
+
+    # Advance diagnostic quantities
+    update_hydrostatic_pressure!(P, arch, grid, buoyancy, tracers; parameters = p_parameters)
+
+    return nothing
+end
+
+#=
+function bad_compute_hydrostatic_free_surface_tendency_contributions!(model, kernel_parameters; active_cells_map=nothing)
+
+    arch = model.architecture
+    grid = model.grid
+
+    compute_hydrostatic_momentum_tendencies!(model, model.velocities, kernel_parameters; active_cells_map)
+
+    for (tracer_index, tracer_name) in enumerate(propertynames(model.tracers))
+
+        @inbounds c_tendency    = model.timestepper.Gⁿ[tracer_name]
+        @inbounds c_advection   = model.advection[tracer_name]
+        @inbounds c_forcing     = model.forcing[tracer_name]
+
+        args = tuple(Val(tracer_index),
+                     Val(tracer_name),
+                     c_advection,
+                     model.closure,
+                     model.buoyancy,
+                     model.biogeochemistry,
+                     model.velocities,
+                     model.free_surface,
+                     model.tracers,
+                     model.diffusivity_fields,
+                     model.auxiliary_fields,
+                     model.clock,
+                     c_forcing)
+
+        launch!(arch, grid, kernel_parameters,
+                compute_hydrostatic_free_surface_Gc!,
+                c_tendency,
+                grid,
+                args;
+                active_cells_map)
+    end
+
+    return nothing
+end
+=#
 
 function estimate_tracer_error(model, wind_stress)
     time_step_double_gyre!(model, wind_stress)
