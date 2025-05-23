@@ -163,34 +163,48 @@ end
 function loop!(model)
     Δt = model.clock.last_Δt
     @trace track_numbers=false for _ = 1:11
-        ab2_step!(model, Δt)
-        bad_barotropic_split_explicit_corrector!(model.velocities.u, model.velocities.v, model.free_surface, model.grid)
+        bad_ab2_step!(model, Δt)
+
+        u = model.velocities.u
+        v = model.velocities.v
+        free_surface = model.free_surface
+        grid = model.grid
+        state = free_surface.filtered_state
+        η     = free_surface.η
+        U, V  = free_surface.barotropic_velocities
+        U̅, V̅  = state.U, state.V
+        arch  = architecture(grid)
+
+        launch!(architecture(grid), grid, :xy,
+                _compute_barotropic_mode!,
+                U̅, V̅, grid, u, v, η)
+
+        launch!(arch, grid, :xyz, _barotropic_split_explicit_corrector!,
+                u, v, U, V, U̅, V̅, η, grid)
+
         compute_hydrostatic_free_surface_tendency_contributions!(model, :xyz; active_cells_map=nothing)
         launch!(model.architecture, model.timestepper.Gⁿ.u.grid, :xy, _apply_z_bcs!, model.timestepper.Gⁿ.u, instantiated_location(model.timestepper.Gⁿ.u), model.timestepper.Gⁿ.u.grid, model.velocities.u.boundary_conditions.bottom, model.velocities.u.boundary_conditions.top, (model.buoyancy,))
     end
     return nothing
 end
 
-function bad_barotropic_split_explicit_corrector!(u, v, free_surface, grid)
-    state = free_surface.filtered_state
-    η     = free_surface.η
-    U, V  = free_surface.barotropic_velocities
-    U̅, V̅  = state.U, state.V
-    arch  = architecture(grid)
+function bad_ab2_step!(model::HydrostaticFreeSurfaceModel, Δt)
 
-    # NOTE: the filtered `U̅` and `V̅` have been copied in the instantaneous `U` and `V`,
-    # so we use the filtered velocities as "work arrays" to store the vertical integrals
-    # of the instantaneous velocities `u` and `v`.
-    launch!(architecture(grid), grid, :xy,
-            _compute_barotropic_mode!,
-            U̅, V̅, grid, u, v, η)
+    grid = model.grid
+    compute_free_surface_tendency!(grid, model, model.free_surface)
 
-    # add in "good" barotropic mode
-    launch!(arch, grid, :xyz, _barotropic_split_explicit_corrector!,
-            u, v, U, V, U̅, V̅, η, grid)
+    FT = eltype(grid)
+    χ = convert(FT, model.timestepper.χ)
+    Δt = convert(FT, Δt)
+
+    # Step locally velocity and tracers
+    @apply_regionally local_ab2_step!(model, Δt, χ)
+
+    step_free_surface!(model.free_surface, model, model.timestepper, Δt)
 
     return nothing
 end
+
 
 #=
 function bad_compute_hydrostatic_free_surface_tendency_contributions!(model, kernel_parameters; active_cells_map=nothing)
