@@ -129,7 +129,8 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces
                                                                                   _split_explicit_free_surface!,
                                                                                   _split_explicit_barotropic_velocity!,
                                                                                   compute_split_explicit_forcing!,
-                                                                                  initialize_free_surface_state!
+                                                                                  initialize_free_surface_state!,
+                                                                                  initialize_free_surface_timestepper!
 
 using Oceananigans.TurbulenceClosures: compute_diffusivities!, getclosure, clip, shear_production, dissipation
 
@@ -175,7 +176,18 @@ function loop!(model)
     Δt = model.clock.last_Δt
     @trace track_numbers=false for _ = 1:11
         grid = model.grid
-        bad_compute_free_surface_tendency!(grid, model, model.free_surface)
+        Guⁿ  = model.timestepper.Gⁿ.u
+        Gvⁿ  = model.timestepper.Gⁿ.v
+        GUⁿ  = model.timestepper.Gⁿ.U
+        GVⁿ  = model.timestepper.Gⁿ.V
+
+        barotropic_timestepper = model.free_surface.timestepper
+        baroclinic_timestepper = model.timestepper
+
+        stage = model.clock.stage
+
+        compute_split_explicit_forcing!(GUⁿ, GVⁿ, grid, Guⁿ, Gvⁿ, baroclinic_timestepper, Val(stage))
+        bad_initialize_free_surface_state!(model.free_surface, baroclinic_timestepper, barotropic_timestepper, Val(stage))
 
         Gⁿ = model.timestepper.Gⁿ.u
         G⁻ = model.timestepper.G⁻.u
@@ -281,21 +293,16 @@ function loop!(model)
     return nothing
 end
 
-function bad_compute_free_surface_tendency!(grid, model, free_surface::SplitExplicitFreeSurface)
+function bad_initialize_free_surface_state!(free_surface, baroclinic_timestepper, timestepper, stage)
 
-    Guⁿ = model.timestepper.Gⁿ.u
-    Gvⁿ = model.timestepper.Gⁿ.v
+    η = free_surface.η
+    U, V = free_surface.barotropic_velocities
 
-    GUⁿ = model.timestepper.Gⁿ.U
-    GVⁿ = model.timestepper.Gⁿ.V
+    initialize_free_surface_timestepper!(timestepper, η, U, V)
 
-    barotropic_timestepper = free_surface.timestepper
-    baroclinic_timestepper = model.timestepper
-
-    stage = model.clock.stage
-
-    compute_split_explicit_forcing!(GUⁿ, GVⁿ, grid, Guⁿ, Gvⁿ, baroclinic_timestepper, Val(stage))
-    initialize_free_surface_state!(free_surface, baroclinic_timestepper, barotropic_timestepper, Val(stage))
+    fill!(free_surface.filtered_state.η, 0)
+    fill!(free_surface.filtered_state.U, 0)
+    fill!(free_surface.filtered_state.V, 0)
 
     return nothing
 end
