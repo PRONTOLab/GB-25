@@ -306,7 +306,7 @@ end
 
 @kernel function bad_compute_hydrostatic_free_surface_Gc!(Gc, grid, args)
     i, j, k = @index(Global, NTuple)
-    @inbounds Gc[i, j, k] = hydrostatic_free_surface_tracer_tendency(i, j, k, grid, args...)
+    @inbounds Gc[i, j, k] = bad_hydrostatic_free_surface_tracer_tendency(i, j, k, grid, args...)
 end
 
 @inline function bad_hydrostatic_free_surface_tracer_tendency(i, j, k, grid,
@@ -326,21 +326,10 @@ end
                                                           forcing) where tracer_index
 
     @inbounds c = tracers[tracer_index]
-    model_fields = merge(hydrostatic_fields(velocities, free_surface, tracers),
-                         auxiliary_fields,
-                         biogeochemical_auxiliary_fields(biogeochemistry))
 
-    biogeochemical_velocities = biogeochemical_drift_velocity(biogeochemistry, val_tracer_name)
-    closure_velocities = closure_turbulent_velocity(closure, diffusivities, val_tracer_name)
+    total_velocities = velocities
 
-    total_velocities = sum_of_velocities(velocities, biogeochemical_velocities, closure_velocities)
-    total_velocities = with_advective_forcing(forcing, total_velocities)
-
-    return ( - div_Uc(i, j, k, grid, advection, total_velocities, c)
-             - ∇_dot_qᶜ(i, j, k, grid, closure, diffusivities, val_tracer_index, c, clock, model_fields, buoyancy)
-             - immersed_∇_dot_qᶜ(i, j, k, grid, c, c_immersed_bc, closure, diffusivities, val_tracer_index, clock, model_fields)
-             + biogeochemical_transition(i, j, k, grid, biogeochemistry, val_tracer_name, clock, model_fields)
-             + forcing(i, j, k, grid, clock, model_fields))
+    return - div_Uc(i, j, k, grid, advection, total_velocities, c)
 end
 
 @kernel function _bad_apply_z_bcs!(Gc, loc, grid, bottom_bc, top_bc, args)
