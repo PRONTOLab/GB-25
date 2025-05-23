@@ -90,14 +90,14 @@ end
 using Oceananigans: initialize!, prognostic_fields, instantiated_location
 using Oceananigans.Grids: AbstractGrid, XDirection, YDirection, ZDirection, inactive_cell, get_active_column_map
 using Oceananigans.TimeSteppers: update_state!, ab2_step!, tick!, calculate_pressure_correction!, correct_velocities_and_cache_previous_tendencies!, step_lagrangian_particles!, ab2_step_field!, implicit_step!, pressure_correct_velocities!, cache_previous_tendencies!
-using Oceananigans.Utils: @apply_regionally, launch!, configure_kernel
+using Oceananigans.Utils: @apply_regionally, launch!, configure_kernel, sum_of_velocities
 
 using Oceananigans.Models: update_model_field_time_series!, interior_tendency_kernel_parameters, complete_communication_and_compute_buffer!
 
-using Oceananigans.BoundaryConditions: update_boundary_condition!, replace_horizontal_vector_halos!, fill_halo_regions!, apply_x_bcs!, apply_y_bcs!, apply_z_bcs!, _apply_z_bcs!
+using Oceananigans.BoundaryConditions: update_boundary_condition!, replace_horizontal_vector_halos!, fill_halo_regions!, apply_x_bcs!, apply_y_bcs!, apply_z_bcs!, _apply_z_bcs!, apply_z_top_bc!, getbc, flip
 using Oceananigans.Fields: tupled_fill_halo_regions!, location, immersed_boundary_condition
 using Oceananigans.Models.NonhydrostaticModels: compute_auxiliaries!, update_hydrostatic_pressure!
-using Oceananigans.Biogeochemistry: update_biogeochemical_state!, update_tendencies!
+using Oceananigans.Biogeochemistry: update_biogeochemical_state!, update_tendencies!, biogeochemical_drift_velocity, biogeochemical_transition, biogeochemical_auxiliary_fields
 
 using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fields!,
                                                         compute_tendencies!,
@@ -118,7 +118,8 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fiel
                                                         compute_hydrostatic_free_surface_Gc!,
                                                         hydrostatic_free_surface_tracer_tendency,
                                                         barotropic_split_explicit_corrector!,
-                                                        _ab2_step_tracer_field!
+                                                        _ab2_step_tracer_field!,
+                                                        hydrostatic_fields
 
 using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: _compute_barotropic_mode!,
                                                                                   _barotropic_split_explicit_corrector!,
@@ -133,7 +134,7 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces
                                                                                   initialize_free_surface_timestepper!,
                                                                                   _compute_integrated_ab2_tendencies!
 
-using Oceananigans.TurbulenceClosures: compute_diffusivities!, getclosure, clip, shear_production, dissipation
+using Oceananigans.TurbulenceClosures: compute_diffusivities!, getclosure, clip, shear_production, dissipation, closure_turbulent_velocity, ∇_dot_qᶜ, immersed_∇_dot_qᶜ
 
 using Oceananigans.ImmersedBoundaries: get_active_cells_map, mask_immersed_field!
 
@@ -153,7 +154,9 @@ using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: get_top_tra
 
 
 using Oceananigans.Solvers: solve!, solve_batched_tridiagonal_system_kernel!
-using Oceananigans.Operators: ℑxᶜᵃᵃ, ℑyᵃᶜᵃ
+using Oceananigans.Operators: ℑxᶜᵃᵃ, ℑyᵃᶜᵃ, Az, volume
+using Oceananigans.Forcings: with_advective_forcing
+using Oceananigans.Advection: div_Uc
 using KernelAbstractions: @kernel, @index
 using KernelAbstractions.Extras.LoopInfo: @unroll
 
@@ -219,10 +222,8 @@ function loop!(model)
         barotropic_velocities = free_surface.barotropic_velocities
 
         # All hardcoded
-        Nsubsteps = 21
         Δτᴮ = 80.0
-        weights = (-0.0027616325569592756, -0.003862908196820046, -0.0033054695005112497, -0.0010957042827565292, 0.0027497791381626267, 0.008196486562738532, 0.015182182424663676, 0.023604844197351794, 0.033308426692553815, 0.044066436251068465, 0.05556331482554762, 0.06737363395539638, 0.07893909863376815, 0.08954336106665389, 0.09828464432406694, 0.1040461758833218, 0.10546443106440806, 0.10089518635745921, 0.08837738264231575, 0.06559479830018361, 0.029835532217386728)
-
+        
         # Slow forcing terms
         GUⁿ = model.timestepper.Gⁿ.U
         GVⁿ = model.timestepper.Gⁿ.V
@@ -249,8 +250,8 @@ function loop!(model)
         free_surface_kernel!, _        = configure_kernel(arch, free_surface.η.grid, free_surface.kernel_parameters, _split_explicit_free_surface!)
         barotropic_velocity_kernel!, _ = configure_kernel(arch, free_surface.η.grid, free_surface.kernel_parameters, _split_explicit_barotropic_velocity!)
 
-        for substep in 1:Nsubsteps
-                averaging_weight = weights[substep]
+        for substep in 1:2
+                averaging_weight = 0.5
                 free_surface_kernel!(η_args...)
                 barotropic_velocity_kernel!(averaging_weight, U_args...)
         end
@@ -293,14 +294,59 @@ function loop!(model)
                     model.forcing.T)
         
         launch!(arch, grid, :xyz,
-                compute_hydrostatic_free_surface_Gc!,
+                bad_compute_hydrostatic_free_surface_Gc!,
                 model.timestepper.Gⁿ.T,
                 grid,
                 args)
 
-        launch!(model.architecture, model.timestepper.Gⁿ.u.grid, :xy, _apply_z_bcs!, model.timestepper.Gⁿ.u, instantiated_location(model.timestepper.Gⁿ.u), model.timestepper.Gⁿ.u.grid, model.velocities.u.boundary_conditions.bottom, model.velocities.u.boundary_conditions.top, (model.buoyancy,))
+        launch!(model.architecture, model.timestepper.Gⁿ.u.grid, :xy, _bad_apply_z_bcs!, model.timestepper.Gⁿ.u, instantiated_location(model.timestepper.Gⁿ.u), model.timestepper.Gⁿ.u.grid, model.velocities.u.boundary_conditions.bottom, model.velocities.u.boundary_conditions.top, (model.buoyancy,))
     end
     return nothing
+end
+
+@kernel function bad_compute_hydrostatic_free_surface_Gc!(Gc, grid, args)
+    i, j, k = @index(Global, NTuple)
+    @inbounds Gc[i, j, k] = hydrostatic_free_surface_tracer_tendency(i, j, k, grid, args...)
+end
+
+@inline function bad_hydrostatic_free_surface_tracer_tendency(i, j, k, grid,
+                                                          val_tracer_index::Val{tracer_index},
+                                                          val_tracer_name,
+                                                          advection,
+                                                          closure,
+                                                          c_immersed_bc,
+                                                          buoyancy,
+                                                          biogeochemistry,
+                                                          velocities,
+                                                          free_surface,
+                                                          tracers,
+                                                          diffusivities,
+                                                          auxiliary_fields,
+                                                          clock,
+                                                          forcing) where tracer_index
+
+    @inbounds c = tracers[tracer_index]
+    model_fields = merge(hydrostatic_fields(velocities, free_surface, tracers),
+                         auxiliary_fields,
+                         biogeochemical_auxiliary_fields(biogeochemistry))
+
+    biogeochemical_velocities = biogeochemical_drift_velocity(biogeochemistry, val_tracer_name)
+    closure_velocities = closure_turbulent_velocity(closure, diffusivities, val_tracer_name)
+
+    total_velocities = sum_of_velocities(velocities, biogeochemical_velocities, closure_velocities)
+    total_velocities = with_advective_forcing(forcing, total_velocities)
+
+    return ( - div_Uc(i, j, k, grid, advection, total_velocities, c)
+             - ∇_dot_qᶜ(i, j, k, grid, closure, diffusivities, val_tracer_index, c, clock, model_fields, buoyancy)
+             - immersed_∇_dot_qᶜ(i, j, k, grid, c, c_immersed_bc, closure, diffusivities, val_tracer_index, clock, model_fields)
+             + biogeochemical_transition(i, j, k, grid, biogeochemistry, val_tracer_name, clock, model_fields)
+             + forcing(i, j, k, grid, clock, model_fields))
+end
+
+@kernel function _bad_apply_z_bcs!(Gc, loc, grid, bottom_bc, top_bc, args)
+    i, j = @index(Global, NTuple)
+    LX, LY, LZ = loc
+    @inbounds Gc[i, j, grid.Nz] -= getbc(top_bc, i, j, grid, args...) * 10
 end
 
 function estimate_tracer_error(model, wind_stress)
