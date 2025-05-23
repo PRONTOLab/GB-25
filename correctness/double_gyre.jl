@@ -161,32 +161,8 @@ function loop!(model)
         correct_velocities_and_cache_previous_tendencies!(model, Δt)
         compute_auxiliaries!(model)
         compute_hydrostatic_free_surface_tendency_contributions!(model, :xyz; active_cells_map=nothing)
-        bad_compute_hydrostatic_boundary_tendency_contributions!(model.timestepper.Gⁿ,
-                                                         model.architecture,
-                                                         model.velocities,
-                                                         model.tracers,
-                                                         model.clock,
-                                                         fields(model),
-                                                         model.closure,
-                                                         model.buoyancy)
+        launch!(model.architecture, model.timestepper.Gⁿ.u.grid, :xy, _apply_z_bcs!, model.timestepper.Gⁿ.u, instantiated_location(model.timestepper.Gⁿ.u), model.timestepper.Gⁿ.u.grid, model.velocities.u.boundary_conditions.bottom, model.velocities.u.boundary_conditions.top, (model.buoyancy,))
     end
-    return nothing
-end
-
-function bad_compute_hydrostatic_boundary_tendency_contributions!(Gⁿ, arch, velocities, tracers, args...)
-
-    args = Tuple(args)
-
-    # Velocity fields
-    for i in (:u, :v)
-        apply_flux_bcs!(Gⁿ[i], velocities[i], arch, args)
-    end
-
-    # Tracer fields
-    for i in propertynames(tracers)
-        apply_flux_bcs!(Gⁿ[i], tracers[i], arch, args)
-    end
-
     return nothing
 end
 
