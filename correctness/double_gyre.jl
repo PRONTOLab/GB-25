@@ -119,11 +119,16 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fiel
                                                         hydrostatic_free_surface_tracer_tendency,
                                                         barotropic_split_explicit_corrector!
 
-using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: _compute_barotropic_mode!, _barotropic_split_explicit_corrector!
+using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: _compute_barotropic_mode!,
+                                                                                  _barotropic_split_explicit_corrector!,
+                                                                                  calculate_substeps,
+                                                                                  calculate_adaptive_settings,
+                                                                                  iterate_split_explicit!,
+                                                                                  _update_split_explicit_state!
 
 using Oceananigans.TurbulenceClosures: compute_diffusivities!, getclosure, clip, shear_production, dissipation
 
-using Oceananigans.ImmersedBoundaries: get_active_cells_map
+using Oceananigans.ImmersedBoundaries: get_active_cells_map, mask_immersed_field!
 
 using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: get_top_tracer_bcs,
                                                                      update_previous_compute_time!,
@@ -163,12 +168,14 @@ end
 function loop!(model)
     Δt = model.clock.last_Δt
     @trace track_numbers=false for _ = 1:11
-        bad_ab2_step!(model, Δt)
+        grid = model.grid
+        compute_free_surface_tendency!(grid, model, model.free_surface)
+        local_ab2_step!(model, Δt, model.timestepper.χ)
+        bad_step_free_surface!(model.free_surface, model, model.timestepper, Δt)
 
         u = model.velocities.u
         v = model.velocities.v
         free_surface = model.free_surface
-        grid = model.grid
         state = free_surface.filtered_state
         η     = free_surface.η
         U, V  = free_surface.barotropic_velocities
@@ -188,19 +195,51 @@ function loop!(model)
     return nothing
 end
 
-function bad_ab2_step!(model::HydrostaticFreeSurfaceModel, Δt)
+function bad_step_free_surface!(free_surface, model, baroclinic_timestepper, Δt)
 
-    grid = model.grid
-    compute_free_surface_tendency!(grid, model, model.free_surface)
+    # Note: free_surface.η.grid != model.grid for DistributedSplitExplicitFreeSurface
+    # since halo_size(free_surface.η.grid) != halo_size(model.grid)
+    free_surface_grid = free_surface.η.grid
+    filtered_state    = free_surface.filtered_state
+    substepping       = free_surface.substepping
 
-    FT = eltype(grid)
-    χ = convert(FT, model.timestepper.χ)
-    Δt = convert(FT, Δt)
+    barotropic_velocities = free_surface.barotropic_velocities
 
-    # Step locally velocity and tracers
-    @apply_regionally local_ab2_step!(model, Δt, χ)
+    # Calculate the substepping parameterers
+    # barotropic time step as fraction of baroclinic step and averaging weights
+    Nsubsteps = calculate_substeps(substepping, Δt)
+    fractional_Δt, weights = calculate_adaptive_settings(substepping, Nsubsteps)
+    Nsubsteps = length(weights)
 
-    step_free_surface!(model.free_surface, model, model.timestepper, Δt)
+    # barotropic time step in seconds
+    Δτᴮ = fractional_Δt * Δt
+
+    # Slow forcing terms
+    GUⁿ = model.timestepper.Gⁿ.U
+    GVⁿ = model.timestepper.Gⁿ.V
+
+    #free surface state
+    η = free_surface.η
+    U = barotropic_velocities.U
+    V = barotropic_velocities.V
+    η̅ = filtered_state.η
+    U̅ = filtered_state.U
+    V̅ = filtered_state.V
+
+    # reset free surface averages
+    @apply_regionally begin
+        # Solve for the free surface at tⁿ⁺¹
+        iterate_split_explicit!(free_surface, free_surface_grid, GUⁿ, GVⁿ, Δτᴮ, weights, Val(Nsubsteps))
+
+        # Update eta and velocities for the next timestep
+        # The halos are updated in the `update_state!` function
+        launch!(architecture(free_surface_grid), free_surface_grid, :xy,
+                _update_split_explicit_state!, η, U, V, free_surface_grid, η̅, U̅, V̅)
+
+        # Preparing velocities for the barotropic correction
+        mask_immersed_field!(model.velocities.u)
+        mask_immersed_field!(model.velocities.v)
+    end
 
     return nothing
 end
