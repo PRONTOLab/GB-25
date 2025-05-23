@@ -258,51 +258,7 @@ function loop!(model)
     launch!(architecture(free_surface_grid), free_surface_grid, :xy,
             _update_split_explicit_state!, η, U, V, free_surface_grid, η̅, U̅, V̅)
 
-    u = model.velocities.u
-    v = model.velocities.v
-    free_surface = model.free_surface
-    state = free_surface.filtered_state
-    η     = free_surface.η
-    U, V  = free_surface.barotropic_velocities
-    U̅, V̅  = state.U, state.V
-    arch  = architecture(grid)
-
-    launch!(architecture(grid), grid, :xy,
-            _compute_barotropic_mode!,
-            U̅, V̅, grid, u, v, η)
-
-    launch!(arch, grid, :xyz, _barotropic_split_explicit_corrector!,
-            u, v, U, V, U̅, V̅, η, grid)
-
-    arch = model.architecture
-    grid = model.grid
-    
-    launch!(arch, grid, :xyz,
-            bad_compute_hydrostatic_free_surface_Gc!,
-            model.timestepper.Gⁿ.T,
-            grid,
-            model.advection.T,
-            model.velocities,
-            model.tracers[1])
-
     return nothing
-end
-
-@kernel function bad_compute_hydrostatic_free_surface_Gc!(Gc, grid, advection, velocity, tracer)
-    i, j, k = @index(Global, NTuple)
-    @inbounds Gc[i, j, k] = - bad_div_Uc(i, j, k, grid, advection, velocity, tracer)
-end
-
-@inline function bad_div_Uc(i, j, k, grid, advection, U, c)
-    return (δxᶜᵃᵃ(i, j, k, grid, _advective_tracer_flux_x, advection, U.u, c) +
-                                    δyᵃᶜᵃ(i, j, k, grid, _advective_tracer_flux_y, advection, U.v, c) +
-                                    δzᵃᵃᶜ(i, j, k, grid, _advective_tracer_flux_z, advection, U.w, c))
-end
-
-@kernel function _bad_apply_z_bcs!(Gc, loc, grid, bottom_bc, top_bc, args)
-    i, j = @index(Global, NTuple)
-    LX, LY, LZ = loc
-    @inbounds Gc[i, j, grid.Nz] -= getbc(top_bc, i, j, grid, args...) * 10
 end
 
 function estimate_tracer_error(model, wind_stress)
