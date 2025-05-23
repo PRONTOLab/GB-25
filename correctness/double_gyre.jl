@@ -88,8 +88,8 @@ function wind_stress_init(grid;
 end
 
 using Oceananigans: initialize!, prognostic_fields, instantiated_location
-using Oceananigans.Grids: AbstractGrid, XDirection, YDirection, ZDirection, inactive_cell
-using Oceananigans.TimeSteppers: update_state!, ab2_step!, tick!, calculate_pressure_correction!, correct_velocities_and_cache_previous_tendencies!, step_lagrangian_particles!, ab2_step_field!, implicit_step!
+using Oceananigans.Grids: AbstractGrid, XDirection, YDirection, ZDirection, inactive_cell, get_active_column_map
+using Oceananigans.TimeSteppers: update_state!, ab2_step!, tick!, calculate_pressure_correction!, correct_velocities_and_cache_previous_tendencies!, step_lagrangian_particles!, ab2_step_field!, implicit_step!, pressure_correct_velocities!, cache_previous_tendencies!
 using Oceananigans.Utils: @apply_regionally, launch!
 
 using Oceananigans.Models: update_model_field_time_series!, interior_tendency_kernel_parameters, complete_communication_and_compute_buffer!
@@ -116,7 +116,10 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fiel
                                                         apply_flux_bcs!,
                                                         compute_hydrostatic_momentum_tendencies!,
                                                         compute_hydrostatic_free_surface_Gc!,
-                                                        hydrostatic_free_surface_tracer_tendency
+                                                        hydrostatic_free_surface_tracer_tendency,
+                                                        barotropic_split_explicit_corrector!
+
+using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: _compute_barotropic_mode!, _barotropic_split_explicit_corrector!
 
 using Oceananigans.TurbulenceClosures: compute_diffusivities!, getclosure, clip, shear_production, dissipation
 
@@ -159,31 +162,32 @@ end
 
 function loop!(model)
     Δt = model.clock.last_Δt
-    @trace track_numbers=false for _ = 1:10
+    @trace track_numbers=false for _ = 1:11
         ab2_step!(model, Δt)
-        correct_velocities_and_cache_previous_tendencies!(model, Δt)
-        #bad_compute_auxiliaries!(model)
+        bad_barotropic_split_explicit_corrector!(model.velocities.u, model.velocities.v, model.free_surface, model.grid)
         compute_hydrostatic_free_surface_tendency_contributions!(model, :xyz; active_cells_map=nothing)
         launch!(model.architecture, model.timestepper.Gⁿ.u.grid, :xy, _apply_z_bcs!, model.timestepper.Gⁿ.u, instantiated_location(model.timestepper.Gⁿ.u), model.timestepper.Gⁿ.u.grid, model.velocities.u.boundary_conditions.bottom, model.velocities.u.boundary_conditions.top, (model.buoyancy,))
     end
     return nothing
 end
 
-function bad_compute_auxiliaries!(model; w_parameters = w_kernel_parameters(model.grid),
-                                                                  p_parameters = p_kernel_parameters(model.grid),
-                                                                  κ_parameters = :xyz)
+function bad_barotropic_split_explicit_corrector!(u, v, free_surface, grid)
+    state = free_surface.filtered_state
+    η     = free_surface.η
+    U, V  = free_surface.barotropic_velocities
+    U̅, V̅  = state.U, state.V
+    arch  = architecture(grid)
 
-    grid        = model.grid
-    closure     = model.closure
-    tracers     = model.tracers
-    diffusivity = model.diffusivity_fields
-    buoyancy    = model.buoyancy
+    # NOTE: the filtered `U̅` and `V̅` have been copied in the instantaneous `U` and `V`,
+    # so we use the filtered velocities as "work arrays" to store the vertical integrals
+    # of the instantaneous velocities `u` and `v`.
+    launch!(architecture(grid), grid, :xy,
+            _compute_barotropic_mode!,
+            U̅, V̅, grid, u, v, η)
 
-    P    = model.pressure.pHY′
-    arch = architecture(grid)
-
-    # Advance diagnostic quantities
-    update_hydrostatic_pressure!(P, arch, grid, buoyancy, tracers; parameters = p_parameters)
+    # add in "good" barotropic mode
+    launch!(arch, grid, :xyz, _barotropic_split_explicit_corrector!,
+            u, v, U, V, U̅, V̅, η, grid)
 
     return nothing
 end
