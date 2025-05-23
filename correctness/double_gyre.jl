@@ -160,28 +160,8 @@ function loop!(model)
         ab2_step!(model, Δt)
         correct_velocities_and_cache_previous_tendencies!(model, Δt)
         compute_auxiliaries!(model)
-        bad_compute_tendencies!(model, [])
-    end
-    return nothing
-end
-
-function bad_compute_tendencies!(model, callbacks)
-
-    grid = model.grid
-    arch = architecture(grid)
-
-    # Calculate contributions to momentum and tracer tendencies from fluxes and volume terms in the
-    # interior of the domain. The active cells map restricts the computation to the active cells in the
-    # interior if the grid is _immersed_ and the `active_cells_map` kwarg is active
-    active_cells_map = get_active_cells_map(model.grid, Val(:interior))
-    kernel_parameters = interior_tendency_kernel_parameters(arch, grid)
-
-    compute_hydrostatic_free_surface_tendency_contributions!(model, kernel_parameters; active_cells_map)
-    complete_communication_and_compute_buffer!(model, grid, arch)
-
-    # Calculate contributions to momentum and tracer tendencies from user-prescribed fluxes across the
-    # boundaries of the domain
-    compute_hydrostatic_boundary_tendency_contributions!(model.timestepper.Gⁿ,
+        compute_hydrostatic_free_surface_tendency_contributions!(model, :xyz; active_cells_map=nothing)
+        bad_compute_hydrostatic_boundary_tendency_contributions!(model.timestepper.Gⁿ,
                                                          model.architecture,
                                                          model.velocities,
                                                          model.tracers,
@@ -189,12 +169,23 @@ function bad_compute_tendencies!(model, callbacks)
                                                          fields(model),
                                                          model.closure,
                                                          model.buoyancy)
+    end
+    return nothing
+end
 
-    for callback in callbacks
-        callback.callsite isa TendencyCallsite && callback(model)
+function bad_compute_hydrostatic_boundary_tendency_contributions!(Gⁿ, arch, velocities, tracers, args...)
+
+    args = Tuple(args)
+
+    # Velocity fields
+    for i in (:u, :v)
+        apply_flux_bcs!(Gⁿ[i], velocities[i], arch, args)
     end
 
-    update_tendencies!(model.biogeochemistry, model)
+    # Tracer fields
+    for i in propertynames(tracers)
+        apply_flux_bcs!(Gⁿ[i], tracers[i], arch, args)
+    end
 
     return nothing
 end
