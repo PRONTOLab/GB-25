@@ -154,9 +154,9 @@ using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: get_top_tra
 
 
 using Oceananigans.Solvers: solve!, solve_batched_tridiagonal_system_kernel!
-using Oceananigans.Operators: ℑxᶜᵃᵃ, ℑyᵃᶜᵃ, Az, volume
+using Oceananigans.Operators: ℑxᶜᵃᵃ, ℑyᵃᶜᵃ, Az, volume, δxᶜᵃᵃ, δyᵃᶜᵃ, δzᵃᵃᶜ, V⁻¹ᶜᶜᶜ
 using Oceananigans.Forcings: with_advective_forcing
-using Oceananigans.Advection: div_Uc
+using Oceananigans.Advection: div_Uc, _advective_tracer_flux_x, _advective_tracer_flux_y, _advective_tracer_flux_z
 using KernelAbstractions: @kernel, @index
 using KernelAbstractions.Extras.LoopInfo: @unroll
 
@@ -178,7 +178,7 @@ end
 
 function loop!(model)
     Δt = model.clock.last_Δt
-    @trace track_numbers=false for _ = 1:10
+    @trace track_numbers=false for _ = 1:5
         grid = model.grid
         Guⁿ  = model.timestepper.Gⁿ.u
         Gvⁿ  = model.timestepper.Gⁿ.v
@@ -277,59 +277,29 @@ function loop!(model)
 
         arch = model.architecture
         grid = model.grid
-
-        args = tuple(Val(1),
-                    Val(:T),
-                    model.advection.T,
-                    model.closure,
-                    immersed_boundary_condition(model.tracers.T),
-                    model.buoyancy,
-                    model.biogeochemistry,
-                    model.velocities,
-                    model.free_surface,
-                    model.tracers,
-                    model.diffusivity_fields,
-                    model.auxiliary_fields,
-                    model.clock,
-                    model.forcing.T)
         
         launch!(arch, grid, :xyz,
                 bad_compute_hydrostatic_free_surface_Gc!,
                 model.timestepper.Gⁿ.T,
                 grid,
-                args)
+                model.advection.T,
+                model.velocities,
+                model.tracers[1])
 
         launch!(model.architecture, model.timestepper.Gⁿ.u.grid, :xy, _bad_apply_z_bcs!, model.timestepper.Gⁿ.u, instantiated_location(model.timestepper.Gⁿ.u), model.timestepper.Gⁿ.u.grid, model.velocities.u.boundary_conditions.bottom, model.velocities.u.boundary_conditions.top, (model.buoyancy,))
     end
     return nothing
 end
 
-@kernel function bad_compute_hydrostatic_free_surface_Gc!(Gc, grid, args)
+@kernel function bad_compute_hydrostatic_free_surface_Gc!(Gc, grid, advection, velocity, tracer)
     i, j, k = @index(Global, NTuple)
-    @inbounds Gc[i, j, k] = bad_hydrostatic_free_surface_tracer_tendency(i, j, k, grid, args...)
+    @inbounds Gc[i, j, k] = - bad_div_Uc(i, j, k, grid, advection, velocity, tracer)
 end
 
-@inline function bad_hydrostatic_free_surface_tracer_tendency(i, j, k, grid,
-                                                          val_tracer_index::Val{tracer_index},
-                                                          val_tracer_name,
-                                                          advection,
-                                                          closure,
-                                                          c_immersed_bc,
-                                                          buoyancy,
-                                                          biogeochemistry,
-                                                          velocities,
-                                                          free_surface,
-                                                          tracers,
-                                                          diffusivities,
-                                                          auxiliary_fields,
-                                                          clock,
-                                                          forcing) where tracer_index
-
-    @inbounds c = tracers[tracer_index]
-
-    total_velocities = velocities
-
-    return - div_Uc(i, j, k, grid, advection, total_velocities, c)
+@inline function bad_div_Uc(i, j, k, grid, advection, U, c)
+    return (δxᶜᵃᵃ(i, j, k, grid, _advective_tracer_flux_x, advection, U.u, c) +
+                                    δyᵃᶜᵃ(i, j, k, grid, _advective_tracer_flux_y, advection, U.v, c) +
+                                    δzᵃᵃᶜ(i, j, k, grid, _advective_tracer_flux_z, advection, U.w, c))
 end
 
 @kernel function _bad_apply_z_bcs!(Gc, loc, grid, bottom_bc, top_bc, args)
@@ -389,7 +359,26 @@ compile_toc = time() - tic
 i = 10
 j = 10
 
+# Primal-only, with reactant
+pmodel = double_gyre_model(rarch, 62, 62, 4, 1200)
+
+pTᵢ, pSᵢ      = set_tracers(pmodel.grid)
+pwind_stress = wind_stress_init(pmodel.grid)
+set!(pmodel.tracers.T, pTᵢ)
+
+# Vanilla and forward only
+vmodel = double_gyre_model(CPU(), 62, 62, 4, 1200)
+
+vTᵢ, vSᵢ      = set_tracers(vmodel.grid)
+vwind_stress = wind_stress_init(vmodel.grid)
+set!(vmodel.tracers.T, vTᵢ)
+
+estimate_tracer_error(vmodel, vwind_stress)
+restimate_tracer_error(pmodel, pwind_stress)
 dedν, dJ = rdifferentiate_tracer_error(rmodel, rwind_stress, dmodel, dJ)
+
+GordonBell25.compare_states(vmodel, pmodel; include_halos=false, throw_error=false, rtol=sqrt(eps(Float64)), atol=sqrt(eps(Float64)))
+GordonBell25.compare_states(rmodel, pmodel; include_halos=true, throw_error=false, rtol=sqrt(eps(Float64)), atol=sqrt(eps(Float64)))
 
 @allowscalar @show dJ[i, j]
 
