@@ -239,15 +239,15 @@ function loop!(model)
         U, V    = free_surface.barotropic_velocities
         η̅, U̅, V̅ = free_surface.filtered_state.η, free_surface.filtered_state.U, free_surface.filtered_state.V
 
-        free_surface_kernel!, _        = configure_kernel(arch, free_surface.η.grid, free_surface.kernel_parameters, _split_explicit_free_surface!)
-        barotropic_velocity_kernel!, _ = configure_kernel(arch, free_surface.η.grid, free_surface.kernel_parameters, _split_explicit_barotropic_velocity!)
-
         η_args = (free_surface.η.grid, Δτᴮ, free_surface.η, U, V,
                 free_surface.timestepper)
 
         U_args = (free_surface.η.grid, Δτᴮ, free_surface.η, U, V,
                 η̅, U̅, V̅, GUⁿ, GVⁿ, free_surface.gravitational_acceleration,
                 free_surface.timestepper)
+
+        free_surface_kernel!, _        = configure_kernel(arch, free_surface.η.grid, free_surface.kernel_parameters, _split_explicit_free_surface!)
+        barotropic_velocity_kernel!, _ = configure_kernel(arch, free_surface.η.grid, free_surface.kernel_parameters, _split_explicit_barotropic_velocity!)
 
         for substep in 1:Nsubsteps
                 averaging_weight = weights[substep]
@@ -274,53 +274,34 @@ function loop!(model)
         launch!(arch, grid, :xyz, _barotropic_split_explicit_corrector!,
                 u, v, U, V, U̅, V̅, η, grid)
 
-        bad_compute_hydrostatic_free_surface_tendency_contributions!(model, :xyz; active_cells_map=nothing)
+        arch = model.architecture
+        grid = model.grid
+
+        args = tuple(Val(1),
+                    Val(:T),
+                    model.advection.T,
+                    model.closure,
+                    immersed_boundary_condition(model.tracers.T),
+                    model.buoyancy,
+                    model.biogeochemistry,
+                    model.velocities,
+                    model.free_surface,
+                    model.tracers,
+                    model.diffusivity_fields,
+                    model.auxiliary_fields,
+                    model.clock,
+                    model.forcing.T)
+        
+        launch!(arch, grid, :xyz,
+                compute_hydrostatic_free_surface_Gc!,
+                model.timestepper.Gⁿ.T,
+                grid,
+                args)
 
         launch!(model.architecture, model.timestepper.Gⁿ.u.grid, :xy, _apply_z_bcs!, model.timestepper.Gⁿ.u, instantiated_location(model.timestepper.Gⁿ.u), model.timestepper.Gⁿ.u.grid, model.velocities.u.boundary_conditions.bottom, model.velocities.u.boundary_conditions.top, (model.buoyancy,))
     end
     return nothing
 end
-
-function bad_compute_hydrostatic_free_surface_tendency_contributions!(model, kernel_parameters; active_cells_map=nothing)
-
-    arch = model.architecture
-    grid = model.grid
-
-    compute_hydrostatic_momentum_tendencies!(model, model.velocities, kernel_parameters; active_cells_map)
-
-    for (tracer_index, tracer_name) in enumerate(propertynames(model.tracers))
-
-        @inbounds c_tendency    = model.timestepper.Gⁿ[tracer_name]
-        @inbounds c_advection   = model.advection[tracer_name]
-        @inbounds c_forcing     = model.forcing[tracer_name]
-        @inbounds c_immersed_bc = immersed_boundary_condition(model.tracers[tracer_name])
-
-        args = tuple(Val(tracer_index),
-                     Val(tracer_name),
-                     c_advection,
-                     model.closure,
-                     c_immersed_bc,
-                     model.buoyancy,
-                     model.biogeochemistry,
-                     model.velocities,
-                     model.free_surface,
-                     model.tracers,
-                     model.diffusivity_fields,
-                     model.auxiliary_fields,
-                     model.clock,
-                     c_forcing)
-
-        launch!(arch, grid, kernel_parameters,
-                compute_hydrostatic_free_surface_Gc!,
-                c_tendency,
-                grid,
-                args;
-                active_cells_map)
-    end
-
-    return nothing
-end
-
 
 function estimate_tracer_error(model, wind_stress)
     time_step_double_gyre!(model, wind_stress)
