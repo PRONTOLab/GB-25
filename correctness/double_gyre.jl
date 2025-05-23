@@ -1,5 +1,5 @@
 using Oceananigans
-using Oceananigans.Architectures: ReactantState, architecture, AbstractArchitecture
+using Oceananigans.Architectures: ReactantState, architecture, AbstractArchitecture, convert_to_device
 using ClimaOcean
 using Reactant
 using GordonBell25
@@ -90,7 +90,7 @@ end
 using Oceananigans: initialize!, prognostic_fields, instantiated_location
 using Oceananigans.Grids: AbstractGrid, XDirection, YDirection, ZDirection, inactive_cell, get_active_column_map
 using Oceananigans.TimeSteppers: update_state!, ab2_step!, tick!, calculate_pressure_correction!, correct_velocities_and_cache_previous_tendencies!, step_lagrangian_particles!, ab2_step_field!, implicit_step!, pressure_correct_velocities!, cache_previous_tendencies!
-using Oceananigans.Utils: @apply_regionally, launch!
+using Oceananigans.Utils: @apply_regionally, launch!, configure_kernel
 
 using Oceananigans.Models: update_model_field_time_series!, interior_tendency_kernel_parameters, complete_communication_and_compute_buffer!
 
@@ -117,14 +117,17 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fiel
                                                         compute_hydrostatic_momentum_tendencies!,
                                                         compute_hydrostatic_free_surface_Gc!,
                                                         hydrostatic_free_surface_tracer_tendency,
-                                                        barotropic_split_explicit_corrector!
+                                                        barotropic_split_explicit_corrector!,
+                                                        _ab2_step_tracer_field!
 
 using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: _compute_barotropic_mode!,
                                                                                   _barotropic_split_explicit_corrector!,
                                                                                   calculate_substeps,
                                                                                   calculate_adaptive_settings,
                                                                                   iterate_split_explicit!,
-                                                                                  _update_split_explicit_state!
+                                                                                  _update_split_explicit_state!,
+                                                                                  _split_explicit_free_surface!,
+                                                                                  _split_explicit_barotropic_velocity!
 
 using Oceananigans.TurbulenceClosures: compute_diffusivities!, getclosure, clip, shear_production, dissipation
 
@@ -148,6 +151,7 @@ using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: get_top_tra
 using Oceananigans.Solvers: solve!, solve_batched_tridiagonal_system_kernel!
 using Oceananigans.Operators: ℑxᶜᵃᵃ, ℑyᵃᶜᵃ
 using KernelAbstractions: @kernel, @index
+using KernelAbstractions.Extras.LoopInfo: @unroll
 
 
 function time_step_double_gyre!(model, wind_stress)
@@ -170,8 +174,60 @@ function loop!(model)
     @trace track_numbers=false for _ = 1:11
         grid = model.grid
         compute_free_surface_tendency!(grid, model, model.free_surface)
-        local_ab2_step!(model, Δt, model.timestepper.χ)
-        bad_step_free_surface!(model.free_surface, model, model.timestepper, Δt)
+        
+        ab2_step_velocities!(model.velocities, model, Δt, model.timestepper.χ)
+        bad_ab2_step_tracers!(model.tracers, model, Δt, model.timestepper.χ)
+
+        free_surface = model.free_surface
+        baroclinic_timestepper = model.timestepper
+
+        free_surface_grid = free_surface.η.grid
+        filtered_state    = free_surface.filtered_state
+        substepping       = free_surface.substepping
+
+        arch = architecture(free_surface_grid)
+
+        barotropic_velocities = free_surface.barotropic_velocities
+
+        # All hardcoded
+        Nsubsteps = 21
+        Δτᴮ = 80.0
+        weights = (-0.0027616325569592756, -0.003862908196820046, -0.0033054695005112497, -0.0010957042827565292, 0.0027497791381626267, 0.008196486562738532, 0.015182182424663676, 0.023604844197351794, 0.033308426692553815, 0.044066436251068465, 0.05556331482554762, 0.06737363395539638, 0.07893909863376815, 0.08954336106665389, 0.09828464432406694, 0.1040461758833218, 0.10546443106440806, 0.10089518635745921, 0.08837738264231575, 0.06559479830018361, 0.029835532217386728)
+
+        # Slow forcing terms
+        GUⁿ = model.timestepper.Gⁿ.U
+        GVⁿ = model.timestepper.Gⁿ.V
+
+        #free surface state
+        η = free_surface.η
+        U = barotropic_velocities.U
+        V = barotropic_velocities.V
+        η̅ = filtered_state.η
+        U̅ = filtered_state.U
+        V̅ = filtered_state.V
+
+        # unpack state quantities, parameters and forcing terms
+        U, V    = free_surface.barotropic_velocities
+        η̅, U̅, V̅ = free_surface.filtered_state.η, free_surface.filtered_state.U, free_surface.filtered_state.V
+
+        free_surface_kernel!, _        = configure_kernel(arch, free_surface.η.grid, free_surface.kernel_parameters, _split_explicit_free_surface!)
+        barotropic_velocity_kernel!, _ = configure_kernel(arch, free_surface.η.grid, free_surface.kernel_parameters, _split_explicit_barotropic_velocity!)
+
+        η_args = (free_surface.η.grid, Δτᴮ, free_surface.η, U, V,
+                free_surface.timestepper)
+
+        U_args = (free_surface.η.grid, Δτᴮ, free_surface.η, U, V,
+                η̅, U̅, V̅, GUⁿ, GVⁿ, free_surface.gravitational_acceleration,
+                free_surface.timestepper)
+
+        for substep in 1:Nsubsteps
+                averaging_weight = weights[substep]
+                free_surface_kernel!(η_args...)
+                barotropic_velocity_kernel!(averaging_weight, U_args...)
+        end
+
+        launch!(architecture(free_surface_grid), free_surface_grid, :xy,
+                _update_split_explicit_state!, η, U, V, free_surface_grid, η̅, U̅, V̅)
 
         u = model.velocities.u
         v = model.velocities.v
@@ -195,55 +251,26 @@ function loop!(model)
     return nothing
 end
 
-function bad_step_free_surface!(free_surface, model, baroclinic_timestepper, Δt)
+function bad_ab2_step_tracers!(tracers, model, Δt, χ)
 
-    # Note: free_surface.η.grid != model.grid for DistributedSplitExplicitFreeSurface
-    # since halo_size(free_surface.η.grid) != halo_size(model.grid)
-    free_surface_grid = free_surface.η.grid
-    filtered_state    = free_surface.filtered_state
-    substepping       = free_surface.substepping
+    Gⁿ = model.timestepper.Gⁿ.T
+    G⁻ = model.timestepper.G⁻.T
+    tracer_field = tracers.T
+    closure = model.closure
+    grid = model.grid
 
-    barotropic_velocities = free_surface.barotropic_velocities
+    launch!(architecture(grid), grid, :xyz, _ab2_step_tracer_field!, tracer_field, grid, Δt, χ, Gⁿ, G⁻)
 
-    # Calculate the substepping parameterers
-    # barotropic time step as fraction of baroclinic step and averaging weights
-    Nsubsteps = calculate_substeps(substepping, Δt)
-    fractional_Δt, weights = calculate_adaptive_settings(substepping, Nsubsteps)
-    Nsubsteps = length(weights)
-
-    # barotropic time step in seconds
-    Δτᴮ = fractional_Δt * Δt
-
-    # Slow forcing terms
-    GUⁿ = model.timestepper.Gⁿ.U
-    GVⁿ = model.timestepper.Gⁿ.V
-
-    #free surface state
-    η = free_surface.η
-    U = barotropic_velocities.U
-    V = barotropic_velocities.V
-    η̅ = filtered_state.η
-    U̅ = filtered_state.U
-    V̅ = filtered_state.V
-
-    # reset free surface averages
-    @apply_regionally begin
-        # Solve for the free surface at tⁿ⁺¹
-        iterate_split_explicit!(free_surface, free_surface_grid, GUⁿ, GVⁿ, Δτᴮ, weights, Val(Nsubsteps))
-
-        # Update eta and velocities for the next timestep
-        # The halos are updated in the `update_state!` function
-        launch!(architecture(free_surface_grid), free_surface_grid, :xy,
-                _update_split_explicit_state!, η, U, V, free_surface_grid, η̅, U̅, V̅)
-
-        # Preparing velocities for the barotropic correction
-        mask_immersed_field!(model.velocities.u)
-        mask_immersed_field!(model.velocities.v)
-    end
+    implicit_step!(tracer_field,
+                    model.timestepper.implicit_solver,
+                    closure,
+                    model.diffusivity_fields,
+                    Val(1),
+                    model.clock,
+                    Δt)
 
     return nothing
 end
-
 
 #=
 function bad_compute_hydrostatic_free_surface_tendency_contributions!(model, kernel_parameters; active_cells_map=nothing)
