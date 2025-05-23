@@ -187,7 +187,8 @@ function loop!(model)
 
         stage = model.clock.stage
 
-        bad_compute_split_explicit_forcing!(GUⁿ, GVⁿ, grid, Guⁿ, Gvⁿ, baroclinic_timestepper, Val(stage))
+        launch!(architecture(grid), grid, :xy, _compute_integrated_ab2_tendencies!, GUⁿ, GVⁿ, grid,
+                baroclinic_timestepper.G⁻.u, baroclinic_timestepper.G⁻.v, Guⁿ, Gvⁿ, baroclinic_timestepper.χ)
 
         fill!(model.free_surface.filtered_state.U, 0)
 
@@ -198,14 +199,6 @@ function loop!(model)
         launch!(model.architecture, model.grid, :xyz,
                 ab2_step_field!, velocity_field, Δt, model.timestepper.χ, Gⁿ, G⁻)
 
-        implicit_step!(velocity_field,
-                       model.timestepper.implicit_solver,
-                       model.closure,
-                       model.diffusivity_fields,
-                       nothing,
-                       model.clock,
-                       Δt)
-
         Gⁿ = model.timestepper.Gⁿ.T
         G⁻ = model.timestepper.G⁻.T
         tracer_field = model.tracers.T
@@ -213,14 +206,6 @@ function loop!(model)
         grid = model.grid
 
         launch!(architecture(grid), grid, :xyz, _ab2_step_tracer_field!, tracer_field, grid, Δt, model.timestepper.χ, Gⁿ, G⁻)
-
-        implicit_step!(tracer_field,
-                        model.timestepper.implicit_solver,
-                        closure,
-                        model.diffusivity_fields,
-                        Val(1),
-                        model.clock,
-                        Δt)
 
         free_surface = model.free_surface
         baroclinic_timestepper = model.timestepper
@@ -292,19 +277,6 @@ function loop!(model)
         compute_hydrostatic_free_surface_tendency_contributions!(model, :xyz; active_cells_map=nothing)
         launch!(model.architecture, model.timestepper.Gⁿ.u.grid, :xy, _apply_z_bcs!, model.timestepper.Gⁿ.u, instantiated_location(model.timestepper.Gⁿ.u), model.timestepper.Gⁿ.u.grid, model.velocities.u.boundary_conditions.bottom, model.velocities.u.boundary_conditions.top, (model.buoyancy,))
     end
-    return nothing
-end
-
-@inline function bad_compute_split_explicit_forcing!(GUⁿ, GVⁿ, grid, Guⁿ, Gvⁿ,
-                                                 timestepper, stage)
-    active_cells_map = get_active_column_map(grid)
-
-    Gu⁻ = timestepper.G⁻.u
-    Gv⁻ = timestepper.G⁻.v
-
-    launch!(architecture(grid), grid, :xy, _compute_integrated_ab2_tendencies!, GUⁿ, GVⁿ, grid,
-            Gu⁻, Gv⁻, Guⁿ, Gvⁿ, timestepper.χ; active_cells_map)
-
     return nothing
 end
 
