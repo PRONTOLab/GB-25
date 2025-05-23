@@ -46,6 +46,8 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
         topology = (Periodic, Bounded, Bounded)
     )
 
+    tracer_advection   = Centered(order=2)
+
     #
     # Momentum BCs:
     #
@@ -63,7 +65,7 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
                                           tracers = tracers,
                                           coriolis = nothing, #coriolis,
                                           momentum_advection = nothing, #momentum_advection,
-                                          tracer_advection = nothing, #tracer_advection,
+                                          tracer_advection = tracer_advection,
                                           boundary_conditions = boundary_conditions)
 
     model.clock.last_Δt = Δt
@@ -84,11 +86,14 @@ function wind_stress_init(grid;
     return wind_stress
 end
 
-function loop!(model, Ninner)
+using Oceananigans: initialize!
+using Oceananigans.TimeSteppers: update_state!, ab2_step!, tick!, calculate_pressure_correction!, correct_velocities_and_cache_previous_tendencies!, step_lagrangian_particles!
+using Oceananigans.Utils: @apply_regionally
+
+function loop!(model)
     Δt = model.clock.last_Δt + 0
-    Oceananigans.TimeSteppers.first_time_step!(model, Δt)
-    @trace track_numbers=false for _ = 1:(Ninner-1)
-        Oceananigans.TimeSteppers.time_step!(model, Δt)
+    @trace track_numbers=false for _ = 1:10
+        bad_time_step!(model, Δt)
     end
     return nothing
 end
@@ -103,7 +108,53 @@ function time_step_double_gyre!(model, wind_stress)
     model.clock.last_Δt = 1200
 
     # Step it forward
-    loop!(model, 10)
+    loop!(model)
+
+    return nothing
+end
+
+function bad_time_step!(model, Δt; callbacks=[], euler=false)
+
+    # Note: Δt cannot change
+    if model.clock.last_Δt isa Reactant.TracedRNumber
+        model.clock.last_Δt.mlir_data = Δt.mlir_data
+    else
+        model.clock.last_Δt = Δt
+    end
+
+    # If euler, then set χ = -0.5
+    minus_point_five = convert(Float64, -0.5)
+    ab2_timestepper = model.timestepper
+    χ = ifelse(euler, minus_point_five, ab2_timestepper.χ)
+    χ₀ = ab2_timestepper.χ # Save initial value
+    ab2_timestepper.χ = χ
+
+    # Full step for tracers, fractional step for velocities.
+    ab2_step!(model, Δt)
+
+    tick!(model.clock, Δt)
+
+    if model.clock.last_Δt isa Reactant.TracedRNumber
+        model.clock.last_Δt.mlir_data = Δt.mlir_data
+    else
+        model.clock.last_Δt = Δt
+    end
+
+    # just one stage
+    if model.clock.last_stage_Δt isa Reactant.TracedRNumber
+        model.clock.last_stage_Δt.mlir_data = Δt.mlir_data
+    else
+        model.clock.last_stage_Δt = Δt
+    end
+
+    calculate_pressure_correction!(model, Δt)
+    correct_velocities_and_cache_previous_tendencies!(model, Δt)
+
+    update_state!(model, callbacks; compute_tendencies=true)
+    step_lagrangian_particles!(model, Δt)
+
+    # Return χ to initial value
+    ab2_timestepper.χ = χ₀
 
     return nothing
 end
