@@ -1,5 +1,6 @@
 using Oceananigans
-using Oceananigans.Architectures: ReactantState
+using Oceananigans.Architectures: ReactantState, architecture, AbstractArchitecture
+using ClimaOcean
 using Reactant
 using GordonBell25
 #Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
@@ -86,16 +87,57 @@ function wind_stress_init(grid;
     return wind_stress
 end
 
-using Oceananigans: initialize!
-using Oceananigans.TimeSteppers: update_state!, ab2_step!, tick!, calculate_pressure_correction!, correct_velocities_and_cache_previous_tendencies!, step_lagrangian_particles!
-using Oceananigans.Utils: @apply_regionally
+using Oceananigans: initialize!, prognostic_fields, instantiated_location
+using Oceananigans.Grids: AbstractGrid, XDirection, YDirection, ZDirection, inactive_cell
+using Oceananigans.TimeSteppers: update_state!, ab2_step!, tick!, calculate_pressure_correction!, correct_velocities_and_cache_previous_tendencies!, step_lagrangian_particles!, ab2_step_field!, implicit_step!
+using Oceananigans.Utils: @apply_regionally, launch!
 
-using Oceananigans.Models: update_model_field_time_series!
-using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fields!, compute_tendencies!
-using Oceananigans.BoundaryConditions: update_boundary_condition!, replace_horizontal_vector_halos!, fill_halo_regions!
-using Oceananigans.Fields: tupled_fill_halo_regions!
-using Oceananigans.Models.NonhydrostaticModels: compute_auxiliaries!
-using Oceananigans.Biogeochemistry: update_biogeochemical_state!
+using Oceananigans.Models: update_model_field_time_series!, interior_tendency_kernel_parameters, complete_communication_and_compute_buffer!
+
+using Oceananigans.BoundaryConditions: update_boundary_condition!, replace_horizontal_vector_halos!, fill_halo_regions!, apply_x_bcs!, apply_y_bcs!, apply_z_bcs!, _apply_z_bcs!
+using Oceananigans.Fields: tupled_fill_halo_regions!, location
+using Oceananigans.Models.NonhydrostaticModels: compute_auxiliaries!, update_hydrostatic_pressure!
+using Oceananigans.Biogeochemistry: update_biogeochemical_state!, update_tendencies!
+
+using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fields!,
+                                                        compute_tendencies!,
+                                                        update_grid!,
+                                                        unscale_tracers!,
+                                                        compute_w_from_continuity!,
+                                                        w_kernel_parameters,
+                                                        p_kernel_parameters,
+                                                        step_free_surface!,
+                                                        compute_free_surface_tendency!,
+                                                        local_ab2_step!,
+                                                        ab2_step_velocities!,
+                                                        ab2_step_tracers!,
+                                                        compute_hydrostatic_boundary_tendency_contributions!,
+                                                        compute_hydrostatic_free_surface_tendency_contributions!,
+                                                        apply_flux_bcs!
+
+using Oceananigans.TurbulenceClosures: compute_diffusivities!, getclosure, clip, shear_production, dissipation
+
+using Oceananigans.ImmersedBoundaries: get_active_cells_map
+
+using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: get_top_tracer_bcs,
+                                                                     update_previous_compute_time!,
+                                                                     time_step_catke_equation!,
+                                                                     compute_average_surface_buoyancy_flux!,
+                                                                     compute_CATKE_diffusivities!,
+                                                                     substep_turbulent_kinetic_energy!,
+                                                                     get_time_step,
+                                                                     κuᶜᶜᶠ, κcᶜᶜᶠ, κeᶜᶜᶠ,
+                                                                     mask_diffusivity,
+                                                                     explicit_buoyancy_flux,
+                                                                     dissipation_rate,
+                                                                     TKE_mixing_lengthᶜᶜᶠ,
+                                                                     turbulent_velocityᶜᶜᶜ
+
+
+using Oceananigans.Solvers: solve!, solve_batched_tridiagonal_system_kernel!
+using Oceananigans.Operators: ℑxᶜᵃᵃ, ℑyᵃᶜᵃ
+using KernelAbstractions: @kernel, @index
+
 
 function time_step_double_gyre!(model, wind_stress)
 
@@ -117,45 +159,42 @@ function loop!(model)
     @trace track_numbers=false for _ = 1:10
         ab2_step!(model, Δt)
         correct_velocities_and_cache_previous_tendencies!(model, Δt)
-        bad_update_state!(model, model.grid, []; compute_tendencies=true)
+        compute_auxiliaries!(model)
+        bad_compute_tendencies!(model, [])
     end
     return nothing
 end
 
-function bad_time_step!(model, Δt)
+function bad_compute_tendencies!(model, callbacks)
 
-    # Full step for tracers, fractional step for velocities.
-    ab2_step!(model, Δt)
+    grid = model.grid
+    arch = architecture(grid)
 
-    correct_velocities_and_cache_previous_tendencies!(model, Δt)
+    # Calculate contributions to momentum and tracer tendencies from fluxes and volume terms in the
+    # interior of the domain. The active cells map restricts the computation to the active cells in the
+    # interior if the grid is _immersed_ and the `active_cells_map` kwarg is active
+    active_cells_map = get_active_cells_map(model.grid, Val(:interior))
+    kernel_parameters = interior_tendency_kernel_parameters(arch, grid)
 
-    update_state!(model, []; compute_tendencies=true)
+    compute_hydrostatic_free_surface_tendency_contributions!(model, kernel_parameters; active_cells_map)
+    complete_communication_and_compute_buffer!(model, grid, arch)
 
-    return nothing
-end
+    # Calculate contributions to momentum and tracer tendencies from user-prescribed fluxes across the
+    # boundaries of the domain
+    compute_hydrostatic_boundary_tendency_contributions!(model.timestepper.Gⁿ,
+                                                         model.architecture,
+                                                         model.velocities,
+                                                         model.tracers,
+                                                         model.clock,
+                                                         fields(model),
+                                                         model.closure,
+                                                         model.buoyancy)
 
+    for callback in callbacks
+        callback.callsite isa TendencyCallsite && callback(model)
+    end
 
-function bad_update_state!(model, grid, callbacks; compute_tendencies = true)
-
-    @apply_regionally mask_immersed_model_fields!(model, grid)
-
-    # Update possible FieldTimeSeries used in the model
-    @apply_regionally update_model_field_time_series!(model, model.clock)
-
-    # Update the boundary conditions
-    @apply_regionally update_boundary_condition!(fields(model), model)
-
-    @apply_regionally replace_horizontal_vector_halos!(model.velocities, model.grid)
-    @apply_regionally compute_auxiliaries!(model)
-
-    fill_halo_regions!(model.diffusivity_fields; only_local_halos = true)
-
-    [callback(model) for callback in callbacks if callback.callsite isa UpdateStateCallsite]
-
-    update_biogeochemical_state!(model.biogeochemistry, model)
-
-    compute_tendencies &&
-        @apply_regionally compute_tendencies!(model, callbacks)
+    update_tendencies!(model.biogeochemistry, model)
 
     return nothing
 end
