@@ -127,7 +127,9 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces
                                                                                   iterate_split_explicit!,
                                                                                   _update_split_explicit_state!,
                                                                                   _split_explicit_free_surface!,
-                                                                                  _split_explicit_barotropic_velocity!
+                                                                                  _split_explicit_barotropic_velocity!,
+                                                                                  compute_split_explicit_forcing!,
+                                                                                  initialize_free_surface_state!
 
 using Oceananigans.TurbulenceClosures: compute_diffusivities!, getclosure, clip, shear_production, dissipation
 
@@ -173,9 +175,22 @@ function loop!(model)
     Δt = model.clock.last_Δt
     @trace track_numbers=false for _ = 1:11
         grid = model.grid
-        compute_free_surface_tendency!(grid, model, model.free_surface)
-        
-        bad_ab2_step_velocities!(model.velocities, model, Δt, model.timestepper.χ)
+        bad_compute_free_surface_tendency!(grid, model, model.free_surface)
+
+        Gⁿ = model.timestepper.Gⁿ.u
+        G⁻ = model.timestepper.G⁻.u
+        velocity_field = model.velocities.u
+
+        launch!(model.architecture, model.grid, :xyz,
+                ab2_step_field!, velocity_field, Δt, model.timestepper.χ, Gⁿ, G⁻)
+
+        implicit_step!(velocity_field,
+                       model.timestepper.implicit_solver,
+                       model.closure,
+                       model.diffusivity_fields,
+                       nothing,
+                       model.clock,
+                       Δt)
 
         Gⁿ = model.timestepper.Gⁿ.T
         G⁻ = model.timestepper.G⁻.T
@@ -266,24 +281,21 @@ function loop!(model)
     return nothing
 end
 
-function bad_ab2_step_velocities!(velocities, model, Δt, χ)
+function bad_compute_free_surface_tendency!(grid, model, free_surface::SplitExplicitFreeSurface)
 
-    for (i, name) in enumerate((:u, :v))
-        Gⁿ = model.timestepper.Gⁿ[name]
-        G⁻ = model.timestepper.G⁻[name]
-        velocity_field = model.velocities[name]
+    Guⁿ = model.timestepper.Gⁿ.u
+    Gvⁿ = model.timestepper.Gⁿ.v
 
-        launch!(model.architecture, model.grid, :xyz,
-                ab2_step_field!, velocity_field, Δt, χ, Gⁿ, G⁻)
+    GUⁿ = model.timestepper.Gⁿ.U
+    GVⁿ = model.timestepper.Gⁿ.V
 
-        implicit_step!(velocity_field,
-                       model.timestepper.implicit_solver,
-                       model.closure,
-                       model.diffusivity_fields,
-                       nothing,
-                       model.clock,
-                       Δt)
-    end
+    barotropic_timestepper = free_surface.timestepper
+    baroclinic_timestepper = model.timestepper
+
+    stage = model.clock.stage
+
+    compute_split_explicit_forcing!(GUⁿ, GVⁿ, grid, Guⁿ, Gvⁿ, baroclinic_timestepper, Val(stage))
+    initialize_free_surface_state!(free_surface, baroclinic_timestepper, barotropic_timestepper, Val(stage))
 
     return nothing
 end
