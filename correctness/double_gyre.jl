@@ -178,116 +178,113 @@ end
 
 function loop!(model)
     Δt = model.clock.last_Δt
-    @trace track_numbers=false for _ = 1:5
-        grid = model.grid
-        Guⁿ  = model.timestepper.Gⁿ.u
-        Gvⁿ  = model.timestepper.Gⁿ.v
-        GUⁿ  = model.timestepper.Gⁿ.U
-        GVⁿ  = model.timestepper.Gⁿ.V
+    grid = model.grid
+    Guⁿ  = model.timestepper.Gⁿ.u
+    Gvⁿ  = model.timestepper.Gⁿ.v
+    GUⁿ  = model.timestepper.Gⁿ.U
+    GVⁿ  = model.timestepper.Gⁿ.V
 
-        barotropic_timestepper = model.free_surface.timestepper
-        baroclinic_timestepper = model.timestepper
+    barotropic_timestepper = model.free_surface.timestepper
+    baroclinic_timestepper = model.timestepper
 
-        stage = model.clock.stage
+    stage = model.clock.stage
 
-        launch!(architecture(grid), grid, :xy, _compute_integrated_ab2_tendencies!, GUⁿ, GVⁿ, grid,
-                baroclinic_timestepper.G⁻.u, baroclinic_timestepper.G⁻.v, Guⁿ, Gvⁿ, baroclinic_timestepper.χ)
+    launch!(architecture(grid), grid, :xy, _compute_integrated_ab2_tendencies!, GUⁿ, GVⁿ, grid,
+            baroclinic_timestepper.G⁻.u, baroclinic_timestepper.G⁻.v, Guⁿ, Gvⁿ, baroclinic_timestepper.χ)
 
-        fill!(model.free_surface.filtered_state.U, 0)
+    fill!(model.free_surface.filtered_state.U, 0)
 
-        Gⁿ = model.timestepper.Gⁿ.u
-        G⁻ = model.timestepper.G⁻.u
-        velocity_field = model.velocities.u
+    Gⁿ = model.timestepper.Gⁿ.u
+    G⁻ = model.timestepper.G⁻.u
+    velocity_field = model.velocities.u
 
-        launch!(model.architecture, model.grid, :xyz,
-                ab2_step_field!, velocity_field, Δt, model.timestepper.χ, Gⁿ, G⁻)
+    launch!(model.architecture, model.grid, :xyz,
+            ab2_step_field!, velocity_field, Δt, model.timestepper.χ, Gⁿ, G⁻)
 
-        Gⁿ = model.timestepper.Gⁿ.T
-        G⁻ = model.timestepper.G⁻.T
-        tracer_field = model.tracers.T
-        closure = model.closure
-        grid = model.grid
+    Gⁿ = model.timestepper.Gⁿ.T
+    G⁻ = model.timestepper.G⁻.T
+    tracer_field = model.tracers.T
+    closure = model.closure
+    grid = model.grid
 
-        launch!(architecture(grid), grid, :xyz, _ab2_step_tracer_field!, tracer_field, grid, Δt, model.timestepper.χ, Gⁿ, G⁻)
+    launch!(architecture(grid), grid, :xyz, _ab2_step_tracer_field!, tracer_field, grid, Δt, model.timestepper.χ, Gⁿ, G⁻)
 
-        free_surface = model.free_surface
-        baroclinic_timestepper = model.timestepper
+    free_surface = model.free_surface
+    baroclinic_timestepper = model.timestepper
 
-        free_surface_grid = free_surface.η.grid
-        filtered_state    = free_surface.filtered_state
-        substepping       = free_surface.substepping
+    free_surface_grid = free_surface.η.grid
+    filtered_state    = free_surface.filtered_state
+    substepping       = free_surface.substepping
 
-        arch = architecture(free_surface_grid)
+    arch = architecture(free_surface_grid)
 
-        barotropic_velocities = free_surface.barotropic_velocities
+    barotropic_velocities = free_surface.barotropic_velocities
 
-        # All hardcoded
-        Δτᴮ = 80.0
-        
-        # Slow forcing terms
-        GUⁿ = model.timestepper.Gⁿ.U
-        GVⁿ = model.timestepper.Gⁿ.V
+    # All hardcoded
+    Δτᴮ = 80.0
+    
+    # Slow forcing terms
+    GUⁿ = model.timestepper.Gⁿ.U
+    GVⁿ = model.timestepper.Gⁿ.V
 
-        #free surface state
-        η = free_surface.η
-        U = barotropic_velocities.U
-        V = barotropic_velocities.V
-        η̅ = filtered_state.η
-        U̅ = filtered_state.U
-        V̅ = filtered_state.V
+    #free surface state
+    η = free_surface.η
+    U = barotropic_velocities.U
+    V = barotropic_velocities.V
+    η̅ = filtered_state.η
+    U̅ = filtered_state.U
+    V̅ = filtered_state.V
 
-        # unpack state quantities, parameters and forcing terms
-        U, V    = free_surface.barotropic_velocities
-        η̅, U̅, V̅ = free_surface.filtered_state.η, free_surface.filtered_state.U, free_surface.filtered_state.V
+    # unpack state quantities, parameters and forcing terms
+    U, V    = free_surface.barotropic_velocities
+    η̅, U̅, V̅ = free_surface.filtered_state.η, free_surface.filtered_state.U, free_surface.filtered_state.V
 
-        η_args = (free_surface.η.grid, Δτᴮ, free_surface.η, U, V,
-                free_surface.timestepper)
+    η_args = (free_surface.η.grid, Δτᴮ, free_surface.η, U, V,
+            free_surface.timestepper)
 
-        U_args = (free_surface.η.grid, Δτᴮ, free_surface.η, U, V,
-                η̅, U̅, V̅, GUⁿ, GVⁿ, free_surface.gravitational_acceleration,
-                free_surface.timestepper)
+    U_args = (free_surface.η.grid, Δτᴮ, free_surface.η, U, V,
+            η̅, U̅, V̅, GUⁿ, GVⁿ, free_surface.gravitational_acceleration,
+            free_surface.timestepper)
 
-        free_surface_kernel!, _        = configure_kernel(arch, free_surface.η.grid, free_surface.kernel_parameters, _split_explicit_free_surface!)
-        barotropic_velocity_kernel!, _ = configure_kernel(arch, free_surface.η.grid, free_surface.kernel_parameters, _split_explicit_barotropic_velocity!)
+    free_surface_kernel!, _        = configure_kernel(arch, free_surface.η.grid, free_surface.kernel_parameters, _split_explicit_free_surface!)
+    barotropic_velocity_kernel!, _ = configure_kernel(arch, free_surface.η.grid, free_surface.kernel_parameters, _split_explicit_barotropic_velocity!)
 
-        for substep in 1:2
-                averaging_weight = 0.5
-                free_surface_kernel!(η_args...)
-                barotropic_velocity_kernel!(averaging_weight, U_args...)
-        end
-
-        launch!(architecture(free_surface_grid), free_surface_grid, :xy,
-                _update_split_explicit_state!, η, U, V, free_surface_grid, η̅, U̅, V̅)
-
-        u = model.velocities.u
-        v = model.velocities.v
-        free_surface = model.free_surface
-        state = free_surface.filtered_state
-        η     = free_surface.η
-        U, V  = free_surface.barotropic_velocities
-        U̅, V̅  = state.U, state.V
-        arch  = architecture(grid)
-
-        launch!(architecture(grid), grid, :xy,
-                _compute_barotropic_mode!,
-                U̅, V̅, grid, u, v, η)
-
-        launch!(arch, grid, :xyz, _barotropic_split_explicit_corrector!,
-                u, v, U, V, U̅, V̅, η, grid)
-
-        arch = model.architecture
-        grid = model.grid
-        
-        launch!(arch, grid, :xyz,
-                bad_compute_hydrostatic_free_surface_Gc!,
-                model.timestepper.Gⁿ.T,
-                grid,
-                model.advection.T,
-                model.velocities,
-                model.tracers[1])
-
-        launch!(model.architecture, model.timestepper.Gⁿ.u.grid, :xy, _bad_apply_z_bcs!, model.timestepper.Gⁿ.u, instantiated_location(model.timestepper.Gⁿ.u), model.timestepper.Gⁿ.u.grid, model.velocities.u.boundary_conditions.bottom, model.velocities.u.boundary_conditions.top, (model.buoyancy,))
+    for substep in 1:2
+            averaging_weight = 0.5
+            free_surface_kernel!(η_args...)
+            barotropic_velocity_kernel!(averaging_weight, U_args...)
     end
+
+    launch!(architecture(free_surface_grid), free_surface_grid, :xy,
+            _update_split_explicit_state!, η, U, V, free_surface_grid, η̅, U̅, V̅)
+
+    u = model.velocities.u
+    v = model.velocities.v
+    free_surface = model.free_surface
+    state = free_surface.filtered_state
+    η     = free_surface.η
+    U, V  = free_surface.barotropic_velocities
+    U̅, V̅  = state.U, state.V
+    arch  = architecture(grid)
+
+    launch!(architecture(grid), grid, :xy,
+            _compute_barotropic_mode!,
+            U̅, V̅, grid, u, v, η)
+
+    launch!(arch, grid, :xyz, _barotropic_split_explicit_corrector!,
+            u, v, U, V, U̅, V̅, η, grid)
+
+    arch = model.architecture
+    grid = model.grid
+    
+    launch!(arch, grid, :xyz,
+            bad_compute_hydrostatic_free_surface_Gc!,
+            model.timestepper.Gⁿ.T,
+            grid,
+            model.advection.T,
+            model.velocities,
+            model.tracers[1])
+
     return nothing
 end
 
@@ -380,6 +377,7 @@ dedν, dJ = rdifferentiate_tracer_error(rmodel, rwind_stress, dmodel, dJ)
 GordonBell25.compare_states(vmodel, pmodel; include_halos=false, throw_error=false, rtol=sqrt(eps(Float64)), atol=sqrt(eps(Float64)))
 GordonBell25.compare_states(rmodel, pmodel; include_halos=true, throw_error=false, rtol=sqrt(eps(Float64)), atol=sqrt(eps(Float64)))
 
+#=
 @allowscalar @show dJ[i, j]
 
 # Produce finite-difference gradients for comparison:
@@ -415,3 +413,4 @@ for ϵ in ϵ_list
 end
 
 @info gradient_list
+=#
