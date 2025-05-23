@@ -90,13 +90,12 @@ using Oceananigans: initialize!
 using Oceananigans.TimeSteppers: update_state!, ab2_step!, tick!, calculate_pressure_correction!, correct_velocities_and_cache_previous_tendencies!, step_lagrangian_particles!
 using Oceananigans.Utils: @apply_regionally
 
-function loop!(model)
-    Δt = model.clock.last_Δt + 0
-    @trace track_numbers=false for _ = 1:10
-        bad_time_step!(model, Δt)
-    end
-    return nothing
-end
+using Oceananigans.Models: update_model_field_time_series!
+using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fields!, compute_tendencies!
+using Oceananigans.BoundaryConditions: update_boundary_condition!, replace_horizontal_vector_halos!, fill_halo_regions!
+using Oceananigans.Fields: tupled_fill_halo_regions!
+using Oceananigans.Models.NonhydrostaticModels: compute_auxiliaries!
+using Oceananigans.Biogeochemistry: update_biogeochemical_state!
 
 function time_step_double_gyre!(model, wind_stress)
 
@@ -113,51 +112,54 @@ function time_step_double_gyre!(model, wind_stress)
     return nothing
 end
 
-function bad_time_step!(model, Δt; callbacks=[], euler=false)
-
-    # Note: Δt cannot change
-    if model.clock.last_Δt isa Reactant.TracedRNumber
-        model.clock.last_Δt.mlir_data = Δt.mlir_data
-    else
-        model.clock.last_Δt = Δt
+function loop!(model)
+    Δt = model.clock.last_Δt
+    @trace track_numbers=false for _ = 1:10
+        ab2_step!(model, Δt)
+        correct_velocities_and_cache_previous_tendencies!(model, Δt)
+        bad_update_state!(model, model.grid, []; compute_tendencies=true)
     end
+    return nothing
+end
 
-    # If euler, then set χ = -0.5
-    minus_point_five = convert(Float64, -0.5)
-    ab2_timestepper = model.timestepper
-    χ = ifelse(euler, minus_point_five, ab2_timestepper.χ)
-    χ₀ = ab2_timestepper.χ # Save initial value
-    ab2_timestepper.χ = χ
+function bad_time_step!(model, Δt)
 
     # Full step for tracers, fractional step for velocities.
     ab2_step!(model, Δt)
 
-    tick!(model.clock, Δt)
-
-    if model.clock.last_Δt isa Reactant.TracedRNumber
-        model.clock.last_Δt.mlir_data = Δt.mlir_data
-    else
-        model.clock.last_Δt = Δt
-    end
-
-    # just one stage
-    if model.clock.last_stage_Δt isa Reactant.TracedRNumber
-        model.clock.last_stage_Δt.mlir_data = Δt.mlir_data
-    else
-        model.clock.last_stage_Δt = Δt
-    end
-
-    calculate_pressure_correction!(model, Δt)
     correct_velocities_and_cache_previous_tendencies!(model, Δt)
 
-    update_state!(model, callbacks; compute_tendencies=true)
-    step_lagrangian_particles!(model, Δt)
-
-    # Return χ to initial value
-    ab2_timestepper.χ = χ₀
+    update_state!(model, []; compute_tendencies=true)
 
     return nothing
 end
+
+
+function bad_update_state!(model, grid, callbacks; compute_tendencies = true)
+
+    @apply_regionally mask_immersed_model_fields!(model, grid)
+
+    # Update possible FieldTimeSeries used in the model
+    @apply_regionally update_model_field_time_series!(model, model.clock)
+
+    # Update the boundary conditions
+    @apply_regionally update_boundary_condition!(fields(model), model)
+
+    @apply_regionally replace_horizontal_vector_halos!(model.velocities, model.grid)
+    @apply_regionally compute_auxiliaries!(model)
+
+    fill_halo_regions!(model.diffusivity_fields; only_local_halos = true)
+
+    [callback(model) for callback in callbacks if callback.callsite isa UpdateStateCallsite]
+
+    update_biogeochemical_state!(model.biogeochemistry, model)
+
+    compute_tendencies &&
+        @apply_regionally compute_tendencies!(model, callbacks)
+
+    return nothing
+end
+
 
 function estimate_tracer_error(model, wind_stress)
     time_step_double_gyre!(model, wind_stress)
