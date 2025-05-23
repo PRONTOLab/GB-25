@@ -95,7 +95,7 @@ using Oceananigans.Utils: @apply_regionally, launch!, configure_kernel
 using Oceananigans.Models: update_model_field_time_series!, interior_tendency_kernel_parameters, complete_communication_and_compute_buffer!
 
 using Oceananigans.BoundaryConditions: update_boundary_condition!, replace_horizontal_vector_halos!, fill_halo_regions!, apply_x_bcs!, apply_y_bcs!, apply_z_bcs!, _apply_z_bcs!
-using Oceananigans.Fields: tupled_fill_halo_regions!, location
+using Oceananigans.Fields: tupled_fill_halo_regions!, location, immersed_boundary_condition
 using Oceananigans.Models.NonhydrostaticModels: compute_auxiliaries!, update_hydrostatic_pressure!
 using Oceananigans.Biogeochemistry: update_biogeochemical_state!, update_tendencies!
 
@@ -274,13 +274,13 @@ function loop!(model)
         launch!(arch, grid, :xyz, _barotropic_split_explicit_corrector!,
                 u, v, U, V, U̅, V̅, η, grid)
 
-        compute_hydrostatic_free_surface_tendency_contributions!(model, :xyz; active_cells_map=nothing)
+        bad_compute_hydrostatic_free_surface_tendency_contributions!(model, :xyz; active_cells_map=nothing)
+
         launch!(model.architecture, model.timestepper.Gⁿ.u.grid, :xy, _apply_z_bcs!, model.timestepper.Gⁿ.u, instantiated_location(model.timestepper.Gⁿ.u), model.timestepper.Gⁿ.u.grid, model.velocities.u.boundary_conditions.bottom, model.velocities.u.boundary_conditions.top, (model.buoyancy,))
     end
     return nothing
 end
 
-#=
 function bad_compute_hydrostatic_free_surface_tendency_contributions!(model, kernel_parameters; active_cells_map=nothing)
 
     arch = model.architecture
@@ -293,11 +293,13 @@ function bad_compute_hydrostatic_free_surface_tendency_contributions!(model, ker
         @inbounds c_tendency    = model.timestepper.Gⁿ[tracer_name]
         @inbounds c_advection   = model.advection[tracer_name]
         @inbounds c_forcing     = model.forcing[tracer_name]
+        @inbounds c_immersed_bc = immersed_boundary_condition(model.tracers[tracer_name])
 
         args = tuple(Val(tracer_index),
                      Val(tracer_name),
                      c_advection,
                      model.closure,
+                     c_immersed_bc,
                      model.buoyancy,
                      model.biogeochemistry,
                      model.velocities,
@@ -318,7 +320,7 @@ function bad_compute_hydrostatic_free_surface_tendency_contributions!(model, ker
 
     return nothing
 end
-=#
+
 
 function estimate_tracer_error(model, wind_stress)
     time_step_double_gyre!(model, wind_stress)
