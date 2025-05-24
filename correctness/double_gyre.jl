@@ -154,7 +154,7 @@ using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: get_top_tra
 
 
 using Oceananigans.Solvers: solve!, solve_batched_tridiagonal_system_kernel!
-using Oceananigans.Operators: ℑxᶜᵃᵃ, ℑyᵃᶜᵃ, Az, volume, δxᶜᵃᵃ, δyᵃᶜᵃ, δzᵃᵃᶜ, V⁻¹ᶜᶜᶜ
+using Oceananigans.Operators: ℑxᶜᵃᵃ, ℑyᵃᶜᵃ, Az, volume, δxᶜᵃᵃ, δyᵃᶜᵃ, δzᵃᵃᶜ, V⁻¹ᶜᶜᶜ, σⁿ, σ⁻
 using Oceananigans.Forcings: with_advective_forcing
 using Oceananigans.Advection: div_Uc, _advective_tracer_flux_x, _advective_tracer_flux_y, _advective_tracer_flux_z
 using KernelAbstractions: @kernel, @index
@@ -185,9 +185,23 @@ function loop!(model)
     tracer_field = model.tracers.T
     grid = model.grid
 
-    launch!(architecture(grid), grid, :xyz, _ab2_step_tracer_field!, tracer_field, grid, Δt, model.timestepper.χ, Gⁿ, G⁻)
+    launch!(architecture(grid), grid, :xyz, _bad_ab2_step_tracer_field!, tracer_field, grid, Δt, model.timestepper.χ, Gⁿ, G⁻)
 
     return nothing
+end
+
+@kernel function _bad_ab2_step_tracer_field!(θ, grid, Δt, χ, Gⁿ, G⁻)
+    i, j, k = @index(Global, NTuple)
+
+    σᶜᶜⁿ = σⁿ(i, j, k, grid, Center(), Center(), Center())
+    σᶜᶜ⁻ = σ⁻(i, j, k, grid, Center(), Center(), Center())
+
+    @inbounds begin
+
+        # We store temporarily σθ in θ.
+        # The unscaled θ will be retrieved with `unscale_tracers!`
+        θ[i, j, k] = σᶜᶜⁿ * θ[i, j, k] + Δt
+    end
 end
 
 function estimate_tracer_error(model, wind_stress)
