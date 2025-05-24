@@ -160,64 +160,18 @@ using Oceananigans.Advection: div_Uc, _advective_tracer_flux_x, _advective_trace
 using KernelAbstractions: @kernel, @index
 using KernelAbstractions.Extras.LoopInfo: @unroll
 
-
-function time_step_double_gyre!(model, wind_stress)
-
-    set!(model.velocities.u.boundary_conditions.top.condition, wind_stress)
-
-    # Initialize the model
-    model.clock.iteration = 0
-    model.clock.time = 0
-    model.clock.last_Δt = 1200
-
-    # Step it forward
-    loop!(model)
-
-    return nothing
-end
-
-function loop!(model)
-    Δt = model.clock.last_Δt
-
-
-    Gⁿ = model.timestepper.Gⁿ.T
-    G⁻ = model.timestepper.G⁻.T
-    tracer_field = model.tracers.T
-    grid = model.grid
-
-    launch!(architecture(grid), grid, :xyz, _bad_ab2_step_tracer_field!, tracer_field, grid, Δt, model.timestepper.χ, Gⁿ, G⁻)
-
-    return nothing
-end
-
-@kernel function _bad_ab2_step_tracer_field!(θ, grid, Δt, χ, Gⁿ, G⁻)
-    i, j, k = @index(Global, NTuple)
-
-    σᶜᶜⁿ = σⁿ(i, j, k, grid, Center(), Center(), Center())
-
-    @inbounds begin
-
-        # We store temporarily σθ in θ.
-        # The unscaled θ will be retrieved with `unscale_tracers!`
-        θ[i, j, k] = σᶜᶜⁿ * θ[i, j, k] + Δt
-    end
-end
-
-function estimate_tracer_error(model, wind_stress)
-    time_step_double_gyre!(model, wind_stress)
-    # Compute the mean mixed layer depth:
-    
+function estimate_tracer_error(tracer_field)
+    tracer_field .+= 12000.0
     return 0.0
 end
 
-function differentiate_tracer_error(model, J, dmodel, dJ)
+function differentiate_tracer_error(model, dmodel)
 
-    dedν = autodiff(set_runtime_activity(Enzyme.Reverse),
+    autodiff(set_runtime_activity(Enzyme.Reverse),
                     estimate_tracer_error, Active,
-                    Duplicated(model, dmodel),
-                    Duplicated(J, dJ))
+                    Duplicated(model, dmodel))
 
-    return dedν, dJ
+    return
 end
 
 Oceananigans.defaults.FloatType = Float64
@@ -227,7 +181,6 @@ rarch = ReactantState()
 rmodel = double_gyre_model(rarch, 62, 62, 4, 1200)
 
 rTᵢ, rSᵢ      = set_tracers(rmodel.grid)
-rwind_stress = wind_stress_init(rmodel.grid)
 
 set!(rmodel.tracers.T, rTᵢ)
 
@@ -237,8 +190,18 @@ dJ  = Field{Face, Center, Nothing}(rmodel.grid)
 @info "Compiling..."
 
 tic = time()
-restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(rmodel, rwind_stress)
-rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true differentiate_tracer_error(rmodel, rwind_stress, dmodel, dJ)
+
+@show parent(rmodel.tracers.T), parent(dmodel.tracers.T)
+@show objectid(parent(rmodel.tracers.T)), objectid(parent(dmodel.tracers.T))
+
+println(@code_hlo raise_first=true raise=true optimize=false estimate_tracer_error(parent(rmodel.tracers.T)))
+println(@code_hlo raise_first=true raise=true optimize=false differentiate_tracer_error(parent(rmodel.tracers.T), parent(dmodel.tracers.T)))
+
+println(@code_hlo raise_first=true raise=true estimate_tracer_error(parent(rmodel.tracers.T)))
+println(@code_hlo raise_first=true raise=true differentiate_tracer_error(parent(rmodel.tracers.T), parent(dmodel.tracers.T)))
+
+restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(parent(rmodel.tracers.T))
+rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true differentiate_tracer_error(parent(rmodel.tracers.T), parent(dmodel.tracers.T))
 compile_toc = time() - tic
 
 @show compile_toc
@@ -260,9 +223,9 @@ vTᵢ, vSᵢ      = set_tracers(vmodel.grid)
 vwind_stress = wind_stress_init(vmodel.grid)
 set!(vmodel.tracers.T, vTᵢ)
 
-estimate_tracer_error(vmodel, vwind_stress)
-restimate_tracer_error(pmodel, pwind_stress)
-dedν, dJ = rdifferentiate_tracer_error(rmodel, rwind_stress, dmodel, dJ)
+estimate_tracer_error(parent(vmodel.tracers.T))
+restimate_tracer_error(parent(pmodel.tracers.T))
+rdifferentiate_tracer_error(parent(rmodel.tracers.T), parent(dmodel.tracers.T))
 
 GordonBell25.compare_states(vmodel, pmodel; include_halos=false, throw_error=false, rtol=sqrt(eps(Float64)), atol=sqrt(eps(Float64)))
 GordonBell25.compare_states(rmodel, pmodel; include_halos=true, throw_error=false, rtol=sqrt(eps(Float64)), atol=sqrt(eps(Float64)))
