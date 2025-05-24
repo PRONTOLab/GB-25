@@ -194,7 +194,6 @@ end
     i, j, k = @index(Global, NTuple)
 
     σᶜᶜⁿ = σⁿ(i, j, k, grid, Center(), Center(), Center())
-    σᶜᶜ⁻ = σ⁻(i, j, k, grid, Center(), Center(), Center())
 
     @inbounds begin
 
