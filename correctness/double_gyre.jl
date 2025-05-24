@@ -178,33 +178,11 @@ end
 
 function loop!(model)
     Δt = model.clock.last_Δt
-    grid = model.grid
-    Guⁿ  = model.timestepper.Gⁿ.u
-    Gvⁿ  = model.timestepper.Gⁿ.v
-    GUⁿ  = model.timestepper.Gⁿ.U
-    GVⁿ  = model.timestepper.Gⁿ.V
 
-    barotropic_timestepper = model.free_surface.timestepper
-    baroclinic_timestepper = model.timestepper
-
-    stage = model.clock.stage
-
-    launch!(architecture(grid), grid, :xy, _compute_integrated_ab2_tendencies!, GUⁿ, GVⁿ, grid,
-            baroclinic_timestepper.G⁻.u, baroclinic_timestepper.G⁻.v, Guⁿ, Gvⁿ, baroclinic_timestepper.χ)
-
-    fill!(model.free_surface.filtered_state.U, 0)
-
-    Gⁿ = model.timestepper.Gⁿ.u
-    G⁻ = model.timestepper.G⁻.u
-    velocity_field = model.velocities.u
-
-    launch!(model.architecture, model.grid, :xyz,
-            ab2_step_field!, velocity_field, Δt, model.timestepper.χ, Gⁿ, G⁻)
 
     Gⁿ = model.timestepper.Gⁿ.T
     G⁻ = model.timestepper.G⁻.T
     tracer_field = model.tracers.T
-    closure = model.closure
     grid = model.grid
 
     launch!(architecture(grid), grid, :xyz, _ab2_step_tracer_field!, tracer_field, grid, Δt, model.timestepper.χ, Gⁿ, G⁻)
