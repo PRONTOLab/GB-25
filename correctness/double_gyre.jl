@@ -209,55 +209,6 @@ function loop!(model)
 
     launch!(architecture(grid), grid, :xyz, _ab2_step_tracer_field!, tracer_field, grid, Δt, model.timestepper.χ, Gⁿ, G⁻)
 
-    free_surface = model.free_surface
-    baroclinic_timestepper = model.timestepper
-
-    free_surface_grid = free_surface.η.grid
-    filtered_state    = free_surface.filtered_state
-    substepping       = free_surface.substepping
-
-    arch = architecture(free_surface_grid)
-
-    barotropic_velocities = free_surface.barotropic_velocities
-
-    # All hardcoded
-    Δτᴮ = 80.0
-    
-    # Slow forcing terms
-    GUⁿ = model.timestepper.Gⁿ.U
-    GVⁿ = model.timestepper.Gⁿ.V
-
-    #free surface state
-    η = free_surface.η
-    U = barotropic_velocities.U
-    V = barotropic_velocities.V
-    η̅ = filtered_state.η
-    U̅ = filtered_state.U
-    V̅ = filtered_state.V
-
-    # unpack state quantities, parameters and forcing terms
-    U, V    = free_surface.barotropic_velocities
-    η̅, U̅, V̅ = free_surface.filtered_state.η, free_surface.filtered_state.U, free_surface.filtered_state.V
-
-    η_args = (free_surface.η.grid, Δτᴮ, free_surface.η, U, V,
-            free_surface.timestepper)
-
-    U_args = (free_surface.η.grid, Δτᴮ, free_surface.η, U, V,
-            η̅, U̅, V̅, GUⁿ, GVⁿ, free_surface.gravitational_acceleration,
-            free_surface.timestepper)
-
-    free_surface_kernel!, _        = configure_kernel(arch, free_surface.η.grid, free_surface.kernel_parameters, _split_explicit_free_surface!)
-    barotropic_velocity_kernel!, _ = configure_kernel(arch, free_surface.η.grid, free_surface.kernel_parameters, _split_explicit_barotropic_velocity!)
-
-    for substep in 1:2
-            averaging_weight = 0.5
-            free_surface_kernel!(η_args...)
-            barotropic_velocity_kernel!(averaging_weight, U_args...)
-    end
-
-    launch!(architecture(free_surface_grid), free_surface_grid, :xy,
-            _update_split_explicit_state!, η, U, V, free_surface_grid, η̅, U̅, V̅)
-
     return nothing
 end
 
