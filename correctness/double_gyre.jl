@@ -60,7 +60,7 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     free_surface = SplitExplicitFreeSurface(substeps=30)
 
     # TEOS10 is a 54-term polynomial that relates temperature (T) and salinity (S) to buoyancy
-    buoyancy = SeawaterBuoyancy(equation_of_state = LinearEquationOfState(Oceananigans.defaults.FloatType))
+    buoyancy = SeawaterBuoyancy(equation_of_state = SeawaterPolynomials.TEOS10EquationOfState(Oceananigans.defaults.FloatType))
 
     # Closures:
     # diffusivity scheme we need for GM/Redi.
@@ -75,15 +75,15 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
                                                         #slope_limiter = FluxTapering(1e-2))
 
     horizontal_closure = HorizontalScalarDiffusivity(ν = 5000.0, κ = 1000.0)
-    vertical_closure   = VerticalScalarDiffusivity(ν = 1e-2, κ = 1e-5) 
-    #vertical_closure   = Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity()
+    #vertical_closure   = VerticalScalarDiffusivity(ν = 1e-2, κ = 1e-5) 
+    vertical_closure   = Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity()
     #vertical_closure = Oceananigans.TurbulenceClosures.TKEDissipationVerticalDiffusivity()
     closure = (horizontal_closure, vertical_closure)
 
     # Coriolis forces for a rotating Earth
     coriolis = HydrostaticSphericalCoriolis()
 
-    tracers = (:T, :S)
+    tracers = (:T, :S, :e)
 
     grid = simple_latitude_longitude_grid(arch, Nx, Ny, Nz)
 
@@ -112,6 +112,7 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
                                           boundary_conditions = boundary_conditions)
 
     model.clock.last_Δt = Δt
+    set!(model.tracers.e, 1e-6)
 
     return model
 end
@@ -214,15 +215,32 @@ dTᵢ = Field{Center, Center, Center}(rmodel.grid)
 dSᵢ = Field{Center, Center, Center}(rmodel.grid)
 dJ  = Field{Face, Center, Nothing}(rmodel.grid)
 
-@info dmodel
-@info dmodel.closure
-
 tic = time()
 restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress)
 rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true differentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, dmodel, dTᵢ, dSᵢ, dJ)
 compile_toc = time() - tic
 
 @show compile_toc
+
+# Primal-only, with reactant
+pmodel = double_gyre_model(rarch, 62, 62, 15, 1200)
+
+pTᵢ, pSᵢ      = set_tracers(pmodel.grid)
+pwind_stress = wind_stress_init(pmodel.grid)
+
+# Vanilla and forward only
+vmodel = double_gyre_model(CPU(), 62, 62, 15, 1200)
+
+vTᵢ, vSᵢ      = set_tracers(vmodel.grid)
+vwind_stress = wind_stress_init(vmodel.grid)
+
+dedν, dJ = rdifferentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, dmodel, dTᵢ, dSᵢ, dJ)
+
+restimate_tracer_error(pmodel, pTᵢ, pSᵢ, pwind_stress)
+estimate_tracer_error(vmodel, vTᵢ, vSᵢ, vwind_stress)
+
+GordonBell25.compare_states(vmodel, pmodel; include_halos=false, throw_error=false, rtol=sqrt(eps(Float64)), atol=sqrt(eps(Float64)))
+GordonBell25.compare_states(rmodel, pmodel; include_halos=true, throw_error=false, rtol=sqrt(eps(Float64)), atol=sqrt(eps(Float64)))
 
 #=
 @info "Running..."
