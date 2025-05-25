@@ -268,8 +268,6 @@ GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, at
 i = 10
 j = 10
 
-dedν, dJ = rdifferentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, dmodel, dTᵢ, dSᵢ, dJ)
-
 @allowscalar @show dJ[i, j]
 
 # Produce finite-difference gradients for comparison:
