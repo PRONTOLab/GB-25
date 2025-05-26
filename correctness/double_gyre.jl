@@ -25,7 +25,8 @@ using Oceananigans.BoundaryConditions: update_boundary_condition!,
                                        fill_halo_event!,
                                        extract_west_bc, extract_east_bc, extract_south_bc, 
                                        extract_north_bc, extract_bc, extract_bottom_bc, extract_top_bc,
-                                       fill_west_and_east_halo!, fill_south_and_north_halo!, fill_bottom_and_top_halo!, fill_first
+                                       fill_west_and_east_halo!, fill_south_and_north_halo!, fill_bottom_and_top_halo!, fill_first,
+                                       fill_halo_size, fill_halo_offset
 
 using Oceananigans.Fields: tupled_fill_halo_regions!, location, immersed_boundary_condition, fill_reduced_field_halos!, default_indices
 using Oceananigans.Models.NonhydrostaticModels: compute_auxiliaries!, update_hydrostatic_pressure!
@@ -233,27 +234,32 @@ function bad_tupled_fill_halo_regions!(fields, grid, args...; kwargs...)
 
     not_reduced_fields = fill_reduced_field_halos!(fields, args...; kwargs)
 
-    bad_fill_halo_regions!((not_reduced_fields[1].data, ),
-                            (not_reduced_fields[1].boundary_conditions,),
-                            default_indices(3),
-                            map(instantiated_location, not_reduced_fields),
-                            grid, args...; kwargs...)
+    c = (not_reduced_fields[1].data, )
+    boundary_conditions = (not_reduced_fields[1].boundary_conditions,)
+    indices = default_indices(3)
+    loc = map(instantiated_location, not_reduced_fields)
 
-    return nothing
-end
-
-function bad_fill_halo_regions!(c, boundary_conditions, indices, loc, grid, args...;
-                            fill_boundary_normal_velocities = true, kwargs...)
     arch = architecture(grid)
-
-    if fill_boundary_normal_velocities
-        fill_open_boundary_regions!(c, boundary_conditions, indices, loc, grid, args...; kwargs...)
-    end
 
     fill_halos! = [fill_bottom_and_top_halo!]
     bcs = ((extract_bottom_bc(boundary_conditions), extract_top_bc(boundary_conditions)),)
 
-    fill_halo_event!(c, fill_halos![1], bcs[1], indices, loc, arch, grid, args...; kwargs...)
+    bad_fill_halo_event!(c, fill_halos![1], bcs[1], indices, loc, arch, grid, args...; kwargs...)
+
+    return nothing
+end
+
+function bad_fill_halo_event!(c, fill_halos!, bcs, indices, loc, arch, grid, args...;
+                          async = false, # This kwargs is specific to DistributedGrids, here is does nothing
+                          kwargs...)
+
+    # Calculate size and offset of the fill_halo kernel
+    # We assume that the kernel size is the same for west and east boundaries,
+    # south and north boundaries, and bottom and top boundaries
+    size   = fill_halo_size(c, fill_halos!, indices, bcs[1], loc, grid)
+    offset = fill_halo_offset(size, fill_halos!, indices)
+
+    fill_halos!(c, bcs..., size, offset, loc, arch, grid, args...; kwargs...)
 
     return nothing
 end
