@@ -6,11 +6,20 @@ using GordonBell25
 #Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
 #Reactant.allowscalar(true)
 
-using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity
-
-using SeawaterPolynomials
-
 using Enzyme
+
+using Oceananigans: initialize!, prognostic_fields, instantiated_location
+using Oceananigans.Grids: AbstractGrid, XDirection, YDirection, ZDirection, inactive_cell, get_active_column_map
+using Oceananigans.TimeSteppers: update_state!, ab2_step!, tick!, calculate_pressure_correction!, correct_velocities_and_cache_previous_tendencies!, step_lagrangian_particles!, ab2_step_field!, implicit_step!, pressure_correct_velocities!, cache_previous_tendencies!
+using Oceananigans.Utils: @apply_regionally, launch!, configure_kernel, sum_of_velocities
+
+using Oceananigans.Models: update_model_field_time_series!, interior_tendency_kernel_parameters, complete_communication_and_compute_buffer!
+
+using Oceananigans.BoundaryConditions: update_boundary_condition!, replace_horizontal_vector_halos!, fill_halo_regions!, apply_x_bcs!, apply_y_bcs!, apply_z_bcs!, _apply_z_bcs!, apply_z_top_bc!, getbc, flip
+using Oceananigans.Fields: tupled_fill_halo_regions!, location, immersed_boundary_condition
+using Oceananigans.Models.NonhydrostaticModels: compute_auxiliaries!, update_hydrostatic_pressure!
+using Oceananigans.Biogeochemistry: update_biogeochemical_state!, update_tendencies!, biogeochemical_drift_velocity, biogeochemical_transition, biogeochemical_auxiliary_fields
+
 
 throw_error = true
 include_halos = true
@@ -60,35 +69,14 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     free_surface = SplitExplicitFreeSurface(substeps=30)
 
     # TEOS10 is a 54-term polynomial that relates temperature (T) and salinity (S) to buoyancy
-    buoyancy = SeawaterBuoyancy(equation_of_state = SeawaterPolynomials.TEOS10EquationOfState(Oceananigans.defaults.FloatType))
+    buoyancy = SeawaterBuoyancy(equation_of_state = LinearEquationOfState(Oceananigans.defaults.FloatType))
 
     # Closures:
-    # diffusivity scheme we need for GM/Redi.
-    # κ_symmetric is the parameter we need to train for (can be scalar or a spatial field),
-    # κ_skew is GM parameter (also scalar or spatial field),
-    # we might want to use the Isopycnal Tensor instead of small slope (small slope common),
-    # unsure of slope limiter and time disc.
-    redi_diffusivity = IsopycnalSkewSymmetricDiffusivity(VerticallyImplicitTimeDiscretization(), Float64;
-                                                        κ_skew = 0.0,
-                                                        κ_symmetric = 0.0)
-                                                        #isopycnal_tensor = IsopycnalTensor(),
-                                                        #slope_limiter = FluxTapering(1e-2))
-
-    horizontal_closure = HorizontalScalarDiffusivity(ν = 5000.0, κ = 1000.0)
-    #vertical_closure   = VerticalScalarDiffusivity(ν = 1e-2, κ = 1e-5) 
     vertical_closure   = Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity()
-    #vertical_closure = Oceananigans.TurbulenceClosures.TKEDissipationVerticalDiffusivity()
-    closure = (horizontal_closure, vertical_closure)
-
-    # Coriolis forces for a rotating Earth
-    coriolis = HydrostaticSphericalCoriolis()
 
     tracers = (:T, :S, :e)
 
     grid = simple_latitude_longitude_grid(arch, Nx, Ny, Nz)
-
-    momentum_advection = VectorInvariant() #WENOVectorInvariant(order=5)
-    tracer_advection   = Centered(order=2) #WENO(order=5)
 
     #
     # Momentum BCs:
@@ -97,18 +85,16 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     u_top_bc   = FluxBoundaryCondition(Field{Face, Center, Nothing}(grid))
 
     u_bcs = FieldBoundaryConditions(north=no_slip_bc, south=no_slip_bc, top=u_top_bc)
-    v_bcs = FieldBoundaryConditions(east=no_slip_bc, west=no_slip_bc)
 
     boundary_conditions = (u=u_bcs, )
 
     model = HydrostaticFreeSurfaceModel(; grid,
                                           free_surface = free_surface,
-                                          closure = closure,
+                                          closure = vertical_closure,
                                           buoyancy = buoyancy,
                                           tracers = tracers,
-                                          coriolis = coriolis,
-                                          momentum_advection = momentum_advection,
-                                          tracer_advection = tracer_advection,
+                                          momentum_advection = nothing,
+                                          tracer_advection = nothing,
                                           boundary_conditions = boundary_conditions)
 
     model.clock.last_Δt = Δt
@@ -145,8 +131,7 @@ end
 
 function loop!(model, Ninner)
     Δt = model.clock.last_Δt + 0
-    Oceananigans.TimeSteppers.first_time_step!(model, Δt)
-    @trace track_numbers=false for _ = 1:(Ninner-1)
+    @trace track_numbers=false for _ = 1:Ninner
         Oceananigans.TimeSteppers.time_step!(model, Δt)
     end
     return nothing
@@ -164,7 +149,7 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     model.clock.last_Δt = 1200
 
     # Step it forward
-    loop!(model, 10)
+    loop!(model, 5)
 
     return nothing
 end
