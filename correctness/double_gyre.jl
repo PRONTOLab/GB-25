@@ -202,39 +202,17 @@ function bad_time_step!(model, Δt;
     # Full step for tracers, fractional step for velocities.
     ab2_step!(model, Δt)
 
-    bad_update_state!(model, model.grid, callbacks; compute_tendencies=true)
+    grid = model.grid
+    callbacks = []
 
-    return nothing
-end
-
-function bad_update_state!(model, grid, callbacks; compute_tendencies = true)
     tupled_fill_halo_regions!(prognostic_fields(model), grid, model.clock, fields(model), async=true)
     compute_auxiliaries!(model)
-    bad_compute_hydrostatic_boundary_tendency_contributions!(model.timestepper.Gⁿ,
-                                                         model.architecture,
-                                                         model.velocities,
-                                                         model.tracers,
-                                                         model.clock,
-                                                         fields(model),
-                                                         model.closure,
-                                                         model.buoyancy)
 
-    return nothing
-end
+    Gⁿ = model.timestepper.Gⁿ
+    arch = model.architecture
+    velocities = model.velocities
 
-function bad_compute_hydrostatic_boundary_tendency_contributions!(Gⁿ, arch, velocities, tracers, args...)
-
-    args = Tuple(args)
-
-    # Velocity fields
-    for i in (:u, :v)
-        apply_flux_bcs!(Gⁿ[i], velocities[i], arch, args)
-    end
-
-    # Tracer fields
-    for i in propertynames(tracers)
-        apply_flux_bcs!(Gⁿ[i], tracers[i], arch, args)
-    end
+    launch!(arch, Gⁿ.u.grid, :xy, _apply_z_bcs!, Gⁿ.u, instantiated_location(Gⁿ.u), Gⁿ.u.grid, velocities.u.boundary_conditions.bottom, velocities.u.boundary_conditions.top, (model.clock, fields(model), model.closure, model.buoyancy))
 
     return nothing
 end
