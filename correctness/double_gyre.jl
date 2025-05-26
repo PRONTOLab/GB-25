@@ -15,11 +15,70 @@ using Oceananigans.Utils: @apply_regionally, launch!, configure_kernel, sum_of_v
 
 using Oceananigans.Models: update_model_field_time_series!, interior_tendency_kernel_parameters, complete_communication_and_compute_buffer!
 
-using Oceananigans.BoundaryConditions: update_boundary_condition!, replace_horizontal_vector_halos!, fill_halo_regions!, apply_x_bcs!, apply_y_bcs!, apply_z_bcs!, _apply_z_bcs!, apply_z_top_bc!, getbc, flip
+using Oceananigans.BoundaryConditions: update_boundary_condition!, replace_horizontal_vector_halos!, fill_halo_regions!, apply_x_bcs!, apply_y_bcs!, apply_z_bcs!, _apply_z_bcs!, apply_z_top_bc!, getbc, flip, update_boundary_conditions!
 using Oceananigans.Fields: tupled_fill_halo_regions!, location, immersed_boundary_condition
 using Oceananigans.Models.NonhydrostaticModels: compute_auxiliaries!, update_hydrostatic_pressure!
 using Oceananigans.Biogeochemistry: update_biogeochemical_state!, update_tendencies!, biogeochemical_drift_velocity, biogeochemical_transition, biogeochemical_auxiliary_fields
 
+using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fields!,
+                                                        compute_tendencies!,
+                                                        update_grid!,
+                                                        unscale_tracers!,
+                                                        compute_w_from_continuity!,
+                                                        w_kernel_parameters,
+                                                        p_kernel_parameters,
+                                                        step_free_surface!,
+                                                        compute_free_surface_tendency!,
+                                                        local_ab2_step!,
+                                                        ab2_step_velocities!,
+                                                        ab2_step_tracers!,
+                                                        compute_hydrostatic_boundary_tendency_contributions!,
+                                                        compute_hydrostatic_free_surface_tendency_contributions!,
+                                                        apply_flux_bcs!,
+                                                        compute_hydrostatic_momentum_tendencies!,
+                                                        compute_hydrostatic_free_surface_Gc!,
+                                                        hydrostatic_free_surface_tracer_tendency,
+                                                        barotropic_split_explicit_corrector!,
+                                                        _ab2_step_tracer_field!,
+                                                        hydrostatic_fields
+
+                                                        using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: _compute_barotropic_mode!,
+                                                        _barotropic_split_explicit_corrector!,
+                                                        calculate_substeps,
+                                                        calculate_adaptive_settings,
+                                                        iterate_split_explicit!,
+                                                        _update_split_explicit_state!,
+                                                        _split_explicit_free_surface!,
+                                                        _split_explicit_barotropic_velocity!,
+                                                        compute_split_explicit_forcing!,
+                                                        initialize_free_surface_state!,
+                                                        initialize_free_surface_timestepper!,
+                                                        _compute_integrated_ab2_tendencies!
+
+using Oceananigans.TurbulenceClosures: compute_diffusivities!, getclosure, clip, shear_production, dissipation, closure_turbulent_velocity, ∇_dot_qᶜ, immersed_∇_dot_qᶜ
+
+using Oceananigans.ImmersedBoundaries: get_active_cells_map, mask_immersed_field!
+
+using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: get_top_tracer_bcs,
+                                           update_previous_compute_time!,
+                                           time_step_catke_equation!,
+                                           compute_average_surface_buoyancy_flux!,
+                                           compute_CATKE_diffusivities!,
+                                           substep_turbulent_kinetic_energy!,
+                                           get_time_step,
+                                           κuᶜᶜᶠ, κcᶜᶜᶠ, κeᶜᶜᶠ,
+                                           mask_diffusivity,
+                                           explicit_buoyancy_flux,
+                                           dissipation_rate,
+                                           TKE_mixing_lengthᶜᶜᶠ,
+                                           turbulent_velocityᶜᶜᶜ
+
+using Oceananigans.Solvers: solve!, solve_batched_tridiagonal_system_kernel!
+using Oceananigans.Operators: ℑxᶜᵃᵃ, ℑyᵃᶜᵃ, Az, volume, δxᶜᵃᵃ, δyᵃᶜᵃ, δzᵃᵃᶜ, V⁻¹ᶜᶜᶜ, σⁿ, σ⁻
+using Oceananigans.Forcings: with_advective_forcing
+using Oceananigans.Advection: div_Uc, _advective_tracer_flux_x, _advective_tracer_flux_y, _advective_tracer_flux_z
+using KernelAbstractions: @kernel, @index
+using KernelAbstractions.Extras.LoopInfo: @unroll
 
 throw_error = true
 include_halos = true
@@ -140,27 +199,29 @@ end
 function bad_time_step!(model, Δt;
                     callbacks=[], euler=false)
 
-    # Take an euler step if:
-    #   * We detect that the time-step size has changed.
-    #   * We detect that this is the "first" time-step, which means we
-    #     need to take an euler step. Note that model.clock.last_Δt is
-    #     initialized as Inf
-    #   * The user has passed euler=true to time_step!
-    euler = euler || (Δt != model.clock.last_Δt)
-    euler && @debug "Taking a forward Euler step."
-
     # Full step for tracers, fractional step for velocities.
     ab2_step!(model, Δt)
 
-    tick!(model.clock, Δt)
-    model.clock.last_Δt = Δt
-    model.clock.last_stage_Δt = Δt # just one stage
+    bad_update_state!(model, model.grid, callbacks; compute_tendencies=true)
 
-    calculate_pressure_correction!(model, Δt)
-    @apply_regionally correct_velocities_and_cache_previous_tendencies!(model, Δt)
+    return nothing
+end
 
-    update_state!(model, callbacks; compute_tendencies=true)
-    step_lagrangian_particles!(model, Δt)
+function bad_update_state!(model, grid, callbacks; compute_tendencies = true)
+
+    @apply_regionally mask_immersed_model_fields!(model, grid)
+
+    # Update possible FieldTimeSeries used in the model
+    @apply_regionally update_model_field_time_series!(model, model.clock)
+
+    # Update the boundary conditions
+    @apply_regionally update_boundary_conditions!(fields(model), model)
+
+    tupled_fill_halo_regions!(prognostic_fields(model), grid, model.clock, fields(model), async=true)
+
+    @apply_regionally compute_auxiliaries!(model)
+
+    compute_tendencies!(model, callbacks)
 
     return nothing
 end
