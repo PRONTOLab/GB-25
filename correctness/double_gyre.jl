@@ -15,7 +15,18 @@ using Oceananigans.Utils: @apply_regionally, launch!, configure_kernel, sum_of_v
 
 using Oceananigans.Models: update_model_field_time_series!, interior_tendency_kernel_parameters, complete_communication_and_compute_buffer!
 
-using Oceananigans.BoundaryConditions: update_boundary_condition!, replace_horizontal_vector_halos!, fill_halo_regions!, apply_x_bcs!, apply_y_bcs!, apply_z_bcs!, _apply_z_bcs!, apply_z_top_bc!, getbc, flip, update_boundary_conditions!, fill_open_boundary_regions!, permute_boundary_conditions, fill_halo_event!
+using Oceananigans.BoundaryConditions: update_boundary_condition!, 
+                                       replace_horizontal_vector_halos!, 
+                                       fill_halo_regions!, apply_x_bcs!,
+                                       apply_y_bcs!, apply_z_bcs!, _apply_z_bcs!, apply_z_top_bc!, 
+                                       getbc, flip, update_boundary_conditions!, 
+                                       fill_open_boundary_regions!, 
+                                       permute_boundary_conditions, 
+                                       fill_halo_event!,
+                                       extract_west_bc, extract_east_bc, extract_south_bc, 
+                                       extract_north_bc, extract_bc, extract_bottom_bc,
+                                       fill_west_and_east_halo!, fill_south_and_north_halo!, fill_bottom_and_top_halo!, fill_first
+
 using Oceananigans.Fields: tupled_fill_halo_regions!, location, immersed_boundary_condition, fill_reduced_field_halos!, default_indices
 using Oceananigans.Models.NonhydrostaticModels: compute_auxiliaries!, update_hydrostatic_pressure!
 using Oceananigans.Biogeochemistry: update_biogeochemical_state!, update_tendencies!, biogeochemical_drift_velocity, biogeochemical_transition, biogeochemical_auxiliary_fields
@@ -239,12 +250,54 @@ function bad_fill_halo_regions!(c, boundary_conditions, indices, loc, grid, args
         fill_open_boundary_regions!(c, boundary_conditions, indices, loc, grid, args...; kwargs...)
     end
 
-    fill_halos!, bcs = permute_boundary_conditions(boundary_conditions)
+    fill_halos!, bcs = bad_permute_boundary_conditions(boundary_conditions)
 
     fill_halo_event!(c, fill_halos![1], bcs[1], indices, loc, arch, grid, args...; kwargs...)
 
     return nothing
 end
+
+function bad_permute_boundary_conditions(boundary_conditions)
+
+    split_x_halo_filling = false
+    split_y_halo_filling = false
+
+    west_bc  = extract_west_bc(boundary_conditions)
+    east_bc  = extract_east_bc(boundary_conditions)
+    south_bc = extract_south_bc(boundary_conditions)
+    north_bc = extract_north_bc(boundary_conditions)
+
+    if split_x_halo_filling
+        if split_y_halo_filling
+            fill_halos! = [fill_west_halo!, fill_east_halo!, fill_south_halo!, fill_north_halo!, fill_bottom_and_top_halo!]
+            sides       = [:west, :east, :south, :north, :bottom_and_top]
+            bcs_array   = [west_bc, east_bc, south_bc, north_bc, extract_bottom_bc(boundary_conditions)]
+        else
+            fill_halos! = [fill_west_halo!, fill_east_halo!, fill_south_and_north_halo!, fill_bottom_and_top_halo!]
+            sides       = [:west, :east, :south_and_north, :bottom_and_top]
+            bcs_array   = [west_bc, east_bc, south_bc, extract_bottom_bc(boundary_conditions)]
+        end
+    else
+        if split_y_halo_filling
+            fill_halos! = [fill_west_and_east_halo!, fill_south_halo!, fill_north_halo!, fill_bottom_and_top_halo!]
+            sides       = [:west_and_east, :south, :north, :bottom_and_top]
+            bcs_array   = [west_bc, south_bc, north_bc, extract_bottom_bc(boundary_conditions)]
+        else
+            fill_halos! = [fill_west_and_east_halo!, fill_south_and_north_halo!, fill_bottom_and_top_halo!]
+            sides       = [:west_and_east, :south_and_north, :bottom_and_top]
+            bcs_array   = [west_bc, south_bc, extract_bottom_bc(boundary_conditions)]
+        end
+    end
+
+    perm = sortperm(bcs_array, lt=fill_first)
+    fill_halos! = fill_halos![perm]
+    sides = sides[perm]
+
+    boundary_conditions = Tuple(extract_bc(boundary_conditions, Val(side)) for side in sides)
+
+    return fill_halos!, boundary_conditions
+end
+
 
 function estimate_tracer_error(model, initial_temperature, initial_salinity, wind_stress)
     time_step_double_gyre!(model, initial_temperature, initial_salinity, wind_stress)
