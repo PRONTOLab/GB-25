@@ -206,13 +206,40 @@ function bad_time_step!(model, Δt;
     callbacks = []
 
     tupled_fill_halo_regions!(prognostic_fields(model), grid, model.clock, fields(model), async=true)
-    compute_auxiliaries!(model)
+    bad_compute_auxiliaries!(model)
 
     Gⁿ = model.timestepper.Gⁿ
     arch = model.architecture
     velocities = model.velocities
 
     launch!(arch, Gⁿ.u.grid, :xy, _apply_z_bcs!, Gⁿ.u, instantiated_location(Gⁿ.u), Gⁿ.u.grid, velocities.u.boundary_conditions.bottom, velocities.u.boundary_conditions.top, (model.clock, fields(model), model.closure, model.buoyancy))
+
+    return nothing
+end
+
+function bad_compute_auxiliaries!(model::HydrostaticFreeSurfaceModel; w_parameters = w_kernel_parameters(model.grid),
+                                                                  p_parameters = p_kernel_parameters(model.grid),
+                                                                  κ_parameters = :xyz)
+
+    grid        = model.grid
+    closure     = model.closure
+    tracers     = model.tracers
+    diffusivity = model.diffusivity_fields
+    buoyancy    = model.buoyancy
+
+    P    = model.pressure.pHY′
+    arch = architecture(grid)
+
+    # Update the grid and unscale the tracers
+    update_grid!(model, grid, model.vertical_coordinate; parameters = w_parameters)
+    unscale_tracers!(tracers, grid; parameters = w_parameters)
+
+    # Advance diagnostic quantities
+    compute_w_from_continuity!(model; parameters = w_parameters)
+    update_hydrostatic_pressure!(P, arch, grid, buoyancy, tracers; parameters = p_parameters)
+
+    # Update closure diffusivities
+    compute_diffusivities!(diffusivity, closure, model; parameters = κ_parameters)
 
     return nothing
 end
