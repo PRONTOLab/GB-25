@@ -1,5 +1,5 @@
 using Oceananigans
-using Oceananigans.Architectures: ReactantState
+using Oceananigans.Architectures: ReactantState, architecture, AbstractArchitecture, convert_to_device
 using ClimaOcean
 using Reactant
 using GordonBell25
@@ -72,7 +72,7 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     buoyancy = SeawaterBuoyancy(equation_of_state = LinearEquationOfState(Oceananigans.defaults.FloatType))
 
     # Closures:
-    vertical_closure   = Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity()
+    vertical_closure = Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity()
 
     tracers = (:T, :S, :e)
 
@@ -117,26 +117,6 @@ function wind_stress_init(grid;
     return wind_stress
 end
 
-function first_time_step!(model)
-    Δt = model.clock.last_Δt
-    Oceananigans.TimeSteppers.first_time_step!(model, Δt)
-    return nothing
-end
-
-function time_step!(model)
-    Δt = model.clock.last_Δt + 0
-    Oceananigans.TimeSteppers.time_step!(model, Δt)
-    return nothing
-end
-
-function loop!(model, Ninner)
-    Δt = model.clock.last_Δt + 0
-    @trace track_numbers=false for _ = 1:Ninner
-        Oceananigans.TimeSteppers.time_step!(model, Δt)
-    end
-    return nothing
-end
-
 function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
 
     set!(model.tracers.T, Tᵢ)
@@ -149,7 +129,38 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     model.clock.last_Δt = 1200
 
     # Step it forward
-    loop!(model, 5)
+    Δt = model.clock.last_Δt + 0
+    @trace track_numbers=false for _ = 1:5
+        bad_time_step!(model, Δt)
+    end
+
+    return nothing
+end
+
+function bad_time_step!(model, Δt;
+                    callbacks=[], euler=false)
+
+    # Take an euler step if:
+    #   * We detect that the time-step size has changed.
+    #   * We detect that this is the "first" time-step, which means we
+    #     need to take an euler step. Note that model.clock.last_Δt is
+    #     initialized as Inf
+    #   * The user has passed euler=true to time_step!
+    euler = euler || (Δt != model.clock.last_Δt)
+    euler && @debug "Taking a forward Euler step."
+
+    # Full step for tracers, fractional step for velocities.
+    ab2_step!(model, Δt)
+
+    tick!(model.clock, Δt)
+    model.clock.last_Δt = Δt
+    model.clock.last_stage_Δt = Δt # just one stage
+
+    calculate_pressure_correction!(model, Δt)
+    @apply_regionally correct_velocities_and_cache_previous_tendencies!(model, Δt)
+
+    update_state!(model, callbacks; compute_tendencies=true)
+    step_lagrangian_particles!(model, Δt)
 
     return nothing
 end
@@ -181,7 +192,6 @@ function differentiate_tracer_error(model, Tᵢ, Sᵢ, J, dmodel, dTᵢ, dSᵢ, 
     return dedν, dJ
 end
 
-Ninner = ConcreteRNumber(3)
 Oceananigans.defaults.FloatType = Float64
 
 @info "Generating model..."
@@ -256,7 +266,7 @@ j = 10
 @allowscalar @show dJ[i, j]
 
 # Produce finite-difference gradients for comparison:
-ϵ_list = [1e-1, 1e-2, 1e-3, 1e-4] #, 1e-5, 1e-6, 1e-7, 1e-8]
+ϵ_list = [1e-1, 1e-2, 1e-3]
 
 @allowscalar gradient_list = Array{Float64}[]
 
