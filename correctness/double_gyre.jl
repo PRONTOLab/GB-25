@@ -190,36 +190,30 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     # Step it forward
     Δt = model.clock.last_Δt + 0
     @trace track_numbers=false for _ = 1:2
-        bad_time_step!(model, Δt)
+        # Full step for tracers, fractional step for velocities.
+        ab2_step!(model, Δt)
+
+        grid = model.grid
+
+        bad_tupled_fill_halo_regions!(prognostic_fields(model), grid, model.clock, fields(model), async=true)
+
+        arch = model.architecture
+        grid = model.grid
+        velocities = model.velocities
+        tracers = model.tracers
+        buoyancy = model.buoyancy
+
+        launch!(arch, grid, :xyz,
+                compute_CATKE_diffusivities!,
+                model.diffusivity_fields, grid, model.closure, velocities, tracers, buoyancy)
+
+        Gⁿ = model.timestepper.Gⁿ
+        arch = model.architecture
+        velocities = model.velocities
+
+        launch!(arch, Gⁿ.u.grid, :xy, _apply_z_bcs!, Gⁿ.u, instantiated_location(Gⁿ.u), Gⁿ.u.grid, velocities.u.boundary_conditions.bottom, velocities.u.boundary_conditions.top, (model.clock, fields(model), model.closure, model.buoyancy))
+
     end
-
-    return nothing
-end
-
-function bad_time_step!(model, Δt)
-
-    # Full step for tracers, fractional step for velocities.
-    ab2_step!(model, Δt)
-
-    grid = model.grid
-
-    bad_tupled_fill_halo_regions!(prognostic_fields(model), grid, model.clock, fields(model), async=true)
-
-    arch = model.architecture
-    grid = model.grid
-    velocities = model.velocities
-    tracers = model.tracers
-    buoyancy = model.buoyancy
-
-    launch!(arch, grid, :xyz,
-            compute_CATKE_diffusivities!,
-            model.diffusivity_fields, grid, model.closure, velocities, tracers, buoyancy)
-
-    Gⁿ = model.timestepper.Gⁿ
-    arch = model.architecture
-    velocities = model.velocities
-
-    launch!(arch, Gⁿ.u.grid, :xy, _apply_z_bcs!, Gⁿ.u, instantiated_location(Gⁿ.u), Gⁿ.u.grid, velocities.u.boundary_conditions.bottom, velocities.u.boundary_conditions.top, (model.clock, fields(model), model.closure, model.buoyancy))
 
     return nothing
 end
@@ -228,18 +222,16 @@ function bad_tupled_fill_halo_regions!(fields, grid, args...; kwargs...)
 
     not_reduced_fields = fill_reduced_field_halos!(fields, args...; kwargs)
 
-    if !isempty(not_reduced_fields)
-        fill_halo_regions!((not_reduced_fields[1].data, ),
-                           (not_reduced_fields[1].boundary_conditions,),
-                           default_indices(3),
-                           map(instantiated_location, not_reduced_fields),
-                           grid, args...; kwargs...)
-    end
+    bad_fill_halo_regions!((not_reduced_fields[1].data, ),
+                            (not_reduced_fields[1].boundary_conditions,),
+                            default_indices(3),
+                            map(instantiated_location, not_reduced_fields),
+                            grid, args...; kwargs...)
 
     return nothing
 end
 
-function bad_fill_halo_regions!(c::MaybeTupledData, boundary_conditions, indices, loc, grid, args...;
+function bad_fill_halo_regions!(c, boundary_conditions, indices, loc, grid, args...;
                             fill_boundary_normal_velocities = true, kwargs...)
     arch = architecture(grid)
 
@@ -248,12 +240,8 @@ function bad_fill_halo_regions!(c::MaybeTupledData, boundary_conditions, indices
     end
 
     fill_halos!, bcs = permute_boundary_conditions(boundary_conditions)
-    number_of_tasks  = length(fill_halos!)
 
-    # Fill halo in the three permuted directions (1, 2, and 3), making sure dependencies are fulfilled
-    for task = 1:number_of_tasks
-        fill_halo_event!(c, fill_halos![task], bcs[task], indices, loc, arch, grid, args...; kwargs...)
-    end
+    fill_halo_event!(c, fill_halos![1], bcs[1], indices, loc, arch, grid, args...; kwargs...)
 
     return nothing
 end
