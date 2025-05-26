@@ -15,8 +15,8 @@ using Oceananigans.Utils: @apply_regionally, launch!, configure_kernel, sum_of_v
 
 using Oceananigans.Models: update_model_field_time_series!, interior_tendency_kernel_parameters, complete_communication_and_compute_buffer!
 
-using Oceananigans.BoundaryConditions: update_boundary_condition!, replace_horizontal_vector_halos!, fill_halo_regions!, apply_x_bcs!, apply_y_bcs!, apply_z_bcs!, _apply_z_bcs!, apply_z_top_bc!, getbc, flip, update_boundary_conditions!
-using Oceananigans.Fields: tupled_fill_halo_regions!, location, immersed_boundary_condition
+using Oceananigans.BoundaryConditions: update_boundary_condition!, replace_horizontal_vector_halos!, fill_halo_regions!, apply_x_bcs!, apply_y_bcs!, apply_z_bcs!, _apply_z_bcs!, apply_z_top_bc!, getbc, flip, update_boundary_conditions!, fill_open_boundary_regions!, permute_boundary_conditions, fill_halo_event!
+using Oceananigans.Fields: tupled_fill_halo_regions!, location, immersed_boundary_condition, fill_reduced_field_halos!, default_indices
 using Oceananigans.Models.NonhydrostaticModels: compute_auxiliaries!, update_hydrostatic_pressure!
 using Oceananigans.Biogeochemistry: update_biogeochemical_state!, update_tendencies!, biogeochemical_drift_velocity, biogeochemical_transition, biogeochemical_auxiliary_fields
 
@@ -203,8 +203,17 @@ function bad_time_step!(model, Δt)
 
     grid = model.grid
 
-    tupled_fill_halo_regions!(prognostic_fields(model), grid, model.clock, fields(model), async=true)
-    bad_compute_diffusivities!(model.diffusivity_fields, model.closure, model; parameters = :xyz)
+    bad_tupled_fill_halo_regions!(prognostic_fields(model), grid, model.clock, fields(model), async=true)
+
+    arch = model.architecture
+    grid = model.grid
+    velocities = model.velocities
+    tracers = model.tracers
+    buoyancy = model.buoyancy
+
+    launch!(arch, grid, :xyz,
+            compute_CATKE_diffusivities!,
+            model.diffusivity_fields, grid, model.closure, velocities, tracers, buoyancy)
 
     Gⁿ = model.timestepper.Gⁿ
     arch = model.architecture
@@ -215,29 +224,36 @@ function bad_time_step!(model, Δt)
     return nothing
 end
 
-function bad_compute_diffusivities!(diffusivities, closure, model; parameters = :xyz)
-    arch = model.architecture
-    grid = model.grid
-    velocities = model.velocities
-    tracers = model.tracers
-    buoyancy = model.buoyancy
-    clock = model.clock
-    top_tracer_bcs = get_top_tracer_bcs(model.buoyancy.formulation, tracers)
-    Δt = update_previous_compute_time!(diffusivities, model)
+function bad_tupled_fill_halo_regions!(fields, grid, args...; kwargs...)
 
-    # Update "previous velocities"
-    u, v, w = model.velocities
-    u⁻, v⁻ = diffusivities.previous_velocities
-    parent(u⁻) .= parent(u)
-    parent(v⁻) .= parent(v)
+    not_reduced_fields = fill_reduced_field_halos!(fields, args...; kwargs)
 
-    launch!(arch, grid, :xy,
-            compute_average_surface_buoyancy_flux!,
-            diffusivities.Jᵇ, grid, closure, velocities, tracers, buoyancy, top_tracer_bcs, clock, Δt)
+    if !isempty(not_reduced_fields)
+        fill_halo_regions!((not_reduced_fields[1].data, ),
+                           (not_reduced_fields[1].boundary_conditions,),
+                           default_indices(3),
+                           map(instantiated_location, not_reduced_fields),
+                           grid, args...; kwargs...)
+    end
 
-    launch!(arch, grid, parameters,
-            compute_CATKE_diffusivities!,
-            diffusivities, grid, closure, velocities, tracers, buoyancy)
+    return nothing
+end
+
+function bad_fill_halo_regions!(c::MaybeTupledData, boundary_conditions, indices, loc, grid, args...;
+                            fill_boundary_normal_velocities = true, kwargs...)
+    arch = architecture(grid)
+
+    if fill_boundary_normal_velocities
+        fill_open_boundary_regions!(c, boundary_conditions, indices, loc, grid, args...; kwargs...)
+    end
+
+    fill_halos!, bcs = permute_boundary_conditions(boundary_conditions)
+    number_of_tasks  = length(fill_halos!)
+
+    # Fill halo in the three permuted directions (1, 2, and 3), making sure dependencies are fulfilled
+    for task = 1:number_of_tasks
+        fill_halo_event!(c, fill_halos![task], bcs[task], indices, loc, arch, grid, args...; kwargs...)
+    end
 
     return nothing
 end
@@ -287,6 +303,13 @@ dTᵢ = Field{Center, Center, Center}(rmodel.grid)
 dSᵢ = Field{Center, Center, Center}(rmodel.grid)
 dJ  = Field{Face, Center, Nothing}(rmodel.grid)
 
+# Vanilla and forward only
+vmodel = double_gyre_model(CPU(), 62, 62, 15, 1200)
+
+vTᵢ, vSᵢ      = set_tracers(vmodel.grid)
+vwind_stress = wind_stress_init(vmodel.grid)
+estimate_tracer_error(vmodel, vTᵢ, vSᵢ, vwind_stress)
+
 tic = time()
 restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress)
 rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true differentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, dmodel, dTᵢ, dSᵢ, dJ)
@@ -300,16 +323,9 @@ pmodel = double_gyre_model(rarch, 62, 62, 15, 1200)
 pTᵢ, pSᵢ      = set_tracers(pmodel.grid)
 pwind_stress = wind_stress_init(pmodel.grid)
 
-# Vanilla and forward only
-vmodel = double_gyre_model(CPU(), 62, 62, 15, 1200)
-
-vTᵢ, vSᵢ      = set_tracers(vmodel.grid)
-vwind_stress = wind_stress_init(vmodel.grid)
-
 dedν, dJ = rdifferentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, dmodel, dTᵢ, dSᵢ, dJ)
 
 restimate_tracer_error(pmodel, pTᵢ, pSᵢ, pwind_stress)
-estimate_tracer_error(vmodel, vTᵢ, vSᵢ, vwind_stress)
 
 GordonBell25.compare_states(vmodel, pmodel; include_halos=false, throw_error=false, rtol=sqrt(eps(Float64)), atol=sqrt(eps(Float64)))
 GordonBell25.compare_states(rmodel, pmodel; include_halos=true, throw_error=false, rtol=sqrt(eps(Float64)), atol=sqrt(eps(Float64)))
