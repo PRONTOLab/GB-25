@@ -189,24 +189,22 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
 
     # Step it forward
     Δt = model.clock.last_Δt + 0
-    @trace track_numbers=false for _ = 1:5
+    @trace track_numbers=false for _ = 1:2
         bad_time_step!(model, Δt)
     end
 
     return nothing
 end
 
-function bad_time_step!(model, Δt;
-                    callbacks=[], euler=false)
+function bad_time_step!(model, Δt)
 
     # Full step for tracers, fractional step for velocities.
     ab2_step!(model, Δt)
 
     grid = model.grid
-    callbacks = []
 
     tupled_fill_halo_regions!(prognostic_fields(model), grid, model.clock, fields(model), async=true)
-    bad_compute_auxiliaries!(model)
+    bad_compute_diffusivities!(model.diffusivity_fields, model.closure, model; parameters = :xyz)
 
     Gⁿ = model.timestepper.Gⁿ
     arch = model.architecture
@@ -217,29 +215,29 @@ function bad_time_step!(model, Δt;
     return nothing
 end
 
-function bad_compute_auxiliaries!(model::HydrostaticFreeSurfaceModel; w_parameters = w_kernel_parameters(model.grid),
-                                                                  p_parameters = p_kernel_parameters(model.grid),
-                                                                  κ_parameters = :xyz)
+function bad_compute_diffusivities!(diffusivities, closure, model; parameters = :xyz)
+    arch = model.architecture
+    grid = model.grid
+    velocities = model.velocities
+    tracers = model.tracers
+    buoyancy = model.buoyancy
+    clock = model.clock
+    top_tracer_bcs = get_top_tracer_bcs(model.buoyancy.formulation, tracers)
+    Δt = update_previous_compute_time!(diffusivities, model)
 
-    grid        = model.grid
-    closure     = model.closure
-    tracers     = model.tracers
-    diffusivity = model.diffusivity_fields
-    buoyancy    = model.buoyancy
+    # Update "previous velocities"
+    u, v, w = model.velocities
+    u⁻, v⁻ = diffusivities.previous_velocities
+    parent(u⁻) .= parent(u)
+    parent(v⁻) .= parent(v)
 
-    P    = model.pressure.pHY′
-    arch = architecture(grid)
+    launch!(arch, grid, :xy,
+            compute_average_surface_buoyancy_flux!,
+            diffusivities.Jᵇ, grid, closure, velocities, tracers, buoyancy, top_tracer_bcs, clock, Δt)
 
-    # Update the grid and unscale the tracers
-    update_grid!(model, grid, model.vertical_coordinate; parameters = w_parameters)
-    unscale_tracers!(tracers, grid; parameters = w_parameters)
-
-    # Advance diagnostic quantities
-    compute_w_from_continuity!(model; parameters = w_parameters)
-    update_hydrostatic_pressure!(P, arch, grid, buoyancy, tracers; parameters = p_parameters)
-
-    # Update closure diffusivities
-    compute_diffusivities!(diffusivity, closure, model; parameters = κ_parameters)
+    launch!(arch, grid, parameters,
+            compute_CATKE_diffusivities!,
+            diffusivities, grid, closure, velocities, tracers, buoyancy)
 
     return nothing
 end
@@ -345,7 +343,7 @@ j = 10
 @allowscalar @show dJ[i, j]
 
 # Produce finite-difference gradients for comparison:
-ϵ_list = [1e-1, 1e-2, 1e-3]
+ϵ_list = [1e-1, 1e-3]
 
 @allowscalar gradient_list = Array{Float64}[]
 
