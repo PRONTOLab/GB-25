@@ -27,7 +27,8 @@ using Oceananigans.BoundaryConditions: update_boundary_condition!,
                                        extract_north_bc, extract_bc, extract_bottom_bc, extract_top_bc,
                                        fill_west_and_east_halo!, fill_south_and_north_halo!, fill_bottom_and_top_halo!, fill_first,
                                        fill_halo_size, fill_halo_offset,
-                                       _fill_bottom_and_top_halo!, _fill_bottom_halo!, _fill_top_halo!
+                                       _fill_bottom_and_top_halo!, _fill_bottom_halo!, _fill_top_halo!,
+                                       _fill_flux_top_halo!
 
 using Oceananigans.Fields: tupled_fill_halo_regions!, location, immersed_boundary_condition, fill_reduced_field_halos!, default_indices, ReducedField, FullField
 using Oceananigans.Models.NonhydrostaticModels: compute_auxiliaries!, update_hydrostatic_pressure!
@@ -299,21 +300,14 @@ function bad_tupled_fill_halo_regions!(fields, grid, args...; kwargs...)
     arch = architecture(grid)
 
     launch!(arch, grid, KernelParameters(:xy, (0, 0)),
-            _bad_fill_bottom_and_top_halo!, c, extract_bottom_bc(bcs), extract_top_bc(bcs), loc, grid, Tuple(args); kwargs...)
+            _bad_fill_bottom_and_top_halo!, c, grid)
 
     return nothing
 end
 
-@kernel function _bad_fill_bottom_and_top_halo!(c, bottom_bc, top_bc, loc, grid, args)
+@kernel function _bad_fill_bottom_and_top_halo!(c, grid)
     i, j = @index(Global, NTuple)
-    ntuple(Val(length(bottom_bc))) do n
-        Base.@_inline_meta
-        @constprop(:aggressive) # TODO constprop failure on `loc[n]`
-        @inbounds begin
-            _fill_bottom_halo!(i, j, grid, c[n], bottom_bc[n], loc[n], args...)
-               _fill_top_halo!(i, j, grid, c[n], top_bc[n],    loc[n], args...)
-        end
-    end
+    @inbounds c[1][i, j, grid.Nz+1] = c[1][i, j, grid.Nz]
 end
 
 
