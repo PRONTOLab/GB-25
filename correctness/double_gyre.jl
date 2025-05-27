@@ -90,7 +90,7 @@ using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: get_top_tra
 using Oceananigans.BuoyancyFormulations: ∂z_b
 
 using Oceananigans.Solvers: solve!, solve_batched_tridiagonal_system_kernel!
-using Oceananigans.Operators: ℑxᶜᵃᵃ, ℑyᵃᶜᵃ, Az, volume, δxᶜᵃᵃ, δyᵃᶜᵃ, δzᵃᵃᶜ, V⁻¹ᶜᶜᶜ, σⁿ, σ⁻
+using Oceananigans.Operators: ℑxᶜᵃᵃ, ℑyᵃᶜᵃ, Az, volume, δxᶜᵃᵃ, δyᵃᶜᵃ, δzᵃᵃᶜ, V⁻¹ᶜᶜᶜ, σⁿ, σ⁻, ∂zᶠᶜᶠ, δxᶠᶜᶠ, Δx⁻¹ᶠᶜᶠ
 using Oceananigans.Forcings: with_advective_forcing
 using Oceananigans.Advection: div_Uc, _advective_tracer_flux_x, _advective_tracer_flux_y, _advective_tracer_flux_z
 using KernelAbstractions: @kernel, @index
@@ -252,36 +252,28 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
 
         launch!(arch, grid, :xyz,
                 bad_compute_CATKE_diffusivities!,
-                model.diffusivity_fields, grid, model.closure, velocities, tracers, buoyancy)
+                model.diffusivity_fields, velocities)
         
         Gⁿ = model.timestepper.Gⁿ
         arch = model.architecture
         velocities = model.velocities
 
-        launch!(arch, Gⁿ.u.grid, :xy, _bad_apply_z_bcs!, Gⁿ.u, instantiated_location(Gⁿ.u), Gⁿ.u.grid, velocities.u.boundary_conditions.bottom, velocities.u.boundary_conditions.top, (model.clock, arg_fields, model.closure, model.buoyancy))
+        launch!(arch, Gⁿ.u.grid, :xy, _bad_apply_z_bcs!, Gⁿ.u, Gⁿ.u.grid, velocities.u.boundary_conditions.top)
 
     end
 
     return nothing
 end
 
-@kernel function bad_compute_CATKE_diffusivities!(diffusivities, grid, closure, velocities, tracers, buoyancy)
+@kernel function bad_compute_CATKE_diffusivities!(diffusivities, velocities)
     i, j, k = @index(Global, NTuple)
 
-    # Ensure this works with "ensembles" of closures, in addition to ordinary single closures
-    closure_ij = getclosure(i, j, closure)
+    Ri = 1 / (velocities.u[i,   j, k] - velocities.u[i-1, j, k])
 
-    @inbounds diffusivities.κe[i, j, k] = bad_stability_functionᶜᶜᶠ(i, j, k, grid, closure_ij, 1.447, 7.863, 0.548, velocities, tracers, buoyancy)
+    @inbounds diffusivities.κe[i, j, k] = 1.447 * (Ri < 0) + 0.548 * max(zero(Ri), min(one(Ri), (Ri - 0.254) / 1.02)) * (Ri ≥ 0)
 end
 
-@inline function bad_stability_functionᶜᶜᶠ(i, j, k, grid, closure, Cᵘⁿ, Cˡᵒ, Cʰⁱ, velocities, tracers, buoyancy)
-    Ri = 1 / shear_squaredᶜᶜᶠ(i, j, k, grid, velocities)
-    CRi⁰ = closure.mixing_length.CRi⁰
-    CRiᵟ = closure.mixing_length.CRiᵟ
-    return scale(Ri, Cᵘⁿ, Cˡᵒ, Cʰⁱ, CRi⁰, CRiᵟ)
-end
-
-@kernel function _bad_apply_z_bcs!(Gc, loc, grid, bottom_bc, top_bc, args)
+@kernel function _bad_apply_z_bcs!(Gc, grid, top_bc)
     i, j = @index(Global, NTuple)
     @inbounds Gc[i, j, grid.Nz] -= top_bc.condition[i, j, 1]
     
