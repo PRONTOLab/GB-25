@@ -242,25 +242,8 @@ function bad_tupled_fill_halo_regions!(fields, grid, args...; kwargs...)
 
     arch = architecture(grid)
 
-    fill_halos! = fill_bottom_and_top_halo!
-    bcs = (extract_bottom_bc(boundary_conditions), extract_top_bc(boundary_conditions))
-
-    bad_fill_halo_event!(c, fill_halos!, bcs, indices, loc, arch, grid, args...; kwargs...)
-
-    return nothing
-end
-
-function bad_fill_halo_event!(c, fill_halos!, bcs, indices, loc, arch, grid, args...;
-                          kwargs...)
-
-    # Calculate size and offset of the fill_halo kernel
-    # We assume that the kernel size is the same for west and east boundaries,
-    # south and north boundaries, and bottom and top boundaries
-    size   = fill_halo_size(c, fill_halos!, indices, bcs[1], loc, grid)
-    offset = fill_halo_offset(size, fill_halos!, indices)
-
-    launch!(arch, grid, KernelParameters(size, offset),
-                   _fill_bottom_and_top_halo!, c, bcs[1], bcs[2], loc, grid, Tuple(args); kwargs...)
+    launch!(arch, grid, KernelParameters(:xy, (0, 0)),
+            _fill_bottom_and_top_halo!, c, extract_bottom_bc(boundary_conditions), extract_top_bc(boundary_conditions), loc, grid, Tuple(args); kwargs...)
 
     return nothing
 end
