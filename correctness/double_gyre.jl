@@ -214,13 +214,25 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
         launch!(model.architecture, model.grid, :xyz,
                 ab2_step_field!, velocity_field, Δt, χ, Gⁿ, G⁻)
 
-        bad_implicit_step!(velocity_field,
-                        model.timestepper.implicit_solver,
-                        model.closure,
-                        model.diffusivity_fields,
-                        nothing,
-                        model.clock,
-                        Δt)
+        field = velocity_field
+        implicit_solver = model.timestepper.implicit_solver
+        closure = model.closure
+        diffusivity_fields = model.diffusivity_fields
+        clock = model.clock
+
+        solver_args = (closure, diffusivity_fields, nothing, Face(), Center(), Center(), Δt, clock)
+
+        launch!(architecture(implicit_solver), implicit_solver.grid, :xy,
+            solve_batched_tridiagonal_system_kernel!, field,
+            implicit_solver.a,
+            implicit_solver.b,
+            implicit_solver.c,
+            field,
+            implicit_solver.t,
+            implicit_solver.grid,
+            implicit_solver.parameters,
+            solver_args,
+            implicit_solver.tridiagonal_direction)
 
         grid = model.grid
 
@@ -245,34 +257,6 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     end
 
     return nothing
-end
-
-function bad_implicit_step!(field,
-                        implicit_solver,
-                        closure,
-                        diffusivity_fields,
-                        tracer_index,
-                        clock,
-                        Δt;
-                        kwargs...)
-
-    # Filter explicit closures for closure tuples
-    if closure isa Tuple
-        closure_tuple = closure
-        N = length(closure_tuple)
-        vi_closure            = Tuple(closure[n]            for n = 1:N if is_vertically_implicit(closure[n]))
-        vi_diffusivity_fields = Tuple(diffusivity_fields[n] for n = 1:N if is_vertically_implicit(closure[n]))
-    else
-        vi_closure = closure
-        vi_diffusivity_fields = diffusivity_fields
-    end
-
-    LX, LY, LZ = location(field)
-    # Nullify tracer_index if `field` is not a tracer
-    (LX, LY, LZ) == (Center, Center, Center) || (tracer_index = nothing)
-    return solve!(field, implicit_solver, field,
-                  # ivd_*_diagonal gets called with these args after (i, j, k, grid):
-                  vi_closure, vi_diffusivity_fields, tracer_index, LX(), LY(), LZ(), Δt, clock; kwargs...)
 end
 
 function bad_tupled_fill_halo_regions!(fields, grid, args...; kwargs...)
