@@ -68,7 +68,7 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fiel
                                                         initialize_free_surface_timestepper!,
                                                         _compute_integrated_ab2_tendencies!
 
-using Oceananigans.TurbulenceClosures: compute_diffusivities!, getclosure, clip, shear_production, dissipation, closure_turbulent_velocity, ∇_dot_qᶜ, immersed_∇_dot_qᶜ
+using Oceananigans.TurbulenceClosures: compute_diffusivities!, getclosure, clip, shear_production, dissipation, closure_turbulent_velocity, ∇_dot_qᶜ, immersed_∇_dot_qᶜ, Riᶜᶜᶠ, shear_squaredᶜᶜᶠ
 
 using Oceananigans.ImmersedBoundaries: get_active_cells_map, mask_immersed_field!
 
@@ -85,8 +85,9 @@ using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: get_top_tra
                                            dissipation_rate,
                                            TKE_mixing_lengthᶜᶜᶠ,
                                            turbulent_velocityᶜᶜᶜ,
-                                           convective_length_scaleᶜᶜᶠ, stability_functionᶜᶜᶠ, stable_length_scaleᶜᶜᶠ, static_column_depthᶜᶜᵃ
+                                           convective_length_scaleᶜᶜᶠ, stability_functionᶜᶜᶠ, stable_length_scaleᶜᶜᶠ, static_column_depthᶜᶜᵃ, scale
 
+using Oceananigans.BuoyancyFormulations: ∂z_b
 
 using Oceananigans.Solvers: solve!, solve_batched_tridiagonal_system_kernel!
 using Oceananigans.Operators: ℑxᶜᵃᵃ, ℑyᵃᶜᵃ, Az, volume, δxᶜᵃᵃ, δyᵃᶜᵃ, δzᵃᵃᶜ, V⁻¹ᶜᶜᶜ, σⁿ, σ⁻
@@ -252,7 +253,7 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
         launch!(arch, grid, :xyz,
                 bad_compute_CATKE_diffusivities!,
                 model.diffusivity_fields, grid, model.closure, velocities, tracers, buoyancy)
-
+        
         Gⁿ = model.timestepper.Gⁿ
         arch = model.architecture
         velocities = model.velocities
@@ -269,34 +270,24 @@ end
 
     # Ensure this works with "ensembles" of closures, in addition to ordinary single closures
     closure_ij = getclosure(i, j, closure)
-    Jᵇ = diffusivities.Jᵇ
 
-    @inbounds diffusivities.κe[i, j, k] = bad_κeᶜᶜᶠ(i, j, k, grid, closure_ij, velocities, tracers, buoyancy, Jᵇ)
+    @inbounds diffusivities.κe[i, j, k] = bad_stability_functionᶜᶜᶠ(i, j, k, grid, closure_ij, 1.447, 7.863, 0.548, velocities, tracers, buoyancy)
 end
 
-@inline function bad_κeᶜᶜᶠ(i, j, k, grid, closure, velocities, tracers, buoyancy, surface_buoyancy_flux)
-    κe = bad_TKE_mixing_lengthᶜᶜᶠ(i, j, k, grid, closure, velocities, tracers, buoyancy, surface_buoyancy_flux)
-    FT = eltype(grid)
-    return FT(κe)
+@inline function bad_stability_functionᶜᶜᶠ(i, j, k, grid, closure, Cᵘⁿ, Cˡᵒ, Cʰⁱ, velocities, tracers, buoyancy)
+    Ri = bad_Riᶜᶜᶠ(i, j, k, grid, velocities, buoyancy, tracers)
+    CRi⁰ = closure.mixing_length.CRi⁰
+    CRiᵟ = closure.mixing_length.CRiᵟ
+    return scale(Ri, Cᵘⁿ, Cˡᵒ, Cʰⁱ, CRi⁰, CRiᵟ)
 end
 
+@inline function bad_Riᶜᶜᶠ(i, j, k, grid, velocities, buoyancy, tracers)
+    S² = shear_squaredᶜᶜᶠ(i, j, k, grid, velocities)
+    N² = ∂z_b(i, j, k, grid, buoyancy, tracers)
+    Ri = N² / S²
 
-@inline function bad_TKE_mixing_lengthᶜᶜᶠ(i, j, k, grid, closure, velocities, tracers, buoyancy, surface_buoyancy_flux)
-    Cᶜ  = closure.mixing_length.Cᶜe
-    Cᵉ  = closure.mixing_length.Cᵉe
-    Cˢᵖ = closure.mixing_length.Cˢᵖ
-    ℓʰ  = convective_length_scaleᶜᶜᶠ(i, j, k, grid, closure, Cᶜ, Cᵉ, Cˢᵖ, velocities, tracers, buoyancy, surface_buoyancy_flux)
-
-    Cᵘⁿ = closure.mixing_length.Cᵘⁿe
-    Cˡᵒ = closure.mixing_length.Cˡᵒe
-    Cʰⁱ = closure.mixing_length.Cʰⁱe
-    σ = stability_functionᶜᶜᶠ(i, j, k, grid, closure, Cᵘⁿ, Cˡᵒ, Cʰⁱ, velocities, tracers, buoyancy)
-    ℓ★ = σ * stable_length_scaleᶜᶜᶠ(i, j, k, grid, closure, tracers.e, velocities, tracers, buoyancy)
-
-    ℓʰ = ifelse(isnan(ℓʰ), zero(grid), ℓʰ)
-    ℓ★ = ifelse(isnan(ℓ★), zero(grid), ℓ★)
-    ℓe = ℓ★
-    return ℓe
+    # Clip N² and avoid NaN
+    return ifelse(N² <= 0, zero(grid), Ri)
 end
 
 
