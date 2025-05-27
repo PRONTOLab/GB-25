@@ -275,21 +275,11 @@ end
 end
 
 @inline function bad_stability_functionᶜᶜᶠ(i, j, k, grid, closure, Cᵘⁿ, Cˡᵒ, Cʰⁱ, velocities, tracers, buoyancy)
-    Ri = bad_Riᶜᶜᶠ(i, j, k, grid, velocities, buoyancy, tracers)
+    Ri = 1 / shear_squaredᶜᶜᶠ(i, j, k, grid, velocities)
     CRi⁰ = closure.mixing_length.CRi⁰
     CRiᵟ = closure.mixing_length.CRiᵟ
     return scale(Ri, Cᵘⁿ, Cˡᵒ, Cʰⁱ, CRi⁰, CRiᵟ)
 end
-
-@inline function bad_Riᶜᶜᶠ(i, j, k, grid, velocities, buoyancy, tracers)
-    S² = shear_squaredᶜᶜᶠ(i, j, k, grid, velocities)
-    N² = ∂z_b(i, j, k, grid, buoyancy, tracers)
-    Ri = N² / S²
-
-    # Clip N² and avoid NaN
-    return ifelse(N² <= 0, zero(grid), Ri)
-end
-
 
 @kernel function _bad_apply_z_bcs!(Gc, loc, grid, bottom_bc, top_bc, args)
     i, j = @index(Global, NTuple)
