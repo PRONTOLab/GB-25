@@ -8,7 +8,7 @@ using GordonBell25
 
 using Enzyme
 
-using Oceananigans: initialize!, prognostic_fields, instantiated_location
+using Oceananigans: initialize!, prognostic_fields, instantiated_location, boundary_conditions
 using Oceananigans.Grids: AbstractGrid, XDirection, YDirection, ZDirection, inactive_cell, get_active_column_map
 using Oceananigans.TimeSteppers: update_state!, ab2_step!, tick!, calculate_pressure_correction!, correct_velocities_and_cache_previous_tendencies!, step_lagrangian_particles!, ab2_step_field!, implicit_step!, pressure_correct_velocities!, cache_previous_tendencies!
 using Oceananigans.Utils: @apply_regionally, launch!, configure_kernel, sum_of_velocities, KernelParameters
@@ -29,7 +29,7 @@ using Oceananigans.BoundaryConditions: update_boundary_condition!,
                                        fill_halo_size, fill_halo_offset,
                                        _fill_bottom_and_top_halo!
 
-using Oceananigans.Fields: tupled_fill_halo_regions!, location, immersed_boundary_condition, fill_reduced_field_halos!, default_indices
+using Oceananigans.Fields: tupled_fill_halo_regions!, location, immersed_boundary_condition, fill_reduced_field_halos!, default_indices, ReducedField, FullField
 using Oceananigans.Models.NonhydrostaticModels: compute_auxiliaries!, update_hydrostatic_pressure!
 using Oceananigans.Biogeochemistry: update_biogeochemical_state!, update_tendencies!, biogeochemical_drift_velocity, biogeochemical_transition, biogeochemical_auxiliary_fields
 
@@ -233,17 +233,25 @@ end
 
 function bad_tupled_fill_halo_regions!(fields, grid, args...; kwargs...)
 
-    not_reduced_fields = fill_reduced_field_halos!(fields, args...; kwargs)
+    not_reduced_fields = Field[]
+    for f in fields
+        bcs = boundary_conditions(f)
+        if !isnothing(bcs) && (!(f isa ReducedField) && f isa FullField)
+            push!(not_reduced_fields, f)
+        end
+    end
+
+    not_reduced_fields = tuple(not_reduced_fields...)
 
     c = (not_reduced_fields[1].data, )
-    boundary_conditions = (not_reduced_fields[1].boundary_conditions,)
+    bcs = (not_reduced_fields[1].boundary_conditions,)
     indices = default_indices(3)
     loc = map(instantiated_location, not_reduced_fields)
 
     arch = architecture(grid)
 
     launch!(arch, grid, KernelParameters(:xy, (0, 0)),
-            _fill_bottom_and_top_halo!, c, extract_bottom_bc(boundary_conditions), extract_top_bc(boundary_conditions), loc, grid, Tuple(args); kwargs...)
+            _fill_bottom_and_top_halo!, c, extract_bottom_bc(bcs), extract_top_bc(bcs), loc, grid, Tuple(args); kwargs...)
 
     return nothing
 end
