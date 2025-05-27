@@ -269,21 +269,7 @@ end
     closure_ij = getclosure(i, j, closure)
     Jᵇ = diffusivities.Jᵇ
 
-    # Note: we also compute the TKE diffusivity here for diagnostic purposes, even though it
-    # is recomputed in time_step_turbulent_kinetic_energy.
-    κu★ = κuᶜᶜᶠ(i, j, k, grid, closure_ij, velocities, tracers, buoyancy, Jᵇ)
-    κc★ = κcᶜᶜᶠ(i, j, k, grid, closure_ij, velocities, tracers, buoyancy, Jᵇ)
-    κe★ = κeᶜᶜᶠ(i, j, k, grid, closure_ij, velocities, tracers, buoyancy, Jᵇ)
-
-    κu★ = mask_diffusivity(i, j, k, grid, κu★)
-    κc★ = mask_diffusivity(i, j, k, grid, κc★)
-    κe★ = mask_diffusivity(i, j, k, grid, κe★)
-
-    @inbounds begin
-        diffusivities.κu[i, j, k] = κu★
-        diffusivities.κc[i, j, k] = κc★
-        diffusivities.κe[i, j, k] = κe★
-    end
+    @inbounds diffusivities.κe[i, j, k] = κeᶜᶜᶠ(i, j, k, grid, closure_ij, velocities, tracers, buoyancy, Jᵇ)
 end
 
 @kernel function _bad_apply_z_bcs!(Gc, loc, grid, bottom_bc, top_bc, args)
