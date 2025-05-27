@@ -11,7 +11,7 @@ using Enzyme
 using Oceananigans: initialize!, prognostic_fields, instantiated_location
 using Oceananigans.Grids: AbstractGrid, XDirection, YDirection, ZDirection, inactive_cell, get_active_column_map
 using Oceananigans.TimeSteppers: update_state!, ab2_step!, tick!, calculate_pressure_correction!, correct_velocities_and_cache_previous_tendencies!, step_lagrangian_particles!, ab2_step_field!, implicit_step!, pressure_correct_velocities!, cache_previous_tendencies!
-using Oceananigans.Utils: @apply_regionally, launch!, configure_kernel, sum_of_velocities
+using Oceananigans.Utils: @apply_regionally, launch!, configure_kernel, sum_of_velocities, KernelParameters
 
 using Oceananigans.Models: update_model_field_time_series!, interior_tendency_kernel_parameters, complete_communication_and_compute_buffer!
 
@@ -26,7 +26,8 @@ using Oceananigans.BoundaryConditions: update_boundary_condition!,
                                        extract_west_bc, extract_east_bc, extract_south_bc, 
                                        extract_north_bc, extract_bc, extract_bottom_bc, extract_top_bc,
                                        fill_west_and_east_halo!, fill_south_and_north_halo!, fill_bottom_and_top_halo!, fill_first,
-                                       fill_halo_size, fill_halo_offset
+                                       fill_halo_size, fill_halo_offset,
+                                       _fill_bottom_and_top_halo!
 
 using Oceananigans.Fields: tupled_fill_halo_regions!, location, immersed_boundary_condition, fill_reduced_field_halos!, default_indices
 using Oceananigans.Models.NonhydrostaticModels: compute_auxiliaries!, update_hydrostatic_pressure!
@@ -207,7 +208,7 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
 
         grid = model.grid
 
-        bad_tupled_fill_halo_regions!(prognostic_fields(model), grid, model.clock, fields(model), async=true)
+        bad_tupled_fill_halo_regions!(prognostic_fields(model), grid, model.clock, fields(model))
 
         arch = model.architecture
         grid = model.grid
@@ -241,16 +242,15 @@ function bad_tupled_fill_halo_regions!(fields, grid, args...; kwargs...)
 
     arch = architecture(grid)
 
-    fill_halos! = [fill_bottom_and_top_halo!]
-    bcs = ((extract_bottom_bc(boundary_conditions), extract_top_bc(boundary_conditions)),)
+    fill_halos! = fill_bottom_and_top_halo!
+    bcs = (extract_bottom_bc(boundary_conditions), extract_top_bc(boundary_conditions))
 
-    bad_fill_halo_event!(c, fill_halos![1], bcs[1], indices, loc, arch, grid, args...; kwargs...)
+    bad_fill_halo_event!(c, fill_halos!, bcs, indices, loc, arch, grid, args...; kwargs...)
 
     return nothing
 end
 
 function bad_fill_halo_event!(c, fill_halos!, bcs, indices, loc, arch, grid, args...;
-                          async = false, # This kwargs is specific to DistributedGrids, here is does nothing
                           kwargs...)
 
     # Calculate size and offset of the fill_halo kernel
@@ -259,7 +259,8 @@ function bad_fill_halo_event!(c, fill_halos!, bcs, indices, loc, arch, grid, arg
     size   = fill_halo_size(c, fill_halos!, indices, bcs[1], loc, grid)
     offset = fill_halo_offset(size, fill_halos!, indices)
 
-    fill_halos!(c, bcs..., size, offset, loc, arch, grid, args...; kwargs...)
+    launch!(arch, grid, KernelParameters(size, offset),
+                   _fill_bottom_and_top_halo!, c, bcs[1], bcs[2], loc, grid, Tuple(args); kwargs...)
 
     return nothing
 end
