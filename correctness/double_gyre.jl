@@ -11,7 +11,7 @@ using Enzyme
 using Oceananigans: initialize!, prognostic_fields, instantiated_location, boundary_conditions
 using Oceananigans.Grids: AbstractGrid, XDirection, YDirection, ZDirection, inactive_cell, get_active_column_map
 using Oceananigans.TimeSteppers: update_state!, ab2_step!, tick!, calculate_pressure_correction!, correct_velocities_and_cache_previous_tendencies!, step_lagrangian_particles!, ab2_step_field!, implicit_step!, pressure_correct_velocities!, cache_previous_tendencies!
-using Oceananigans.Utils: @apply_regionally, launch!, configure_kernel, sum_of_velocities, KernelParameters
+using Oceananigans.Utils: @apply_regionally, launch!, configure_kernel, sum_of_velocities, KernelParameters, @constprop
 
 using Oceananigans.Models: update_model_field_time_series!, interior_tendency_kernel_parameters, complete_communication_and_compute_buffer!
 
@@ -27,7 +27,7 @@ using Oceananigans.BoundaryConditions: update_boundary_condition!,
                                        extract_north_bc, extract_bc, extract_bottom_bc, extract_top_bc,
                                        fill_west_and_east_halo!, fill_south_and_north_halo!, fill_bottom_and_top_halo!, fill_first,
                                        fill_halo_size, fill_halo_offset,
-                                       _fill_bottom_and_top_halo!
+                                       _fill_bottom_and_top_halo!, _fill_bottom_halo!, _fill_top_halo!
 
 using Oceananigans.Fields: tupled_fill_halo_regions!, location, immersed_boundary_condition, fill_reduced_field_halos!, default_indices, ReducedField, FullField
 using Oceananigans.Models.NonhydrostaticModels: compute_auxiliaries!, update_hydrostatic_pressure!
@@ -299,9 +299,21 @@ function bad_tupled_fill_halo_regions!(fields, grid, args...; kwargs...)
     arch = architecture(grid)
 
     launch!(arch, grid, KernelParameters(:xy, (0, 0)),
-            _fill_bottom_and_top_halo!, c, extract_bottom_bc(bcs), extract_top_bc(bcs), loc, grid, Tuple(args); kwargs...)
+            _bad_fill_bottom_and_top_halo!, c, extract_bottom_bc(bcs), extract_top_bc(bcs), loc, grid, Tuple(args); kwargs...)
 
     return nothing
+end
+
+@kernel function _bad_fill_bottom_and_top_halo!(c, bottom_bc, top_bc, loc, grid, args)
+    i, j = @index(Global, NTuple)
+    ntuple(Val(length(bottom_bc))) do n
+        Base.@_inline_meta
+        @constprop(:aggressive) # TODO constprop failure on `loc[n]`
+        @inbounds begin
+            _fill_bottom_halo!(i, j, grid, c[n], bottom_bc[n], loc[n], args...)
+               _fill_top_halo!(i, j, grid, c[n], top_bc[n],    loc[n], args...)
+        end
+    end
 end
 
 
