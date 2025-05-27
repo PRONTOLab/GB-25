@@ -204,7 +204,23 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     Δt = model.clock.last_Δt + 0
     @trace track_numbers=false for _ = 1:2
         # Full step for tracers, fractional step for velocities.
-        bad_ab2_step_velocities!(model.velocities, model, Δt, model.timestepper.χ)
+        velocities = model.velocities
+        χ = model.timestepper.χ
+
+        Gⁿ = model.timestepper.Gⁿ.u
+        G⁻ = model.timestepper.G⁻.u
+        velocity_field = model.velocities.u
+
+        launch!(model.architecture, model.grid, :xyz,
+                ab2_step_field!, velocity_field, Δt, χ, Gⁿ, G⁻)
+
+        bad_implicit_step!(velocity_field,
+                        model.timestepper.implicit_solver,
+                        model.closure,
+                        model.diffusivity_fields,
+                        nothing,
+                        model.clock,
+                        Δt)
 
         grid = model.grid
 
@@ -231,26 +247,32 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     return nothing
 end
 
-function bad_ab2_step_velocities!(velocities, model, Δt, χ)
+function bad_implicit_step!(field,
+                        implicit_solver,
+                        closure,
+                        diffusivity_fields,
+                        tracer_index,
+                        clock,
+                        Δt;
+                        kwargs...)
 
-    for (i, name) in enumerate((:u,))
-        Gⁿ = model.timestepper.Gⁿ[name]
-        G⁻ = model.timestepper.G⁻[name]
-        velocity_field = model.velocities[name]
-
-        launch!(model.architecture, model.grid, :xyz,
-                ab2_step_field!, velocity_field, Δt, χ, Gⁿ, G⁻)
-
-        implicit_step!(velocity_field,
-                       model.timestepper.implicit_solver,
-                       model.closure,
-                       model.diffusivity_fields,
-                       nothing,
-                       model.clock,
-                       Δt)
+    # Filter explicit closures for closure tuples
+    if closure isa Tuple
+        closure_tuple = closure
+        N = length(closure_tuple)
+        vi_closure            = Tuple(closure[n]            for n = 1:N if is_vertically_implicit(closure[n]))
+        vi_diffusivity_fields = Tuple(diffusivity_fields[n] for n = 1:N if is_vertically_implicit(closure[n]))
+    else
+        vi_closure = closure
+        vi_diffusivity_fields = diffusivity_fields
     end
 
-    return nothing
+    LX, LY, LZ = location(field)
+    # Nullify tracer_index if `field` is not a tracer
+    (LX, LY, LZ) == (Center, Center, Center) || (tracer_index = nothing)
+    return solve!(field, implicit_solver, field,
+                  # ivd_*_diagonal gets called with these args after (i, j, k, grid):
+                  vi_closure, vi_diffusivity_fields, tracer_index, LX(), LY(), LZ(), Δt, clock; kwargs...)
 end
 
 function bad_tupled_fill_halo_regions!(fields, grid, args...; kwargs...)
