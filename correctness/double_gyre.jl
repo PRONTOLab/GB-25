@@ -18,7 +18,7 @@ using Oceananigans.Models: update_model_field_time_series!, interior_tendency_ke
 using Oceananigans.BoundaryConditions: update_boundary_condition!, 
                                        replace_horizontal_vector_halos!, 
                                        fill_halo_regions!, apply_x_bcs!,
-                                       apply_y_bcs!, apply_z_bcs!, _apply_z_bcs!, apply_z_top_bc!, 
+                                       apply_y_bcs!, apply_z_bcs!, _apply_z_bcs!, apply_z_bottom_bc!, apply_z_top_bc!, 
                                        getbc, flip, update_boundary_conditions!, 
                                        fill_open_boundary_regions!, 
                                        permute_boundary_conditions, 
@@ -236,7 +236,10 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
 
         grid = model.grid
 
-        bad_tupled_fill_halo_regions!(prognostic_fields(model), grid, model.clock, fields(model))
+        arg_fields = fields(model)
+        prog_fields = prognostic_fields(model)
+
+        not_reduced_fields = bad_tupled_fill_halo_regions!(prog_fields, grid, model.clock, arg_fields)
 
         arch = model.architecture
         grid = model.grid
@@ -252,11 +255,17 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
         arch = model.architecture
         velocities = model.velocities
 
-        launch!(arch, Gⁿ.u.grid, :xy, _apply_z_bcs!, Gⁿ.u, instantiated_location(Gⁿ.u), Gⁿ.u.grid, velocities.u.boundary_conditions.bottom, velocities.u.boundary_conditions.top, (model.clock, fields(model), model.closure, model.buoyancy))
+        launch!(arch, Gⁿ.u.grid, :xy, _bad_apply_z_bcs!, Gⁿ.u, instantiated_location(Gⁿ.u), Gⁿ.u.grid, velocities.u.boundary_conditions.bottom, velocities.u.boundary_conditions.top, (model.clock, arg_fields, model.closure, model.buoyancy))
 
     end
 
     return nothing
+end
+
+@kernel function _bad_apply_z_bcs!(Gc, loc, grid, bottom_bc, top_bc, args)
+    i, j = @index(Global, NTuple)
+    @inbounds Gc[i, j, grid.Nz] -= top_bc.condition[i, j, 1]
+    
 end
 
 function bad_tupled_fill_halo_regions!(fields, grid, args...; kwargs...)
