@@ -204,7 +204,7 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     Δt = model.clock.last_Δt + 0
     @trace track_numbers=false for _ = 1:2
         # Full step for tracers, fractional step for velocities.
-        bad_ab2_step!(model, Δt)
+        bad_ab2_step_velocities!(model.velocities, model, Δt, model.timestepper.χ)
 
         grid = model.grid
 
@@ -231,15 +231,24 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     return nothing
 end
 
-function bad_ab2_step!(model, Δt)
+function bad_ab2_step_velocities!(velocities, model, Δt, χ)
 
-    grid = model.grid
-    compute_free_surface_tendency!(grid, model, model.free_surface)
+    for (i, name) in enumerate((:u,))
+        Gⁿ = model.timestepper.Gⁿ[name]
+        G⁻ = model.timestepper.G⁻[name]
+        velocity_field = model.velocities[name]
 
-    χ = model.timestepper.χ
+        launch!(model.architecture, model.grid, :xyz,
+                ab2_step_field!, velocity_field, Δt, χ, Gⁿ, G⁻)
 
-    # Step locally velocity and tracers
-    local_ab2_step!(model, Δt, χ)
+        implicit_step!(velocity_field,
+                       model.timestepper.implicit_solver,
+                       model.closure,
+                       model.diffusivity_fields,
+                       nothing,
+                       model.clock,
+                       Δt)
+    end
 
     return nothing
 end
