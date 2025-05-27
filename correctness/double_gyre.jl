@@ -248,7 +248,7 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
         buoyancy = model.buoyancy
 
         launch!(arch, grid, :xyz,
-                compute_CATKE_diffusivities!,
+                bad_compute_CATKE_diffusivities!,
                 model.diffusivity_fields, grid, model.closure, velocities, tracers, buoyancy)
 
         Gⁿ = model.timestepper.Gⁿ
@@ -260,6 +260,30 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     end
 
     return nothing
+end
+
+@kernel function bad_compute_CATKE_diffusivities!(diffusivities, grid, closure, velocities, tracers, buoyancy)
+    i, j, k = @index(Global, NTuple)
+
+    # Ensure this works with "ensembles" of closures, in addition to ordinary single closures
+    closure_ij = getclosure(i, j, closure)
+    Jᵇ = diffusivities.Jᵇ
+
+    # Note: we also compute the TKE diffusivity here for diagnostic purposes, even though it
+    # is recomputed in time_step_turbulent_kinetic_energy.
+    κu★ = κuᶜᶜᶠ(i, j, k, grid, closure_ij, velocities, tracers, buoyancy, Jᵇ)
+    κc★ = κcᶜᶜᶠ(i, j, k, grid, closure_ij, velocities, tracers, buoyancy, Jᵇ)
+    κe★ = κeᶜᶜᶠ(i, j, k, grid, closure_ij, velocities, tracers, buoyancy, Jᵇ)
+
+    κu★ = mask_diffusivity(i, j, k, grid, κu★)
+    κc★ = mask_diffusivity(i, j, k, grid, κc★)
+    κe★ = mask_diffusivity(i, j, k, grid, κe★)
+
+    @inbounds begin
+        diffusivities.κu[i, j, k] = κu★
+        diffusivities.κc[i, j, k] = κc★
+        diffusivities.κe[i, j, k] = κe★
+    end
 end
 
 @kernel function _bad_apply_z_bcs!(Gc, loc, grid, bottom_bc, top_bc, args)
