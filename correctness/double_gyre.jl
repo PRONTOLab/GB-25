@@ -84,7 +84,9 @@ using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: get_top_tra
                                            explicit_buoyancy_flux,
                                            dissipation_rate,
                                            TKE_mixing_lengthᶜᶜᶠ,
-                                           turbulent_velocityᶜᶜᶜ
+                                           turbulent_velocityᶜᶜᶜ,
+                                           convective_length_scaleᶜᶜᶠ, stability_functionᶜᶜᶠ, stable_length_scaleᶜᶜᶠ, static_column_depthᶜᶜᵃ
+
 
 using Oceananigans.Solvers: solve!, solve_batched_tridiagonal_system_kernel!
 using Oceananigans.Operators: ℑxᶜᵃᵃ, ℑyᵃᶜᵃ, Az, volume, δxᶜᵃᵃ, δyᵃᶜᵃ, δzᵃᵃᶜ, V⁻¹ᶜᶜᶜ, σⁿ, σ⁻
@@ -269,8 +271,34 @@ end
     closure_ij = getclosure(i, j, closure)
     Jᵇ = diffusivities.Jᵇ
 
-    @inbounds diffusivities.κe[i, j, k] = κeᶜᶜᶠ(i, j, k, grid, closure_ij, velocities, tracers, buoyancy, Jᵇ)
+    @inbounds diffusivities.κe[i, j, k] = bad_κeᶜᶜᶠ(i, j, k, grid, closure_ij, velocities, tracers, buoyancy, Jᵇ)
 end
+
+@inline function bad_κeᶜᶜᶠ(i, j, k, grid, closure, velocities, tracers, buoyancy, surface_buoyancy_flux)
+    κe = bad_TKE_mixing_lengthᶜᶜᶠ(i, j, k, grid, closure, velocities, tracers, buoyancy, surface_buoyancy_flux)
+    FT = eltype(grid)
+    return FT(κe)
+end
+
+
+@inline function bad_TKE_mixing_lengthᶜᶜᶠ(i, j, k, grid, closure, velocities, tracers, buoyancy, surface_buoyancy_flux)
+    Cᶜ  = closure.mixing_length.Cᶜe
+    Cᵉ  = closure.mixing_length.Cᵉe
+    Cˢᵖ = closure.mixing_length.Cˢᵖ
+    ℓʰ  = convective_length_scaleᶜᶜᶠ(i, j, k, grid, closure, Cᶜ, Cᵉ, Cˢᵖ, velocities, tracers, buoyancy, surface_buoyancy_flux)
+
+    Cᵘⁿ = closure.mixing_length.Cᵘⁿe
+    Cˡᵒ = closure.mixing_length.Cˡᵒe
+    Cʰⁱ = closure.mixing_length.Cʰⁱe
+    σ = stability_functionᶜᶜᶠ(i, j, k, grid, closure, Cᵘⁿ, Cˡᵒ, Cʰⁱ, velocities, tracers, buoyancy)
+    ℓ★ = σ * stable_length_scaleᶜᶜᶠ(i, j, k, grid, closure, tracers.e, velocities, tracers, buoyancy)
+
+    ℓʰ = ifelse(isnan(ℓʰ), zero(grid), ℓʰ)
+    ℓ★ = ifelse(isnan(ℓ★), zero(grid), ℓ★)
+    ℓe = ℓ★
+    return ℓe
+end
+
 
 @kernel function _bad_apply_z_bcs!(Gc, loc, grid, bottom_bc, top_bc, args)
     i, j = @index(Global, NTuple)
