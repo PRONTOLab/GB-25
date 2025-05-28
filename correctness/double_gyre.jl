@@ -315,15 +315,8 @@ function estimate_tracer_error(model, initial_temperature, initial_salinity, win
     time_step_double_gyre!(model, initial_temperature, initial_salinity, wind_stress)
     # Compute the mean mixed layer depth:
     Nλ, Nφ, _ = size(model.grid)
-    
-    mean_sq_surface_u = 0.0
-    
-    for j = 1:Nφ, i = 1:Nλ
-        @allowscalar mean_sq_surface_u += @inbounds model.velocities.u[i, j, 1]^2
-    end
-    mean_sq_surface_u = mean_sq_surface_u / (Nλ * Nφ)
-    
-    return mean_sq_surface_u
+        
+    return @allowscalar @inbounds model.velocities.u[1, 1, 1]
 end
 
 function differentiate_tracer_error(model, Tᵢ, Sᵢ, J, dmodel, dTᵢ, dSᵢ, dJ)
@@ -365,6 +358,7 @@ estimate_tracer_error(vmodel, vTᵢ, vSᵢ, vwind_stress)
 
 tic = time()
 restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress)
+println(@code_hlo raise_first=true raise=true differentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, dmodel, dTᵢ, dSᵢ, dJ))
 rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true differentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, dmodel, dTᵢ, dSᵢ, dJ)
 compile_toc = time() - tic
 
