@@ -271,7 +271,7 @@ end
 
     Ri = 1 / (velocities.u[i,   j, k] - velocities.u[i-1, j, k])
 
-    @inbounds diffusivities.κe[i, j, k] = 1.447 * (Ri < 0) + 0.548 * max(zero(Ri), min(one(Ri), (Ri - 0.254) / 1.02)) * (Ri ≥ 0)
+    @inbounds diffusivities.κe[i, j, k] = Ri
 end
 
 @kernel function _bad_apply_z_bcs!(Gc, grid, top_bc)
@@ -316,13 +316,13 @@ function estimate_tracer_error(model, initial_temperature, initial_salinity, win
     # Compute the mean mixed layer depth:
     Nλ, Nφ, _ = size(model.grid)
         
-    return @allowscalar @inbounds model.velocities.u[1, 1, 1]
+    return nothing # @allowscalar @inbounds model.velocities.u[1, 1, 1]
 end
 
 function differentiate_tracer_error(model, Tᵢ, Sᵢ, J, dmodel, dTᵢ, dSᵢ, dJ)
 
     dedν = autodiff(set_runtime_activity(Enzyme.Reverse),
-                    estimate_tracer_error, Active,
+                    estimate_tracer_error, Const, #Active,
                     Duplicated(model, dmodel),
                     Duplicated(Tᵢ, dTᵢ),
                     Duplicated(Sᵢ, dSᵢ),
@@ -404,35 +404,3 @@ i = 10
 j = 10
 
 @allowscalar @show dJ[i, j]
-
-# Produce finite-difference gradients for comparison:
-ϵ_list = [1e-1, 1e-3]
-
-@allowscalar gradient_list = Array{Float64}[]
-
-for ϵ in ϵ_list
-    rmodelP = double_gyre_model(rarch, 62, 62, 15, 1200)
-    rTᵢP, rSᵢP      = set_tracers(rmodelP.grid)
-    rwind_stressP = wind_stress_init(rmodelP.grid)
-
-    @allowscalar diff = 2ϵ * abs(rwind_stressP[i, j])
-
-    @allowscalar rwind_stressP[i, j] = rwind_stressP[i, j] + ϵ * abs(rwind_stressP[i, j])
-
-    sq_surface_uP = restimate_tracer_error(rmodelP, rTᵢP, rSᵢP, rwind_stressP)
-
-    rmodelM = double_gyre_model(rarch, 62, 62, 15, 1200)
-    rTᵢM, rSᵢM      = set_tracers(rmodelM.grid)
-    rwind_stressM = wind_stress_init(rmodelM.grid)
-    @allowscalar rwind_stressM[i, j] = rwind_stressM[i, j] - ϵ * abs(rwind_stressM[i, j])
-
-    sq_surface_uM = restimate_tracer_error(rmodelM, rTᵢM, rSᵢM, rwind_stressM)
-
-    dsq_surface_u = (sq_surface_uP - sq_surface_uM) / diff
-
-    #push!(gradient_list, dsq_surface_u)
-    @show ϵ, dsq_surface_u
-
-end
-
-@info gradient_list
