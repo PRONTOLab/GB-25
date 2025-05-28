@@ -193,6 +193,62 @@ function wind_stress_init(grid;
     return wind_stress
 end
 
+@kernel function bad_ab2_step_field!(u, Δt, χ, Gⁿ, G⁻)
+    i, j, k = @index(Global, NTuple)
+
+    FT = eltype(u)
+    Δt = convert(FT, Δt)
+    one_point_five = convert(FT, 1.5)
+    oh_point_five  = convert(FT, 0.5)
+    not_euler = χ != convert(FT, -0.5) # use to prevent corruption by leftover NaNs in G⁻
+
+    @inbounds begin
+        Gu = (one_point_five + χ) * Gⁿ[i, j, k] - (oh_point_five + χ) * G⁻[i, j, k] * not_euler
+        u[i, j, k] += Δt * Gu
+    end
+end
+
+@kernel function bad_solve_batched_tridiagonal_system_kernel!(ϕ, a, b, c, f, t, grid, p, args, tridiagonal_direction::ZDirection)
+    Nz = size(grid, 3)
+    i, j = @index(Global, NTuple)
+    solve_batched_tridiagonal_system_z!(i, j, Nz, ϕ, a, b, c, f, t, grid, p, args, tridiagonal_direction)
+end
+
+#=
+@inline get_coefficient(i, j, k, grid, a::AbstractArray{<:Any, 1}, p, ::XDirection,          args...) = @inbounds a[i]
+@inline get_coefficient(i, j, k, grid, a::AbstractArray{<:Any, 1}, p, ::YDirection,          args...) = @inbounds a[j]
+@inline get_coefficient(i, j, k, grid, a::AbstractArray{<:Any, 1}, p, ::ZDirection,          args...) = @inbounds a[k]
+@inline get_coefficient(i, j, k, grid, a::AbstractArray{<:Any, 3}, p, tridiagonal_direction, args...) = @inbounds a[i, j, k]
+=#
+
+@inline float_eltype(ϕ::AbstractArray{T}) where T <: AbstractFloat = T
+@inline float_eltype(ϕ::AbstractArray{<:Complex{T}}) where T <: AbstractFloat = T
+
+@inline function solve_batched_tridiagonal_system_z!(i, j, Nz, ϕ, a, b, c, f, t, grid, p, args, tridiagonal_direction)
+    @inbounds begin
+        β  = Oceananigans.Solvers.get_coefficient(i, j, 1, grid, b, p, tridiagonal_direction, args...)
+        f₁ = Oceananigans.Solvers.get_coefficient(i, j, 1, grid, f, p, tridiagonal_direction, args...)
+        ϕ[i, j, 1] = f₁ / β
+
+        for k = 2:Nz
+            cᵏ⁻¹ = Oceananigans.Solvers.get_coefficient(i, j, k-1, grid, c, p, tridiagonal_direction, args...)
+            bᵏ   = Oceananigans.Solvers.get_coefficient(i, j, k,   grid, b, p, tridiagonal_direction, args...)
+            aᵏ⁻¹ = Oceananigans.Solvers.get_coefficient(i, j, k-1, grid, a, p, tridiagonal_direction, args...)
+
+            t[i, j, k] = cᵏ⁻¹ / β
+            β = bᵏ - aᵏ⁻¹ * t[i, j, k]
+            fᵏ = Oceananigans.Solvers.get_coefficient(i, j, k, grid, f, p, tridiagonal_direction, args...)
+
+            # If the problem is not diagonally-dominant such that `β ≈ 0`,
+            # the algorithm is unstable and we elide the forward pass update of `ϕ`.
+            definitely_diagonally_dominant = abs(β) > 10 * eps(float_eltype(ϕ))
+            ϕ★ = (fᵏ - aᵏ⁻¹ * ϕ[i, j, k-1]) / β
+            # ϕ[i, j, k] = ifelse(definitely_diagonally_dominant, ϕ★, ϕ[i, j, k])
+        end
+    end
+end
+
+
 function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
 
     set!(model.tracers.T, Tᵢ)
@@ -206,7 +262,8 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
 
     # Step it forward
     Δt = model.clock.last_Δt + 0
-    @trace track_numbers=false for _ = 1:2
+    # @trace track_numbers=false 
+    for _ = 1:2
         # Full step for tracers, fractional step for velocities.
         velocities = model.velocities
         χ = model.timestepper.χ
@@ -216,7 +273,7 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
         velocity_field = model.velocities.u
 
         launch!(model.architecture, model.grid, :xyz,
-                ab2_step_field!, velocity_field, Δt, χ, Gⁿ, G⁻)
+                bad_ab2_step_field!, velocity_field, Δt, χ, Gⁿ, G⁻)
 
         field = velocity_field
         implicit_solver = model.timestepper.implicit_solver
@@ -227,7 +284,7 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
         solver_args = (closure, diffusivity_fields, nothing, Face(), Center(), Center(), Δt, clock)
 
         launch!(architecture(implicit_solver), implicit_solver.grid, :xy,
-            solve_batched_tridiagonal_system_kernel!, field,
+            bad_solve_batched_tridiagonal_system_kernel!, field,
             implicit_solver.a,
             implicit_solver.b,
             implicit_solver.c,
@@ -328,7 +385,8 @@ function differentiate_tracer_error(model, Tᵢ, Sᵢ, J, dmodel, dTᵢ, dSᵢ, 
                     Duplicated(Sᵢ, dSᵢ),
                     Duplicated(J, dJ))
 
-    return dedν, dJ
+    return nothing
+
 end
 
 Oceananigans.defaults.FloatType = Float64
@@ -370,7 +428,8 @@ pmodel = double_gyre_model(rarch, 62, 62, 15, 1200)
 pTᵢ, pSᵢ      = set_tracers(pmodel.grid)
 pwind_stress = wind_stress_init(pmodel.grid)
 
-dedν, dJ = rdifferentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, dmodel, dTᵢ, dSᵢ, dJ)
+# dedν, dJ = 
+rdifferentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, dmodel, dTᵢ, dSᵢ, dJ)
 
 restimate_tracer_error(pmodel, pTᵢ, pSᵢ, pwind_stress)
 
