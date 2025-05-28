@@ -271,7 +271,7 @@ end
 
     Ri = 1 / (velocities.u[i,   j, k] - velocities.u[i-1, j, k])
 
-    @inbounds diffusivities.κe[i, j, k] = Ri
+    @inbounds diffusivities.κe[i, j, k] = max(zero(Ri), min(one(Ri), Ri))
 end
 
 @kernel function _bad_apply_z_bcs!(Gc, grid, top_bc)
