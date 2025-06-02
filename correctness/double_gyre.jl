@@ -207,11 +207,6 @@ end
     end
 end
 
-@kernel function bad_solve_batched_tridiagonal_system_kernel!(ϕ, f)
-    i, j = @index(Global, NTuple)
-    @inbounds ϕ[i, j, 1] = f[i, j, 1]
-end
-
 @inline float_eltype(ϕ::AbstractArray{T}) where T <: AbstractFloat = T
 @inline float_eltype(ϕ::AbstractArray{<:Complex{T}}) where T <: AbstractFloat = T
 
@@ -226,21 +221,6 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     model.clock.iteration = 0
     model.clock.time = 0
     model.clock.last_Δt = 1200
-
-    # Step it forward
-    Δt = model.clock.last_Δt + 0
-    # @trace track_numbers=false 
-
-    # Full step for tracers, fractional step for velocities.
-    velocities = model.velocities
-    χ = model.timestepper.χ
-
-    Gⁿ = model.timestepper.Gⁿ.u
-    G⁻ = model.timestepper.G⁻.u
-    velocity_field = model.velocities.u
-
-    launch!(model.architecture, model.grid, :xyz,
-            bad_ab2_step_field!, velocity_field, χ, Gⁿ, G⁻)
     
     Gⁿ = model.timestepper.Gⁿ
     arch = model.architecture
@@ -279,11 +259,6 @@ end
     i, j = @index(Global, NTuple)
     @inbounds Gc[i, j, grid.Nz] -= top_bc.condition[i, j, 1]
     
-end
-
-@kernel function _bad_fill_bottom_and_top_halo!(c, grid)
-    i, j = @index(Global, NTuple)
-    @inbounds c[1][i, j, grid.Nz+1] = c[1][i, j, grid.Nz]
 end
 
 
