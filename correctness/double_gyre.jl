@@ -193,44 +193,27 @@ function wind_stress_init(grid;
     return wind_stress
 end
 
-@kernel function bad_ab2_step_field!(u, Δt, χ, Gⁿ, G⁻)
+@kernel function bad_ab2_step_field!(u, χ, Gⁿ, G⁻)
     i, j, k = @index(Global, NTuple)
 
     FT = eltype(u)
-    Δt = convert(FT, Δt)
     one_point_five = convert(FT, 1.5)
     oh_point_five  = convert(FT, 0.5)
     not_euler = χ != convert(FT, -0.5) # use to prevent corruption by leftover NaNs in G⁻
 
     @inbounds begin
         Gu = (one_point_five + χ) * Gⁿ[i, j, k] - (oh_point_five + χ) * G⁻[i, j, k] * not_euler
-        u[i, j, k] += Δt * Gu
+        u[i, j, k] += Gu
     end
 end
 
-@kernel function bad_solve_batched_tridiagonal_system_kernel!(ϕ, a, b, c, f, t, grid, p, args, tridiagonal_direction::ZDirection)
-    Nz = size(grid, 3)
+@kernel function bad_solve_batched_tridiagonal_system_kernel!(ϕ, f)
     i, j = @index(Global, NTuple)
-    solve_batched_tridiagonal_system_z!(i, j, Nz, ϕ, a, b, c, f, t, grid, p, args, tridiagonal_direction)
+    @inbounds ϕ[i, j, 1] = f[i, j, 1]
 end
-
-#=
-@inline get_coefficient(i, j, k, grid, a::AbstractArray{<:Any, 1}, p, ::XDirection,          args...) = @inbounds a[i]
-@inline get_coefficient(i, j, k, grid, a::AbstractArray{<:Any, 1}, p, ::YDirection,          args...) = @inbounds a[j]
-@inline get_coefficient(i, j, k, grid, a::AbstractArray{<:Any, 1}, p, ::ZDirection,          args...) = @inbounds a[k]
-@inline get_coefficient(i, j, k, grid, a::AbstractArray{<:Any, 3}, p, tridiagonal_direction, args...) = @inbounds a[i, j, k]
-=#
 
 @inline float_eltype(ϕ::AbstractArray{T}) where T <: AbstractFloat = T
 @inline float_eltype(ϕ::AbstractArray{<:Complex{T}}) where T <: AbstractFloat = T
-
-@inline function solve_batched_tridiagonal_system_z!(i, j, Nz, ϕ, a, b, c, f, t, grid, p, args, tridiagonal_direction)
-    @inbounds begin
-        β  = Oceananigans.Solvers.get_coefficient(i, j, 1, grid, b, p, tridiagonal_direction, args...)
-        f₁ = Oceananigans.Solvers.get_coefficient(i, j, 1, grid, f, p, tridiagonal_direction, args...)
-        ϕ[i, j, 1] = f₁ # / β
-    end
-end
 
 
 function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
@@ -247,62 +230,54 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     # Step it forward
     Δt = model.clock.last_Δt + 0
     # @trace track_numbers=false 
-    for _ = 1:2
-        # Full step for tracers, fractional step for velocities.
-        velocities = model.velocities
-        χ = model.timestepper.χ
 
-        Gⁿ = model.timestepper.Gⁿ.u
-        G⁻ = model.timestepper.G⁻.u
-        velocity_field = model.velocities.u
+    # Full step for tracers, fractional step for velocities.
+    velocities = model.velocities
+    χ = model.timestepper.χ
 
-        launch!(model.architecture, model.grid, :xyz,
-                bad_ab2_step_field!, velocity_field, Δt, χ, Gⁿ, G⁻)
+    Gⁿ = model.timestepper.Gⁿ.u
+    G⁻ = model.timestepper.G⁻.u
+    velocity_field = model.velocities.u
 
-        field = velocity_field
-        implicit_solver = model.timestepper.implicit_solver
-        closure = model.closure
-        diffusivity_fields = model.diffusivity_fields
-        clock = model.clock
+    launch!(model.architecture, model.grid, :xyz,
+            bad_ab2_step_field!, velocity_field, χ, Gⁿ, G⁻)
 
-        solver_args = (closure, diffusivity_fields, nothing, Face(), Center(), Center(), Δt, clock)
+    grid = model.grid
 
-        launch!(architecture(implicit_solver), implicit_solver.grid, :xy,
-            bad_solve_batched_tridiagonal_system_kernel!, field,
-            implicit_solver.a,
-            implicit_solver.b,
-            implicit_solver.c,
-            field,
-            implicit_solver.t,
-            implicit_solver.grid,
-            implicit_solver.parameters,
-            solver_args,
-            implicit_solver.tridiagonal_direction)
+    prog_fields = prognostic_fields(model)
 
-        grid = model.grid
-
-        arg_fields = fields(model)
-        prog_fields = prognostic_fields(model)
-
-        not_reduced_fields = bad_tupled_fill_halo_regions!(prog_fields, grid, model.clock, arg_fields)
-
-        arch = model.architecture
-        grid = model.grid
-        velocities = model.velocities
-        tracers = model.tracers
-        buoyancy = model.buoyancy
-
-        launch!(arch, grid, :xyz,
-                bad_compute_CATKE_diffusivities!,
-                model.diffusivity_fields, velocities)
-        
-        Gⁿ = model.timestepper.Gⁿ
-        arch = model.architecture
-        velocities = model.velocities
-
-        launch!(arch, Gⁿ.u.grid, :xy, _bad_apply_z_bcs!, Gⁿ.u, Gⁿ.u.grid, velocities.u.boundary_conditions.top)
-
+    not_reduced_fields = Field[]
+    for f in prog_fields
+        bcs = boundary_conditions(f)
+        if !isnothing(bcs) && (!(f isa ReducedField) && f isa FullField)
+            push!(not_reduced_fields, f)
+        end
     end
+
+    c    = (not_reduced_fields[1].data, )
+    arch = architecture(grid)
+    
+    Gⁿ = model.timestepper.Gⁿ
+    arch = model.architecture
+    velocities = model.velocities
+
+    launch!(arch, Gⁿ.u.grid, :xy, _bad_apply_z_bcs!, Gⁿ.u, Gⁿ.u.grid, velocities.u.boundary_conditions.top)
+
+    χ  = model.timestepper.χ
+    Gⁿ = model.timestepper.Gⁿ.u
+    G⁻ = model.timestepper.G⁻.u
+    velocity_field = model.velocities.u
+
+    launch!(model.architecture, model.grid, :xyz,
+            bad_ab2_step_field!, velocity_field, χ, Gⁿ, G⁻)
+
+    arch = model.architecture
+    grid = model.grid
+    velocities = model.velocities
+
+    launch!(arch, grid, :xyz,
+            bad_compute_CATKE_diffusivities!,
+            model.diffusivity_fields, velocities)
 
     return nothing
 end
@@ -321,31 +296,6 @@ end
     
 end
 
-function bad_tupled_fill_halo_regions!(fields, grid, args...; kwargs...)
-
-    not_reduced_fields = Field[]
-    for f in fields
-        bcs = boundary_conditions(f)
-        if !isnothing(bcs) && (!(f isa ReducedField) && f isa FullField)
-            push!(not_reduced_fields, f)
-        end
-    end
-
-    not_reduced_fields = tuple(not_reduced_fields...)
-
-    c = (not_reduced_fields[1].data, )
-    bcs = (not_reduced_fields[1].boundary_conditions,)
-    indices = default_indices(3)
-    loc = map(instantiated_location, not_reduced_fields)
-
-    arch = architecture(grid)
-
-    launch!(arch, grid, KernelParameters(:xy, (0, 0)),
-            _bad_fill_bottom_and_top_halo!, c, grid)
-
-    return nothing
-end
-
 @kernel function _bad_fill_bottom_and_top_halo!(c, grid)
     i, j = @index(Global, NTuple)
     @inbounds c[1][i, j, grid.Nz+1] = c[1][i, j, grid.Nz]
@@ -354,15 +304,13 @@ end
 
 function estimate_tracer_error(model, initial_temperature, initial_salinity, wind_stress)
     time_step_double_gyre!(model, initial_temperature, initial_salinity, wind_stress)
-    # Compute the mean mixed layer depth:
-    Nλ, Nφ, _ = size(model.grid)
         
-    return nothing # @allowscalar @inbounds model.velocities.u[1, 1, 1]
+    return nothing
 end
 
 function differentiate_tracer_error(model, Tᵢ, Sᵢ, J, dmodel, dTᵢ, dSᵢ, dJ)
 
-    dedν = autodiff(set_runtime_activity(Enzyme.Reverse),
+    dedν = autodiff(set_strong_zero(Enzyme.Reverse),
                     estimate_tracer_error, Const, #Active,
                     Duplicated(model, dmodel),
                     Duplicated(Tᵢ, dTᵢ),
@@ -419,29 +367,6 @@ restimate_tracer_error(pmodel, pTᵢ, pSᵢ, pwind_stress)
 
 GordonBell25.compare_states(vmodel, pmodel; include_halos=false, throw_error=false, rtol=sqrt(eps(Float64)), atol=sqrt(eps(Float64)))
 GordonBell25.compare_states(rmodel, pmodel; include_halos=true, throw_error=false, rtol=sqrt(eps(Float64)), atol=sqrt(eps(Float64)))
-
-#=
-@info "Running..."
-restimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress)
-
-
-@info "Running non-reactant for comparison..."
-varch = CPU()
-vmodel = double_gyre_model(varch, 62, 62, 15, 1200)
-
-@info "Initialized non-reactant model"
-
-vTᵢ, vSᵢ      = set_tracers(vmodel.grid)
-vwind_stress = wind_stress_init(vmodel.grid)
-
-@info "Initialized non-reactant tracers and wind stress"
-
-estimate_tracer_error(vmodel, vTᵢ, vSᵢ, vwind_stress)
-
-GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
-
-@info "Done!"
-=#
 
 i = 10
 j = 10
