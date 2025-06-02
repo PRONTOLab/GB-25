@@ -241,21 +241,6 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
 
     launch!(model.architecture, model.grid, :xyz,
             bad_ab2_step_field!, velocity_field, χ, Gⁿ, G⁻)
-
-    grid = model.grid
-
-    prog_fields = prognostic_fields(model)
-
-    not_reduced_fields = Field[]
-    for f in prog_fields
-        bcs = boundary_conditions(f)
-        if !isnothing(bcs) && (!(f isa ReducedField) && f isa FullField)
-            push!(not_reduced_fields, f)
-        end
-    end
-
-    c    = (not_reduced_fields[1].data, )
-    arch = architecture(grid)
     
     Gⁿ = model.timestepper.Gⁿ
     arch = model.architecture
