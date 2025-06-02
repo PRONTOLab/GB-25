@@ -75,15 +75,15 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
                                                         #slope_limiter = FluxTapering(1e-2))
 
     horizontal_closure = HorizontalScalarDiffusivity(ν = 5000.0, κ = 1000.0)
-    vertical_closure   = VerticalScalarDiffusivity(ν = 1e-2, κ = 1e-5) 
-    #vertical_closure   = Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity()
+    #vertical_closure   = VerticalScalarDiffusivity(ν = 1e-2, κ = 1e-5) 
+    vertical_closure   = Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity()
     #vertical_closure = Oceananigans.TurbulenceClosures.TKEDissipationVerticalDiffusivity()
     closure = (horizontal_closure, vertical_closure)
 
     # Coriolis forces for a rotating Earth
     coriolis = HydrostaticSphericalCoriolis()
 
-    tracers = (:T, :S)
+    tracers = (:T, :S, :e)
 
     grid = simple_latitude_longitude_grid(arch, Nx, Ny, Nz)
 
@@ -111,6 +111,7 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
                                           tracer_advection = tracer_advection,
                                           boundary_conditions = boundary_conditions)
 
+    set!(model.tracers.e, 1e-6)
     model.clock.last_Δt = Δt
 
     return model
@@ -185,7 +186,7 @@ end
 
 function differentiate_tracer_error(model, Tᵢ, Sᵢ, J, dmodel, dTᵢ, dSᵢ, dJ)
 
-    dedν = autodiff(set_runtime_activity(Enzyme.Reverse),
+    dedν = autodiff(set_strong_zero(Enzyme.Reverse),
                     estimate_tracer_error, Active,
                     Duplicated(model, dmodel),
                     Duplicated(Tᵢ, dTᵢ),
