@@ -11,7 +11,7 @@ using Enzyme
 using Oceananigans: initialize!, prognostic_fields, instantiated_location, boundary_conditions
 using Oceananigans.Grids: AbstractGrid, XDirection, YDirection, ZDirection, inactive_cell, get_active_column_map
 using Oceananigans.TimeSteppers: update_state!, ab2_step!, tick!, calculate_pressure_correction!, correct_velocities_and_cache_previous_tendencies!, step_lagrangian_particles!, ab2_step_field!, implicit_step!, pressure_correct_velocities!, cache_previous_tendencies!
-using Oceananigans.Utils: @apply_regionally, launch!, configure_kernel, sum_of_velocities, KernelParameters
+using Oceananigans.Utils: @apply_regionally, launch!, configure_kernel, sum_of_velocities, KernelParameters, @constprop
 
 using Oceananigans.Models: update_model_field_time_series!, interior_tendency_kernel_parameters, complete_communication_and_compute_buffer!
 
@@ -27,7 +27,8 @@ using Oceananigans.BoundaryConditions: update_boundary_condition!,
                                        extract_north_bc, extract_bc, extract_bottom_bc, extract_top_bc,
                                        fill_west_and_east_halo!, fill_south_and_north_halo!, fill_bottom_and_top_halo!, fill_first,
                                        fill_halo_size, fill_halo_offset,
-                                       _fill_bottom_and_top_halo!
+                                       _fill_bottom_and_top_halo!, _fill_bottom_halo!, _fill_top_halo!,
+                                       _fill_flux_top_halo!
 
 using Oceananigans.Fields: tupled_fill_halo_regions!, location, immersed_boundary_condition, fill_reduced_field_halos!, default_indices, ReducedField, FullField
 using Oceananigans.Models.NonhydrostaticModels: compute_auxiliaries!, update_hydrostatic_pressure!
@@ -55,7 +56,7 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fiel
                                                         _ab2_step_tracer_field!,
                                                         hydrostatic_fields
 
-                                                        using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: _compute_barotropic_mode!,
+using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: _compute_barotropic_mode!,
                                                         _barotropic_split_explicit_corrector!,
                                                         calculate_substeps,
                                                         calculate_adaptive_settings,
@@ -68,7 +69,7 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fiel
                                                         initialize_free_surface_timestepper!,
                                                         _compute_integrated_ab2_tendencies!
 
-using Oceananigans.TurbulenceClosures: compute_diffusivities!, getclosure, clip, shear_production, dissipation, closure_turbulent_velocity, ∇_dot_qᶜ, immersed_∇_dot_qᶜ
+using Oceananigans.TurbulenceClosures: compute_diffusivities!, getclosure, clip, shear_production, dissipation, closure_turbulent_velocity, ∇_dot_qᶜ, immersed_∇_dot_qᶜ, Riᶜᶜᶠ, shear_squaredᶜᶜᶠ
 
 using Oceananigans.ImmersedBoundaries: get_active_cells_map, mask_immersed_field!
 
@@ -84,14 +85,18 @@ using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: get_top_tra
                                            explicit_buoyancy_flux,
                                            dissipation_rate,
                                            TKE_mixing_lengthᶜᶜᶠ,
-                                           turbulent_velocityᶜᶜᶜ
+                                           turbulent_velocityᶜᶜᶜ,
+                                           convective_length_scaleᶜᶜᶠ, stability_functionᶜᶜᶠ, stable_length_scaleᶜᶜᶠ, static_column_depthᶜᶜᵃ, scale
+
+using Oceananigans.BuoyancyFormulations: ∂z_b
 
 using Oceananigans.Solvers: solve!, solve_batched_tridiagonal_system_kernel!
-using Oceananigans.Operators: ℑxᶜᵃᵃ, ℑyᵃᶜᵃ, Az, volume, δxᶜᵃᵃ, δyᵃᶜᵃ, δzᵃᵃᶜ, V⁻¹ᶜᶜᶜ, σⁿ, σ⁻
+using Oceananigans.Operators: ℑxᶜᵃᵃ, ℑyᵃᶜᵃ, Az, volume, δxᶜᵃᵃ, δyᵃᶜᵃ, δzᵃᵃᶜ, V⁻¹ᶜᶜᶜ, σⁿ, σ⁻, ∂zᶠᶜᶠ, δxᶠᶜᶠ, Δx⁻¹ᶠᶜᶠ
 using Oceananigans.Forcings: with_advective_forcing
 using Oceananigans.Advection: div_Uc, _advective_tracer_flux_x, _advective_tracer_flux_y, _advective_tracer_flux_z
 using KernelAbstractions: @kernel, @index
 using KernelAbstractions.Extras.LoopInfo: @unroll
+
 
 throw_error = true
 include_halos = true
@@ -239,7 +244,7 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
         arg_fields = fields(model)
         prog_fields = prognostic_fields(model)
 
-        not_reduced_fields = bad_tupled_fill_halo_regions!(prog_fields, grid, model.clock, arg_fields)
+        not_reduced_fields = bad_tupled_fill_halo_regions!(prog_fields, grid)
 
         arch = model.architecture
         grid = model.grid
@@ -275,10 +280,6 @@ end
     κc★ = κcᶜᶜᶠ(i, j, k, grid, closure_ij, velocities, tracers, buoyancy, Jᵇ)
     κe★ = κeᶜᶜᶠ(i, j, k, grid, closure_ij, velocities, tracers, buoyancy, Jᵇ)
 
-    κu★ = mask_diffusivity(i, j, k, grid, κu★)
-    κc★ = mask_diffusivity(i, j, k, grid, κc★)
-    κe★ = mask_diffusivity(i, j, k, grid, κe★)
-
     @inbounds begin
         diffusivities.κu[i, j, k] = κu★
         diffusivities.κc[i, j, k] = κc★
@@ -292,7 +293,7 @@ end
     
 end
 
-function bad_tupled_fill_halo_regions!(fields, grid, args...; kwargs...)
+function bad_tupled_fill_halo_regions!(fields, grid)
 
     not_reduced_fields = Field[]
     for f in fields
@@ -312,9 +313,14 @@ function bad_tupled_fill_halo_regions!(fields, grid, args...; kwargs...)
     arch = architecture(grid)
 
     launch!(arch, grid, KernelParameters(:xy, (0, 0)),
-            _fill_bottom_and_top_halo!, c, extract_bottom_bc(bcs), extract_top_bc(bcs), loc, grid, Tuple(args); kwargs...)
+            _bad_fill_bottom_and_top_halo!, c, grid)
 
     return nothing
+end
+
+@kernel function _bad_fill_bottom_and_top_halo!(c, grid)
+    i, j = @index(Global, NTuple)
+    @inbounds c[1][i, j, grid.Nz+1] = c[1][i, j, grid.Nz]
 end
 
 
