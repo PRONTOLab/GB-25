@@ -84,14 +84,14 @@ using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: get_top_tra
                                            mask_diffusivity,
                                            explicit_buoyancy_flux,
                                            dissipation_rate,
-                                           TKE_mixing_lengthᶜᶜᶠ,
+                                           TKE_mixing_lengthᶜᶜᶠ, momentum_mixing_lengthᶜᶜᶠ,
                                            turbulent_velocityᶜᶜᶜ,
                                            convective_length_scaleᶜᶜᶠ, stability_functionᶜᶜᶠ, stable_length_scaleᶜᶜᶠ, static_column_depthᶜᶜᵃ, scale
 
 using Oceananigans.BuoyancyFormulations: ∂z_b
 
 using Oceananigans.Solvers: solve!, solve_batched_tridiagonal_system_kernel!
-using Oceananigans.Operators: ℑxᶜᵃᵃ, ℑyᵃᶜᵃ, Az, volume, δxᶜᵃᵃ, δyᵃᶜᵃ, δzᵃᵃᶜ, V⁻¹ᶜᶜᶜ, σⁿ, σ⁻, ∂zᶠᶜᶠ, δxᶠᶜᶠ, Δx⁻¹ᶠᶜᶠ
+using Oceananigans.Operators: ℑxᶜᵃᵃ, ℑyᵃᶜᵃ, Az, volume, δxᶜᵃᵃ, δyᵃᶜᵃ, δzᵃᵃᶜ, V⁻¹ᶜᶜᶜ, σⁿ, σ⁻, ∂zᶠᶜᶠ, δxᶠᶜᶠ, Δx⁻¹ᶠᶜᶠ, ℑzᵃᵃᶠ
 using Oceananigans.Forcings: with_advective_forcing
 using Oceananigans.Advection: div_Uc, _advective_tracer_flux_x, _advective_tracer_flux_y, _advective_tracer_flux_z
 using KernelAbstractions: @kernel, @index
@@ -239,12 +239,28 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
             solver_args,
             implicit_solver.tridiagonal_direction)
 
-        grid = model.grid
-
-        arg_fields = fields(model)
+        grid        = model.grid
         prog_fields = prognostic_fields(model)
 
-        not_reduced_fields = bad_tupled_fill_halo_regions!(prog_fields, grid)
+        not_reduced_fields = Field[]
+        for f in prog_fields
+            bcs = boundary_conditions(f)
+            if !isnothing(bcs) && (!(f isa ReducedField) && f isa FullField)
+                push!(not_reduced_fields, f)
+            end
+        end
+
+        not_reduced_fields = tuple(not_reduced_fields...)
+
+        c = (not_reduced_fields[1].data, )
+        bcs = (not_reduced_fields[1].boundary_conditions,)
+        indices = default_indices(3)
+        loc = map(instantiated_location, not_reduced_fields)
+
+        arch = architecture(grid)
+
+        launch!(arch, grid, KernelParameters(:xy, (0, 0)),
+                _bad_fill_bottom_and_top_halo!, c, grid)
 
         arch = model.architecture
         grid = model.grid
@@ -260,7 +276,7 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
         arch = model.architecture
         velocities = model.velocities
 
-        launch!(arch, Gⁿ.u.grid, :xy, _bad_apply_z_bcs!, Gⁿ.u, instantiated_location(Gⁿ.u), Gⁿ.u.grid, velocities.u.boundary_conditions.bottom, velocities.u.boundary_conditions.top, (model.clock, arg_fields, model.closure, model.buoyancy))
+        launch!(arch, Gⁿ.u.grid, :xy, _bad_apply_z_bcs!, Gⁿ.u, Gⁿ.u.grid, velocities.u.boundary_conditions.top)
 
     end
 
@@ -274,48 +290,25 @@ end
     closure_ij = getclosure(i, j, closure)
     Jᵇ = diffusivities.Jᵇ
 
-    # Note: we also compute the TKE diffusivity here for diagnostic purposes, even though it
-    # is recomputed in time_step_turbulent_kinetic_energy.
-    κu★ = κuᶜᶜᶠ(i, j, k, grid, closure_ij, velocities, tracers, buoyancy, Jᵇ)
-    κc★ = κcᶜᶜᶠ(i, j, k, grid, closure_ij, velocities, tracers, buoyancy, Jᵇ)
-    κe★ = κeᶜᶜᶠ(i, j, k, grid, closure_ij, velocities, tracers, buoyancy, Jᵇ)
-
-    @inbounds begin
-        diffusivities.κu[i, j, k] = κu★
-        diffusivities.κc[i, j, k] = κc★
-        diffusivities.κe[i, j, k] = κe★
-    end
+    @inbounds diffusivities.κu[i, j, k] = bad_κuᶜᶜᶠ(i, j, k, grid, closure_ij, velocities, tracers, buoyancy, Jᵇ)
 end
 
-@kernel function _bad_apply_z_bcs!(Gc, loc, grid, bottom_bc, top_bc, args)
+@inline function bad_κuᶜᶜᶠ(i, j, k, grid, closure, velocities, tracers, buoyancy, surface_buoyancy_flux)
+    FT = eltype(grid)
+    w★ = FT(0.5) * (bad_turbulent_velocityᶜᶜᶜ(i, j, k-1, grid, closure, tracers.e) + bad_turbulent_velocityᶜᶜᶜ(i, j, k, grid, closure, tracers.e))
+    ℓu = stability_functionᶜᶜᶠ(i, j, k, grid, closure, 0.37, 0.361, 0.242, velocities, tracers, buoyancy)
+    κu = ℓu * w★
+    return κu
+end
+
+@inline function bad_turbulent_velocityᶜᶜᶜ(i, j, k, grid, closure, e)
+    return sqrt(max(closure.minimum_tke, e[i, j, k]))
+end
+
+@kernel function _bad_apply_z_bcs!(Gc, grid, top_bc)
     i, j = @index(Global, NTuple)
     @inbounds Gc[i, j, grid.Nz] -= top_bc.condition[i, j, 1]
     
-end
-
-function bad_tupled_fill_halo_regions!(fields, grid)
-
-    not_reduced_fields = Field[]
-    for f in fields
-        bcs = boundary_conditions(f)
-        if !isnothing(bcs) && (!(f isa ReducedField) && f isa FullField)
-            push!(not_reduced_fields, f)
-        end
-    end
-
-    not_reduced_fields = tuple(not_reduced_fields...)
-
-    c = (not_reduced_fields[1].data, )
-    bcs = (not_reduced_fields[1].boundary_conditions,)
-    indices = default_indices(3)
-    loc = map(instantiated_location, not_reduced_fields)
-
-    arch = architecture(grid)
-
-    launch!(arch, grid, KernelParameters(:xy, (0, 0)),
-            _bad_fill_bottom_and_top_halo!, c, grid)
-
-    return nothing
 end
 
 @kernel function _bad_fill_bottom_and_top_halo!(c, grid)
