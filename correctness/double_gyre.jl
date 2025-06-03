@@ -335,7 +335,7 @@ end
 
 function differentiate_tracer_error(model, Tᵢ, Sᵢ, J, dmodel, dTᵢ, dSᵢ, dJ)
 
-    dedν = autodiff(set_runtime_activity(Enzyme.Reverse),
+    dedν = autodiff(set_strong_zero(Enzyme.Reverse),
                     estimate_tracer_error, Active,
                     Duplicated(model, dmodel),
                     Duplicated(Tᵢ, dTᵢ),
