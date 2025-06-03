@@ -295,14 +295,17 @@ end
 
 @inline function bad_κuᶜᶜᶠ(i, j, k, grid, closure, velocities, tracers, buoyancy, surface_buoyancy_flux)
     FT = eltype(grid)
-    w★ = FT(0.5) * (bad_turbulent_velocityᶜᶜᶜ(i, j, k-1, grid, closure, tracers.e) + bad_turbulent_velocityᶜᶜᶜ(i, j, k, grid, closure, tracers.e))
-    ℓu = stability_functionᶜᶜᶠ(i, j, k, grid, closure, 0.37, 0.361, 0.242, velocities, tracers, buoyancy)
+    w★ = sqrt(tracers.e[i, j, k-1])
+    ℓu = bad_stability_functionᶜᶜᶠ(i, j, k, grid, closure, 0.37, 0.361, 0.242, velocities, tracers, buoyancy)
     κu = ℓu * w★
     return κu
 end
 
-@inline function bad_turbulent_velocityᶜᶜᶜ(i, j, k, grid, closure, e)
-    return sqrt(max(closure.minimum_tke, e[i, j, k]))
+@inline function bad_stability_functionᶜᶜᶠ(i, j, k, grid, closure, Cᵘⁿ, Cˡᵒ, Cʰⁱ, velocities, tracers, buoyancy)
+    Ri = 1 / shear_squaredᶜᶜᶠ(i, j, k, grid, velocities)
+    CRi⁰ = closure.mixing_length.CRi⁰
+    CRiᵟ = closure.mixing_length.CRiᵟ
+    return scale(Ri, Cᵘⁿ, Cˡᵒ, Cʰⁱ, CRi⁰, CRiᵟ)
 end
 
 @kernel function _bad_apply_z_bcs!(Gc, grid, top_bc)
