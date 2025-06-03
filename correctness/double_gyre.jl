@@ -281,10 +281,9 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
 
         grid = model.grid
 
-        arg_fields = fields(model)
         prog_fields = prognostic_fields(model)
 
-        not_reduced_fields = bad_tupled_fill_halo_regions!(prog_fields, grid, model.clock, arg_fields)
+        not_reduced_fields = bad_tupled_fill_halo_regions!(prog_fields, grid)
 
         arch = model.architecture
         grid = model.grid
@@ -321,10 +320,10 @@ end
     
 end
 
-function bad_tupled_fill_halo_regions!(fields, grid, args...; kwargs...)
+function bad_tupled_fill_halo_regions!(prog_fields, grid)
 
     not_reduced_fields = Field[]
-    for f in fields
+    for f in prog_fields
         bcs = boundary_conditions(f)
         if !isnothing(bcs) && (!(f isa ReducedField) && f isa FullField)
             push!(not_reduced_fields, f)
