@@ -357,7 +357,7 @@ function estimate_tracer_error(model, initial_temperature, initial_salinity, win
     end
     mean_sq_surface_u = mean_sq_surface_u / (Nλ * Nφ)
     
-    return mean_sq_surface_u
+    return mean_sq_surface_u * 1e120
 end
 
 function differentiate_tracer_error(model, Tᵢ, Sᵢ, J, dmodel, dTᵢ, dSᵢ, dJ)
