@@ -69,7 +69,10 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces
                                                         initialize_free_surface_timestepper!,
                                                         _compute_integrated_ab2_tendencies!
 
-using Oceananigans.TurbulenceClosures: compute_diffusivities!, getclosure, clip, shear_production, dissipation, closure_turbulent_velocity, ∇_dot_qᶜ, immersed_∇_dot_qᶜ, Riᶜᶜᶠ, shear_squaredᶜᶜᶠ
+using Oceananigans.TurbulenceClosures: compute_diffusivities!, getclosure, clip, shear_production,
+                                       dissipation, closure_turbulent_velocity, ∇_dot_qᶜ,
+                                       immersed_∇_dot_qᶜ, Riᶜᶜᶠ, shear_squaredᶜᶜᶠ,
+                                       ivd_lower_diagonal, ivd_upper_diagonal, ivd_diagonal
 
 using Oceananigans.ImmersedBoundaries: get_active_cells_map, mask_immersed_field!
 
@@ -289,18 +292,18 @@ end
 
 @inline function solve_batched_tridiagonal_system_z!(i, j, Nz, ϕ, a, b, c, f, t, grid, p, args, tridiagonal_direction)
     @inbounds begin
-        β  = get_coefficient(i, j, 1, grid, b, p, tridiagonal_direction, args...)
-        f₁ = get_coefficient(i, j, 1, grid, f, p, tridiagonal_direction, args...)
+        β  = 1 - ivd_upper_diagonal(i, j, 1, grid, args...) - ivd_lower_diagonal(i, j, 1, grid, args...)
+        f₁ = f[i, j, 1]
         ϕ[i, j, 1] = f₁ / β
 
         for k = 2:Nz
-            cᵏ⁻¹ = get_coefficient(i, j, k-1, grid, c, p, tridiagonal_direction, args...)
-            bᵏ   = get_coefficient(i, j, k,   grid, b, p, tridiagonal_direction, args...)
-            aᵏ⁻¹ = get_coefficient(i, j, k-1, grid, a, p, tridiagonal_direction, args...)
+            cᵏ⁻¹ = ivd_upper_diagonal(i, j, k-1, grid, args...)
+            bᵏ   = 1 - ivd_upper_diagonal(i, j, k, grid, args...) - ivd_lower_diagonal(i, j, k, grid, args...)
+            aᵏ⁻¹ = ivd_lower_diagonal(i, j, k-1, grid, args...)
 
             t[i, j, k] = cᵏ⁻¹ / β
             β = bᵏ - aᵏ⁻¹ * t[i, j, k]
-            fᵏ = get_coefficient(i, j, k, grid, f, p, tridiagonal_direction, args...)
+            fᵏ = f[i, j, k]
 
             # If the problem is not diagonally-dominant such that `β ≈ 0`,
             # the algorithm is unstable and we elide the forward pass update of `ϕ`.
