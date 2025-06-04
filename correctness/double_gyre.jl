@@ -90,7 +90,7 @@ using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: get_top_tra
 
 using Oceananigans.BuoyancyFormulations: ∂z_b
 
-using Oceananigans.Solvers: solve!, solve_batched_tridiagonal_system_kernel!
+using Oceananigans.Solvers: solve!, solve_batched_tridiagonal_system_kernel!, get_coefficient
 using Oceananigans.Operators: ℑxᶜᵃᵃ, ℑyᵃᶜᵃ, Az, volume, δxᶜᵃᵃ, δyᵃᶜᵃ, δzᵃᵃᶜ, V⁻¹ᶜᶜᶜ, σⁿ, σ⁻, ∂zᶠᶜᶠ, δxᶠᶜᶠ, Δx⁻¹ᶠᶜᶠ, ℑzᵃᵃᶠ, δzᵃᵃᶠ, Δz⁻¹ᶠᶜᶠ
 using Oceananigans.Forcings: with_advective_forcing
 using Oceananigans.Advection: div_Uc, _advective_tracer_flux_x, _advective_tracer_flux_y, _advective_tracer_flux_z
@@ -228,7 +228,7 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
         solver_args = (closure, diffusivity_fields, nothing, Face(), Center(), Center(), Δt, clock)
 
         launch!(architecture(implicit_solver), implicit_solver.grid, :xy,
-            solve_batched_tridiagonal_system_kernel!, field,
+            bad_solve_batched_tridiagonal_system_kernel!, field,
             implicit_solver.a,
             implicit_solver.b,
             implicit_solver.c,
@@ -253,8 +253,6 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
         not_reduced_fields = tuple(not_reduced_fields...)
 
         c = (not_reduced_fields[1].data, )
-        bcs = (not_reduced_fields[1].boundary_conditions,)
-        indices = default_indices(3)
         loc = map(instantiated_location, not_reduced_fields)
 
         arch = architecture(grid)
@@ -281,6 +279,40 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     end
 
     return nothing
+end
+
+@kernel function bad_solve_batched_tridiagonal_system_kernel!(ϕ, a, b, c, f, t, grid, p, args, tridiagonal_direction)
+    Nz = size(grid, 3)
+    i, j = @index(Global, NTuple)
+    solve_batched_tridiagonal_system_z!(i, j, Nz, ϕ, a, b, c, f, t, grid, p, args, tridiagonal_direction)
+end
+
+@inline function solve_batched_tridiagonal_system_z!(i, j, Nz, ϕ, a, b, c, f, t, grid, p, args, tridiagonal_direction)
+    @inbounds begin
+        β  = get_coefficient(i, j, 1, grid, b, p, tridiagonal_direction, args...)
+        f₁ = get_coefficient(i, j, 1, grid, f, p, tridiagonal_direction, args...)
+        ϕ[i, j, 1] = f₁ / β
+
+        for k = 2:Nz
+            cᵏ⁻¹ = get_coefficient(i, j, k-1, grid, c, p, tridiagonal_direction, args...)
+            bᵏ   = get_coefficient(i, j, k,   grid, b, p, tridiagonal_direction, args...)
+            aᵏ⁻¹ = get_coefficient(i, j, k-1, grid, a, p, tridiagonal_direction, args...)
+
+            t[i, j, k] = cᵏ⁻¹ / β
+            β = bᵏ - aᵏ⁻¹ * t[i, j, k]
+            fᵏ = get_coefficient(i, j, k, grid, f, p, tridiagonal_direction, args...)
+
+            # If the problem is not diagonally-dominant such that `β ≈ 0`,
+            # the algorithm is unstable and we elide the forward pass update of `ϕ`.
+            definitely_diagonally_dominant = abs(β) > 10 * eps(Float64)
+            ϕ★ = (fᵏ - aᵏ⁻¹ * ϕ[i, j, k-1]) / β
+            ϕ[i, j, k] = ifelse(definitely_diagonally_dominant, ϕ★, ϕ[i, j, k])
+        end
+
+        for k = Nz-1:-1:1
+            ϕ[i, j, k] -= t[i, j, k+1] * ϕ[i, j, k+1]
+        end
+    end
 end
 
 @kernel function bad_compute_CATKE_diffusivities!(diffusivities, grid, closure, velocities, tracers, buoyancy)
