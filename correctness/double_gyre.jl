@@ -296,7 +296,7 @@ end
 @inline function bad_κuᶜᶜᶠ(i, j, k, grid, closure, velocities, tracers, buoyancy, surface_buoyancy_flux)
     w★ = sqrt(tracers.e[i, j, k-1])
     Ri = 1 / (velocities.u[i+1, j, k] - velocities.u[i+1, j, k-1])
-    ℓu = scale(Ri, 0.37, 0.361, 0.242, 0.254, 1.02)
+    ℓu = 0.37 * (Ri < 0) + 0.361 - 0.119max(0, min(1, (Ri - 0.254) / 1.02)) * (Ri ≥ 0)
     κu = ℓu * w★
     return κu
 end
