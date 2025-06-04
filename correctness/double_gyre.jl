@@ -91,7 +91,7 @@ using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: get_top_tra
 using Oceananigans.BuoyancyFormulations: ∂z_b
 
 using Oceananigans.Solvers: solve!, solve_batched_tridiagonal_system_kernel!
-using Oceananigans.Operators: ℑxᶜᵃᵃ, ℑyᵃᶜᵃ, Az, volume, δxᶜᵃᵃ, δyᵃᶜᵃ, δzᵃᵃᶜ, V⁻¹ᶜᶜᶜ, σⁿ, σ⁻, ∂zᶠᶜᶠ, δxᶠᶜᶠ, Δx⁻¹ᶠᶜᶠ, ℑzᵃᵃᶠ
+using Oceananigans.Operators: ℑxᶜᵃᵃ, ℑyᵃᶜᵃ, Az, volume, δxᶜᵃᵃ, δyᵃᶜᵃ, δzᵃᵃᶜ, V⁻¹ᶜᶜᶜ, σⁿ, σ⁻, ∂zᶠᶜᶠ, δxᶠᶜᶠ, Δx⁻¹ᶠᶜᶠ, ℑzᵃᵃᶠ, δzᵃᵃᶠ, Δz⁻¹ᶠᶜᶠ
 using Oceananigans.Forcings: with_advective_forcing
 using Oceananigans.Advection: div_Uc, _advective_tracer_flux_x, _advective_tracer_flux_y, _advective_tracer_flux_z
 using KernelAbstractions: @kernel, @index
@@ -294,18 +294,11 @@ end
 end
 
 @inline function bad_κuᶜᶜᶠ(i, j, k, grid, closure, velocities, tracers, buoyancy, surface_buoyancy_flux)
-    FT = eltype(grid)
     w★ = sqrt(tracers.e[i, j, k-1])
-    ℓu = bad_stability_functionᶜᶜᶠ(i, j, k, grid, closure, 0.37, 0.361, 0.242, velocities, tracers, buoyancy)
+    Ri = 1 / (velocities.u[i+1, j, k] - velocities.u[i+1, j, k-1])
+    ℓu = scale(Ri, 0.37, 0.361, 0.242, 0.254, 1.02)
     κu = ℓu * w★
     return κu
-end
-
-@inline function bad_stability_functionᶜᶜᶠ(i, j, k, grid, closure, Cᵘⁿ, Cˡᵒ, Cʰⁱ, velocities, tracers, buoyancy)
-    Ri = 1 / shear_squaredᶜᶜᶠ(i, j, k, grid, velocities)
-    CRi⁰ = closure.mixing_length.CRi⁰
-    CRiᵟ = closure.mixing_length.CRiᵟ
-    return scale(Ri, Cᵘⁿ, Cˡᵒ, Cʰⁱ, CRi⁰, CRiᵟ)
 end
 
 @kernel function _bad_apply_z_bcs!(Gc, grid, top_bc)
