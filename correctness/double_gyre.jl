@@ -9,7 +9,7 @@ using GordonBell25
 using Enzyme
 
 using Oceananigans: initialize!, prognostic_fields, instantiated_location, boundary_conditions
-using Oceananigans.Grids: AbstractGrid, XDirection, YDirection, ZDirection, inactive_cell, get_active_column_map
+using Oceananigans.Grids: AbstractGrid, XDirection, YDirection, ZDirection, inactive_cell, get_active_column_map, peripheral_node
 using Oceananigans.TimeSteppers: update_state!, ab2_step!, tick!, calculate_pressure_correction!, correct_velocities_and_cache_previous_tendencies!, step_lagrangian_particles!, ab2_step_field!, implicit_step!, pressure_correct_velocities!, cache_previous_tendencies!
 using Oceananigans.Utils: @apply_regionally, launch!, configure_kernel, sum_of_velocities, KernelParameters, @constprop
 
@@ -72,7 +72,8 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces
 using Oceananigans.TurbulenceClosures: compute_diffusivities!, getclosure, clip, shear_production,
                                        dissipation, closure_turbulent_velocity, ∇_dot_qᶜ,
                                        immersed_∇_dot_qᶜ, Riᶜᶜᶠ, shear_squaredᶜᶜᶠ,
-                                       ivd_lower_diagonal, ivd_upper_diagonal, ivd_diagonal
+                                       ivd_lower_diagonal, ivd_upper_diagonal, ivd_diagonal,
+                                       rcp_vertical_spacing, ivd_diffusivity
 
 using Oceananigans.ImmersedBoundaries: get_active_cells_map, mask_immersed_field!
 
@@ -292,14 +293,14 @@ end
 
 @inline function solve_batched_tridiagonal_system_z!(i, j, Nz, ϕ, a, b, c, f, t, grid, p, args, tridiagonal_direction)
     @inbounds begin
-        β  = 1 - ivd_upper_diagonal(i, j, 1, grid, args...) - ivd_lower_diagonal(i, j, 1, grid, args...)
+        β  = 1 - bad_ivd_upper_diagonal(i, j, 1, grid, args...) - bad_ivd_lower_diagonal(i, j, 1, grid, args...)
         f₁ = f[i, j, 1]
         ϕ[i, j, 1] = f₁ / β
 
         for k = 2:Nz
-            cᵏ⁻¹ = ivd_upper_diagonal(i, j, k-1, grid, args...)
-            bᵏ   = 1 - ivd_upper_diagonal(i, j, k, grid, args...) - ivd_lower_diagonal(i, j, k, grid, args...)
-            aᵏ⁻¹ = ivd_lower_diagonal(i, j, k-1, grid, args...)
+            cᵏ⁻¹ = bad_ivd_upper_diagonal(i, j, k-1, grid, args...)
+            bᵏ   = 1 - bad_ivd_upper_diagonal(i, j, k, grid, args...) - bad_ivd_lower_diagonal(i, j, k, grid, args...)
+            aᵏ⁻¹ = bad_ivd_lower_diagonal(i, j, k-1, grid, args...)
 
             t[i, j, k] = cᵏ⁻¹ / β
             β = bᵏ - aᵏ⁻¹ * t[i, j, k]
@@ -316,6 +317,30 @@ end
             ϕ[i, j, k] -= t[i, j, k+1] * ϕ[i, j, k+1]
         end
     end
+end
+
+# Tracers and horizontal velocities at cell centers in z
+@inline function bad_ivd_upper_diagonal(i, j, k, grid, closure, K, id, ℓx, ℓy, ℓz, Δt, clock)
+    closure_ij = getclosure(i, j, closure)
+    κᵏ⁺¹     = ivd_diffusivity(i, j, k+1, grid, ℓx, ℓy, Face(), closure_ij, K, id, clock)
+    Δz⁻¹ᶜₖ   = rcp_vertical_spacing(i, j, k,   grid, ℓx, ℓy, Center())
+    Δz⁻¹ᶠₖ₊₁ = rcp_vertical_spacing(i, j, k+1, grid, ℓx, ℓy, Face())
+    du       = - Δt * κᵏ⁺¹ * (Δz⁻¹ᶜₖ * Δz⁻¹ᶠₖ₊₁)
+    # This conditional ensures the diagonal is correct
+    return du * !(peripheral_node(i, j, k+1, grid, Center(), Center(), Face()) | peripheral_node(i-1, j, k+1, grid, Center(), Center(), Face()))
+end
+
+@inline function bad_ivd_lower_diagonal(i, j, k′, grid, closure, K, id, ℓx, ℓy, ℓz, Δt, clock)
+    k = k′ + 1 # Shift index to match LinearAlgebra.Tridiagonal indexing convenction
+    closure_ij = getclosure(i, j, closure)
+    κᵏ     = ivd_diffusivity(i, j, k, grid, ℓx, ℓy, Face(), closure_ij, K, id, clock)
+    Δz⁻¹ᶜₖ = rcp_vertical_spacing(i, j, k, grid, ℓx, ℓy, Center())
+    Δz⁻¹ᶠₖ = rcp_vertical_spacing(i, j, k, grid, ℓx, ℓy, Face())
+    dl     = - Δt * κᵏ * (Δz⁻¹ᶜₖ * Δz⁻¹ᶠₖ)
+
+    # This conditional ensures the diagonal is correct. (Note we use LinearAlgebra.Tridiagonal
+    # indexing convention, so that lower_diagonal should be defined for k′ = 1 ⋯ N-1.)
+    return dl * !(inactive_cell(i, j, k′, grid) | inactive_cell(i-1, j, k′, grid))
 end
 
 @kernel function bad_compute_CATKE_diffusivities!(diffusivities, grid, closure, velocities, tracers, buoyancy)
