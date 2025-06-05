@@ -228,12 +228,6 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
         closure = model.closure
         diffusivity_fields = model.diffusivity_fields
         clock = model.clock
-
-        solver_args = (closure, diffusivity_fields, nothing, Face(), Center(), Center(), Δt, clock)
-
-        (closure, K, id, ℓx, ℓy, ar, Δt, clock) = solver_args
-        closure_ij = getclosure(1, 1, closure)
-        @show @which Oceananigans.TurbulenceClosures.ivd_diffusivity(1, 1, 1+1, grid, ℓx, ℓy, Oceananigans.TurbulenceClosures.f, closure_ij, K, id, clock)
         
         launch!(model.architecture, implicit_solver.grid, :xy,
             bad_solve_batched_tridiagonal_system_kernel!, field,
@@ -244,7 +238,7 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
             implicit_solver.t,
             implicit_solver.grid,
             implicit_solver.parameters,
-            solver_args,
+            diffusivity_fields,
             implicit_solver.tridiagonal_direction)
 
         grid        = model.grid
@@ -270,24 +264,22 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     return nothing
 end
 
-@kernel function bad_solve_batched_tridiagonal_system_kernel!(ϕ, a, b, c, f, t, grid, p, args, tridiagonal_direction)
+@kernel function bad_solve_batched_tridiagonal_system_kernel!(ϕ, a, b, c, f, t, grid, p, K, tridiagonal_direction)
     Nz = size(grid, 3)
     i, j = @index(Global, NTuple)
-    solve_batched_tridiagonal_system_z!(i, j, Nz, ϕ, a, b, c, f, t, grid, p, args, tridiagonal_direction)
+    solve_batched_tridiagonal_system_z!(i, j, Nz, ϕ, a, b, c, f, t, grid, p, K, tridiagonal_direction)
 end
 
-@inline function solve_batched_tridiagonal_system_z!(i, j, Nz, ϕ, a, b, c, f, t, grid, p, args, tridiagonal_direction)
+@inline function solve_batched_tridiagonal_system_z!(i, j, Nz, ϕ, a, b, c, f, t, grid, p, K, tridiagonal_direction)
     @inbounds begin
 
         for k = Nz-1:-1:1
 
             fᵏ = f[i,j]
-            # cᵏ = Oceananigans.TurbulenceClosures.ivd_upper_diagonal(i, j, k, grid, args...)
 
-            (closure, K, id, ℓx, ℓy, cen, Δt, clock) = args
-            closure_ij = getclosure(i, j, closure)
+            v = K.κu
 
-            cᵏ = Oceananigans.TurbulenceClosures.νzᶠᶜᶠ(i, j, k+1, grid, closure_ij, K, id, clock)
+            cᵏ = (v[i-1, j, k+1] + v[i,   j, k+1])
 
             ϕ[i, j, k] -= cᵏ * (ϕ[i, j, k+1] + fᵏ)
         end
