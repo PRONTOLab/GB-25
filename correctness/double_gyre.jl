@@ -12,6 +12,97 @@ using SeawaterPolynomials
 
 using Enzyme
 
+using Enzyme
+
+using Oceananigans: initialize!, prognostic_fields, instantiated_location, boundary_conditions
+using Oceananigans.Grids: AbstractGrid, XDirection, YDirection, ZDirection, inactive_cell, get_active_column_map
+using Oceananigans.TimeSteppers: update_state!, ab2_step!, tick!, calculate_pressure_correction!, correct_velocities_and_cache_previous_tendencies!, step_lagrangian_particles!, ab2_step_field!, implicit_step!, pressure_correct_velocities!, cache_previous_tendencies!
+using Oceananigans.Utils: @apply_regionally, launch!, configure_kernel, sum_of_velocities, KernelParameters, @constprop
+
+using Oceananigans.Models: update_model_field_time_series!, interior_tendency_kernel_parameters, complete_communication_and_compute_buffer!
+
+using Oceananigans.BoundaryConditions: update_boundary_condition!, 
+                                       replace_horizontal_vector_halos!, 
+                                       fill_halo_regions!, apply_x_bcs!,
+                                       apply_y_bcs!, apply_z_bcs!, _apply_z_bcs!, apply_z_bottom_bc!, apply_z_top_bc!, 
+                                       getbc, flip, update_boundary_conditions!, 
+                                       fill_open_boundary_regions!, 
+                                       permute_boundary_conditions, 
+                                       fill_halo_event!,
+                                       extract_west_bc, extract_east_bc, extract_south_bc, 
+                                       extract_north_bc, extract_bc, extract_bottom_bc, extract_top_bc,
+                                       fill_west_and_east_halo!, fill_south_and_north_halo!, fill_bottom_and_top_halo!, fill_first,
+                                       fill_halo_size, fill_halo_offset,
+                                       _fill_bottom_and_top_halo!, _fill_bottom_halo!, _fill_top_halo!,
+                                       _fill_flux_top_halo!
+
+using Oceananigans.Fields: tupled_fill_halo_regions!, location, immersed_boundary_condition, fill_reduced_field_halos!, default_indices, ReducedField, FullField
+using Oceananigans.Models.NonhydrostaticModels: compute_auxiliaries!, update_hydrostatic_pressure!
+using Oceananigans.Biogeochemistry: update_biogeochemical_state!, update_tendencies!, biogeochemical_drift_velocity, biogeochemical_transition, biogeochemical_auxiliary_fields
+
+using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fields!,
+                                                        compute_tendencies!,
+                                                        update_grid!,
+                                                        unscale_tracers!,
+                                                        compute_w_from_continuity!,
+                                                        w_kernel_parameters,
+                                                        p_kernel_parameters,
+                                                        step_free_surface!,
+                                                        compute_free_surface_tendency!,
+                                                        local_ab2_step!,
+                                                        ab2_step_velocities!,
+                                                        ab2_step_tracers!,
+                                                        compute_hydrostatic_boundary_tendency_contributions!,
+                                                        compute_hydrostatic_free_surface_tendency_contributions!,
+                                                        apply_flux_bcs!,
+                                                        compute_hydrostatic_momentum_tendencies!,
+                                                        compute_hydrostatic_free_surface_Gc!,
+                                                        hydrostatic_free_surface_tracer_tendency,
+                                                        barotropic_split_explicit_corrector!,
+                                                        _ab2_step_tracer_field!,
+                                                        hydrostatic_fields
+
+
+using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: _compute_barotropic_mode!,
+                                                        _barotropic_split_explicit_corrector!,
+                                                        calculate_substeps,
+                                                        calculate_adaptive_settings,
+                                                        iterate_split_explicit!,
+                                                        _update_split_explicit_state!,
+                                                        _split_explicit_free_surface!,
+                                                        _split_explicit_barotropic_velocity!,
+                                                        compute_split_explicit_forcing!,
+                                                        initialize_free_surface_state!,
+                                                        initialize_free_surface_timestepper!,
+                                                        _compute_integrated_ab2_tendencies!
+
+using Oceananigans.TurbulenceClosures: compute_diffusivities!, getclosure, clip, shear_production, dissipation, closure_turbulent_velocity, ∇_dot_qᶜ, immersed_∇_dot_qᶜ, Riᶜᶜᶠ, shear_squaredᶜᶜᶠ
+
+using Oceananigans.ImmersedBoundaries: get_active_cells_map, mask_immersed_field!
+
+using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: get_top_tracer_bcs,
+                                           update_previous_compute_time!,
+                                           time_step_catke_equation!,
+                                           compute_average_surface_buoyancy_flux!,
+                                           compute_CATKE_diffusivities!,
+                                           substep_turbulent_kinetic_energy!,
+                                           get_time_step,
+                                           κuᶜᶜᶠ, κcᶜᶜᶠ, κeᶜᶜᶠ,
+                                           mask_diffusivity,
+                                           explicit_buoyancy_flux,
+                                           dissipation_rate,
+                                           TKE_mixing_lengthᶜᶜᶠ,
+                                           turbulent_velocityᶜᶜᶜ,
+                                           convective_length_scaleᶜᶜᶠ, stability_functionᶜᶜᶠ, stable_length_scaleᶜᶜᶠ, static_column_depthᶜᶜᵃ, scale
+
+using Oceananigans.BuoyancyFormulations: ∂z_b
+using Oceananigans.Solvers: solve!, solve_batched_tridiagonal_system_kernel!
+using Oceananigans.Operators: ℑxᶜᵃᵃ, ℑyᵃᶜᵃ, Az, volume, δxᶜᵃᵃ, δyᵃᶜᵃ, δzᵃᵃᶜ, V⁻¹ᶜᶜᶜ, σⁿ, σ⁻, ∂zᶠᶜᶠ, δxᶠᶜᶠ, Δx⁻¹ᶠᶜᶠ
+using Oceananigans.Forcings: with_advective_forcing
+using Oceananigans.Advection: div_Uc, _advective_tracer_flux_x, _advective_tracer_flux_y, _advective_tracer_flux_z
+using KernelAbstractions: @kernel, @index
+using KernelAbstractions.Extras.LoopInfo: @unroll
+
 throw_error = true
 include_halos = true
 rtol = sqrt(eps(Float64))
@@ -62,23 +153,7 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     # TEOS10 is a 54-term polynomial that relates temperature (T) and salinity (S) to buoyancy
     buoyancy = SeawaterBuoyancy(equation_of_state = LinearEquationOfState(Oceananigans.defaults.FloatType))
 
-    # Closures:
-    # diffusivity scheme we need for GM/Redi.
-    # κ_symmetric is the parameter we need to train for (can be scalar or a spatial field),
-    # κ_skew is GM parameter (also scalar or spatial field),
-    # we might want to use the Isopycnal Tensor instead of small slope (small slope common),
-    # unsure of slope limiter and time disc.
-    redi_diffusivity = IsopycnalSkewSymmetricDiffusivity(VerticallyImplicitTimeDiscretization(), Float64;
-                                                        κ_skew = 0.0,
-                                                        κ_symmetric = 0.0)
-                                                        #isopycnal_tensor = IsopycnalTensor(),
-                                                        #slope_limiter = FluxTapering(1e-2))
-
-    horizontal_closure = HorizontalScalarDiffusivity(ν = 5000.0, κ = 1000.0)
-    #vertical_closure   = VerticalScalarDiffusivity(ν = 1e-2, κ = 1e-5) 
     vertical_closure   = Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity()
-    #vertical_closure = Oceananigans.TurbulenceClosures.TKEDissipationVerticalDiffusivity()
-    closure = (horizontal_closure, vertical_closure)
 
     # Coriolis forces for a rotating Earth
     coriolis = HydrostaticSphericalCoriolis()
@@ -103,12 +178,12 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
 
     model = HydrostaticFreeSurfaceModel(; grid,
                                           free_surface = free_surface,
-                                          closure = closure,
+                                          closure = vertical_closure,
                                           buoyancy = buoyancy,
                                           tracers = tracers,
                                           coriolis = coriolis,
-                                          momentum_advection = momentum_advection,
-                                          tracer_advection = tracer_advection,
+                                          momentum_advection = nothing, #momentum_advection,
+                                          tracer_advection = nothing, #tracer_advection,
                                           boundary_conditions = boundary_conditions)
 
     set!(model.tracers.e, 1e-6)
@@ -131,27 +206,6 @@ function wind_stress_init(grid;
     return wind_stress
 end
 
-function first_time_step!(model)
-    Δt = model.clock.last_Δt
-    Oceananigans.TimeSteppers.first_time_step!(model, Δt)
-    return nothing
-end
-
-function time_step!(model)
-    Δt = model.clock.last_Δt + 0
-    Oceananigans.TimeSteppers.time_step!(model, Δt)
-    return nothing
-end
-
-function loop!(model, Ninner)
-    Δt = model.clock.last_Δt + 0
-    Oceananigans.TimeSteppers.first_time_step!(model, Δt)
-    @trace track_numbers=false for _ = 1:(Ninner-1)
-        Oceananigans.TimeSteppers.time_step!(model, Δt)
-    end
-    return nothing
-end
-
 function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
 
     set!(model.tracers.T, Tᵢ)
@@ -164,7 +218,50 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     model.clock.last_Δt = 1200
 
     # Step it forward
-    loop!(model, 10)
+    Δt = model.clock.last_Δt + 0
+    @trace track_numbers=false for _ = 1:5
+        bad_time_step!(model, Δt)
+    end
+
+    return nothing
+end
+
+function bad_time_step!(model, Δt;
+                    callbacks=[], euler=false)
+
+    # Full step for tracers, fractional step for velocities.
+    ab2_step!(model, Δt)
+
+    correct_velocities_and_cache_previous_tendencies!(model, Δt)
+
+    bad_update_state!(model, model.grid, callbacks; compute_tendencies=true)
+
+    return nothing
+end
+
+function bad_update_state!(model, grid, callbacks; compute_tendencies = true)
+
+    @apply_regionally mask_immersed_model_fields!(model, grid)
+
+    # Update possible FieldTimeSeries used in the model
+    @apply_regionally update_model_field_time_series!(model, model.clock)
+
+    # Update the boundary conditions
+    @apply_regionally update_boundary_conditions!(fields(model), model)
+
+    tupled_fill_halo_regions!(prognostic_fields(model), grid, model.clock, fields(model), async=true)
+
+    @apply_regionally replace_horizontal_vector_halos!(model.velocities, model.grid)
+    @apply_regionally compute_auxiliaries!(model)
+
+    fill_halo_regions!(model.diffusivity_fields; only_local_halos = true)
+
+    [callback(model) for callback in callbacks if callback.callsite isa UpdateStateCallsite]
+
+    update_biogeochemical_state!(model.biogeochemistry, model)
+
+    compute_tendencies &&
+        @apply_regionally compute_tendencies!(model, callbacks)
 
     return nothing
 end
