@@ -1,5 +1,5 @@
 using Oceananigans
-using Oceananigans.Architectures: ReactantState
+using Oceananigans.Architectures: ReactantState, architecture, AbstractArchitecture, convert_to_device
 using ClimaOcean
 using Reactant
 using GordonBell25
@@ -241,27 +241,48 @@ end
 
 function bad_update_state!(model, grid, callbacks; compute_tendencies = true)
 
-    @apply_regionally mask_immersed_model_fields!(model, grid)
-
-    # Update possible FieldTimeSeries used in the model
-    @apply_regionally update_model_field_time_series!(model, model.clock)
-
     # Update the boundary conditions
     @apply_regionally update_boundary_conditions!(fields(model), model)
 
     tupled_fill_halo_regions!(prognostic_fields(model), grid, model.clock, fields(model), async=true)
+    
+    compute_auxiliaries!(model)
 
-    @apply_regionally replace_horizontal_vector_halos!(model.velocities, model.grid)
-    @apply_regionally compute_auxiliaries!(model)
+    bad_compute_tendencies!(model, callbacks)
 
-    fill_halo_regions!(model.diffusivity_fields; only_local_halos = true)
+    return nothing
+end
 
-    [callback(model) for callback in callbacks if callback.callsite isa UpdateStateCallsite]
+function bad_compute_tendencies!(model, callbacks)
 
-    update_biogeochemical_state!(model.biogeochemistry, model)
+    grid = model.grid
+    arch = architecture(grid)
 
-    compute_tendencies &&
-        @apply_regionally compute_tendencies!(model, callbacks)
+    # Calculate contributions to momentum and tracer tendencies from fluxes and volume terms in the
+    # interior of the domain. The active cells map restricts the computation to the active cells in the
+    # interior if the grid is _immersed_ and the `active_cells_map` kwarg is active
+    active_cells_map = get_active_cells_map(model.grid, Val(:interior))
+    kernel_parameters = interior_tendency_kernel_parameters(arch, grid)
+
+    compute_hydrostatic_free_surface_tendency_contributions!(model, kernel_parameters; active_cells_map)
+    complete_communication_and_compute_buffer!(model, grid, arch)
+
+    # Calculate contributions to momentum and tracer tendencies from user-prescribed fluxes across the
+    # boundaries of the domain
+    compute_hydrostatic_boundary_tendency_contributions!(model.timestepper.Gⁿ,
+                                                         model.architecture,
+                                                         model.velocities,
+                                                         model.tracers,
+                                                         model.clock,
+                                                         fields(model),
+                                                         model.closure,
+                                                         model.buoyancy)
+
+    for callback in callbacks
+        callback.callsite isa TendencyCallsite && callback(model)
+    end
+
+    update_tendencies!(model.biogeochemistry, model)
 
     return nothing
 end
@@ -278,7 +299,7 @@ function estimate_tracer_error(model, initial_temperature, initial_salinity, win
     end
     mean_sq_surface_u = mean_sq_surface_u / (Nλ * Nφ)
     
-    return mean_sq_surface_u
+    return mean_sq_surface_u * 1e11
 end
 
 function differentiate_tracer_error(model, Tᵢ, Sᵢ, J, dmodel, dTᵢ, dSᵢ, dJ)
