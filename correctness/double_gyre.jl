@@ -6,6 +6,8 @@ using GordonBell25
 #Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
 #Reactant.allowscalar(true)
 
+using InteractiveUtils
+
 using Enzyme
 
 using Oceananigans: initialize!, prognostic_fields, instantiated_location, boundary_conditions
@@ -198,7 +200,7 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
 
     set!(model.tracers.T, Tᵢ)
     set!(model.tracers.S, Sᵢ)
-    set!(model.velocities.u.boundary_conditions.top.condition, wind_stress)
+    # set!(model.velocities.u.boundary_conditions.top.condition, wind_stress)
 
     # Initialize the model
     model.clock.iteration = 0
@@ -210,13 +212,15 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     @trace track_numbers=false for _ = 1:2
         # Full step for tracers, fractional step for velocities.
         velocities = model.velocities
+        grid = model.grid
+
         χ = model.timestepper.χ
 
         Gⁿ = model.timestepper.Gⁿ.u
         G⁻ = model.timestepper.G⁻.u
         velocity_field = model.velocities.u
 
-        launch!(model.architecture, model.grid, :xyz,
+        launch!(model.architecture, grid, :xyz,
                 ab2_step_field!, velocity_field, Δt, χ, Gⁿ, G⁻)
 
         field = velocity_field
@@ -227,7 +231,7 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
 
         solver_args = (closure, diffusivity_fields, nothing, Face(), Center(), Center(), Δt, clock)
 
-        launch!(architecture(implicit_solver), implicit_solver.grid, :xy,
+        launch!(model.architecture, implicit_solver.grid, :xy,
             bad_solve_batched_tridiagonal_system_kernel!, field,
             implicit_solver.a,
             implicit_solver.b,
@@ -240,20 +244,8 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
             implicit_solver.tridiagonal_direction)
 
         grid        = model.grid
-        prog_fields = prognostic_fields(model)
 
-        not_reduced_fields = Field[]
-        for f in prog_fields
-            bcs = boundary_conditions(f)
-            if !isnothing(bcs) && (!(f isa ReducedField) && f isa FullField)
-                push!(not_reduced_fields, f)
-            end
-        end
-
-        not_reduced_fields = tuple(not_reduced_fields...)
-
-        c = (not_reduced_fields[1].data, )
-        loc = map(instantiated_location, not_reduced_fields)
+        c = velocities.u.data
 
         arch = architecture(grid)
 
@@ -262,19 +254,12 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
 
         arch = model.architecture
         grid = model.grid
-        velocities = model.velocities
-        tracers = model.tracers
-        buoyancy = model.buoyancy
 
         launch!(arch, grid, :xyz,
                 bad_compute_CATKE_diffusivities!,
-                model.diffusivity_fields, grid, model.closure, velocities, tracers, buoyancy)
+                model.diffusivity_fields, grid, model.velocities.u, model.tracers.e)
 
-        Gⁿ = model.timestepper.Gⁿ
-        arch = model.architecture
-        velocities = model.velocities
-
-        launch!(arch, Gⁿ.u.grid, :xy, _bad_apply_z_bcs!, Gⁿ.u, Gⁿ.u.grid, velocities.u.boundary_conditions.top)
+        launch!(arch, grid, :xy, _bad_apply_z_bcs!, Gⁿ, wind_stress, grid.Nz)
 
     end
 
@@ -291,22 +276,16 @@ end
     @inbounds begin
         β  = get_coefficient(i, j, 1, grid, b, p, tridiagonal_direction, args...)
         f₁ = get_coefficient(i, j, 1, grid, f, p, tridiagonal_direction, args...)
-        ϕ[i, j, 1] = f₁ / β
+        # ϕ[i, j, 1] = f₁ / β
 
         for k = 2:Nz
             cᵏ⁻¹ = get_coefficient(i, j, k-1, grid, c, p, tridiagonal_direction, args...)
-            bᵏ   = get_coefficient(i, j, k,   grid, b, p, tridiagonal_direction, args...)
-            aᵏ⁻¹ = get_coefficient(i, j, k-1, grid, a, p, tridiagonal_direction, args...)
 
-            t[i, j, k] = cᵏ⁻¹ / β
-            β = bᵏ - aᵏ⁻¹ * t[i, j, k]
+            t[i, j, k] = cᵏ⁻¹
             fᵏ = get_coefficient(i, j, k, grid, f, p, tridiagonal_direction, args...)
 
-            # If the problem is not diagonally-dominant such that `β ≈ 0`,
-            # the algorithm is unstable and we elide the forward pass update of `ϕ`.
-            definitely_diagonally_dominant = abs(β) > 10 * eps(Float64)
-            ϕ★ = (fᵏ - aᵏ⁻¹ * ϕ[i, j, k-1]) / β
-            ϕ[i, j, k] = ifelse(definitely_diagonally_dominant, ϕ★, ϕ[i, j, k])
+            ϕ★ = (fᵏ + ϕ[i, j, k-1])
+            ϕ[i, j, k] = ϕ★
         end
 
         for k = Nz-1:-1:1
@@ -315,33 +294,23 @@ end
     end
 end
 
-@kernel function bad_compute_CATKE_diffusivities!(diffusivities, grid, closure, velocities, tracers, buoyancy)
+@kernel function bad_compute_CATKE_diffusivities!(diffusivities, grid, u, e)
     i, j, k = @index(Global, NTuple)
 
-    # Ensure this works with "ensembles" of closures, in addition to ordinary single closures
-    closure_ij = getclosure(i, j, closure)
-    Jᵇ = diffusivities.Jᵇ
-
-    @inbounds diffusivities.κu[i, j, k] = bad_κuᶜᶜᶠ(i, j, k, grid, closure_ij, velocities, tracers, buoyancy, Jᵇ)
+    w★ = sqrt(e[i, j, k-1])
+    Ri = 1 / (u[i+1, j, k] - u[i+1, j, k-1])
+    ℓu =  0.119max(0, min(1, Ri)) * (Ri ≥ 0)
+    diffusivities.κu[i, j, k] = ℓu * w★
 end
 
-@inline function bad_κuᶜᶜᶠ(i, j, k, grid, closure, velocities, tracers, buoyancy, surface_buoyancy_flux)
-    w★ = sqrt(tracers.e[i, j, k-1])
-    Ri = 1 / (velocities.u[i+1, j, k] - velocities.u[i+1, j, k-1])
-    ℓu = 0.37 * (Ri < 0) + 0.361 - 0.119max(0, min(1, (Ri - 0.254) / 1.02)) * (Ri ≥ 0)
-    κu = ℓu * w★
-    return κu
-end
-
-@kernel function _bad_apply_z_bcs!(Gc, grid, top_bc)
+@kernel function _bad_apply_z_bcs!(Gc, wind_stress, Nz)
     i, j = @index(Global, NTuple)
-    @inbounds Gc[i, j, grid.Nz] -= top_bc.condition[i, j, 1]
-    
+    @inbounds Gc[i, j, Nz] -= wind_stress[i, j, 1]
 end
 
 @kernel function _bad_fill_bottom_and_top_halo!(c, grid)
     i, j = @index(Global, NTuple)
-    @inbounds c[1][i, j, grid.Nz+1] = c[1][i, j, grid.Nz]
+    @inbounds c[i, j, grid.Nz+1] = c[i, j, grid.Nz]
 end
 
 
@@ -352,12 +321,10 @@ function estimate_tracer_error(model, initial_temperature, initial_salinity, win
     
     mean_sq_surface_u = 0.0
     
-    for j = 1:Nφ, i = 1:Nλ
+    for j = 8:10, i = 1:10
         @allowscalar mean_sq_surface_u += @inbounds model.velocities.u[i, j, 1]^2
     end
-    mean_sq_surface_u = mean_sq_surface_u / (Nλ * Nφ)
-    
-    return mean_sq_surface_u * 1e120
+    return mean_sq_surface_u * 1e108
 end
 
 function differentiate_tracer_error(model, Tᵢ, Sᵢ, J, dmodel, dTᵢ, dSᵢ, dJ)
