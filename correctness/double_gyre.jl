@@ -242,7 +242,7 @@ end
 function bad_update_state!(model, grid, callbacks; compute_tendencies = true)
 
     # Update the boundary conditions
-    @apply_regionally update_boundary_conditions!(fields(model), model)
+    update_boundary_conditions!(fields(model), model)
 
     tupled_fill_halo_regions!(prognostic_fields(model), grid, model.clock, fields(model), async=true)
     
@@ -255,21 +255,11 @@ end
 
 function bad_compute_tendencies!(model, callbacks)
 
-    grid = model.grid
-    arch = architecture(grid)
-
-    # Calculate contributions to momentum and tracer tendencies from fluxes and volume terms in the
-    # interior of the domain. The active cells map restricts the computation to the active cells in the
-    # interior if the grid is _immersed_ and the `active_cells_map` kwarg is active
-    active_cells_map = get_active_cells_map(model.grid, Val(:interior))
-    kernel_parameters = interior_tendency_kernel_parameters(arch, grid)
-
-    compute_hydrostatic_free_surface_tendency_contributions!(model, kernel_parameters; active_cells_map)
-    complete_communication_and_compute_buffer!(model, grid, arch)
+    compute_hydrostatic_free_surface_tendency_contributions!(model, :xyz; active_cells_map=nothing)
 
     # Calculate contributions to momentum and tracer tendencies from user-prescribed fluxes across the
     # boundaries of the domain
-    compute_hydrostatic_boundary_tendency_contributions!(model.timestepper.Gⁿ,
+    bad_compute_hydrostatic_boundary_tendency_contributions!(model.timestepper.Gⁿ,
                                                          model.architecture,
                                                          model.velocities,
                                                          model.tracers,
@@ -278,13 +268,15 @@ function bad_compute_tendencies!(model, callbacks)
                                                          model.closure,
                                                          model.buoyancy)
 
-    for callback in callbacks
-        callback.callsite isa TendencyCallsite && callback(model)
-    end
-
-    update_tendencies!(model.biogeochemistry, model)
-
     return nothing
+end
+
+""" Apply boundary conditions by adding flux divergences to the right-hand-side. """
+function bad_compute_hydrostatic_boundary_tendency_contributions!(Gⁿ, arch, velocities, tracers, args...)
+
+    args = Tuple(args)
+    #apply_z_bcs!(Gⁿ.u, velocities.u, arch, args...)
+    apply_z_bcs!(Gⁿ.u, Gⁿ.u.grid, velocities.u, velocities.u.boundary_conditions.bottom, velocities.u.boundary_conditions.top, arch, args...)
 end
 
 function estimate_tracer_error(model, initial_temperature, initial_salinity, wind_stress)
