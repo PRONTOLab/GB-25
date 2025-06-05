@@ -231,6 +231,10 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
 
         solver_args = (closure, diffusivity_fields, nothing, Face(), Center(), Center(), Δt, clock)
 
+        (closure, K, id, ℓx, ℓy, ar, Δt, clock) = solver_args
+        closure_ij = getclosure(1, 1, closure)
+        @show @which Oceananigans.TurbulenceClosures.ivd_diffusivity(1, 1, 1+1, grid, ℓx, ℓy, Oceananigans.TurbulenceClosures.f, closure_ij, K, id, clock)
+        
         launch!(model.architecture, implicit_solver.grid, :xy,
             bad_solve_batched_tridiagonal_system_kernel!, field,
             implicit_solver.a,
@@ -274,22 +278,18 @@ end
 
 @inline function solve_batched_tridiagonal_system_z!(i, j, Nz, ϕ, a, b, c, f, t, grid, p, args, tridiagonal_direction)
     @inbounds begin
-        β  = get_coefficient(i, j, 1, grid, b, p, tridiagonal_direction, args...)
-        f₁ = get_coefficient(i, j, 1, grid, f, p, tridiagonal_direction, args...)
-        # ϕ[i, j, 1] = f₁ / β
-
-        for k = 2:Nz
-            cᵏ⁻¹ = get_coefficient(i, j, k-1, grid, c, p, tridiagonal_direction, args...)
-
-            t[i, j, k] = cᵏ⁻¹
-            fᵏ = get_coefficient(i, j, k, grid, f, p, tridiagonal_direction, args...)
-
-            ϕ★ = (fᵏ + ϕ[i, j, k-1])
-            ϕ[i, j, k] = ϕ★
-        end
 
         for k = Nz-1:-1:1
-            ϕ[i, j, k] -= t[i, j, k+1] * ϕ[i, j, k+1]
+
+            fᵏ = f[i,j]
+            # cᵏ = Oceananigans.TurbulenceClosures.ivd_upper_diagonal(i, j, k, grid, args...)
+
+            (closure, K, id, ℓx, ℓy, cen, Δt, clock) = args
+            closure_ij = getclosure(i, j, closure)
+
+            cᵏ = Oceananigans.TurbulenceClosures.νzᶠᶜᶠ(i, j, k+1, grid, closure_ij, K, id, clock)
+
+            ϕ[i, j, k] -= cᵏ * (ϕ[i, j, k+1] + fᵏ)
         end
     end
 end
