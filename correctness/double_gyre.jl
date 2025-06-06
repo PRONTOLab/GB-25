@@ -245,46 +245,13 @@ function bad_update_state!(model, grid, callbacks; compute_tendencies = true)
 
     # Update the boundary conditions
     update_boundary_conditions!(fields(model), model)
-
-    tupled_fill_halo_regions!(prognostic_fields(model), grid, model.clock, fields(model), async=true)
     
-    bad_compute_diffusivities!(model.diffusivity_fields, model.closure, model; parameters = :xyz)
-
-    bad_compute_tendencies!(model, callbacks)
-
-    return nothing
-end
-
-function bad_compute_diffusivities!(diffusivities, closure, model; parameters = :xyz)
-    arch = model.architecture
-    grid = model.grid
-    velocities = model.velocities
-    tracers = model.tracers
-    buoyancy = model.buoyancy
-    clock = model.clock
-    top_tracer_bcs = get_top_tracer_bcs(model.buoyancy.formulation, tracers)
-    Δt = update_previous_compute_time!(diffusivities, model)
-
-    if isfinite(model.clock.last_Δt) # Check that we have taken a valid time-step first.
-        # Compute e at the current time:
-        #   * update tendency Gⁿ using current and previous velocity field
-        #   * use tridiagonal solve to take an implicit step
-        time_step_catke_equation!(model)
-    end
-
-    # Update "previous velocities"
     u, v, w = model.velocities
-    u⁻, v⁻ = diffusivities.previous_velocities
+    u⁻, v⁻ = model.diffusivity_fields.previous_velocities
     parent(u⁻) .= parent(u)
     parent(v⁻) .= parent(v)
 
-    launch!(arch, grid, :xy,
-            compute_average_surface_buoyancy_flux!,
-            diffusivities.Jᵇ, grid, closure, velocities, tracers, buoyancy, top_tracer_bcs, clock, Δt)
-
-    launch!(arch, grid, parameters,
-            compute_CATKE_diffusivities!,
-            diffusivities, grid, closure, velocities, tracers, buoyancy)
+    bad_compute_tendencies!(model, callbacks)
 
     return nothing
 end
