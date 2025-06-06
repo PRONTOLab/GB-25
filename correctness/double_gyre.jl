@@ -251,10 +251,9 @@ function bad_barotropic_split_explicit_corrector!(u, v, free_surface, grid)
     U̅, V̅  = state.U, state.V
     arch  = architecture(grid)
 
-    # NOTE: the filtered `U̅` and `V̅` have been copied in the instantaneous `U` and `V`,
-    # so we use the filtered velocities as "work arrays" to store the vertical integrals
-    # of the instantaneous velocities `u` and `v`.
-    compute_barotropic_mode!(U̅, V̅, grid, u, v)
+    launch!(architecture(grid), grid, :xy,
+            _compute_barotropic_mode!,
+            U̅, V̅, grid, u, v)
 
     # add in "good" barotropic mode
     launch!(arch, grid, :xyz, _barotropic_split_explicit_corrector!,
