@@ -62,7 +62,8 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fiel
                                                         _ab2_step_tracer_field!,
                                                         hydrostatic_fields,
                                                         compute_hydrostatic_free_surface_Gu!,
-                                                        compute_hydrostatic_free_surface_Gv!
+                                                        compute_hydrostatic_free_surface_Gv!,
+                                                        ab2_step_grid!, ab2_step_velocities!, ab2_step_tracers!
 
 
 using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: _compute_barotropic_mode!,
@@ -233,7 +234,7 @@ function bad_time_step!(model, Δt;
                     callbacks=[], euler=false)
 
     # Full step for tracers, fractional step for velocities.
-    ab2_step!(model, Δt)
+    bad_ab2_step!(model, Δt)
 
     u, v, _ = model.velocities
     grid = model.grid
@@ -257,6 +258,27 @@ function bad_time_step!(model, Δt;
     parent(v⁻) .= parent(v)
 
     bad_compute_tendencies!(model, callbacks)
+
+    return nothing
+end
+
+function bad_ab2_step!(model, Δt)
+
+    grid = model.grid
+    compute_free_surface_tendency!(grid, model, model.free_surface)
+
+    FT = eltype(grid)
+    χ  = convert(FT, model.timestepper.χ)
+    Δt = convert(FT, Δt)
+
+    # Step locally velocity and tracers
+    @apply_regionally begin
+        ab2_step_grid!(model.grid, model, model.vertical_coordinate, Δt, χ)
+        ab2_step_velocities!(model.velocities, model, Δt, χ)
+        ab2_step_tracers!(model.tracers, model, Δt, χ)
+    end
+
+    step_free_surface!(model.free_surface, model, model.timestepper, Δt)
 
     return nothing
 end
