@@ -215,17 +215,11 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
 
     χ = model.timestepper.χ
 
-    Gⁿ = model.timestepper.Gⁿ.u
     velocity_field = model.velocities.u
 
     κu = model.diffusivity_fields.κu
 
     @trace track_numbers=false for _ = 1:2
-
-        #launch!(model.architecture, grid, :xyz,
-        #        bad_ab2_step_field!, velocity_field, Gⁿ)
-
-        parent(velocity_field) .+= parent(Gⁿ)
 
         launch!(model.architecture, grid, :xy,
             bad_solve_batched_tridiagonal_system_kernel!, grid.Nz, velocity_field,
@@ -237,9 +231,7 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
                 bad_compute_CATKE_diffusivities!,
                 κu, grid, velocity_field, model.tracers.e)
 
-        # launch!(arch, grid, :xy, _bad_apply_z_bcs!, Gⁿ, wind_stress, grid.Nz)
-
-        parent(Gⁿ.data)[:, :, grid.Nz - axes(Gⁿ.data)[3].offset] = parent(wind_stress.data)[:, :, 1]
+        parent(velocity_field.data)[:, :, grid.Nz - axes(velocity_field.data)[3].offset] .+= parent(wind_stress.data)[:, :, 1]
 
     end
 
@@ -260,9 +252,21 @@ end
 @kernel function bad_compute_CATKE_diffusivities!(κu, grid, u, e)
     i, j, k = @index(Global, NTuple)
 
+    #if k != 1
+    # if (i >= 1 && j >= 1 && (k-1) >= 1 && i <= size(grid, 1) && j <= size(grid, 2) && (k-1) <= size(grid, 3))
+    #    w★ = sqrt(1.0e-6 ) # e[i, j, k-1])
+    #    Ri = 1 / (u[i+1, j, k] - u[i+1, j, k-1])
+    #    ℓu =  0.119max(0, min(1, Ri)) * (Ri ≥ 0)
+    #    κu[i, j, k] = ℓu * w★
+    #else
+    #    κu[i, j, k] = 0.0
+    #end
+
+    # w★ = sqrt( (i >= 1 && j >= 1 && (k-1) >= 1 && i <= size(grid, 1) && j <= size(grid, 2) && (k-1) <= size(grid, 3)) * 1.0e-6 ) # e[i, j, k-1])
+
     w★ = sqrt(e[i, j, k-1])
     Ri = 1 / (u[i+1, j, k] - u[i+1, j, k-1])
-    ℓu =  0.119max(0, min(1, Ri)) * (Ri ≥ 0)
+    ℓu =  0.119max(0, min(1, Ri))
     κu[i, j, k] = ℓu * w★
 end
 
