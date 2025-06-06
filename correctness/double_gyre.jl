@@ -16,7 +16,7 @@ using Enzyme
 
 using Oceananigans: initialize!, prognostic_fields, instantiated_location, boundary_conditions
 using Oceananigans.Grids: AbstractGrid, XDirection, YDirection, ZDirection, inactive_cell, get_active_column_map
-using Oceananigans.TimeSteppers: update_state!, ab2_step!, tick!, calculate_pressure_correction!, correct_velocities_and_cache_previous_tendencies!, step_lagrangian_particles!, ab2_step_field!, implicit_step!, pressure_correct_velocities!, cache_previous_tendencies!
+using Oceananigans.TimeSteppers: update_state!, ab2_step!, tick!, calculate_pressure_correction!, correct_velocities_and_cache_previous_tendencies!, step_lagrangian_particles!, ab2_step_field!, implicit_step!, pressure_correct_velocities!, cache_previous_tendencies!, make_pressure_correction!
 using Oceananigans.Utils: @apply_regionally, launch!, configure_kernel, sum_of_velocities, KernelParameters, @constprop
 
 using Oceananigans.Models: update_model_field_time_series!, interior_tendency_kernel_parameters, complete_communication_and_compute_buffer!
@@ -76,7 +76,8 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces
                                                         compute_split_explicit_forcing!,
                                                         initialize_free_surface_state!,
                                                         initialize_free_surface_timestepper!,
-                                                        _compute_integrated_ab2_tendencies!
+                                                        _compute_integrated_ab2_tendencies!,
+                                                        compute_barotropic_mode!
 
 using Oceananigans.TurbulenceClosures: compute_diffusivities!, getclosure, clip, shear_production, dissipation, closure_turbulent_velocity, ∇_dot_qᶜ, immersed_∇_dot_qᶜ, Riᶜᶜᶠ, shear_squaredᶜᶜᶠ
 
@@ -234,9 +235,30 @@ function bad_time_step!(model, Δt;
     # Full step for tracers, fractional step for velocities.
     ab2_step!(model, Δt)
 
-    correct_velocities_and_cache_previous_tendencies!(model, Δt)
+    u, v, _ = model.velocities
+    grid = model.grid
+    bad_barotropic_split_explicit_corrector!(u, v, model.free_surface, grid)
 
     bad_update_state!(model, model.grid, callbacks; compute_tendencies=true)
+
+    return nothing
+end
+
+function bad_barotropic_split_explicit_corrector!(u, v, free_surface, grid)
+    state = free_surface.filtered_state
+    η     = free_surface.η
+    U, V  = free_surface.barotropic_velocities
+    U̅, V̅  = state.U, state.V
+    arch  = architecture(grid)
+
+    # NOTE: the filtered `U̅` and `V̅` have been copied in the instantaneous `U` and `V`,
+    # so we use the filtered velocities as "work arrays" to store the vertical integrals
+    # of the instantaneous velocities `u` and `v`.
+    compute_barotropic_mode!(U̅, V̅, grid, u, v)
+
+    # add in "good" barotropic mode
+    launch!(arch, grid, :xyz, _barotropic_split_explicit_corrector!,
+            u, v, U, V, U̅, V̅, grid)
 
     return nothing
 end
