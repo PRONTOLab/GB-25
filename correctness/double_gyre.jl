@@ -248,44 +248,42 @@ function bad_update_state!(model, grid, callbacks; compute_tendencies = true)
 
     tupled_fill_halo_regions!(prognostic_fields(model), grid, model.clock, fields(model), async=true)
     
-    compute_auxiliaries!(model)
+    bad_compute_auxiliaries!(model)
 
     bad_compute_tendencies!(model, callbacks)
 
     return nothing
 end
 
+function bad_compute_auxiliaries!(model; w_parameters = w_kernel_parameters(model.grid),
+                                         p_parameters = p_kernel_parameters(model.grid),
+                                         κ_parameters = :xyz)
+
+    grid        = model.grid
+    closure     = model.closure
+    tracers     = model.tracers
+    diffusivity = model.diffusivity_fields
+    buoyancy    = model.buoyancy
+
+    P    = model.pressure.pHY′
+    arch = architecture(grid)
+
+    # Advance diagnostic quantities
+    compute_w_from_continuity!(model; parameters = w_parameters)
+    update_hydrostatic_pressure!(P, arch, grid, buoyancy, tracers; parameters = p_parameters)
+
+    # Update closure diffusivities
+    compute_diffusivities!(diffusivity, closure, model; parameters = κ_parameters)
+
+    return nothing
+end
+
 function bad_compute_tendencies!(model, callbacks)
-
-    bad_compute_hydrostatic_free_surface_tendency_contributions!(model, :xyz; active_cells_map=nothing)
-
-    # Calculate contributions to momentum and tracer tendencies from user-prescribed fluxes across the
-    # boundaries of the domain
-    bad_compute_hydrostatic_boundary_tendency_contributions!(model.timestepper.Gⁿ,
-                                                         model.architecture,
-                                                         model.velocities,
-                                                         model.tracers,
-                                                         model.clock,
-                                                         fields(model),
-                                                         model.closure,
-                                                         model.buoyancy)
-
-    return nothing
-end
-
-function bad_compute_hydrostatic_free_surface_tendency_contributions!(model, kernel_parameters; active_cells_map=nothing)
-
-    bad_compute_hydrostatic_momentum_tendencies!(model, model.velocities, kernel_parameters; active_cells_map=nothing)
-    return nothing
-end
-
-function bad_compute_hydrostatic_momentum_tendencies!(model, velocities, kernel_parameters; active_cells_map=nothing)
-
     grid = model.grid
     arch = architecture(grid)
 
-    u_immersed_bc = immersed_boundary_condition(velocities.u)
-    v_immersed_bc = immersed_boundary_condition(velocities.v)
+    u_immersed_bc = immersed_boundary_condition(model.velocities.u)
+    v_immersed_bc = immersed_boundary_condition(model.velocities.v)
 
     u_forcing = model.forcing.u
     v_forcing = model.forcing.v
@@ -294,7 +292,7 @@ function bad_compute_hydrostatic_momentum_tendencies!(model, velocities, kernel_
                                   model.coriolis,
                                   model.closure)
 
-    end_momentum_kernel_args = (velocities,
+    end_momentum_kernel_args = (model.velocities,
                                 model.free_surface,
                                 model.tracers,
                                 model.buoyancy,
@@ -307,21 +305,23 @@ function bad_compute_hydrostatic_momentum_tendencies!(model, velocities, kernel_
     u_kernel_args = tuple(start_momentum_kernel_args..., u_immersed_bc, end_momentum_kernel_args..., u_forcing)
     v_kernel_args = tuple(start_momentum_kernel_args..., v_immersed_bc, end_momentum_kernel_args..., v_forcing)
 
-    launch!(arch, grid, kernel_parameters,
+    launch!(arch, grid, :xyz,
             compute_hydrostatic_free_surface_Gu!, model.timestepper.Gⁿ.u, grid, 
-            u_kernel_args; active_cells_map)
+            u_kernel_args; active_cells_map=nothing)
 
-    launch!(arch, grid, kernel_parameters,
+    launch!(arch, grid, :xyz,
             compute_hydrostatic_free_surface_Gv!, model.timestepper.Gⁿ.v, grid, 
-            v_kernel_args; active_cells_map)
+            v_kernel_args; active_cells_map=nothing)
+
+    # Calculate contributions to momentum and tracer tendencies from user-prescribed fluxes across the
+    # boundaries of the domain
+    args = (model.clock, fields(model), model.closure, model.buoyancy)
+
+    launch!(model.architecture, model.timestepper.Gⁿ.u.grid, :xy, _apply_z_bcs!, model.timestepper.Gⁿ.u,
+            instantiated_location(model.timestepper.Gⁿ.u), model.timestepper.Gⁿ.u.grid,
+            model.velocities.u.boundary_conditions.bottom, model.velocities.u.boundary_conditions.top, args)
 
     return nothing
-end
-
-""" Apply boundary conditions by adding flux divergences to the right-hand-side. """
-function bad_compute_hydrostatic_boundary_tendency_contributions!(Gⁿ, arch, velocities, tracers, args...)
-    args = Tuple(args)
-    launch!(arch, Gⁿ.u.grid, :xy, _apply_z_bcs!, Gⁿ.u, instantiated_location(Gⁿ.u), Gⁿ.u.grid, velocities.u.boundary_conditions.bottom, velocities.u.boundary_conditions.top, args)
 end
 
 function estimate_tracer_error(model, initial_temperature, initial_salinity, wind_stress)
