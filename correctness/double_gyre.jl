@@ -60,7 +60,9 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fiel
                                                         hydrostatic_free_surface_tracer_tendency,
                                                         barotropic_split_explicit_corrector!,
                                                         _ab2_step_tracer_field!,
-                                                        hydrostatic_fields
+                                                        hydrostatic_fields,
+                                                        compute_hydrostatic_free_surface_Gu!,
+                                                        compute_hydrostatic_free_surface_Gv!
 
 
 using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: _compute_barotropic_mode!,
@@ -273,40 +275,45 @@ end
 
 function bad_compute_hydrostatic_free_surface_tendency_contributions!(model, kernel_parameters; active_cells_map=nothing)
 
-    arch = model.architecture
+    bad_compute_hydrostatic_momentum_tendencies!(model, model.velocities, kernel_parameters; active_cells_map=nothing)
+    return nothing
+end
+
+function bad_compute_hydrostatic_momentum_tendencies!(model, velocities, kernel_parameters; active_cells_map=nothing)
+
     grid = model.grid
+    arch = architecture(grid)
 
-    compute_hydrostatic_momentum_tendencies!(model, model.velocities, kernel_parameters; active_cells_map)
+    u_immersed_bc = immersed_boundary_condition(velocities.u)
+    v_immersed_bc = immersed_boundary_condition(velocities.v)
 
-    for (tracer_index, tracer_name) in enumerate(propertynames(model.tracers))
+    u_forcing = model.forcing.u
+    v_forcing = model.forcing.v
 
-        @inbounds c_tendency    = model.timestepper.Gⁿ[tracer_name]
-        @inbounds c_advection   = model.advection[tracer_name]
-        @inbounds c_forcing     = model.forcing[tracer_name]
-        @inbounds c_immersed_bc = immersed_boundary_condition(model.tracers[tracer_name])
+    start_momentum_kernel_args = (model.advection.momentum,
+                                  model.coriolis,
+                                  model.closure)
 
-        args = tuple(Val(tracer_index),
-                     Val(tracer_name),
-                     c_advection,
-                     model.closure,
-                     c_immersed_bc,
-                     model.buoyancy,
-                     model.biogeochemistry,
-                     model.velocities,
-                     model.free_surface,
-                     model.tracers,
-                     model.diffusivity_fields,
-                     model.auxiliary_fields,
-                     model.clock,
-                     c_forcing)
+    end_momentum_kernel_args = (velocities,
+                                model.free_surface,
+                                model.tracers,
+                                model.buoyancy,
+                                model.diffusivity_fields,
+                                model.pressure.pHY′,
+                                model.auxiliary_fields,
+                                model.vertical_coordinate,
+                                model.clock)
 
-        launch!(arch, grid, kernel_parameters,
-                compute_hydrostatic_free_surface_Gc!,
-                c_tendency,
-                grid,
-                args;
-                active_cells_map)
-    end
+    u_kernel_args = tuple(start_momentum_kernel_args..., u_immersed_bc, end_momentum_kernel_args..., u_forcing)
+    v_kernel_args = tuple(start_momentum_kernel_args..., v_immersed_bc, end_momentum_kernel_args..., v_forcing)
+
+    launch!(arch, grid, kernel_parameters,
+            compute_hydrostatic_free_surface_Gu!, model.timestepper.Gⁿ.u, grid, 
+            u_kernel_args; active_cells_map)
+
+    launch!(arch, grid, kernel_parameters,
+            compute_hydrostatic_free_surface_Gv!, model.timestepper.Gⁿ.v, grid, 
+            v_kernel_args; active_cells_map)
 
     return nothing
 end
