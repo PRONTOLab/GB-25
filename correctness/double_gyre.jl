@@ -237,17 +237,9 @@ function bad_time_step!(model, Δt;
 
     u, v, _ = model.velocities
     grid = model.grid
-    bad_barotropic_split_explicit_corrector!(u, v, model.free_surface, grid)
-
-    bad_update_state!(model, model.grid, callbacks; compute_tendencies=true)
-
-    return nothing
-end
-
-function bad_barotropic_split_explicit_corrector!(u, v, free_surface, grid)
-    state = free_surface.filtered_state
-    η     = free_surface.η
-    U, V  = free_surface.barotropic_velocities
+    state = model.free_surface.filtered_state
+    η     = model.free_surface.η
+    U, V  = model.free_surface.barotropic_velocities
     U̅, V̅  = state.U, state.V
     arch  = architecture(grid)
 
@@ -259,14 +251,6 @@ function bad_barotropic_split_explicit_corrector!(u, v, free_surface, grid)
     launch!(arch, grid, :xyz, _barotropic_split_explicit_corrector!,
             u, v, U, V, U̅, V̅, grid)
 
-    return nothing
-end
-
-function bad_update_state!(model, grid, callbacks; compute_tendencies = true)
-
-    # Update the boundary conditions
-    update_boundary_conditions!(fields(model), model)
-    
     u, v, w = model.velocities
     u⁻, v⁻ = model.diffusivity_fields.previous_velocities
     parent(u⁻) .= parent(u)
