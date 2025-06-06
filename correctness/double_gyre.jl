@@ -21,7 +21,7 @@ atol = sqrt(eps(Float64))
 #=
 struct NNDiffusivity
     layers::Int
-    model::NNVars
+    model::
 end
 
 # The NN for tracer e in CATKE. Modify struct above to fit:
@@ -34,55 +34,24 @@ function NNDiffusivity{T}(G::Grid) where {T<:AbstractFloat}
     nqx = if (bc == "periodic") nx else nx+1 end      # q-grid in x-direction
     nqy = ny+1                                        # q-grid in y-direction
 
-    corner_outdim = 2
-    corner_indim = 22
+    outdim = 1
+    indim = 17
 
-    center_outdim = 1
-    center_indim = 17
+    center_layers = Lux.Dense(indim => outdim, relu)
 
-    corner_layers = Lux.Dense(corner_indim => corner_outdim, relu)
-    center_layers = Lux.Dense(center_indim => center_outdim, relu)
-
-    model_corner = Lux.setup(Random.default_rng(), corner_layers)
     model_center = Lux.setup(Random.default_rng(), center_layers)
     
-    corner_input = Reactant.to_rarray(Array{T}(undef, 9+9+4, nqx, nqy))
-    center_input = Reactant.to_rarray(Array{T}(undef, 9+4+4, nx, ny))
+    center_input = Array{T}(undef, 9+4+4, nx, ny)
 
-    corner_dinput = Reactant.to_rarray(Array{T}(undef, 9+9+4, nqx, nqy))
-    center_dinput = Reactant.to_rarray(Array{T}(undef, 9+4+4, nx, ny))
+    center_dinput = Array{T}(undef, 9+4+4, nx, ny)
 
-    d_corner_res = Reactant.to_rarray(Array{T}(undef, 2, nqx, nqy))
-    d_center_res = Reactant.to_rarray(Array{T}(undef, 1, nx, ny))
-
-    use_reactant = true
-
-    if use_reactant
-        model_corner = Reactant.to_rarray(model_corner)
-    end
-    if use_reactant
-        model_center = Reactant.to_rarray(model_center)
-    end
-
-    compiled_corner = Reactant.@compile Lux.apply(corner_layers, corner_input, model_corner[1], model_corner[2])
-    compiled_center = Reactant.@compile Lux.apply(center_layers, center_input, model_center[1], model_center[2])
-
-    compiled_dcorner = Reactant.@compile grad_apply(d_corner_res, deepcopy(model_corner[1]), corner_layers, corner_input, corner_dinput, model_corner[1], model_corner[2])
-    compiled_dcenter = Reactant.@compile grad_apply(d_center_res, deepcopy(model_center[1]), center_layers, center_input, center_dinput, model_center[1], model_center[2])
-
-    if !use_reactant
-        compiled_corner = nothing
-        compiled_center = nothing
-        compiled_dcorner = nothing
-        compiled_dcenter = nothing
-    end
+    d_center_res = Array{T}(undef, 1, nx, ny)
 
 
-    return NNDiffusivity{T, typeof(corner_layers), typeof(center_layers), typeof(model_corner), typeof(model_center), typeof(compiled_corner), typeof(compiled_center), typeof(compiled_dcorner), typeof(compiled_dcenter)}(; nx=nx,ny=ny,bc=bc,halo=halo,haloη=haloη,
-                    halosstx=halosstx,halossty=halossty, corner_outdim, corner_indim, center_outdim, center_indim, corner_layers, center_layers, model_corner, model_center, compiled_corner, compiled_center, compiled_dcorner, compiled_dcenter
-    )
+    return NNDiffusivity{T, typeof(center_layers), typeof(model_center)}(; nx=nx,ny=ny,bc=bc,e_flux=e_flux, outdim, indim, center_layers, model_center)
 end
 =#
+
 function set_tracers(grid;
                      dTdz::Real = 30.0 / 1800.0)
     fₜ(λ, φ, z) = 30 + dTdz * z # + dTdz * model.grid.Lz * 1e-6 * Ξ(z)
@@ -188,7 +157,7 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     set!(model.tracers.e, 1e-6)
     model.clock.last_Δt = Δt
 
-    return model, Je
+    return model
 end
 
 function wind_stress_init(grid;
@@ -217,17 +186,17 @@ function time_step!(model)
     return nothing
 end
 
-function loop!(model, Je, Ninner)
+function loop!(model, Ninner)
     Δt = model.clock.last_Δt + 0
     Oceananigans.TimeSteppers.first_time_step!(model, Δt)
     @trace track_numbers=false for _ = 1:(Ninner-1)
-        # Modify Je here:
+        # Modify Je here: (though model.forcings.e or something)
         Oceananigans.TimeSteppers.time_step!(model, Δt)
     end
     return nothing
 end
 
-function time_step_double_gyre!(model, Je, Tᵢ, Sᵢ, wind_stress)
+function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
 
     set!(model.tracers.T, Tᵢ)
     set!(model.tracers.S, Sᵢ)
@@ -239,13 +208,13 @@ function time_step_double_gyre!(model, Je, Tᵢ, Sᵢ, wind_stress)
     model.clock.last_Δt = 1200
 
     # Step it forward
-    loop!(model, Je, 10)
+    loop!(model, 10)
 
     return nothing
 end
 
-function estimate_tracer_error(model, Je, initial_temperature, initial_salinity, wind_stress)
-    time_step_double_gyre!(model, Je, initial_temperature, initial_salinity, wind_stress)
+function estimate_tracer_error(model, initial_temperature, initial_salinity, wind_stress)
+    time_step_double_gyre!(model, initial_temperature, initial_salinity, wind_stress)
     # Compute the mean mixed layer depth:
     Nλ, Nφ, _ = size(model.grid)
     
@@ -259,12 +228,11 @@ function estimate_tracer_error(model, Je, initial_temperature, initial_salinity,
     return mean_sq_surface_u
 end
 #=
-function differentiate_tracer_error(model, Je, Tᵢ, Sᵢ, J, dmodel, dJe, dTᵢ, dSᵢ, dJ)
+function differentiate_tracer_error(model, Tᵢ, Sᵢ, J, dmodel, dTᵢ, dSᵢ, dJ)
 
     dedν = autodiff(set_strong_zero(Enzyme.Reverse),
                     estimate_tracer_error, Active,
                     Duplicated(model, dmodel),
-                    Duplicated(Je, dJe),
                     Duplicated(Tᵢ, dTᵢ),
                     Duplicated(Sᵢ, dSᵢ),
                     Duplicated(J, dJ))
@@ -277,7 +245,7 @@ Oceananigans.defaults.FloatType = Float64
 
 @info "Generating model..."
 rarch = ReactantState()
-rmodel, rJe = double_gyre_model(rarch, 62, 62, 15, 1200)
+rmodel = double_gyre_model(rarch, 62, 62, 15, 1200)
 
 @info rmodel.buoyancy
 
@@ -308,7 +276,7 @@ restimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress)
 
 @info "Running non-reactant for comparison..."
 varch = CPU()
-vmodel, vJe = double_gyre_model(varch, 62, 62, 15, 1200)
+vmodel = double_gyre_model(varch, 62, 62, 15, 1200)
 
 @info "Initialized non-reactant model"
 
