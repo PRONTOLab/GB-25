@@ -212,31 +212,34 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
 
     # Step it forward
     Δt = model.clock.last_Δt + 0
+
+    χ = model.timestepper.χ
+
+    Gⁿ = model.timestepper.Gⁿ.u
+    velocity_field = model.velocities.u
+
+    κu = model.diffusivity_fields.κu
+
     @trace track_numbers=false for _ = 1:2
 
-        χ = model.timestepper.χ
+        #launch!(model.architecture, grid, :xyz,
+        #        bad_ab2_step_field!, velocity_field, Gⁿ)
 
-        Gⁿ = model.timestepper.Gⁿ.u
-        G⁻ = model.timestepper.G⁻.u
-        velocity_field = model.velocities.u
-
-        launch!(model.architecture, grid, :xyz,
-                ab2_step_field!, velocity_field, Δt, χ, Gⁿ, G⁻)
-
-        κu = model.diffusivity_fields.κu
+        parent(velocity_field) .+= parent(Gⁿ)
 
         launch!(model.architecture, grid, :xy,
             bad_solve_batched_tridiagonal_system_kernel!, grid.Nz, velocity_field,
             κu)
 
-        launch!(arch, grid, KernelParameters(:xy, (0, 0)),
-                _bad_fill_bottom_and_top_halo!, velocity_field.data, grid)
+        parent(velocity_field.data)[:, :, grid.Nz+1 - axes(velocity_field.data)[3].offset] = parent(velocity_field.data)[:, :, grid.Nz - axes(velocity_field.data)[3].offset]
 
         launch!(arch, grid, :xyz,
                 bad_compute_CATKE_diffusivities!,
                 κu, grid, velocity_field, model.tracers.e)
 
-        launch!(arch, grid, :xy, _bad_apply_z_bcs!, Gⁿ, wind_stress, grid.Nz)
+        # launch!(arch, grid, :xy, _bad_apply_z_bcs!, Gⁿ, wind_stress, grid.Nz)
+
+        parent(Gⁿ.data)[:, :, grid.Nz - axes(Gⁿ.data)[3].offset] = parent(wind_stress.data)[:, :, 1]
 
     end
 
@@ -252,11 +255,6 @@ end
 
             @inbounds ϕ[i, j, k] -= cᵏ * (@inbounds ϕ[i, j, k+1] + fᵏ)
         end
-end
-
-@kernel function _bad_fill_bottom_and_top_halo!(c, grid)
-    i, j = @index(Global, NTuple)
-    @inbounds c[i, j, grid.Nz+1] = c[i, j, grid.Nz]
 end
 
 @kernel function bad_compute_CATKE_diffusivities!(κu, grid, u, e)
