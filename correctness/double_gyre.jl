@@ -207,17 +207,17 @@ end
 end
 
 
-function estimate_tracer_error(model, wind_stress)
+function estimate_tracer_error(grid, κu, wdata, vdata)
 
-    grid = model.grid
     Nz = grid.Nz
-    κu = parent(model.diffusivity_fields.κu.data)
-    wdata = parent(wind_stress.data)
-    vdata = parent(model.velocities.u.data)
+
+    # κu = parent(model.diffusivity_fields.κu.data)
+    # wdata = parent(wind_stress.data)
+    # vdata = parent(model.velocities.u.data)
 
     edata = zero(κu)
     edata[8:end-8, 8:end-8, 9:size(vdata, 3)-7] .= 1e-3
-    arch = model.architecture
+    arch = grid.architecture
 
     @trace track_numbers=false for _ = 1:2
 
@@ -231,8 +231,6 @@ function estimate_tracer_error(model, wind_stress)
                 bad_compute_CATKE_diffusivities!,
                 κu, grid, vdata, edata)
 
-        # κu .*= edata
-
         vdata[:, :, Nz + 8] .+= wdata[:, :, 1]
 
     end
@@ -242,14 +240,16 @@ function estimate_tracer_error(model, wind_stress)
     return mean_sq_surface_u * 1e108
 end
 
-function differentiate_tracer_error(model, J, dmodel, dJ)
+function differentiate_tracer_error(grid, κu, wdata, vdata, dκu, dwdata, dvdata)
 
     dedν = autodiff(set_strong_zero(Enzyme.Reverse),
                     estimate_tracer_error, Active,
-                    Duplicated(model, dmodel),
-                    Duplicated(J, dJ))
+                    Const(grid),
+                    Duplicated(κu, dκu),
+                    Duplicated(wdata, dwdata),
+                    Duplicated(vdata, dvdata))
 
-    return dedν, dJ
+    return nothing
 end
 
 Oceananigans.defaults.FloatType = Float64
@@ -258,31 +258,40 @@ Oceananigans.defaults.FloatType = Float64
 rarch = ReactantState()
 rmodel = double_gyre_model(rarch, 62, 62, 15, 1200)
 
+rκu = parent(rmodel.diffusivity_fields.κu.data)
+rvdata = parent(rmodel.velocities.u.data)
+
 @info rmodel.buoyancy
 
 rwind_stress = wind_stress_init(rmodel.grid)
+rwdata = parent(rwind_stress.data)
 
 @info "Compiling..."
 
 dmodel = Enzyme.make_zero(rmodel)
-dTᵢ = Field{Center, Center, Center}(rmodel.grid)
-dSᵢ = Field{Center, Center, Center}(rmodel.grid)
 dJ  = Field{Face, Center, Nothing}(rmodel.grid)
+dκu = parent(dmodel.diffusivity_fields.κu.data)
+dvdata = parent(dmodel.velocities.u.data)
+dwdata = parent(dJ.data)
 
 # Vanilla and forward only
 vmodel = double_gyre_model(CPU(), 62, 62, 15, 1200)
 
+vκu = parent(vmodel.diffusivity_fields.κu.data)
+vvdata = parent(vmodel.velocities.u.data)
+
 vwind_stress = wind_stress_init(vmodel.grid)
-estimate_tracer_error(vmodel, vwind_stress)
+vwdata = parent(vwind_stress.data)
+estimate_tracer_error(vmodel.grid, vκu, vwdata, vvdata)
 
 tic = time()
 
 passes = "mark-func-memory-effects,inline{default-pipeline=canonicalize max-iterations=4},propagate-constant-bounds,sroa-wrappers{instcombine=false instsimplify=true },canonicalize,sroa-wrappers{instcombine=false instsimplify=true },libdevice-funcs-raise,canonicalize,remove-duplicate-func-def,canonicalize,cse,canonicalize,lower-kernel{backend=cpu},canonicalize,canonicalize,llvm-to-memref-access,canonicalize,convert-llvm-to-cf,canonicalize,enzyme-lift-cf-to-scf,canonicalize,func.func(canonicalize-loops),canonicalize-scf-for,canonicalize,libdevice-funcs-raise,canonicalize,affine-cfg,canonicalize,func.func(canonicalize-loops),canonicalize,llvm-to-affine-access,canonicalize,delinearize-indexing,canonicalize,simplify-affine-exprs,affine-cfg,canonicalize,func.func(affine-loop-invariant-code-motion),canonicalize,sort-memory,raise-affine-to-stablehlo{prefer_while_raising=false dump_failed_lockstep=false},canonicalize,arith-raise{stablehlo=true},enzyme-batch,inline{default-pipeline=canonicalize max-iterations=4},canonicalize,cse,canonicalize,enzyme-hlo-generate-td{patterns=compare_op_canon<16>;transpose_transpose<16>;broadcast_in_dim_op_canon<16>;convert_op_canon<16>;dynamic_broadcast_in_dim_op_not_actually_dynamic<16>;chained_dynamic_broadcast_in_dim_canonicalization<16>;dynamic_broadcast_in_dim_all_dims_non_expanding<16>;noop_reduce_op_canon<16>;compare_select_simplify;while_simplify<1>(1);if_remove_unused;transpose_reshape_to_broadcast;reshape_transpose_to_broadcast;dus_dus;dus_dus_concat;abs_positive_simplify;transpose_unary_transpose_abs;transpose_unary_transpose_neg;transpose_unary_transpose_sqrt;transpose_unary_transpose_rsqrt;transpose_unary_transpose_ceil;transpose_unary_transpose_convert;transpose_unary_transpose_cosine;transpose_unary_transpose_exp;transpose_unary_transpose_expm1;transpose_unary_transpose_log;transpose_unary_transpose_log1p;transpose_unary_transpose_sign;transpose_unary_transpose_sine;transpose_unary_transpose_tanh;select_comp_iota_const_simplify<1>;sign_abs_simplify<1>;broadcastindim_is_reshape;slice_reduce_window<1>;while_deadresult;while_dus;dus_licm(0);while_op_induction_replacement;dus_pad;dus_concat;slice_dus_to_concat;while_induction_reduction;slice_licm(0);pad_licm(0);elementwise_licm(0);concatenate_licm(0);slice_broadcast;while_pad_induction_reduction;while_licm<1>(1);associative_common_mul_op_reordering;slice_select_to_select_slice;pad_concat_to_concat_pad;slice_if;dus_to_i32;rotate_pad;slice_extend;concat_wrap;cse_extend<16>;cse_wrap<16>;cse_rotate<16>;cse_rotate<16>;concat_concat_axis_swap;concat_multipad;concat_concat_to_dus;speculate_if_pad_to_select;broadcast_iota_simplify;select_comp_iota_to_dus;compare_cleanup;broadcast_compare;not_compare;broadcast_iota;cse_iota;compare_iota_const_simplify;reshuffle_ands_compares;square_abs_simplify;divide_divide_simplify;concat_reshape_slice;full_reduce_reshape_or_transpose;concat_reshape_reduce;concat_elementwise;reduce_reduce;conj_real;select_broadcast_in_dim;if_op_lift_common_ops;involution_neg_simplify;involution_conj_simplify;involution_not_simplify;real_conj_simplify;conj_complex_simplify;chlo_inf_const_prop<16>;gamma_const_prop<16>;abs_const_prop<16>;log_const_prop<1>;log_plus_one_const_prop<1>;is_finite_const_prop;not_const_prop;neg_const_prop;sqrt_const_prop;rsqrt_const_prop;cos_const_prop;sin_const_prop;exp_const_prop;expm1_const_prop;tanh_const_prop;logistic_const_prop;conj_const_prop;ceil_const_prop;cbrt_const_prop;real_const_prop;imag_const_prop;round_const_prop;round_nearest_even_const_prop;sign_const_prop;floor_const_prop;tan_const_prop;add_const_prop;and_const_prop;atan2_const_prop;complex_const_prop;div_const_prop;max_const_prop;min_const_prop;mul_const_prop;or_const_prop;pow_const_prop;rem_const_prop;sub_const_prop;xor_const_prop;const_prop_through_barrier<16>;concat_const_prop<1>(1024);dynamic_update_slice_const_prop(1024);scatter_update_computation_const_prop;dus_slice_simplify;reshape_concat;reshape_dus;dot_reshape_pad<1>;pad_dot_general<1>(0);pad_dot_general<1>(1);reshape_pad;reshape_wrap;reshape_rotate;reshape_extend;reshape_slice(1);reshape_elementwise(1);transpose_select;transpose_while;transpose_slice;transpose_concat;transpose_iota;transpose_reduce;transpose_reduce_window;transpose_dus;transpose_pad<1>;transpose_einsum<1>;transpose_wrap;transpose_extend;transpose_rotate;transpose_dynamic_slice;transpose_reverse;transpose_batch_norm_training;transpose_batch_norm_inference;transpose_batch_norm_grad;transpose_if;transpose_elementwise(1);no_nan_add_sub_simplify(0);lower_extend;lower_wrap;lower_rotate},transform-interpreter,enzyme-hlo-remove-transform,enzyme{postpasses=\"arith-raise{stablehlo=true},canonicalize,cse,canonicalize,remove-unnecessary-enzyme-ops,enzyme-simplify-math,canonicalize,cse,canonicalize\"}"
 
-restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(rmodel, rwind_stress)
-# println(@code_hlo raise_first=true raise=true optimize=false differentiate_tracer_error(rmodel, rwind_stress, dmodel, dJ))
-println(@code_hlo optimize=passes raise=true differentiate_tracer_error(rmodel, rwind_stress, dmodel, dJ))
-rdifferentiate_tracer_error = @compile optimize=passes raise=true sync=true differentiate_tracer_error(rmodel, rwind_stress, dmodel, dJ)
+restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(rmodel.grid, rκu, rwdata, rvdata)
+# println(@code_hlo raise_first=true raise=true optimize=false differentiate_tracer_error(rmodel.grid, rκu, rwdata, rvdata, rκu, dwdata, dvdata))
+println(@code_hlo optimize=passes raise=true differentiate_tracer_error(rmodel.grid, rκu, rwdata, rvdata, rκu, dwdata, dvdata))
+rdifferentiate_tracer_error = @compile optimize=passes raise=true sync=true differentiate_tracer_error(rmodel.grid, rκu, rwdata, rvdata, rκu, dwdata, dvdata)
 compile_toc = time() - tic
 
 @show compile_toc
@@ -290,31 +299,41 @@ compile_toc = time() - tic
 # Primal-only, with reactant
 pmodel = double_gyre_model(rarch, 62, 62, 15, 1200)
 
+pκu = parent(pmodel.diffusivity_fields.κu.data)
+pvdata = parent(pmodel.velocities.u.data)
+
 pwind_stress = wind_stress_init(pmodel.grid)
 
-dedν, dJ = rdifferentiate_tracer_error(rmodel, rwind_stress, dmodel, dJ)
+pwdata = parent(pwind_stress.data)
 
-restimate_tracer_error(pmodel, pwind_stress)
+# dedν, dJ = 
+rdifferentiate_tracer_error(rmodel.grid, rκu, rwdata, rvdata, rκu, dwdata, dvdata)
+
+restimate_tracer_error(pmodel.grid, pκu, pwdata, pvdata)
 
 GordonBell25.compare_states(vmodel, pmodel; include_halos=false, throw_error=false, rtol=sqrt(eps(Float64)), atol=sqrt(eps(Float64)))
 GordonBell25.compare_states(rmodel, pmodel; include_halos=true, throw_error=false, rtol=sqrt(eps(Float64)), atol=sqrt(eps(Float64)))
 
 #=
 @info "Running..."
-restimate_tracer_error(rmodel,  rwind_stress)
+restimate_tracer_error(rmodel.grid, rκu, rwdata, rvdata)
 
 
 @info "Running non-reactant for comparison..."
 varch = CPU()
 vmodel = double_gyre_model(varch, 62, 62, 15, 1200)
 
+vκu = parent(vmodel.diffusivity_fields.κu.data)
+vvdata = parent(vmodel.velocities.u.data)
+
 @info "Initialized non-reactant model"
 
 vwind_stress = wind_stress_init(vmodel.grid)
+vwdata = parent(vwind_stress.data)
 
 @info "Initialized non-reactant tracers and wind stress"
 
-estimate_tracer_error(vmodel, vwind_stress)
+estimate_tracer_error(vmodel.grid, vκu, vwdata, vvdata)
 
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
@@ -335,17 +354,27 @@ for ϵ in ϵ_list
     rmodelP = double_gyre_model(rarch, 62, 62, 15, 1200)
     rwind_stressP = wind_stress_init(rmodelP.grid)
 
+    rκuP = parent(rmodelP.diffusivity_fields.κu.data)
+    rvdataP = parent(rmodelP.velocities.u.data)
+
+    vwdataP = parent(rwind_stressP.data)
+
     @allowscalar diff = 2ϵ * abs(rwind_stressP[i, j])
 
     @allowscalar rwind_stressP[i, j] = rwind_stressP[i, j] + ϵ * abs(rwind_stressP[i, j])
 
-    sq_surface_uP = restimate_tracer_error(rmodelP, rwind_stressP)
+    sq_surface_uP = restimate_tracer_error(rmodelP.grid, rκuP, vwdataP, rvdataP)
 
     rmodelM = double_gyre_model(rarch, 62, 62, 15, 1200)
     rwind_stressM = wind_stress_init(rmodelM.grid)
+
+    rκuM = parent(rmodelM.diffusivity_fields.κu.data)
+    rvdataM = parent(rmodelM.velocities.u.data)
+
+    vwdataM = parent(rwind_stressM.data)
     @allowscalar rwind_stressM[i, j] = rwind_stressM[i, j] - ϵ * abs(rwind_stressM[i, j])
 
-    sq_surface_uM = restimate_tracer_error(rmodelM, rwind_stressM)
+    sq_surface_uM = restimate_tracer_error(rmodelM.grid, rκuM, vwdataM, rvdataM)
 
     dsq_surface_u = (sq_surface_uP - sq_surface_uM) / diff
 
