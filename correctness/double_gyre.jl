@@ -7,6 +7,7 @@ using GordonBell25
 #Reactant.allowscalar(true)
 
 using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity
+using Oceananigans.Operators: ℑzᵃᵃᶜ
 
 using SeawaterPolynomials
 
@@ -17,6 +18,71 @@ include_halos = true
 rtol = sqrt(eps(Float64))
 atol = sqrt(eps(Float64))
 
+#=
+struct NNDiffusivity
+    layers::Int
+    model::NNVars
+end
+
+# The NN for tracer e in CATKE. Modify struct above to fit:
+function NNDiffusivity{T}(G::Grid) where {T<:AbstractFloat}
+
+    @unpack nx,ny,bc= G
+    @unpack halo,haloη = G
+    @unpack halosstx,halossty = G
+
+    nqx = if (bc == "periodic") nx else nx+1 end      # q-grid in x-direction
+    nqy = ny+1                                        # q-grid in y-direction
+
+    corner_outdim = 2
+    corner_indim = 22
+
+    center_outdim = 1
+    center_indim = 17
+
+    corner_layers = Lux.Dense(corner_indim => corner_outdim, relu)
+    center_layers = Lux.Dense(center_indim => center_outdim, relu)
+
+    model_corner = Lux.setup(Random.default_rng(), corner_layers)
+    model_center = Lux.setup(Random.default_rng(), center_layers)
+    
+    corner_input = Reactant.to_rarray(Array{T}(undef, 9+9+4, nqx, nqy))
+    center_input = Reactant.to_rarray(Array{T}(undef, 9+4+4, nx, ny))
+
+    corner_dinput = Reactant.to_rarray(Array{T}(undef, 9+9+4, nqx, nqy))
+    center_dinput = Reactant.to_rarray(Array{T}(undef, 9+4+4, nx, ny))
+
+    d_corner_res = Reactant.to_rarray(Array{T}(undef, 2, nqx, nqy))
+    d_center_res = Reactant.to_rarray(Array{T}(undef, 1, nx, ny))
+
+    use_reactant = true
+
+    if use_reactant
+        model_corner = Reactant.to_rarray(model_corner)
+    end
+    if use_reactant
+        model_center = Reactant.to_rarray(model_center)
+    end
+
+    compiled_corner = Reactant.@compile Lux.apply(corner_layers, corner_input, model_corner[1], model_corner[2])
+    compiled_center = Reactant.@compile Lux.apply(center_layers, center_input, model_center[1], model_center[2])
+
+    compiled_dcorner = Reactant.@compile grad_apply(d_corner_res, deepcopy(model_corner[1]), corner_layers, corner_input, corner_dinput, model_corner[1], model_corner[2])
+    compiled_dcenter = Reactant.@compile grad_apply(d_center_res, deepcopy(model_center[1]), center_layers, center_input, center_dinput, model_center[1], model_center[2])
+
+    if !use_reactant
+        compiled_corner = nothing
+        compiled_center = nothing
+        compiled_dcorner = nothing
+        compiled_dcenter = nothing
+    end
+
+
+    return NNDiffusivity{T, typeof(corner_layers), typeof(center_layers), typeof(model_corner), typeof(model_center), typeof(compiled_corner), typeof(compiled_center), typeof(compiled_dcorner), typeof(compiled_dcenter)}(; nx=nx,ny=ny,bc=bc,halo=halo,haloη=haloη,
+                    halosstx=halosstx,halossty=halossty, corner_outdim, corner_indim, center_outdim, center_indim, corner_layers, center_layers, model_corner, model_center, compiled_corner, compiled_center, compiled_dcorner, compiled_dcenter
+    )
+end
+=#
 function set_tracers(grid;
                      dTdz::Real = 30.0 / 1800.0)
     fₜ(λ, φ, z) = 30 + dTdz * z # + dTdz * model.grid.Lz * 1e-6 * Ξ(z)
@@ -54,13 +120,15 @@ function simple_latitude_longitude_grid(arch, Nx, Ny, Nz; halo=(8, 8, 8))
     return grid
 end
 
+@inline div_Je(i, j, k, grid, clock, fields, Je) = - ℑzᵃᵃᶜ(i, j, k, grid, Je)
+
 function double_gyre_model(arch, Nx, Ny, Nz, Δt)
 
     # Fewer substeps can be used at higher resolutions
     free_surface = SplitExplicitFreeSurface(substeps=30)
 
     # TEOS10 is a 54-term polynomial that relates temperature (T) and salinity (S) to buoyancy
-    buoyancy = SeawaterBuoyancy(equation_of_state = LinearEquationOfState(Oceananigans.defaults.FloatType))
+    buoyancy = SeawaterBuoyancy(equation_of_state = SeawaterPolynomials.TEOS10EquationOfState(Oceananigans.defaults.FloatType))
 
     # Closures:
     # diffusivity scheme we need for GM/Redi.
@@ -101,20 +169,26 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
 
     boundary_conditions = (u=u_bcs, )
 
+    # How to incorporate a NN using a forcing:
+    # Can set initial Je here:
+    Je = ZFaceField(grid)
+    e_forcing = Forcing(div_Je, discrete_form=true, parameters=Je)
+
     model = HydrostaticFreeSurfaceModel(; grid,
-                                          free_surface = free_surface,
-                                          closure = closure,
-                                          buoyancy = buoyancy,
-                                          tracers = tracers,
-                                          coriolis = coriolis,
-                                          momentum_advection = momentum_advection,
-                                          tracer_advection = tracer_advection,
+                                          free_surface        = free_surface,
+                                          closure             = closure,
+                                          buoyancy            = buoyancy,
+                                          forcing             = (e=e_forcing,),
+                                          tracers             = tracers,
+                                          coriolis            = coriolis,
+                                          momentum_advection  = momentum_advection,
+                                          tracer_advection    = tracer_advection,
                                           boundary_conditions = boundary_conditions)
 
     set!(model.tracers.e, 1e-6)
     model.clock.last_Δt = Δt
 
-    return model
+    return model, Je
 end
 
 function wind_stress_init(grid;
@@ -143,16 +217,17 @@ function time_step!(model)
     return nothing
 end
 
-function loop!(model, Ninner)
+function loop!(model, Je, Ninner)
     Δt = model.clock.last_Δt + 0
     Oceananigans.TimeSteppers.first_time_step!(model, Δt)
     @trace track_numbers=false for _ = 1:(Ninner-1)
+        # Modify Je here:
         Oceananigans.TimeSteppers.time_step!(model, Δt)
     end
     return nothing
 end
 
-function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
+function time_step_double_gyre!(model, Je, Tᵢ, Sᵢ, wind_stress)
 
     set!(model.tracers.T, Tᵢ)
     set!(model.tracers.S, Sᵢ)
@@ -164,13 +239,13 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     model.clock.last_Δt = 1200
 
     # Step it forward
-    loop!(model, 10)
+    loop!(model, Je, 10)
 
     return nothing
 end
 
-function estimate_tracer_error(model, initial_temperature, initial_salinity, wind_stress)
-    time_step_double_gyre!(model, initial_temperature, initial_salinity, wind_stress)
+function estimate_tracer_error(model, Je, initial_temperature, initial_salinity, wind_stress)
+    time_step_double_gyre!(model, Je, initial_temperature, initial_salinity, wind_stress)
     # Compute the mean mixed layer depth:
     Nλ, Nφ, _ = size(model.grid)
     
@@ -183,25 +258,26 @@ function estimate_tracer_error(model, initial_temperature, initial_salinity, win
     
     return mean_sq_surface_u
 end
-
-function differentiate_tracer_error(model, Tᵢ, Sᵢ, J, dmodel, dTᵢ, dSᵢ, dJ)
+#=
+function differentiate_tracer_error(model, Je, Tᵢ, Sᵢ, J, dmodel, dJe, dTᵢ, dSᵢ, dJ)
 
     dedν = autodiff(set_strong_zero(Enzyme.Reverse),
                     estimate_tracer_error, Active,
                     Duplicated(model, dmodel),
+                    Duplicated(Je, dJe),
                     Duplicated(Tᵢ, dTᵢ),
                     Duplicated(Sᵢ, dSᵢ),
                     Duplicated(J, dJ))
 
     return dedν, dJ
 end
+=#
 
-Ninner = ConcreteRNumber(3)
 Oceananigans.defaults.FloatType = Float64
 
 @info "Generating model..."
 rarch = ReactantState()
-rmodel = double_gyre_model(rarch, 62, 62, 15, 1200)
+rmodel, rJe = double_gyre_model(rarch, 62, 62, 15, 1200)
 
 @info rmodel.buoyancy
 
@@ -220,19 +296,19 @@ dJ  = Field{Face, Center, Nothing}(rmodel.grid)
 
 tic = time()
 restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress)
-rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true differentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, dmodel, dTᵢ, dSᵢ, dJ)
+#rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true differentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, dmodel, dTᵢ, dSᵢ, dJ)
 compile_toc = time() - tic
 
 @show compile_toc
 
-#=
+
 @info "Running..."
 restimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress)
 
 
 @info "Running non-reactant for comparison..."
 varch = CPU()
-vmodel = double_gyre_model(varch, 62, 62, 15, 1200)
+vmodel, vJe = double_gyre_model(varch, 62, 62, 15, 1200)
 
 @info "Initialized non-reactant model"
 
@@ -246,8 +322,9 @@ estimate_tracer_error(vmodel, vTᵢ, vSᵢ, vwind_stress)
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
 @info "Done!"
-=#
 
+
+#=
 i = 10
 j = 10
 
@@ -286,3 +363,4 @@ for ϵ in ϵ_list
 end
 
 @info gradient_list
+=#
