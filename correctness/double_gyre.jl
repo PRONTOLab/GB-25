@@ -207,12 +207,12 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     model.clock.time = 0
     model.clock.last_Δt = 1200
 
+    grid = model.grid
+    arch = architecture(grid)
+
     # Step it forward
     Δt = model.clock.last_Δt + 0
     @trace track_numbers=false for _ = 1:2
-        # Full step for tracers, fractional step for velocities.
-        velocities = model.velocities
-        grid = model.grid
 
         χ = model.timestepper.χ
 
@@ -223,39 +223,18 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
         launch!(model.architecture, grid, :xyz,
                 ab2_step_field!, velocity_field, Δt, χ, Gⁿ, G⁻)
 
-        field = velocity_field
-        implicit_solver = model.timestepper.implicit_solver
-        closure = model.closure
-        diffusivity_fields = model.diffusivity_fields
-        clock = model.clock
-        
-        launch!(model.architecture, implicit_solver.grid, :xy,
-            bad_solve_batched_tridiagonal_system_kernel!, field,
-            implicit_solver.a,
-            implicit_solver.b,
-            implicit_solver.c,
-            field,
-            implicit_solver.t,
-            implicit_solver.grid,
-            implicit_solver.parameters,
-            diffusivity_fields,
-            implicit_solver.tridiagonal_direction)
+        κu = model.diffusivity_fields.κu
 
-        grid        = model.grid
-
-        c = velocities.u.data
-
-        arch = architecture(grid)
+        launch!(model.architecture, grid, :xy,
+            bad_solve_batched_tridiagonal_system_kernel!, grid.Nz, velocity_field,
+            κu)
 
         launch!(arch, grid, KernelParameters(:xy, (0, 0)),
-                _bad_fill_bottom_and_top_halo!, c, grid)
-
-        arch = model.architecture
-        grid = model.grid
+                _bad_fill_bottom_and_top_halo!, velocity_field.data, grid)
 
         launch!(arch, grid, :xyz,
                 bad_compute_CATKE_diffusivities!,
-                model.diffusivity_fields, grid, model.velocities.u, model.tracers.e)
+                κu, grid, velocity_field, model.tracers.e)
 
         launch!(arch, grid, :xy, _bad_apply_z_bcs!, Gⁿ, wind_stress, grid.Nz)
 
@@ -264,45 +243,34 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     return nothing
 end
 
-@kernel function bad_solve_batched_tridiagonal_system_kernel!(ϕ, a, b, c, f, t, grid, p, K, tridiagonal_direction)
-    Nz = size(grid, 3)
+@kernel function bad_solve_batched_tridiagonal_system_kernel!(Nz, ϕ, κu)
     i, j = @index(Global, NTuple)
-    solve_batched_tridiagonal_system_z!(i, j, Nz, ϕ, a, b, c, f, t, grid, p, K, tridiagonal_direction)
-end
 
-@inline function solve_batched_tridiagonal_system_z!(i, j, Nz, ϕ, a, b, c, f, t, grid, p, K, tridiagonal_direction)
-    @inbounds begin
-
+        fᵏ = ϕ[i,j, 1]
         for k = Nz-1:-1:1
+            cᵏ = @inbounds κu[i-1, j, k+1]
 
-            fᵏ = f[i,j]
-
-            v = K.κu
-
-            cᵏ = (v[i-1, j, k+1] + v[i,   j, k+1])
-
-            ϕ[i, j, k] -= cᵏ * (ϕ[i, j, k+1] + fᵏ)
+            @inbounds ϕ[i, j, k] -= cᵏ * (@inbounds ϕ[i, j, k+1] + fᵏ)
         end
-    end
-end
-
-@kernel function bad_compute_CATKE_diffusivities!(diffusivities, grid, u, e)
-    i, j, k = @index(Global, NTuple)
-
-    w★ = sqrt(e[i, j, k-1])
-    Ri = 1 / (u[i+1, j, k] - u[i+1, j, k-1])
-    ℓu =  0.119max(0, min(1, Ri)) * (Ri ≥ 0)
-    diffusivities.κu[i, j, k] = ℓu * w★
-end
-
-@kernel function _bad_apply_z_bcs!(Gc, wind_stress, Nz)
-    i, j = @index(Global, NTuple)
-    @inbounds Gc[i, j, Nz] -= wind_stress[i, j, 1]
 end
 
 @kernel function _bad_fill_bottom_and_top_halo!(c, grid)
     i, j = @index(Global, NTuple)
     @inbounds c[i, j, grid.Nz+1] = c[i, j, grid.Nz]
+end
+
+@kernel function bad_compute_CATKE_diffusivities!(κu, grid, u, e)
+    i, j, k = @index(Global, NTuple)
+
+    w★ = sqrt(e[i, j, k-1])
+    Ri = 1 / (u[i+1, j, k] - u[i+1, j, k-1])
+    ℓu =  0.119max(0, min(1, Ri)) * (Ri ≥ 0)
+    κu[i, j, k] = ℓu * w★
+end
+
+@kernel function _bad_apply_z_bcs!(Gc, wind_stress, Nz)
+    i, j = @index(Global, NTuple)
+    @inbounds Gc[i, j, Nz] -= wind_stress[i, j, 1]
 end
 
 
