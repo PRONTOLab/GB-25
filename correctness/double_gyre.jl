@@ -248,32 +248,43 @@ function bad_update_state!(model, grid, callbacks; compute_tendencies = true)
 
     tupled_fill_halo_regions!(prognostic_fields(model), grid, model.clock, fields(model), async=true)
     
-    bad_compute_auxiliaries!(model)
+    bad_compute_diffusivities!(model.diffusivity_fields, model.closure, model; parameters = :xyz)
 
     bad_compute_tendencies!(model, callbacks)
 
     return nothing
 end
 
-function bad_compute_auxiliaries!(model; w_parameters = w_kernel_parameters(model.grid),
-                                         p_parameters = p_kernel_parameters(model.grid),
-                                         κ_parameters = :xyz)
+function bad_compute_diffusivities!(diffusivities, closure, model; parameters = :xyz)
+    arch = model.architecture
+    grid = model.grid
+    velocities = model.velocities
+    tracers = model.tracers
+    buoyancy = model.buoyancy
+    clock = model.clock
+    top_tracer_bcs = get_top_tracer_bcs(model.buoyancy.formulation, tracers)
+    Δt = update_previous_compute_time!(diffusivities, model)
 
-    grid        = model.grid
-    closure     = model.closure
-    tracers     = model.tracers
-    diffusivity = model.diffusivity_fields
-    buoyancy    = model.buoyancy
+    if isfinite(model.clock.last_Δt) # Check that we have taken a valid time-step first.
+        # Compute e at the current time:
+        #   * update tendency Gⁿ using current and previous velocity field
+        #   * use tridiagonal solve to take an implicit step
+        time_step_catke_equation!(model)
+    end
 
-    P    = model.pressure.pHY′
-    arch = architecture(grid)
+    # Update "previous velocities"
+    u, v, w = model.velocities
+    u⁻, v⁻ = diffusivities.previous_velocities
+    parent(u⁻) .= parent(u)
+    parent(v⁻) .= parent(v)
 
-    # Advance diagnostic quantities
-    compute_w_from_continuity!(model; parameters = w_parameters)
-    update_hydrostatic_pressure!(P, arch, grid, buoyancy, tracers; parameters = p_parameters)
+    launch!(arch, grid, :xy,
+            compute_average_surface_buoyancy_flux!,
+            diffusivities.Jᵇ, grid, closure, velocities, tracers, buoyancy, top_tracer_bcs, clock, Δt)
 
-    # Update closure diffusivities
-    compute_diffusivities!(diffusivity, closure, model; parameters = κ_parameters)
+    launch!(arch, grid, parameters,
+            compute_CATKE_diffusivities!,
+            diffusivities, grid, closure, velocities, tracers, buoyancy)
 
     return nothing
 end
