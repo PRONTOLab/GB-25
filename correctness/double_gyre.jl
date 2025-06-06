@@ -219,7 +219,8 @@ function estimate_tracer_error(grid, κu, wdata, vdata)
     edata[8:end-8, 8:end-8, 9:size(vdata, 3)-7] .= 1e-3
     arch = grid.architecture
 
-    @trace track_numbers=false for _ = 1:2
+    # @trace track_numbers=false 
+    for _ = 1:2
 
         launch!(arch, grid, :xy,
             bad_solve_batched_tridiagonal_system_kernel!, grid.Nz, vdata,
