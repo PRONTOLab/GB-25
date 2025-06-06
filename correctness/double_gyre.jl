@@ -255,7 +255,7 @@ end
 
 function bad_compute_tendencies!(model, callbacks)
 
-    compute_hydrostatic_free_surface_tendency_contributions!(model, :xyz; active_cells_map=nothing)
+    bad_compute_hydrostatic_free_surface_tendency_contributions!(model, :xyz; active_cells_map=nothing)
 
     # Calculate contributions to momentum and tracer tendencies from user-prescribed fluxes across the
     # boundaries of the domain
@@ -271,12 +271,50 @@ function bad_compute_tendencies!(model, callbacks)
     return nothing
 end
 
+function bad_compute_hydrostatic_free_surface_tendency_contributions!(model, kernel_parameters; active_cells_map=nothing)
+
+    arch = model.architecture
+    grid = model.grid
+
+    compute_hydrostatic_momentum_tendencies!(model, model.velocities, kernel_parameters; active_cells_map)
+
+    for (tracer_index, tracer_name) in enumerate(propertynames(model.tracers))
+
+        @inbounds c_tendency    = model.timestepper.Gⁿ[tracer_name]
+        @inbounds c_advection   = model.advection[tracer_name]
+        @inbounds c_forcing     = model.forcing[tracer_name]
+        @inbounds c_immersed_bc = immersed_boundary_condition(model.tracers[tracer_name])
+
+        args = tuple(Val(tracer_index),
+                     Val(tracer_name),
+                     c_advection,
+                     model.closure,
+                     c_immersed_bc,
+                     model.buoyancy,
+                     model.biogeochemistry,
+                     model.velocities,
+                     model.free_surface,
+                     model.tracers,
+                     model.diffusivity_fields,
+                     model.auxiliary_fields,
+                     model.clock,
+                     c_forcing)
+
+        launch!(arch, grid, kernel_parameters,
+                compute_hydrostatic_free_surface_Gc!,
+                c_tendency,
+                grid,
+                args;
+                active_cells_map)
+    end
+
+    return nothing
+end
+
 """ Apply boundary conditions by adding flux divergences to the right-hand-side. """
 function bad_compute_hydrostatic_boundary_tendency_contributions!(Gⁿ, arch, velocities, tracers, args...)
-
     args = Tuple(args)
-    #apply_z_bcs!(Gⁿ.u, velocities.u, arch, args...)
-    apply_z_bcs!(Gⁿ.u, Gⁿ.u.grid, velocities.u, velocities.u.boundary_conditions.bottom, velocities.u.boundary_conditions.top, arch, args...)
+    launch!(arch, Gⁿ.u.grid, :xy, _apply_z_bcs!, Gⁿ.u, instantiated_location(Gⁿ.u), Gⁿ.u.grid, velocities.u.boundary_conditions.bottom, velocities.u.boundary_conditions.top, args)
 end
 
 function estimate_tracer_error(model, initial_temperature, initial_salinity, wind_stress)
