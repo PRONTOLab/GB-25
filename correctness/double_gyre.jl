@@ -201,7 +201,7 @@ function estimate_tracer_error((arch, Nx, Ny, Nz), wdata)
     fill!(κu, 1.0)
 
     edata = zero(κu)
-    edata[8:end-8, 8:end-8, 9:size(vdata, 3)-7] .= 1e-3
+    edata[8:end-8, 8:end-8, 9:size(vdata, 3)-7] .= 0.8
 
     dev  = Oceananigans.Architectures.device(arch)
 
@@ -214,7 +214,7 @@ function estimate_tracer_error((arch, Nx, Ny, Nz), wdata)
     vdata .+= 0.119 * 1e-3
 
     iter = vdata[9:(9+Nx), 9:(9+Ny), Nz+8][1:10, 9:10]
-    
+
     for k = Nz-1:-1:1
         cᵏ = κu[9:(9+Nx), 9:(9+Ny), k+8][1:10, 9:10]
         iter = vdata[9:(9+Nx), 9:(9+Ny), k+8][1:10, 9:10] .- cᵏ .* iter
@@ -222,7 +222,7 @@ function estimate_tracer_error((arch, Nx, Ny, Nz), wdata)
 
     mean_sq_surface_u = sum(iter)
 
-    return mean_sq_surface_u * 1e50
+    return mean_sq_surface_u * 1e20
 end
 
 function differentiate_tracer_error(grid, wdata, dwdata)
