@@ -233,13 +233,22 @@ end
 function bad_time_step!(model, Δt;
                     callbacks=[], euler=false)
 
-    # Full step for tracers, fractional step for velocities.
-    grid = model.grid
-    compute_free_surface_tendency!(grid, model, model.free_surface)
+    for (i, name) in enumerate((:u, :v))
+        Gⁿ = model.timestepper.Gⁿ[name]
+        G⁻ = model.timestepper.G⁻[name]
+        velocity_field = model.velocities[name]
 
-    ab2_step_velocities!(model.velocities, model, Δt, model.timestepper.χ)
+        launch!(model.architecture, model.grid, :xyz,
+                ab2_step_field!, velocity_field, Δt, model.timestepper.χ, Gⁿ, G⁻)
 
-    bad_step_free_surface!(model.free_surface, model, model.timestepper, Δt)
+        implicit_step!(velocity_field,
+                       model.timestepper.implicit_solver,
+                       model.closure,
+                       model.diffusivity_fields,
+                       nothing,
+                       model.clock,
+                       Δt)
+    end
 
     u, v, _ = model.velocities
     grid = model.grid
@@ -262,67 +271,6 @@ function bad_time_step!(model, Δt;
     parent(u⁻) .= parent(u)
     parent(v⁻) .= parent(v)
 
-    bad_compute_tendencies!(model, callbacks)
-
-    return nothing
-end
-
-function bad_step_free_surface!(free_surface, model, baroclinic_timestepper, Δt)
-
-    # Note: free_surface.η.grid != model.grid for DistributedSplitExplicitFreeSurface
-    # since halo_size(free_surface.η.grid) != halo_size(model.grid)
-    free_surface_grid = free_surface.η.grid
-    filtered_state    = free_surface.filtered_state
-    substepping       = free_surface.substepping
-
-    barotropic_velocities = free_surface.barotropic_velocities
-
-
-    barotropic_timestepper = free_surface.timestepper
-    baroclinic_timestepper = model.timestepper
-
-    stage = model.clock.stage
-
-    # Reset the filtered fields and the barotropic timestepper to zero. 
-    # In case of an RK3 timestepper, reset also the free surface state for the last stage.
-    @apply_regionally initialize_free_surface_state!(free_surface, baroclinic_timestepper, barotropic_timestepper, Val(stage))
-
-    # Calculate the substepping parameterers
-    # barotropic time step as fraction of baroclinic step and averaging weights
-    Nsubsteps = calculate_substeps(substepping, Δt)
-    fractional_Δt, weights = calculate_adaptive_settings(substepping, Nsubsteps)
-    Nsubsteps = length(weights)
-
-    # barotropic time step in seconds
-    Δτᴮ = fractional_Δt * Δt
-
-    # Slow forcing terms
-    GUⁿ = model.timestepper.Gⁿ.U
-    GVⁿ = model.timestepper.Gⁿ.V
-
-    #free surface state
-    η = free_surface.η
-    U = barotropic_velocities.U
-    V = barotropic_velocities.V
-    η̅ = filtered_state.η
-    U̅ = filtered_state.U
-    V̅ = filtered_state.V
-
-    # reset free surface averages
-    @apply_regionally begin
-        # Solve for the free surface at tⁿ⁺¹
-        iterate_split_explicit!(free_surface, free_surface_grid, GUⁿ, GVⁿ, Δτᴮ, weights, Val(Nsubsteps))
-
-        # Update eta and velocities for the next timestep
-        # The halos are updated in the `update_state!` function
-        launch!(architecture(free_surface_grid), free_surface_grid, :xy,
-                _update_split_explicit_state!, η, U, V, free_surface_grid, η̅, U̅, V̅)
-    end
-
-    return nothing
-end
-
-function bad_compute_tendencies!(model, callbacks)
     grid = model.grid
     arch = architecture(grid)
 
