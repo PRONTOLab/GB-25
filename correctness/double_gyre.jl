@@ -198,7 +198,7 @@ end
     i, j, k = @index(Global, NTuple)
 
     w★ = e[i+8, j+8, k+8]
-    Ri = 1 / (u[i+1+8, j+8, k+8] - u[i+1+8, j+8, k-1+8])
+    Ri = 1 / (u[i+1+8, j+8, k+8]) #  - u[i+1+8, j+8, k-1+8])
     ℓu =  0.119max(0, min(1, Ri))
     κu[i+8, j+8, k+8] = ℓu * w★
 end
