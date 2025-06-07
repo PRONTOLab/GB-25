@@ -211,8 +211,12 @@ function estimate_tracer_error((arch, Nx, Ny, Nz), wdata)
 
     vdata[:, :, Nz + 8] .= wdata[:, :, 1]
 
+    for k = Nz-1:-1:1
+        cᵏ = κu[9:(9+Nx), 9:(9+Ny), k+8]
+        vdata[9:(9+Nx), 9:(9+Ny), k+8] .-= cᵏ .* (vdata[9:(9+Nx), 9:(9+Ny), k+1+8] .+ (0.119 * 1e-3))
+    end
 
-    bad_solve_batched_tridiagonal_system_kernel!(dev)(vdata, Nz, κu, ndrange = (Nx, Ny))
+    # bad_solve_batched_tridiagonal_system_kernel!(dev)(vdata, Nz, κu, ndrange = (Nx, Ny))
 
     mean_sq_surface_u = sum(vdata[9:18, 17:18, 9])
 
