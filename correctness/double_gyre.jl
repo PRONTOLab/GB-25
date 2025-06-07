@@ -241,7 +241,7 @@ function bad_time_step!(model, Δt;
         launch!(model.architecture, model.grid, :xyz,
                 ab2_step_field!, velocity_field, Δt, model.timestepper.χ, Gⁿ, G⁻)
 
-        implicit_step!(velocity_field,
+        bad_implicit_step!(velocity_field,
                        model.timestepper.implicit_solver,
                        model.closure,
                        model.diffusivity_fields,
@@ -314,6 +314,20 @@ function bad_time_step!(model, Δt;
             model.velocities.u.boundary_conditions.bottom, model.velocities.u.boundary_conditions.top, args)
 
     return nothing
+end
+
+function bad_implicit_step!(field,
+                        implicit_solver,
+                        closure,
+                        diffusivity_fields,
+                        tracer_index,
+                        clock,
+                        Δt;
+                        kwargs...)
+
+    LX, LY, LZ = location(field)
+
+    return solve!(field, implicit_solver, field, closure, diffusivity_fields, nothing, LX(), LY(), LZ(), Δt, clock; kwargs...)
 end
 
 function estimate_tracer_error(model, initial_temperature, initial_salinity, wind_stress)
