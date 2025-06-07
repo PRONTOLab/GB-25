@@ -183,13 +183,13 @@ function wind_stress_init(grid;
 end
 
 
-@kernel function bad_solve_batched_tridiagonal_system_kernel!(ϕ, Nz, κu, fᵏ)
+@kernel function bad_solve_batched_tridiagonal_system_kernel!(ϕ, Nz, κu)
     i, j = @index(Global, NTuple)
 
         for k = Nz-1:-1:1
-            cᵏ = @inbounds κu[i-1+8, j+8, k+1+8]
+            cᵏ = @inbounds κu[i+8, j+8, k+8]
 
-            @inbounds ϕ[i+8, j+8, k+8] -= cᵏ * (@inbounds ϕ[i+8, j+8, k+1+8] + fᵏ)
+            @inbounds ϕ[i+8, j+8, k+8] -= cᵏ * (@inbounds ϕ[i+8, j+8, k+1+8] + 0.119 * 1e-3)
         end
 end
 
@@ -207,14 +207,12 @@ function estimate_tracer_error((arch, Nx, Ny, Nz), wdata)
 
     Ri = eltype(wdata)(0.119)
 
-    κu[9:(9+Nx-1), 9:(9+Ny-1), 9:(9+Nz-1)] .= Ri .* edata[9:(9+Nx-1), 9:(9+Ny-1), 9:(9+Nz-1)]
-
-    fᵏ = Ri * 1e-3 # @allowscalar vdata[1+8,1+8, 1+8]
+    κu[8:(8+Nx-1), 9:(9+Ny-1), 10:(10+Nz-1)] .= Ri .* edata[9:(9+Nx-1), 9:(9+Ny-1), 9:(9+Nz-1)]
 
     vdata[:, :, Nz + 8] .= wdata[:, :, 1]
 
 
-    bad_solve_batched_tridiagonal_system_kernel!(dev)(vdata, Nz, κu, fᵏ, ndrange = (Nx, Ny))
+    bad_solve_batched_tridiagonal_system_kernel!(dev)(vdata, Nz, κu, ndrange = (Nx, Ny))
 
     mean_sq_surface_u = sum(vdata[9:18, 17:18, 9])
 
