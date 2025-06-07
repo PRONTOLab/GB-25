@@ -213,13 +213,14 @@ function estimate_tracer_error((arch, Nx, Ny, Nz), wdata)
 
     vdata .+= 0.119 * 1e-3
 
-    iter = vdata[9:(9+Nx), 9:(9+Ny), Nz+8]
+    iter = vdata[9:(9+Nx), 9:(9+Ny), Nz+8][1:10, 9:10]
+    
     for k = Nz-1:-1:1
-        cᵏ = κu[9:(9+Nx), 9:(9+Ny), k+8]
-        iter = vdata[9:(9+Nx), 9:(9+Ny), k+8] .- cᵏ .* iter
+        cᵏ = κu[9:(9+Nx), 9:(9+Ny), k+8][1:10, 9:10]
+        iter = vdata[9:(9+Nx), 9:(9+Ny), k+8][1:10, 9:10] .- cᵏ .* iter
     end
 
-    mean_sq_surface_u = sum(iter[1:10, 9:10])
+    mean_sq_surface_u = sum(iter)
 
     return mean_sq_surface_u * 1e50
 end
