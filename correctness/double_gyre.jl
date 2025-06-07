@@ -241,13 +241,15 @@ function bad_time_step!(model, Δt;
         launch!(model.architecture, model.grid, :xyz,
                 ab2_step_field!, velocity_field, Δt, model.timestepper.χ, Gⁿ, G⁻)
 
-        bad_implicit_step!(velocity_field,
-                       model.timestepper.implicit_solver,
-                       model.closure,
-                       model.diffusivity_fields,
-                       nothing,
-                       model.clock,
-                       Δt)
+        field = velocity_field
+        implicit_solver = model.timestepper.implicit_solver
+        closure = model.closure
+        diffusivity_fields = model.diffusivity_fields
+        clock = model.clock
+
+        LX, LY, LZ = location(field)
+
+        bad_solve!(field, implicit_solver, field, closure, diffusivity_fields, nothing, LX(), LY(), LZ(), Δt, clock)
     end
 
     u, v, _ = model.velocities
@@ -316,18 +318,29 @@ function bad_time_step!(model, Δt;
     return nothing
 end
 
-function bad_implicit_step!(field,
-                        implicit_solver,
-                        closure,
-                        diffusivity_fields,
-                        tracer_index,
-                        clock,
-                        Δt;
-                        kwargs...)
+function bad_solve!(ϕ, solver, rhs, args...)
 
-    LX, LY, LZ = location(field)
+    launch_config = if solver.tridiagonal_direction isa XDirection
+                        :yz
+                    elseif solver.tridiagonal_direction isa YDirection
+                        :xz
+                    elseif solver.tridiagonal_direction isa ZDirection
+                        :xy
+                    end
 
-    return solve!(field, implicit_solver, field, closure, diffusivity_fields, nothing, LX(), LY(), LZ(), Δt, clock; kwargs...)
+    launch!(architecture(solver), solver.grid, launch_config,
+            solve_batched_tridiagonal_system_kernel!, ϕ,
+            solver.a,
+            solver.b,
+            solver.c,
+            rhs,
+            solver.t,
+            solver.grid,
+            solver.parameters,
+            Tuple(args),
+            solver.tridiagonal_direction)
+
+    return nothing
 end
 
 function estimate_tracer_error(model, initial_temperature, initial_salinity, wind_stress)
