@@ -217,7 +217,7 @@ function estimate_tracer_error((arch, Nx, Ny, Nz), wdata)
 
     for k = Nz-1:-1:1
         cᵏ = κu[9:(9+Nx), 9:(9+Ny), k+8][1:10, 9:10]
-        iter = vdata[9:(9+Nx), 9:(9+Ny), k+8][1:10, 9:10] .- cᵏ .* iter
+        iter = - cᵏ .* iter
     end
 
     mean_sq_surface_u = sum(iter)
