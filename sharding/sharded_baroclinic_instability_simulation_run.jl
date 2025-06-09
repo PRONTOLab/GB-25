@@ -11,11 +11,16 @@ using Oceananigans.Architectures: ReactantState
 using Random
 using Printf
 using Reactant
+# using MPI
+# 
+# MPI.Init()
+# comm = MPI.COMM_WORLD
 
 jobid_procid = GordonBell25.get_jobid_procid()
 
 # This must be called before `GordonBell25.initialize`!
 GordonBell25.preamble()
+# GordonBell25.preamble(; rendezvous_warn=60, rendezvous_terminate=120)
 
 using Libdl: dllist
 @show filter(contains("nccl"), dllist())
@@ -54,11 +59,24 @@ Nz = 4
 Nx = Tx - 2H
 Ny = Ty - 2H
 
+# #------------------------------------------------------------------------------
+# @info "Entering first MPI Barrier"
+# MPI.Barrier(comm)
+# #------------------------------------------------------------------------------
+
+
 @info "[$rank] Generating model..." now(UTC)
 model = GordonBell25.baroclinic_instability_model(arch, Nx, Ny, Nz; halo=(H, H, H), Δt=1)
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 
 @show model
+
+
+# #------------------------------------------------------------------------------
+# @info "Entering second MPI Barrier"
+# MPI.Barrier(comm)
+# #------------------------------------------------------------------------------
+
 
 Ninner = ConcreteRNumber(256; sharding=Sharding.NamedSharding(arch.connectivity, ()))
 
@@ -69,6 +87,13 @@ rfirst! = @compile sync=true raise=true first_time_step!(model)
 compiled_loop! = @compile sync=true raise=true loop!(model, Ninner)
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 
+
+# #------------------------------------------------------------------------------
+# @info "Entering third MPI Barrier"
+# MPI.Barrier(comm)
+# #------------------------------------------------------------------------------
+
+
 profile_dir = joinpath(@__DIR__, "profiling", jobid_procid)
 mkpath(joinpath(profile_dir, "first_time_step"))
 @info "[$rank] allocations" GordonBell25.allocatorstats()
@@ -78,6 +103,13 @@ Reactant.with_profiler(joinpath(profile_dir, "first_time_step")) do
 end
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 
+
+# #------------------------------------------------------------------------------
+# @info "Entering fourth MPI Barrier"
+# MPI.Barrier(comm)
+# #------------------------------------------------------------------------------
+
+
 mkpath(joinpath(profile_dir, "loop"))
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 @info "[$rank] running loop" now(UTC)
@@ -85,12 +117,21 @@ Reactant.with_profiler(joinpath(profile_dir, "loop")) do
     @time "[$rank] loop" compiled_loop!(model, Ninner)
 end
 
-mkpath(joinpath(profile_dir, "loop 2"))
+
+# #------------------------------------------------------------------------------
+# @info "Entering fifth MPI Barrier"
+# MPI.Barrier(comm)
+# #------------------------------------------------------------------------------
+
+
+mkpath(joinpath(profile_dir, "loop2"))
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 @info "[$rank] running second loop" now(UTC)
-Reactant.with_profiler(joinpath(profile_dir, "loop")) do
+Reactant.with_profiler(joinpath(profile_dir, "loop2")) do
     @time "[$rank] second loop" compiled_loop!(model, Ninner)
 end
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 
+
+#------------------------------------------------------------------------------
 @info "Done!" now(UTC)

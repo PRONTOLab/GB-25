@@ -6,10 +6,10 @@ out_dir = joinpath(ENV["SCRATCH"], "GB25")
 # run params
 submit   = true
 run_name = "r_react_"
-time     = "01:00:00"
+time     = "00:40:00"
 # Ngpus    = [4, 8]
-# Ngpus    = [4, 8, 16, 32, 64]
-Ngpus    = [128, 256, 512, 1024, 2048]
+Ngpus    = [4, 8, 16, 32, 64]
+# Ngpus    = [128, 256, 512, 1024, 2048]
 # Ngpus    = [4096, 6244]
 # Ngpus    = [6244]
 type     = "weak"

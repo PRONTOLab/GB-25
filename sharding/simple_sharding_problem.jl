@@ -12,13 +12,13 @@ using GordonBell25: GordonBell25
 jobid_procid = GordonBell25.get_jobid_procid()
 
 # This must be called before `GordonBell25.initialize`!
-GordonBell25.preamble(; rendezvous_warn=600, rendezvous_terminate=1200)
+GordonBell25.preamble(; rendezvous_warn=60, rendezvous_terminate=120)
 
 using Libdl: dllist
 
 @show filter(contains("nccl"), dllist())
 
-Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
+Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = false
 Reactant.MLIR.IR.DUMP_MLIR_DIR[] = joinpath(@__DIR__, "mlir_dumps", jobid_procid)
 Reactant.Compiler.DEBUG_DISABLE_RESHARDING[] = true
 # Reactant.Compiler.DEBUG_PRINT_CODEGEN[] = true
