@@ -31,17 +31,6 @@ function set_tracers(grid;
     return Tᵢ, Sᵢ
 end
 
-function resolution_to_points(resolution)
-    Nx = convert(Int, 384 / resolution)
-    Ny = convert(Int, 192 / resolution)
-    return Nx, Ny
-end
-
-function simple_latitude_longitude_grid(arch, resolution, Nz)
-    Nx, Ny = resolution_to_points(resolution)
-    return simple_latitude_longitude_grid(arch, Nx, Ny, Nz)
-end
-
 function simple_latitude_longitude_grid(arch, Nx, Ny, Nz; halo=(8, 8, 8))
     z = exponential_z_faces(; Nz, depth=1800) # may need changing for very large Nz
 
@@ -131,18 +120,6 @@ function wind_stress_init(grid;
     return wind_stress
 end
 
-function first_time_step!(model)
-    Δt = model.clock.last_Δt
-    Oceananigans.TimeSteppers.first_time_step!(model, Δt)
-    return nothing
-end
-
-function time_step!(model)
-    Δt = model.clock.last_Δt + 0
-    Oceananigans.TimeSteppers.time_step!(model, Δt)
-    return nothing
-end
-
 function loop!(model, Ninner)
     Δt = model.clock.last_Δt + 0
     Oceananigans.TimeSteppers.first_time_step!(model, Δt)
@@ -205,7 +182,7 @@ rmodel = double_gyre_model(rarch, 62, 62, 15, 1200)
 
 @info rmodel.buoyancy
 
-rTᵢ, rSᵢ      = set_tracers(rmodel.grid)
+rTᵢ, rSᵢ     = set_tracers(rmodel.grid)
 rwind_stress = wind_stress_init(rmodel.grid)
 
 @info "Compiling..."
