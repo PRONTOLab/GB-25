@@ -63,7 +63,8 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fiel
                                                         hydrostatic_fields,
                                                         compute_hydrostatic_free_surface_Gu!,
                                                         compute_hydrostatic_free_surface_Gv!,
-                                                        ab2_step_grid!, ab2_step_velocities!, ab2_step_tracers!
+                                                        ab2_step_grid!, ab2_step_velocities!, ab2_step_tracers!,
+                                                        hydrostatic_free_surface_v_velocity_tendency
 
 
 using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: _compute_barotropic_mode!,
@@ -317,24 +318,23 @@ function bad_time_step!(model, Δt;
             u_kernel_args; active_cells_map=nothing)
 
     launch!(arch, grid, :xyz,
-            compute_hydrostatic_free_surface_Gv!, model.timestepper.Gⁿ.v, grid, 
+            bad_compute_hydrostatic_free_surface_Gv!, model.timestepper.Gⁿ.v, grid, 
             v_kernel_args; active_cells_map=nothing)
 
-    # Calculate contributions to momentum and tracer tendencies from user-prescribed fluxes across the
-    # boundaries of the domain
-    args = (model.clock, fields(model), model.closure, model.buoyancy)
-
     launch!(model.architecture, model.timestepper.Gⁿ.u.grid, :xy, _bad_apply_z_bcs!, model.timestepper.Gⁿ.u,
-            instantiated_location(model.timestepper.Gⁿ.u), model.timestepper.Gⁿ.u.grid,
-            model.velocities.u.boundary_conditions.bottom, model.velocities.u.boundary_conditions.top, args)
+            model.timestepper.Gⁿ.u.grid, model.velocities.u.boundary_conditions.top)
 
     return nothing
 end
 
-@kernel function _bad_apply_z_bcs!(Gc, loc, grid, bottom_bc, top_bc, args)
+@kernel function bad_compute_hydrostatic_free_surface_Gv!(Gv, grid, args)
+    i, j, k = @index(Global, NTuple)
+    @inbounds Gv[i, j, k] = hydrostatic_free_surface_v_velocity_tendency(i, j, k, grid, args...)
+end
+
+@kernel function _bad_apply_z_bcs!(Gc, grid, top_bc)
     i, j = @index(Global, NTuple)
-    apply_z_bottom_bc!(Gc, loc, bottom_bc, i, j, grid, args...)
-       apply_z_top_bc!(Gc, loc, top_bc,    i, j, grid, args...)
+    @inbounds Gc[i, j, grid.Nz] -= top_bc.condition[i, j, 1]
 end
 
 function estimate_tracer_error(model, initial_temperature, initial_salinity, wind_stress)
@@ -349,7 +349,7 @@ function estimate_tracer_error(model, initial_temperature, initial_salinity, win
     end
     mean_sq_surface_u = mean_sq_surface_u / (Nλ * Nφ)
     
-    return mean_sq_surface_u * 1e11
+    return mean_sq_surface_u
 end
 
 function differentiate_tracer_error(model, Tᵢ, Sᵢ, J, dmodel, dTᵢ, dSᵢ, dJ)
