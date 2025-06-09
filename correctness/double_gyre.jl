@@ -249,7 +249,20 @@ function bad_time_step!(model, Δt;
 
         LX, LY, LZ = location(field)
 
-        bad_solve!(field, implicit_solver, field, closure, diffusivity_fields, nothing, LX(), LY(), LZ(), Δt, clock)
+        solver_args = (closure, diffusivity_fields, nothing, LX(), LY(), LZ(), Δt, clock)
+
+
+        launch!(architecture(implicit_solver), implicit_solver.grid, :xy,
+            solve_batched_tridiagonal_system_kernel!, field,
+            implicit_solver.a,
+            implicit_solver.b,
+            implicit_solver.c,
+            field,
+            implicit_solver.t,
+            implicit_solver.grid,
+            implicit_solver.parameters,
+            (closure, diffusivity_fields, nothing, LX(), LY(), LZ(), Δt, clock),
+            implicit_solver.tridiagonal_direction)
     end
 
     u, v, _ = model.velocities
@@ -311,36 +324,17 @@ function bad_time_step!(model, Δt;
     # boundaries of the domain
     args = (model.clock, fields(model), model.closure, model.buoyancy)
 
-    launch!(model.architecture, model.timestepper.Gⁿ.u.grid, :xy, _apply_z_bcs!, model.timestepper.Gⁿ.u,
+    launch!(model.architecture, model.timestepper.Gⁿ.u.grid, :xy, _bad_apply_z_bcs!, model.timestepper.Gⁿ.u,
             instantiated_location(model.timestepper.Gⁿ.u), model.timestepper.Gⁿ.u.grid,
             model.velocities.u.boundary_conditions.bottom, model.velocities.u.boundary_conditions.top, args)
 
     return nothing
 end
 
-function bad_solve!(ϕ, solver, rhs, args...)
-
-    launch_config = if solver.tridiagonal_direction isa XDirection
-                        :yz
-                    elseif solver.tridiagonal_direction isa YDirection
-                        :xz
-                    elseif solver.tridiagonal_direction isa ZDirection
-                        :xy
-                    end
-
-    launch!(architecture(solver), solver.grid, launch_config,
-            solve_batched_tridiagonal_system_kernel!, ϕ,
-            solver.a,
-            solver.b,
-            solver.c,
-            rhs,
-            solver.t,
-            solver.grid,
-            solver.parameters,
-            Tuple(args),
-            solver.tridiagonal_direction)
-
-    return nothing
+@kernel function _bad_apply_z_bcs!(Gc, loc, grid, bottom_bc, top_bc, args)
+    i, j = @index(Global, NTuple)
+    apply_z_bottom_bc!(Gc, loc, bottom_bc, i, j, grid, args...)
+       apply_z_top_bc!(Gc, loc, top_bc,    i, j, grid, args...)
 end
 
 function estimate_tracer_error(model, initial_temperature, initial_salinity, wind_stress)
