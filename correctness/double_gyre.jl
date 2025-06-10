@@ -64,7 +64,8 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fiel
                                                         compute_hydrostatic_free_surface_Gu!,
                                                         compute_hydrostatic_free_surface_Gv!,
                                                         ab2_step_grid!, ab2_step_velocities!, ab2_step_tracers!,
-                                                        hydrostatic_free_surface_v_velocity_tendency
+                                                        hydrostatic_free_surface_v_velocity_tendency,
+                                                        grid_slope_contribution_y, ∂ⱼ_τ₂ⱼ
 
 
 using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: _compute_barotropic_mode!,
@@ -79,7 +80,8 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces
                                                         initialize_free_surface_state!,
                                                         initialize_free_surface_timestepper!,
                                                         _compute_integrated_ab2_tendencies!,
-                                                        compute_barotropic_mode!
+                                                        compute_barotropic_mode!,
+                                                        explicit_barotropic_pressure_y_gradient
 
 using Oceananigans.TurbulenceClosures: compute_diffusivities!, getclosure, clip, shear_production, dissipation, closure_turbulent_velocity, ∇_dot_qᶜ, immersed_∇_dot_qᶜ, Riᶜᶜᶠ, shear_squaredᶜᶜᶠ
 
@@ -102,9 +104,10 @@ using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: get_top_tra
 
 using Oceananigans.BuoyancyFormulations: ∂z_b
 using Oceananigans.Solvers: solve!, solve_batched_tridiagonal_system_kernel!
-using Oceananigans.Operators: ℑxᶜᵃᵃ, ℑyᵃᶜᵃ, Az, volume, δxᶜᵃᵃ, δyᵃᶜᵃ, δzᵃᵃᶜ, V⁻¹ᶜᶜᶜ, σⁿ, σ⁻, ∂zᶠᶜᶠ, δxᶠᶜᶠ, Δx⁻¹ᶠᶜᶠ
+using Oceananigans.Operators: ℑxᶜᵃᵃ, ℑyᵃᶜᵃ, Az, volume, δxᶜᵃᵃ, δyᵃᶜᵃ, δzᵃᵃᶜ, V⁻¹ᶜᶜᶜ, σⁿ, σ⁻, ∂zᶠᶜᶠ, δxᶠᶜᶠ, Δx⁻¹ᶠᶜᶠ, ∂yᶜᶠᶜ, active_weighted_ℑxyᶜᶠᶜ, Δy⁻¹ᶜᶠᶜ, Δy_qᶠᶜᶜ
 using Oceananigans.Forcings: with_advective_forcing
-using Oceananigans.Advection: div_Uc, _advective_tracer_flux_x, _advective_tracer_flux_y, _advective_tracer_flux_z
+using Oceananigans.Advection: div_Uc, _advective_tracer_flux_x, _advective_tracer_flux_y, _advective_tracer_flux_z, U_dot_∇v
+using Oceananigans.Coriolis: y_f_cross_U, fᶠᶠᵃ
 using KernelAbstractions: @kernel, @index
 using KernelAbstractions.Extras.LoopInfo: @unroll
 
@@ -329,8 +332,34 @@ end
 
 @kernel function bad_compute_hydrostatic_free_surface_Gv!(Gv, grid, args)
     i, j, k = @index(Global, NTuple)
-    @inbounds Gv[i, j, k] = hydrostatic_free_surface_v_velocity_tendency(i, j, k, grid, args...)
+    @inbounds Gv[i, j, k] = bad_hydrostatic_free_surface_v_velocity_tendency(i, j, k, grid, args...)
 end
+
+@inline function bad_hydrostatic_free_surface_v_velocity_tendency(i, j, k, grid,
+                                                              advection,
+                                                              coriolis,
+                                                              closure,
+                                                              v_immersed_bc,
+                                                              velocities,
+                                                              free_surface,
+                                                              tracers,
+                                                              buoyancy,
+                                                              diffusivities,
+                                                              hydrostatic_pressure_anomaly,
+                                                              auxiliary_fields,
+                                                              ztype,
+                                                              clock,
+                                                              forcing)
+
+    model_fields = merge(hydrostatic_fields(velocities, free_surface, tracers), auxiliary_fields)
+
+    return ( - bad_y_f_cross_U(i, j, k, grid, coriolis, velocities)
+             - ∂ⱼ_τ₂ⱼ(i, j, k, grid, closure, diffusivities, clock, model_fields, buoyancy))
+end
+
+@inline bad_y_f_cross_U(i, j, k, grid, coriolis, U) =
+    @inbounds + ℑxᶜᵃᵃ(i, j, k, grid, fᶠᶠᵃ, coriolis) *
+                active_weighted_ℑxyᶜᶠᶜ(i, j, k, grid, Δy_qᶠᶜᶜ, U[1]) * Δy⁻¹ᶜᶠᶜ(i, j, k, grid)
 
 @kernel function _bad_apply_z_bcs!(Gc, grid, top_bc)
     i, j = @index(Global, NTuple)
