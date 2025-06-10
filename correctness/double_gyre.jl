@@ -358,9 +358,8 @@ end
 end
 
 @inline function bad_active_weighted_ℑxyᶜᶠᶜ(i, j, k, grid, q, args...)
-    active_nodes =  !inactive_cell(i, j-1, k, grid) & !inactive_cell(i-1, j-1, k, grid) & !inactive_cell(i+1, j-1, k, grid)
-    mask = active_nodes == 0
-    return ifelse(mask, zero(grid), ℑxyᶜᶠᵃ(i, j, k, grid, q, args...))
+    
+    return ifelse(j < 2, zero(grid), q(i+1, j-1, k, grid, args...))
 end
 
 @kernel function _bad_apply_z_bcs!(Gc, grid, top_bc)
