@@ -86,8 +86,8 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces
 using Oceananigans.TurbulenceClosures: compute_diffusivities!, getclosure, clip, shear_production,
                                        dissipation, closure_turbulent_velocity, ∇_dot_qᶜ,
                                        immersed_∇_dot_qᶜ, Riᶜᶜᶠ, shear_squaredᶜᶜᶠ,
-                                       _viscous_flux_vx, _viscous_flux_vy, _viscous_flux_vz,
-                                       time_discretization
+                                       viscous_flux_vx, viscous_flux_vy, viscous_flux_vz,
+                                       time_discretization, ExplicitTimeDiscretization, ivd_viscous_flux_vz
 
 using Oceananigans.ImmersedBoundaries: get_active_cells_map, mask_immersed_field!
 
@@ -111,7 +111,8 @@ using Oceananigans.Solvers: solve!, solve_batched_tridiagonal_system_kernel!
 using Oceananigans.Operators: ℑxᶜᵃᵃ, ℑyᵃᶠᵃ, ℑyᵃᶜᵃ, Az, volume, δxᶜᵃᵃ, δyᵃᶜᵃ, δzᵃᵃᶜ, V⁻¹ᶜᶜᶜ,
                               σⁿ, σ⁻, ∂zᶠᶜᶠ, δxᶠᶜᶠ, Δx⁻¹ᶠᶜᶠ, ∂yᶜᶠᶜ, active_weighted_ℑxyᶜᶠᶜ,
                               Δy⁻¹ᶜᶠᶜ, Δy_qᶠᶜᶜ, ℑxyᶜᶠᵃ, not_peripheral_node, peripheral_node,
-                              Δyᶠᶜᶜ, δyᵃᶠᵃ, Ax_qᶠᶠᶜ, Ay_qᶜᶜᶜ, Az_qᶜᶠᶠ, δzᵃᵃᶜ, V⁻¹ᶜᶠᶜ
+                              Δyᶠᶜᶜ, δyᵃᶠᵃ, Ax_qᶠᶠᶜ, Ay_qᶜᶜᶜ, Az_qᶜᶠᶠ, δzᵃᵃᶜ, V⁻¹ᶜᶠᶜ,
+                              Axᶠᶠᶜ, Ayᶜᶜᶜ, Azᶜᶠᶠ
 
 using Oceananigans.Forcings: with_advective_forcing
 using Oceananigans.Advection: div_Uc, _advective_tracer_flux_x, _advective_tracer_flux_y, _advective_tracer_flux_z, U_dot_∇v
@@ -367,9 +368,18 @@ end
 
 @inline function bad_∂ⱼ_τ₂ⱼ(i, j, k, grid, closure, args...)
     disc = time_discretization(closure)
-    return V⁻¹ᶜᶠᶜ(i, j, k, grid) * (δxᶜᵃᵃ(i, j, k, grid, Ax_qᶠᶠᶜ, _viscous_flux_vx, disc, closure, args...) +
-                                    δyᵃᶠᵃ(i, j, k, grid, Ay_qᶜᶜᶜ, _viscous_flux_vy, disc, closure, args...) +
-                                    δzᵃᵃᶜ(i, j, k, grid, Az_qᶜᶠᶠ, _viscous_flux_vz, disc, closure, args...))
+    return (Axᶠᶠᶜ(i+1, j, k, grid) * zero(grid)
+          - Axᶠᶠᶜ(i, j, k, grid)   * zero(grid)
+          + Ayᶜᶜᶜ(i, j, k, grid)   * zero(grid)
+          - Ayᶜᶜᶜ(i, j-1, k, grid) * zero(grid)
+          + Azᶜᶠᶠ(i, j, k+1, grid) * bad_viscous_flux_vz(i, j, k+1, grid, disc, closure, args...)
+          - Azᶜᶠᶠ(i, j, k, grid)   * bad_viscous_flux_vz(i, j, k, grid, disc, closure, args...))
+end
+
+@inline function bad_viscous_flux_vz(i, j, k, grid, thing, closure, args...)
+    return ifelse((k == 1) | (k == grid.Nz+1),
+                  viscous_flux_vz(i, j, k, grid, ExplicitTimeDiscretization(), closure, args...),
+                  ivd_viscous_flux_vz(i, j, k, grid, closure, args...))
 end
 
 @kernel function _bad_apply_z_bcs!(Gc, grid, top_bc)
