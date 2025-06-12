@@ -88,7 +88,7 @@ using Oceananigans.TurbulenceClosures: compute_diffusivities!, getclosure, clip,
                                        immersed_∇_dot_qᶜ, Riᶜᶜᶠ, shear_squaredᶜᶜᶠ,
                                        viscous_flux_vx, viscous_flux_vy, viscous_flux_vz,
                                        time_discretization, ExplicitTimeDiscretization, ivd_viscous_flux_vz,
-                                       νz_σᶜᶠᶠ, νᶜᶠᶠ
+                                       νz_σᶜᶠᶠ, νᶜᶠᶠ, viscosity_location, viscosity
 
 using Oceananigans.ImmersedBoundaries: get_active_cells_map, mask_immersed_field!
 
@@ -113,7 +113,8 @@ using Oceananigans.Operators: ℑxᶜᵃᵃ, ℑyᵃᶠᵃ, ℑyᵃᶜᵃ, Az, v
                               σⁿ, σ⁻, ∂zᶠᶜᶠ, δxᶠᶜᶠ, Δx⁻¹ᶠᶜᶠ, ∂yᶜᶠᶜ, active_weighted_ℑxyᶜᶠᶜ,
                               Δy⁻¹ᶜᶠᶜ, Δy_qᶠᶜᶜ, ℑxyᶜᶠᵃ, not_peripheral_node, peripheral_node,
                               Δyᶠᶜᶜ, δyᵃᶠᵃ, Ax_qᶠᶠᶜ, Ay_qᶜᶜᶜ, Az_qᶜᶠᶠ, δzᵃᵃᶜ, V⁻¹ᶜᶠᶜ,
-                              Axᶠᶠᶜ, Ayᶜᶜᶜ, Azᶜᶠᶠ, ∂zᶜᶠᶠ, δzᶜᶠᶠ
+                              Axᶠᶠᶜ, Ayᶜᶜᶜ, Azᶜᶠᶠ, ∂zᶜᶠᶠ, δzᶜᶠᶠ, Δyᶠᶠᶜ, Δzᶠᶠᶜ, Δxᶜᶜᶜ, Δzᶜᶜᶜ,
+                              Δxᶜᶠᶠ, Δyᶜᶠᶠ
 
 using Oceananigans.Forcings: with_advective_forcing
 using Oceananigans.Advection: div_Uc, _advective_tracer_flux_x, _advective_tracer_flux_y, _advective_tracer_flux_z, U_dot_∇v
@@ -330,9 +331,10 @@ function bad_time_step!(model, Δt;
             compute_hydrostatic_free_surface_Gu!, model.timestepper.Gⁿ.u, grid, 
             u_kernel_args; active_cells_map=nothing)
 
+
     launch!(arch, grid, :xyz,
             bad_compute_hydrostatic_free_surface_Gv!, model.timestepper.Gⁿ.v, grid, 
-            v_kernel_args; active_cells_map=nothing)
+            model.velocities, model.diffusivity_fields,; active_cells_map=nothing)
 
     launch!(model.architecture, model.timestepper.Gⁿ.u.grid, :xy, _bad_apply_z_bcs!, model.timestepper.Gⁿ.u,
             model.timestepper.Gⁿ.u.grid, model.velocities.u.boundary_conditions.top)
@@ -340,47 +342,13 @@ function bad_time_step!(model, Δt;
     return nothing
 end
 
-@kernel function bad_compute_hydrostatic_free_surface_Gv!(Gv, grid, args)
+@kernel function bad_compute_hydrostatic_free_surface_Gv!(Gv, grid, velocities, diffusivities)
     i, j, k = @index(Global, NTuple)
-    @inbounds Gv[i, j, k] = bad_hydrostatic_free_surface_v_velocity_tendency(i, j, k, grid, args...)
-end
-
-@inline function bad_hydrostatic_free_surface_v_velocity_tendency(i, j, k, grid,
-                                                              advection,
-                                                              coriolis,
-                                                              closure,
-                                                              v_immersed_bc,
-                                                              velocities,
-                                                              free_surface,
-                                                              tracers,
-                                                              buoyancy,
-                                                              diffusivities,
-                                                              hydrostatic_pressure_anomaly,
-                                                              auxiliary_fields,
-                                                              ztype,
-                                                              clock,
-                                                              forcing)
-
-    model_fields = merge(hydrostatic_fields(velocities, free_surface, tracers), auxiliary_fields)
-
-    return ( - (j > 1) * velocities[1][i+1, j-1, k]
-             - bad_∂ⱼ_τ₂ⱼ(i, j, k, grid, closure, diffusivities, clock, model_fields, buoyancy))
-end
-
-@inline function bad_∂ⱼ_τ₂ⱼ(i, j, k, grid, closure, diffusivities, clock, model_fields, buoyancy)
-    disc = time_discretization(closure)
-    return (Axᶠᶠᶜ(i+1, j, k, grid) * zero(grid)
-          - Axᶠᶠᶜ(i, j, k, grid)   * zero(grid)
-          + Ayᶜᶜᶜ(i, j, k, grid)   * zero(grid)
-          - Ayᶜᶜᶜ(i, j-1, k, grid) * zero(grid)
-          + Azᶜᶠᶠ(i, j, k+1, grid) * bad_viscous_flux_vz(i, j, k+1, grid, disc, closure, diffusivities, clock, model_fields, buoyancy)
-          - Azᶜᶠᶠ(i, j, k, grid)   * bad_viscous_flux_vz(i, j, k, grid, disc, closure, diffusivities, clock, model_fields, buoyancy))
-end
-
-@inline function bad_viscous_flux_vz(i, j, k, grid, thing, closure, diffusivities, clock, model_fields, buoyancy)
-    return ifelse((k == 1) | (k == grid.Nz+1),
-                  - νᶜᶠᶠ(i, j, k, grid, closure, diffusivities, clock, model_fields) * δzᶜᶠᶠ(i, j, k, grid, model_fields.v),
-                  zero(grid))
+    @inbounds Gv[i, j, k] = ( - (j > 1) * velocities[1][i+1, j-1, k]
+                                - (grid.Δyᶜᶠᵃ * grid.z.Δᵃᵃᶜ[k] * zero(grid)
+                                -  grid.Δyᶜᶠᵃ * grid.z.Δᵃᵃᶜ[k] * zero(grid)
+                                +  grid.Δxᶜᶜᵃ[j] * grid.z.Δᵃᵃᶜ[k] * zero(grid) 
+                                +  grid.Δxᶜᶠᵃ[j] * grid.Δyᶜᶠᵃ * (k == 1) * diffusivities.κu[i, j, k]))
 end
 
 
@@ -475,7 +443,7 @@ dedν, dJ = rdifferentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, dmod
 @allowscalar @show dJ[i, j]
 
 # Produce finite-difference gradients for comparison:
-ϵ_list = [1e-1, 1e-2, 1e-3, 1e-4] #, 1e-5, 1e-6, 1e-7, 1e-8]
+ϵ_list = [1e-1, 1e-2, 1e-3] #, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8]
 
 @allowscalar gradient_list = Array{Float64}[]
 
