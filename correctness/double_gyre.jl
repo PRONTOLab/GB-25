@@ -346,7 +346,6 @@ end
     i, j, k = @index(Global, NTuple)
     @inbounds Gv[i, j, k] = ( - (j > 1) * velocities[1][i+1, j-1, k]
                                 - (grid.Δyᶜᶠᵃ * grid.z.Δᵃᵃᶜ[k] * zero(grid)
-                                -  grid.Δyᶜᶠᵃ * grid.z.Δᵃᵃᶜ[k] * zero(grid)
                                 +  grid.Δxᶜᶜᵃ[j] * grid.z.Δᵃᵃᶜ[k] * zero(grid) 
                                 +  grid.Δxᶜᶠᵃ[j] * grid.Δyᶜᶠᵃ * (k == 1) * diffusivities.κu[i, j, k]))
 end
