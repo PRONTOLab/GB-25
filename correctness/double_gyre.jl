@@ -293,8 +293,8 @@ function bad_time_step!(model, Δt;
             U̅, V̅, grid, u, v)
 
     # add in "good" barotropic mode
-    launch!(arch, grid, :xyz, _barotropic_split_explicit_corrector!,
-            u, v, U, V, U̅, V̅, grid)
+    launch!(arch, grid, :xyz, _bad_barotropic_split_explicit_corrector!,
+            v, V, V̅)
 
     u, v, w = model.velocities
     u⁻, v⁻ = model.diffusivity_fields.previous_velocities
@@ -340,6 +340,12 @@ function bad_time_step!(model, Δt;
             model.timestepper.Gⁿ.u.grid, model.velocities.u.boundary_conditions.top)
 
     return nothing
+end
+
+@kernel function _bad_barotropic_split_explicit_corrector!(v, V, V̅)
+    i, j, k = @index(Global, NTuple)
+
+    @inbounds v[i, j, k] = v[i, j, k] + (V[i, j, 1] - V̅[i, j, 1])
 end
 
 @kernel function bad_compute_hydrostatic_free_surface_Gv!(Gv, grid, velocities, diffusivities)
@@ -390,8 +396,6 @@ Oceananigans.defaults.FloatType = Float64
 rarch = ReactantState()
 rmodel = double_gyre_model(rarch, 62, 62, 15, 1200)
 
-@info rmodel.buoyancy
-
 rTᵢ, rSᵢ      = set_tracers(rmodel.grid)
 rwind_stress = wind_stress_init(rmodel.grid)
 
@@ -401,9 +405,6 @@ dmodel = Enzyme.make_zero(rmodel)
 dTᵢ = Field{Center, Center, Center}(rmodel.grid)
 dSᵢ = Field{Center, Center, Center}(rmodel.grid)
 dJ  = Field{Face, Center, Nothing}(rmodel.grid)
-
-@info dmodel
-@info dmodel.closure
 
 tic = time()
 restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress)
