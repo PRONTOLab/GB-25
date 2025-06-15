@@ -289,7 +289,7 @@ function bad_time_step!(model, Δt;
     arch  = architecture(grid)
 
     launch!(architecture(grid), grid, :xy,
-            _compute_barotropic_mode!,
+            bad_compute_barotropic_mode!,
             U̅, V̅, grid, u, v)
 
     parent(v)[8:end-8, 8:end-8, 8:end-8] .= parent(V̅)[8:end-8, 8:end-8, 1]
@@ -306,6 +306,30 @@ function bad_time_step!(model, Δt;
     parent(model.timestepper.Gⁿ.u)[8:end-8, 8:end-8, grid.Nz] .-= parent(model.velocities.u.boundary_conditions.top.condition)[8:end-8, 8:end-8, 1]
 
     return nothing
+end
+
+@kernel function bad_compute_barotropic_mode!(U̅, V̅, grid, u, v)
+    i, j  = @index(Global, NTuple)
+    k_top  = size(grid, 3) + 1
+
+    hᶠᶜ = Oceananigans.Grids.static_column_depthᶠᶜᵃ(i, j, grid)
+    hᶜᶠ = Oceananigans.Grids.static_column_depthᶜᶠᵃ(i, j, grid)
+
+    Hᶠᶜ = Oceananigans.Grids.column_depthᶠᶜᵃ(i, j, k_top, grid, 0)
+    Hᶜᶠ = Oceananigans.Grids.column_depthᶜᶠᵃ(i, j, k_top, grid, 0)
+
+    # If the static depths are zero (i.e. the column is immersed),
+    # we set the grid scaling factor to 1
+    σᶠᶜ = ifelse(hᶠᶜ == 0, one(grid), Hᶠᶜ / hᶠᶜ)
+    σᶜᶠ = ifelse(hᶜᶠ == 0, one(grid), Hᶜᶠ / hᶜᶠ)
+
+    @inbounds U̅[i, j, 1] = Oceananigans.Operators.Δrᶠᶜᶜ(i, j, 1, grid) * u[i, j, 1] * σᶠᶜ
+    @inbounds V̅[i, j, 1] = Oceananigans.Operators.Δrᶜᶠᶜ(i, j, 1, grid) * v[i, j, 1] * σᶜᶠ
+
+    for k in 2:grid.Nz
+        @inbounds U̅[i, j, 1] += Oceananigans.Operators.Δrᶠᶜᶜ(i, j, k, grid) * u[i, j, k] * σᶠᶜ
+        @inbounds V̅[i, j, 1] += Oceananigans.Operators.Δrᶜᶠᶜ(i, j, k, grid) * v[i, j, k] * σᶜᶠ
+    end
 end
 
 function estimate_tracer_error(model, initial_temperature, initial_salinity, wind_stress)
