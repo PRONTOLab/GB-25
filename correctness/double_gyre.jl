@@ -232,21 +232,24 @@ function time_step_double_gyre!(model, wind_stress)
 
     u = parent(model.velocities.u)
     v = parent(model.velocities.v)
-    Gnu = parent(model.timestepper.Gⁿ.u)
-    Gnv = parent(model.timestepper.Gⁿ.v)
+    
+    # Gnu = copy(parent(model.timestepper.Gⁿ.u))
 
     Vp = parent(model.free_surface.filtered_state.V)
 
-    Gnu[8:end-8, 8:end-8, grid.Nz] .-= wind_stress    
+    v[8:end-8, 8:end-8, grid.Nz] .= wind_stress    
 
     @trace track_numbers=false for _ = 1:5
 
-        u[8:end-8, 8:end-8, 8:end-8] .+= Gnu[8:end-8, 8:end-8, 8:end-8]
+        v[8:end-8, 8:end-8, 8:end-8] .+= u[8:end-8, 8:end-8, 8:end-8]
+
+        u[8:end-8, 8:end-8, 8:end-8] .+= v[9:end-7, 7:end-9, 8:end-8]
+ # Gnu[8:end-8, 8:end-8, 8:end-8]
 
         launch!(model.architecture, grid, :xy,
             bad_solve_batched_tridiagonal_system_kernel!, model.velocities.u, Nz)
 
-        v[8:end-8, 8:end-8, 8:end-8] .+= Gnv[8:end-8, 8:end-8, 8:end-8]
+        # v[8:end-8, 8:end-8, 8:end-8] .+= Gnv[8:end-8, 8:end-8, 8:end-8]
 
         launch!(model.architecture, grid, :xy,
             bad_solve_batched_tridiagonal_system_kernel!, model.velocities.v, Nz)
@@ -259,9 +262,7 @@ function time_step_double_gyre!(model, wind_stress)
         parent(model.diffusivity_fields.previous_velocities[1]) .= u
         parent(model.diffusivity_fields.previous_velocities[2]) .= v
 
-        Gnu[8:end-8, 8:end-8, 8:end-8] .= v[9:end-7, 7:end-9, 8:end-8]
-
-        Gnv[8:end-8, 8:end-8, 8:end-8] .= u[9:end-7, 7:end-9, 8:end-8]
+        # Gnu[8:end-8, 8:end-8, 8:end-8] .= v[9:end-7, 7:end-9, 8:end-8]
 
     end
 
