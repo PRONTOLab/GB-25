@@ -227,18 +227,26 @@ end
 
 function time_step_double_gyre!(model, wind_stress)
 
+    grid = model.grid
+    Nz = size(grid, 3)
+
+    u = parent(model.velocities.u)
+    v = parent(model.velocities.v)
+    Gnu = parent(model.timestepper.Gⁿ.u)
+    Gnv = parent(model.timestepper.Gⁿ.v)
+
+    Vp = parent(model.free_surface.filtered_state.V)
+
+    Gnu[8:end-8, 8:end-8, grid.Nz] .-= wind_stress    
+
     @trace track_numbers=false for _ = 1:5
 
-
-        grid = model.grid
-        Nz = size(grid, 3)
-
-        parent(model.velocities.u)[8:end-8, 8:end-8, 8:end-8] .+= parent(model.timestepper.Gⁿ.u)[8:end-8, 8:end-8, 8:end-8]
+        u[8:end-8, 8:end-8, 8:end-8] .+= Gnu[8:end-8, 8:end-8, 8:end-8]
 
         launch!(model.architecture, grid, :xy,
             bad_solve_batched_tridiagonal_system_kernel!, model.velocities.u, Nz)
 
-        parent(model.velocities.v)[8:end-8, 8:end-8, 8:end-8] .+= parent(model.timestepper.Gⁿ.v)[8:end-8, 8:end-8, 8:end-8]
+        v[8:end-8, 8:end-8, 8:end-8] .+= Gnv[8:end-8, 8:end-8, 8:end-8]
 
         launch!(model.architecture, grid, :xy,
             bad_solve_batched_tridiagonal_system_kernel!, model.velocities.v, Nz)
@@ -246,17 +254,15 @@ function time_step_double_gyre!(model, wind_stress)
         launch!(model.architecture, grid, :xy,
                 bad_compute_barotropic_mode!, model.free_surface.filtered_state.V, model.velocities.v)
 
-        parent(model.velocities.v)[8:end-8, 8:end-8, 8:end-8] .= parent(model.free_surface.filtered_state.V)[8:end-8, 8:end-8, 1]
+        v[8:end-8, 8:end-8, 8:end-8] .= Vp[8:end-8, 8:end-8, 1]
 
-        u⁻, v⁻ = model.diffusivity_fields.previous_velocities
-        parent(u⁻) .= parent(model.velocities.u)
-        parent(v⁻) .= parent(model.velocities.v)
+        parent(model.diffusivity_fields.previous_velocities[1]) .= u
+        parent(model.diffusivity_fields.previous_velocities[2]) .= v
 
-        parent(model.timestepper.Gⁿ.u)[8:end-8, 8:end-8, 8:end-8] .= parent(model.velocities[2])[9:end-7, 7:end-9, 8:end-8]
+        Gnu[8:end-8, 8:end-8, 8:end-8] .= v[9:end-7, 7:end-9, 8:end-8]
 
-        parent(model.timestepper.Gⁿ.v)[8:end-8, 8:end-8, 8:end-8] .= parent(model.velocities[1])[9:end-7, 7:end-9, 8:end-8]
+        Gnv[8:end-8, 8:end-8, 8:end-8] .= u[9:end-7, 7:end-9, 8:end-8]
 
-        parent(model.timestepper.Gⁿ.u)[8:end-8, 8:end-8, grid.Nz] .-= wind_stress
     end
 
     return nothing
