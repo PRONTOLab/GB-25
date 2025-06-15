@@ -349,7 +349,7 @@ end
 
 @kernel function bad_compute_hydrostatic_free_surface_Gv!(Gv, grid, velocities, diffusivities)
     i, j, k = @index(Global, NTuple)
-    @inbounds Gv[i, j, k] = - (j > 1) * velocities[1][i+1, j-1, k]
+    @inbounds Gv[i, j, k] = velocities[1][i+1, j-1, k]
 end
 
 
