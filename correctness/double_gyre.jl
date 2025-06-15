@@ -295,7 +295,7 @@ end
     not_euler = χ != convert(FT, -0.5) # use to prevent corruption by leftover NaNs in G⁻
 
     @inbounds begin
-        Gu = (one_point_five + χ) * Gⁿ[i, j, k] - (oh_point_five + χ) * G⁻[i, j, k] * not_euler
+        Gu = (one_point_five + χ) * Gⁿ[i, j, k] # - (oh_point_five + χ) * G⁻[i, j, k] * not_euler
         u[i, j, k] += Δt * Gu
     end
 end
