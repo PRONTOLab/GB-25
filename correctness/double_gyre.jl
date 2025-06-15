@@ -310,10 +310,10 @@ end
 
 @inline function bad_solve_batched_tridiagonal_system_z!(i, j, Nz, ϕ, a, b, c, f, t, grid, p, args, tridiagonal_direction)
     @inbounds begin
-        β  = Oceananigans.Solvers.get_coefficient(i, j, 1, grid, b, p, tridiagonal_direction, args...)
+        # β  = Oceananigans.Solvers.get_coefficient(i, j, 1, grid, b, p, tridiagonal_direction, args...)
 
         for k = Nz-1:-1:1
-            ϕ[i, j, k] -= ϕ[i, j, k+1] / β
+            ϕ[i, j, k] -= ϕ[i, j, k+1] / 2
         end
     end
 end
