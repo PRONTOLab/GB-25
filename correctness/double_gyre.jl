@@ -315,7 +315,7 @@ end
 
     # -5.755965230173951e-13 vs -8.222656515676565e-13
     # @inbounds v[i, j, k] = v[i, j, k] + V[i, j, 1] # - V̅[i, j, 1])
-    @inbounds v[i, j, k] = v[i, j, k] - V̅[i, j, 1]
+    @inbounds v[i, j, k] = V̅[i, j, 1]
 end
 
 function estimate_tracer_error(model, initial_temperature, initial_salinity, wind_stress)
