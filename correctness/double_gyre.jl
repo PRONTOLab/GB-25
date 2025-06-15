@@ -252,8 +252,8 @@ function bad_time_step!(model, Δt;
     Nz = size(grid, 3)
 
     for (i, name) in enumerate((:u, :v))
-        launch!(model.architecture, model.grid, :xyz,
-                bad_ab2_step_field!, model.velocities[name], Δt, model.timestepper.χ, model.timestepper.Gⁿ[name], model.timestepper.G⁻[name])
+
+        parent(model.velocities[name])[8:end-8, 8:end-8, 8:end-8] .+= parent(model.timestepper.Gⁿ[name])[8:end-8, 8:end-8, 8:end-8]
 
         launch!(model.architecture, grid, :xy,
             bad_solve_batched_tridiagonal_system_kernel!, model.velocities[name], Nz)
@@ -283,14 +283,6 @@ function bad_time_step!(model, Δt;
     parent(model.timestepper.Gⁿ.u)[8:end-8, 8:end-8, grid.Nz] .-= parent(model.velocities.u.boundary_conditions.top.condition)[8:end-8, 8:end-8, 1]
 
     return nothing
-end
-
-@kernel function bad_ab2_step_field!(u, Δt, χ, Gⁿ, G⁻)
-    i, j, k = @index(Global, NTuple)
-
-    @inbounds begin
-        u[i, j, k] += Gⁿ[i, j, k]
-    end
 end
 
 @kernel function bad_solve_batched_tridiagonal_system_kernel!(ϕ, Nz)
