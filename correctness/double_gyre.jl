@@ -311,34 +311,9 @@ end
 @inline function bad_solve_batched_tridiagonal_system_z!(i, j, Nz, ϕ, a, b, c, f, t, grid, p, args, tridiagonal_direction)
     @inbounds begin
         β  = Oceananigans.Solvers.get_coefficient(i, j, 1, grid, b, p, tridiagonal_direction, args...)
-        f₁ = Oceananigans.Solvers.get_coefficient(i, j, 1, grid, f, p, tridiagonal_direction, args...)
-        # ϕ[i, 1, k] = f₁ / β
-        # β = 1
-        # f₁ = 1
-
-        for k = 2:Nz
-            cᵏ⁻¹ = Oceananigans.Solvers.get_coefficient(i, j-1, k, grid, c, p, tridiagonal_direction, args...)
-            bᵏ   = Oceananigans.Solvers.get_coefficient(i, j,   k, grid, b, p, tridiagonal_direction, args...)
-            aᵏ⁻¹ = Oceananigans.Solvers.get_coefficient(i, j-1, k, grid, a, p, tridiagonal_direction, args...)
-            # cᵏ⁻¹ = c[k]
-            # bᵏ = b[k]
-            # aᵏ⁻¹ = a[k]
-
-            t[i, j, k] = cᵏ⁻¹ / β
-            β = bᵏ - aᵏ⁻¹ * t[i, j, k]
-
-            # fᵏ = f[k]
-            fᵏ = Oceananigans.Solvers.get_coefficient(i, j, k, grid, f, p, tridiagonal_direction, args...)
-
-            # If the problem is not diagonally-dominant such that `β ≈ 0`,
-            # the algorithm is unstable and we elide the forward pass update of ϕ.
-            definitely_diagonally_dominant = abs(β) > 10 * eps(Float64)
-            ϕ★ = (fᵏ - aᵏ⁻¹ * ϕ[i, j, k-1]) / β
-            ϕ[i, j, k] = ifelse(definitely_diagonally_dominant, ϕ★, ϕ[i, j, k])
-        end
 
         for k = Nz-1:-1:1
-            ϕ[i, j, k] -= t[i, j, k+1] * ϕ[i, j, k+1]
+            ϕ[i, j, k] -= ϕ[i, j, k+1] / β
         end
     end
 end
