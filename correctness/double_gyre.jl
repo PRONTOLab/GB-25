@@ -288,15 +288,8 @@ end
 @kernel function bad_ab2_step_field!(u, Δt, χ, Gⁿ, G⁻)
     i, j, k = @index(Global, NTuple)
 
-    FT = eltype(u)
-    Δt = convert(FT, Δt)
-    one_point_five = convert(FT, 1.5)
-    oh_point_five  = convert(FT, 0.5)
-    not_euler = χ != convert(FT, -0.5) # use to prevent corruption by leftover NaNs in G⁻
-
     @inbounds begin
-        Gu = (one_point_five + χ) * Gⁿ[i, j, k] # - (oh_point_five + χ) * G⁻[i, j, k] * not_euler
-        u[i, j, k] += Δt * Gu
+        u[i, j, k] += Gⁿ[i, j, k]
     end
 end
 
