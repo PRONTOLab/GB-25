@@ -289,8 +289,7 @@ function bad_time_step!(model, Δt;
     arch  = architecture(grid)
 
     launch!(architecture(grid), grid, :xy,
-            bad_compute_barotropic_mode!,
-            U̅, V̅, grid, u, v)
+            bad_compute_barotropic_mode!, V̅, v)
 
     parent(v)[8:end-8, 8:end-8, 8:end-8] .= parent(V̅)[8:end-8, 8:end-8, 1]
 
@@ -308,21 +307,8 @@ function bad_time_step!(model, Δt;
     return nothing
 end
 
-@kernel function bad_compute_barotropic_mode!(U̅, V̅, grid, u, v)
+@kernel function bad_compute_barotropic_mode!(V̅, v)
     i, j  = @index(Global, NTuple)
-    k_top  = size(grid, 3) + 1
-
-    hᶠᶜ = Oceananigans.Grids.static_column_depthᶠᶜᵃ(i, j, grid)
-    hᶜᶠ = Oceananigans.Grids.static_column_depthᶜᶠᵃ(i, j, grid)
-
-    Hᶠᶜ = Oceananigans.Grids.column_depthᶠᶜᵃ(i, j, k_top, grid, 0)
-    Hᶜᶠ = Oceananigans.Grids.column_depthᶜᶠᵃ(i, j, k_top, grid, 0)
-
-    # If the static depths are zero (i.e. the column is immersed),
-    # we set the grid scaling factor to 1
-    σᶠᶜ = ifelse(hᶠᶜ == 0, one(grid), Hᶠᶜ / hᶠᶜ)
-    σᶜᶠ = ifelse(hᶜᶠ == 0, one(grid), Hᶜᶠ / hᶜᶠ)
-
     @inbounds V̅[i, j, 1] = v[i, j, 1]
 end
 
