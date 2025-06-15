@@ -248,47 +248,25 @@ end
 function bad_time_step!(model, Δt;
                     callbacks=[], euler=false)
 
+    grid = model.grid
+    Nz = size(grid, 3)
+
     for (i, name) in enumerate((:u, :v))
-        Gⁿ = model.timestepper.Gⁿ[name]
-        G⁻ = model.timestepper.G⁻[name]
-        velocity_field = model.velocities[name]
-
         launch!(model.architecture, model.grid, :xyz,
-                ab2_step_field!, velocity_field, Δt, model.timestepper.χ, Gⁿ, G⁻)
+                bad_ab2_step_field!, model.velocities[name], Δt, model.timestepper.χ, model.timestepper.Gⁿ[name], model.timestepper.G⁻[name])
 
-        field = velocity_field
-        implicit_solver = model.timestepper.implicit_solver
-        closure = model.closure
-        diffusivity_fields = model.diffusivity_fields
-        clock = model.clock
-
-        LX, LY, LZ = location(field)
-
-        solver_args = (closure, diffusivity_fields, nothing, LX(), LY(), LZ(), Δt, clock)
-
-
-        launch!(architecture(implicit_solver), implicit_solver.grid, :xy,
-            bad_solve_batched_tridiagonal_system_kernel!, field,
-            implicit_solver.a,
-            implicit_solver.b,
-            implicit_solver.c,
-            field,
-            implicit_solver.t,
-            implicit_solver.grid,
-            implicit_solver.parameters,
-            (closure, diffusivity_fields, nothing, LX(), LY(), LZ(), Δt, clock),
-            implicit_solver.tridiagonal_direction)
+        launch!(model.architecture, grid, :xy,
+            bad_solve_batched_tridiagonal_system_kernel!, model.velocities[name], Nz)
     end
 
     u, v, _ = model.velocities
-    grid = model.grid
     state = model.free_surface.filtered_state
     η     = model.free_surface.η
     U, V  = model.free_surface.barotropic_velocities
     U̅, V̅  = state.U, state.V
     arch  = architecture(grid)
 
-    launch!(architecture(grid), grid, :xy,
+    launch!(model.architecture, grid, :xy,
             bad_compute_barotropic_mode!, V̅, v)
 
     parent(v)[8:end-8, 8:end-8, 8:end-8] .= parent(V̅)[8:end-8, 8:end-8, 1]
@@ -307,21 +285,28 @@ function bad_time_step!(model, Δt;
     return nothing
 end
 
+@kernel function bad_ab2_step_field!(u, Δt, χ, Gⁿ, G⁻)
+    i, j, k = @index(Global, NTuple)
 
-@inline function bad_solve_batched_tridiagonal_system_z!(i, j, Nz, ϕ, a, b, c, f, t, grid, p, args, tridiagonal_direction)
+    FT = eltype(u)
+    Δt = convert(FT, Δt)
+    one_point_five = convert(FT, 1.5)
+    oh_point_five  = convert(FT, 0.5)
+    not_euler = χ != convert(FT, -0.5) # use to prevent corruption by leftover NaNs in G⁻
+
     @inbounds begin
-        # β  = Oceananigans.Solvers.get_coefficient(i, j, 1, grid, b, p, tridiagonal_direction, args...)
+        Gu = (one_point_five + χ) * Gⁿ[i, j, k] - (oh_point_five + χ) * G⁻[i, j, k] * not_euler
+        u[i, j, k] += Δt * Gu
+    end
+end
 
+@kernel function bad_solve_batched_tridiagonal_system_kernel!(ϕ, Nz)
+    i, j = @index(Global, NTuple)
+    @inbounds begin
         for k = Nz-1:-1:1
             ϕ[i, j, k] -= ϕ[i, j, k+1] / 2
         end
     end
-end
-
-@kernel function bad_solve_batched_tridiagonal_system_kernel!(ϕ, a, b, c, f, t, grid, p, args, tridiagonal_direction::ZDirection)
-    Nz = size(grid, 3)
-    i, j = @index(Global, NTuple)
-    bad_solve_batched_tridiagonal_system_z!(i, j, Nz, ϕ, a, b, c, f, t, grid, p, args, tridiagonal_direction)
 end
 
 @kernel function bad_compute_barotropic_mode!(V̅, v)
