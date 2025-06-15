@@ -301,36 +301,6 @@ function bad_time_step!(model, Δt;
     parent(u⁻) .= parent(u)
     parent(v⁻) .= parent(v)
 
-    grid = model.grid
-    arch = architecture(grid)
-
-    u_immersed_bc = immersed_boundary_condition(model.velocities.u)
-    v_immersed_bc = immersed_boundary_condition(model.velocities.v)
-
-    u_forcing = model.forcing.u
-    v_forcing = model.forcing.v
-
-    start_momentum_kernel_args = (model.advection.momentum,
-                                  model.coriolis,
-                                  model.closure)
-
-    end_momentum_kernel_args = (model.velocities,
-                                model.free_surface,
-                                model.tracers,
-                                model.buoyancy,
-                                model.diffusivity_fields,
-                                model.pressure.pHY′,
-                                model.auxiliary_fields,
-                                model.vertical_coordinate,
-                                model.clock)
-
-    u_kernel_args = tuple(start_momentum_kernel_args..., u_immersed_bc, end_momentum_kernel_args..., u_forcing)
-    v_kernel_args = tuple(start_momentum_kernel_args..., v_immersed_bc, end_momentum_kernel_args..., v_forcing)
-
-    #launch!(arch, grid, :xyz,
-    #        compute_hydrostatic_free_surface_Gu!, model.timestepper.Gⁿ.u, grid, 
-    #        u_kernel_args; active_cells_map=nothing)
-
     parent(model.timestepper.Gⁿ.u)[8:end-8, 8:end-8, 8:end-8] .= parent(model.velocities[2])[9:end-7, 7:end-9, 8:end-8]
 
     parent(model.timestepper.Gⁿ.v)[8:end-8, 8:end-8, 8:end-8] .= parent(model.velocities[1])[9:end-7, 7:end-9, 8:end-8]
@@ -343,7 +313,9 @@ end
 @kernel function _bad_barotropic_split_explicit_corrector!(v, V, V̅)
     i, j, k = @index(Global, NTuple)
 
-    @inbounds v[i, j, k] = v[i, j, k] + (V[i, j, 1] - V̅[i, j, 1])
+    # -5.755965230173951e-13 vs -8.222656515676565e-13
+    # @inbounds v[i, j, k] = v[i, j, k] + V[i, j, 1] # - V̅[i, j, 1])
+    @inbounds v[i, j, k] = v[i, j, k] - V̅[i, j, 1]
 end
 
 function estimate_tracer_error(model, initial_temperature, initial_salinity, wind_stress)
