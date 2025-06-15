@@ -222,62 +222,46 @@ function wind_stress_init(grid;
     @inline τx(λ, φ) = τ₀ * cos(2π * (φ - φ₀) / Lφ)
 
     set!(wind_stress, τx)
-    return wind_stress
+    return parent(wind_stress)[8:end-8, 8:end-8, 1]
 end
 
-function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
+function time_step_double_gyre!(model, wind_stress)
 
-    set!(model.tracers.T, Tᵢ)
-    set!(model.tracers.S, Sᵢ)
-    set!(model.velocities.u.boundary_conditions.top.condition, wind_stress)
-
-    # Initialize the model
-    model.clock.iteration = 0
-    model.clock.time = 0
-    model.clock.last_Δt = 1200
-
-    # Step it forward
-    Δt = model.clock.last_Δt + 0
     @trace track_numbers=false for _ = 1:5
-        bad_time_step!(model, Δt)
+
+
+        grid = model.grid
+        Nz = size(grid, 3)
+
+        parent(model.velocities.u)[8:end-8, 8:end-8, 8:end-8] .+= parent(model.timestepper.Gⁿ.u)[8:end-8, 8:end-8, 8:end-8]
+
+        launch!(model.architecture, grid, :xy,
+            bad_solve_batched_tridiagonal_system_kernel!, model.velocities.u, Nz)
+
+        parent(model.velocities.v)[8:end-8, 8:end-8, 8:end-8] .+= parent(model.timestepper.Gⁿ.v)[8:end-8, 8:end-8, 8:end-8]
+
+        launch!(model.architecture, grid, :xy,
+            bad_solve_batched_tridiagonal_system_kernel!, model.velocities.v, Nz)
+
+        launch!(model.architecture, grid, :xy,
+                bad_compute_barotropic_mode!, model.free_surface.filtered_state.V, model.velocities.v)
+
+        parent(model.velocities.v)[8:end-8, 8:end-8, 8:end-8] .= parent(model.free_surface.filtered_state.V)[8:end-8, 8:end-8, 1]
+
+        u⁻, v⁻ = model.diffusivity_fields.previous_velocities
+        parent(u⁻) .= parent(model.velocities.u)
+        parent(v⁻) .= parent(model.velocities.v)
+
+        parent(model.timestepper.Gⁿ.u)[8:end-8, 8:end-8, 8:end-8] .= parent(model.velocities[2])[9:end-7, 7:end-9, 8:end-8]
+
+        parent(model.timestepper.Gⁿ.v)[8:end-8, 8:end-8, 8:end-8] .= parent(model.velocities[1])[9:end-7, 7:end-9, 8:end-8]
+
+        parent(model.timestepper.Gⁿ.u)[8:end-8, 8:end-8, grid.Nz] .-= wind_stress
     end
 
     return nothing
 end
 
-function bad_time_step!(model, Δt;
-                    callbacks=[], euler=false)
-
-    grid = model.grid
-    Nz = size(grid, 3)
-
-    parent(model.velocities.u)[8:end-8, 8:end-8, 8:end-8] .+= parent(model.timestepper.Gⁿ.u)[8:end-8, 8:end-8, 8:end-8]
-
-    launch!(model.architecture, grid, :xy,
-        bad_solve_batched_tridiagonal_system_kernel!, model.velocities.u, Nz)
-
-    parent(model.velocities.v)[8:end-8, 8:end-8, 8:end-8] .+= parent(model.timestepper.Gⁿ.v)[8:end-8, 8:end-8, 8:end-8]
-
-    launch!(model.architecture, grid, :xy,
-        bad_solve_batched_tridiagonal_system_kernel!, model.velocities.v, Nz)
-
-    launch!(model.architecture, grid, :xy,
-            bad_compute_barotropic_mode!, model.free_surface.filtered_state.V, model.velocities.v)
-
-    parent(model.velocities.v)[8:end-8, 8:end-8, 8:end-8] .= parent(model.free_surface.filtered_state.V)[8:end-8, 8:end-8, 1]
-
-    u⁻, v⁻ = model.diffusivity_fields.previous_velocities
-    parent(u⁻) .= parent(model.velocities.u)
-    parent(v⁻) .= parent(model.velocities.v)
-
-    parent(model.timestepper.Gⁿ.u)[8:end-8, 8:end-8, 8:end-8] .= parent(model.velocities[2])[9:end-7, 7:end-9, 8:end-8]
-
-    parent(model.timestepper.Gⁿ.v)[8:end-8, 8:end-8, 8:end-8] .= parent(model.velocities[1])[9:end-7, 7:end-9, 8:end-8]
-
-    parent(model.timestepper.Gⁿ.u)[8:end-8, 8:end-8, grid.Nz] .-= parent(model.velocities.u.boundary_conditions.top.condition)[8:end-8, 8:end-8, 1]
-
-    return nothing
-end
 
 @kernel function bad_solve_batched_tridiagonal_system_kernel!(ϕ, Nz)
     i, j = @index(Global, NTuple)
@@ -293,8 +277,8 @@ end
     @inbounds V̅[i, j, 1] = v[i, j, 1]
 end
 
-function estimate_tracer_error(model, initial_temperature, initial_salinity, wind_stress)
-    time_step_double_gyre!(model, initial_temperature, initial_salinity, wind_stress)
+function estimate_tracer_error(model, wind_stress)
+    time_step_double_gyre!(model, wind_stress)
     # Compute the mean mixed layer depth:
     Nλ, Nφ, _ = size(model.grid)
     
@@ -307,13 +291,11 @@ function estimate_tracer_error(model, initial_temperature, initial_salinity, win
     return mean_sq_surface_u
 end
 
-function differentiate_tracer_error(model, Tᵢ, Sᵢ, J, dmodel, dTᵢ, dSᵢ, dJ)
+function differentiate_tracer_error(model, J, dmodel, dJ)
 
     dedν = autodiff(set_strong_zero(Enzyme.Reverse),
                     estimate_tracer_error, Active,
                     Duplicated(model, dmodel),
-                    Duplicated(Tᵢ, dTᵢ),
-                    Duplicated(Sᵢ, dSᵢ),
                     Duplicated(J, dJ))
 
     return dedν, dJ
@@ -333,18 +315,18 @@ rwind_stress = wind_stress_init(rmodel.grid)
 dmodel = Enzyme.make_zero(rmodel)
 dTᵢ = Field{Center, Center, Center}(rmodel.grid)
 dSᵢ = Field{Center, Center, Center}(rmodel.grid)
-dJ  = Field{Face, Center, Nothing}(rmodel.grid)
+dJ  = make_zero(rwind_stress) # Field{Face, Center, Nothing}(rmodel.grid)
 
 tic = time()
-restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress)
-rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true differentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, dmodel, dTᵢ, dSᵢ, dJ)
+restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(rmodel, rwind_stress)
+rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true differentiate_tracer_error(rmodel, rwind_stress, dmodel, dJ)
 compile_toc = time() - tic
 
 @show compile_toc
 
 #=
 @info "Running..."
-restimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress)
+restimate_tracer_error(rmodel, rwind_stress)
 
 
 @info "Running non-reactant for comparison..."
@@ -358,7 +340,7 @@ vwind_stress = wind_stress_init(vmodel.grid)
 
 @info "Initialized non-reactant tracers and wind stress"
 
-estimate_tracer_error(vmodel, vTᵢ, vSᵢ, vwind_stress)
+estimate_tracer_error(vmodel, vwind_stress)
 
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
@@ -368,7 +350,7 @@ GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, at
 i = 10
 j = 10
 
-dedν, dJ = rdifferentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, dmodel, dTᵢ, dSᵢ, dJ)
+dedν, dJ = rdifferentiate_tracer_error(rmodel, rwind_stress, dmodel, dJ)
 
 @allowscalar @show dJ[i, j]
 
@@ -386,14 +368,14 @@ for ϵ in ϵ_list
 
     @allowscalar rwind_stressP[i, j] = rwind_stressP[i, j] + ϵ * abs(rwind_stressP[i, j])
 
-    sq_surface_uP = restimate_tracer_error(rmodelP, rTᵢP, rSᵢP, rwind_stressP)
+    sq_surface_uP = restimate_tracer_error(rmodelP, rwind_stressP)
 
     rmodelM = double_gyre_model(rarch, 62, 62, 15, 1200)
     rTᵢM, rSᵢM      = set_tracers(rmodelM.grid)
     rwind_stressM = wind_stress_init(rmodelM.grid)
     @allowscalar rwind_stressM[i, j] = rwind_stressM[i, j] - ϵ * abs(rwind_stressM[i, j])
 
-    sq_surface_uM = restimate_tracer_error(rmodelM, rTᵢM, rSᵢM, rwind_stressM)
+    sq_surface_uM = restimate_tracer_error(rmodelM, rwind_stressM)
 
     dsq_surface_u = (sq_surface_uP - sq_surface_uM) / diff
 
