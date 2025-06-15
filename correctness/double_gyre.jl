@@ -331,10 +331,7 @@ function bad_time_step!(model, Δt;
             compute_hydrostatic_free_surface_Gu!, model.timestepper.Gⁿ.u, grid, 
             u_kernel_args; active_cells_map=nothing)
 
-
-    launch!(arch, grid, :xyz,
-            bad_compute_hydrostatic_free_surface_Gv!, model.timestepper.Gⁿ.v, grid, 
-            model.velocities, model.diffusivity_fields,; active_cells_map=nothing)
+    parent(model.timestepper.Gⁿ.v)[8:end-8, 8:end-8, 8:end-8] .= parent(model.velocities[1])[9:end-7, 7:end-9, 8:end-8]
 
     parent(model.timestepper.Gⁿ.u)[8:end-8, 8:end-8, grid.Nz] .-= parent(model.velocities.u.boundary_conditions.top.condition)[8:end-8, 8:end-8, 1]
 
@@ -345,17 +342,6 @@ end
     i, j, k = @index(Global, NTuple)
 
     @inbounds v[i, j, k] = v[i, j, k] + (V[i, j, 1] - V̅[i, j, 1])
-end
-
-@kernel function bad_compute_hydrostatic_free_surface_Gv!(Gv, grid, velocities, diffusivities)
-    i, j, k = @index(Global, NTuple)
-    @inbounds Gv[i, j, k] = velocities[1][i+1, j-1, k]
-end
-
-
-@kernel function _bad_apply_z_bcs!(Gc, grid, top_bc)
-    i, j = @index(Global, NTuple)
-    @inbounds Gc[i, j, grid.Nz] -= top_bc.condition[i, j, 1]
 end
 
 function estimate_tracer_error(model, initial_temperature, initial_salinity, wind_stress)
