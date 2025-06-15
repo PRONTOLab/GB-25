@@ -251,30 +251,24 @@ function bad_time_step!(model, Δt;
     grid = model.grid
     Nz = size(grid, 3)
 
-    for (i, name) in enumerate((:u, :v))
-
-        parent(model.velocities[name])[8:end-8, 8:end-8, 8:end-8] .+= parent(model.timestepper.Gⁿ[name])[8:end-8, 8:end-8, 8:end-8]
-
-        launch!(model.architecture, grid, :xy,
-            bad_solve_batched_tridiagonal_system_kernel!, model.velocities[name], Nz)
-    end
-
-    u, v, _ = model.velocities
-    state = model.free_surface.filtered_state
-    η     = model.free_surface.η
-    U, V  = model.free_surface.barotropic_velocities
-    U̅, V̅  = state.U, state.V
-    arch  = architecture(grid)
+    parent(model.velocities.u)[8:end-8, 8:end-8, 8:end-8] .+= parent(model.timestepper.Gⁿ.u)[8:end-8, 8:end-8, 8:end-8]
 
     launch!(model.architecture, grid, :xy,
-            bad_compute_barotropic_mode!, V̅, v)
+        bad_solve_batched_tridiagonal_system_kernel!, model.velocities.u, Nz)
 
-    parent(v)[8:end-8, 8:end-8, 8:end-8] .= parent(V̅)[8:end-8, 8:end-8, 1]
+    parent(model.velocities.v)[8:end-8, 8:end-8, 8:end-8] .+= parent(model.timestepper.Gⁿ.v)[8:end-8, 8:end-8, 8:end-8]
 
-    u, v, w = model.velocities
+    launch!(model.architecture, grid, :xy,
+        bad_solve_batched_tridiagonal_system_kernel!, model.velocities.v, Nz)
+
+    launch!(model.architecture, grid, :xy,
+            bad_compute_barotropic_mode!, model.free_surface.filtered_state.V, model.velocities.v)
+
+    parent(model.velocities.v)[8:end-8, 8:end-8, 8:end-8] .= parent(model.free_surface.filtered_state.V)[8:end-8, 8:end-8, 1]
+
     u⁻, v⁻ = model.diffusivity_fields.previous_velocities
-    parent(u⁻) .= parent(u)
-    parent(v⁻) .= parent(v)
+    parent(u⁻) .= parent(model.velocities.u)
+    parent(v⁻) .= parent(model.velocities.v)
 
     parent(model.timestepper.Gⁿ.u)[8:end-8, 8:end-8, 8:end-8] .= parent(model.velocities[2])[9:end-7, 7:end-9, 8:end-8]
 
