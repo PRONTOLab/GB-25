@@ -230,7 +230,7 @@ function time_step_double_gyre!(model, wind_stress)
     grid = model.grid
     Nz = size(grid, 3)
 
-    u = parent(model.velocities.u)
+    u = parent(model.velocities.u)[8:end-8, 8:end-8, 8:end-8]
     v = parent(model.velocities.v)
 
     Vp = parent(model.free_surface.filtered_state.V)
@@ -242,24 +242,24 @@ function time_step_double_gyre!(model, wind_stress)
 
     @trace track_numbers=false for _ = 1:5
 
-        v[8:end-8, 8:end-8, 8:end-8] .+= u[8:end-8, 8:end-8, 8:end-8]
+        v[8:end-8, 8:end-8, 8:end-8] .+= u
 
-        u[8:end-8, 8:end-8, 8:end-8] .+= v[9:end-7, 7:end-9, 8:end-8]
+        u .+= v[9:end-7, 7:end-9, 8:end-8]
 
         launch!(model.architecture, grid, :xy,
-            bad_solve_batched_tridiagonal_system_kernel!, model.velocities.u, Nz)
+            bad_solve_batched_tridiagonal_system_kernel!, u, Nz)
 
         launch!(model.architecture, grid, :xy,
                 bad_compute_barotropic_mode!, model.free_surface.filtered_state.V, v)
 
         v[8:end-8, 8:end-8, 8:end-8] .= Vp[8:end-8, 8:end-8, 1]
 
-        pv1 .= u
+        pv1[8:end-8, 8:end-8, 8:end-8] .= u
         pv2 .= v
 
     end
 
-    return nothing
+    return u
 end
 
 
@@ -278,15 +278,11 @@ end
 end
 
 function estimate_tracer_error(model, wind_stress)
-    time_step_double_gyre!(model, wind_stress)
+    u = time_step_double_gyre!(model, wind_stress)
     # Compute the mean mixed layer depth:
     Nλ, Nφ, _ = size(model.grid)
     
-    mean_sq_surface_u = 0.0
-    
-    for j = 1:Nφ, i = 1:Nλ
-        @allowscalar mean_sq_surface_u += @inbounds model.velocities.u[i, j, 1]
-    end
+    mean_sq_surface_u = sum(u)
     
     return mean_sq_surface_u
 end
