@@ -292,9 +292,7 @@ function bad_time_step!(model, Δt;
             _compute_barotropic_mode!,
             U̅, V̅, grid, u, v)
 
-    # add in "good" barotropic mode
-    launch!(arch, grid, :xyz, _bad_barotropic_split_explicit_corrector!,
-            v, V, V̅)
+    parent(v)[8:end-8, 8:end-8, 8:end-8] .= parent(V̅)[8:end-8, 8:end-8, 1]
 
     u, v, w = model.velocities
     u⁻, v⁻ = model.diffusivity_fields.previous_velocities
@@ -308,14 +306,6 @@ function bad_time_step!(model, Δt;
     parent(model.timestepper.Gⁿ.u)[8:end-8, 8:end-8, grid.Nz] .-= parent(model.velocities.u.boundary_conditions.top.condition)[8:end-8, 8:end-8, 1]
 
     return nothing
-end
-
-@kernel function _bad_barotropic_split_explicit_corrector!(v, V, V̅)
-    i, j, k = @index(Global, NTuple)
-
-    # -5.755965230173951e-13 vs -8.222656515676565e-13
-    # @inbounds v[i, j, k] = v[i, j, k] + V[i, j, 1] # - V̅[i, j, 1])
-    @inbounds v[i, j, k] = V̅[i, j, 1]
 end
 
 function estimate_tracer_error(model, initial_temperature, initial_salinity, wind_stress)
