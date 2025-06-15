@@ -336,9 +336,11 @@ function bad_time_step!(model, Δt;
             bad_compute_hydrostatic_free_surface_Gv!, model.timestepper.Gⁿ.v, grid, 
             model.velocities, model.diffusivity_fields,; active_cells_map=nothing)
 
-    launch!(model.architecture, model.timestepper.Gⁿ.u.grid, :xy, _bad_apply_z_bcs!, model.timestepper.Gⁿ.u,
-            model.timestepper.Gⁿ.u.grid, model.velocities.u.boundary_conditions.top)
+    # launch!(model.architecture, model.timestepper.Gⁿ.u.grid, :xy, _bad_apply_z_bcs!, model.timestepper.Gⁿ.u,
+    #         model.timestepper.Gⁿ.u.grid, model.velocities.u.boundary_conditions.top)
 
+    parent(model.timestepper.Gⁿ.u)[8:end-8, 8:end-8, grid.Nz] .-= parent(model.velocities.u.boundary_conditions.top.condition)[8:end-8, 8:end-8, 1]
+    
     return nothing
 end
 
@@ -371,9 +373,8 @@ function estimate_tracer_error(model, initial_temperature, initial_salinity, win
     mean_sq_surface_u = 0.0
     
     for j = 1:Nφ, i = 1:Nλ
-        @allowscalar mean_sq_surface_u += @inbounds model.velocities.u[i, j, 1]^2
+        @allowscalar mean_sq_surface_u += @inbounds model.velocities.u[i, j, 1]
     end
-    mean_sq_surface_u = mean_sq_surface_u / (Nλ * Nφ)
     
     return mean_sq_surface_u
 end
