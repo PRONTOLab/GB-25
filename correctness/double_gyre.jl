@@ -336,11 +336,8 @@ function bad_time_step!(model, Δt;
             bad_compute_hydrostatic_free_surface_Gv!, model.timestepper.Gⁿ.v, grid, 
             model.velocities, model.diffusivity_fields,; active_cells_map=nothing)
 
-    # launch!(model.architecture, model.timestepper.Gⁿ.u.grid, :xy, _bad_apply_z_bcs!, model.timestepper.Gⁿ.u,
-    #         model.timestepper.Gⁿ.u.grid, model.velocities.u.boundary_conditions.top)
-
     parent(model.timestepper.Gⁿ.u)[8:end-8, 8:end-8, grid.Nz] .-= parent(model.velocities.u.boundary_conditions.top.condition)[8:end-8, 8:end-8, 1]
-    
+
     return nothing
 end
 
@@ -354,7 +351,6 @@ end
     i, j, k = @index(Global, NTuple)
     @inbounds Gv[i, j, k] = ( - (j > 1) * velocities[1][i+1, j-1, k]
                                 - (grid.Δyᶜᶠᵃ * grid.z.Δᵃᵃᶜ[k] * zero(grid)
-                                -  grid.Δyᶜᶠᵃ * grid.z.Δᵃᵃᶜ[k] * zero(grid)
                                 +  grid.Δxᶜᶜᵃ[j] * grid.z.Δᵃᵃᶜ[k] * zero(grid) 
                                 +  grid.Δxᶜᶠᵃ[j] * grid.Δyᶜᶠᵃ * (k == 1) * diffusivities.κu[i, j, k]))
 end
