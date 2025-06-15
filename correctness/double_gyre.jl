@@ -323,7 +323,7 @@ end
     σᶠᶜ = ifelse(hᶠᶜ == 0, one(grid), Hᶠᶜ / hᶠᶜ)
     σᶜᶠ = ifelse(hᶜᶠ == 0, one(grid), Hᶜᶠ / hᶜᶠ)
 
-    @inbounds V̅[i, j, 1] = Oceananigans.Operators.Δrᶜᶠᶜ(i, j, 1, grid) * v[i, j, 1] * σᶜᶠ
+    @inbounds V̅[i, j, 1] = Oceananigans.Operators.Δrᶜᶠᶜ(i, j, 1, grid) * v[i, j, 1]
 end
 
 function estimate_tracer_error(model, initial_temperature, initial_salinity, wind_stress)
