@@ -237,6 +237,9 @@ function time_step_double_gyre!(model, wind_stress)
 
     v[8:end-8, 8:end-8, grid.Nz] .= wind_stress    
 
+    pv1 = parent(model.diffusivity_fields.previous_velocities[1])
+    pv2 = parent(model.diffusivity_fields.previous_velocities[2])
+
     @trace track_numbers=false for _ = 1:5
 
         v[8:end-8, 8:end-8, 8:end-8] .+= u[8:end-8, 8:end-8, 8:end-8]
@@ -247,12 +250,12 @@ function time_step_double_gyre!(model, wind_stress)
             bad_solve_batched_tridiagonal_system_kernel!, model.velocities.u, Nz)
 
         launch!(model.architecture, grid, :xy,
-                bad_compute_barotropic_mode!, model.free_surface.filtered_state.V, model.velocities.v)
+                bad_compute_barotropic_mode!, model.free_surface.filtered_state.V, v)
 
         v[8:end-8, 8:end-8, 8:end-8] .= Vp[8:end-8, 8:end-8, 1]
 
-        parent(model.diffusivity_fields.previous_velocities[1]) .= u
-        parent(model.diffusivity_fields.previous_velocities[2]) .= v
+        pv1 .= u
+        pv2 .= v
 
     end
 
@@ -271,7 +274,7 @@ end
 
 @kernel function bad_compute_barotropic_mode!(V̅, v)
     i, j  = @index(Global, NTuple)
-    @inbounds V̅[i, j, 1] = v[i, j, 1]
+    V̅[i, j, 1] = v[i+8, j+8, 1+8]
 end
 
 function estimate_tracer_error(model, wind_stress)
