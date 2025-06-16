@@ -254,7 +254,7 @@ function time_step_double_gyre!(model, wind_stress)
 
         v[8:end-8, 8:end-8, 8:end-8] .= Vp[8:end-8, 8:end-8, 1]
 
-        pv1[8:end-8, 8:end-8, 8:end-8] .= u
+        # pv1[8:end-8, 8:end-8, 8:end-8] .= u
         pv2 .= v
 
     end
