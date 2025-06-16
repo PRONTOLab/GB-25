@@ -235,6 +235,7 @@ function time_step_double_gyre!(model, wind_stress)
 
     Vnp = model.free_surface.filtered_state.V
     Vp = parent(Vnp)
+    @show Core.Typeof(Vnp), Core.Typeof(Vp)
 
     v[8:end-8, 8:end-8, grid.Nz] .= wind_stress    
 
@@ -242,14 +243,15 @@ function time_step_double_gyre!(model, wind_stress)
 
     arch = model.architecture
 
-    @trace track_numbers=false for _ = 1:4
+    @trace track_numbers=false for _ = 1:3
 
         v[8:end-8, 8:end-8, 8:end-8] .+= u
 
         u .+= v[9:end-7, 7:end-9, 8:end-8]
 
-        launch!(arch, grid, :xy,
-            bad_solve_batched_tridiagonal_system_kernel!, u, Nz)
+        for k = Nz-1:-1:1
+            u[:, :, k] .+= u[:, :, k+1]
+        end
 
         launch!(arch, grid, :xy,
                 bad_compute_barotropic_mode!, Vnp, v)
@@ -263,16 +265,6 @@ function time_step_double_gyre!(model, wind_stress)
     end
 
     return u
-end
-
-
-@kernel function bad_solve_batched_tridiagonal_system_kernel!(ϕ, Nz)
-    i, j = @index(Global, NTuple)
-    @inbounds begin
-        for k = Nz-1:-1:1
-            ϕ[i, j, k] += ϕ[i, j, k+1]
-        end
-    end
 end
 
 @kernel function bad_compute_barotropic_mode!(V̅, v)
