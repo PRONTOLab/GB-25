@@ -327,18 +327,12 @@ function bad_time_step!(model, Δt;
 
     u_kernel_args = tuple(start_momentum_kernel_args..., u_immersed_bc, end_momentum_kernel_args..., u_forcing)
     v_kernel_args = tuple(start_momentum_kernel_args..., v_immersed_bc, end_momentum_kernel_args..., v_forcing)
-
-    
-    launch!(arch, grid, :xyz,
-            compute_hydrostatic_free_surface_Gu!, model.timestepper.Gⁿ.u, grid, 
-            u_kernel_args; active_cells_map=nothing)
     
 
-    #=
     launch!(arch, grid, :xyz,
             bad_compute_hydrostatic_free_surface_Gu!, model.timestepper.Gⁿ.u, 
             model.velocities; active_cells_map=nothing)
-    =#
+
 
     launch!(arch, grid, :xyz,
             bad_compute_hydrostatic_free_surface_Gv!, model.timestepper.Gⁿ.v, 
