@@ -246,7 +246,7 @@ function estimate_tracer_error(u, v, grid, arch, Vnp, wind_stress)
 
         u .= v[9:end-7, 7:end-9, 8:end-8]
 
-        for k = Nz-6:-1:2
+        for k = Nz-7:-1:2
             u[:, :, k] .+= u[:, :, k+1]
         end
 
