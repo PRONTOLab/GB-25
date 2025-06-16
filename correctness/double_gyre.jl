@@ -25,34 +25,29 @@ atol = sqrt(eps(Float64))
 # Here: design your NN structure
 #
 struct LinearDiffusivity{F1, F2} <: LuxCore.AbstractLuxLayer
-    in_dims::Int
+    in_dims::Tuple{Int, Int, Int}
     out_dims::Int
     init_weight::F1
     init_bias::F2
 end
 
-function LinearDiffusivity(in_dims::Int, out_dims::Int; init_weight=glorot_uniform, init_bias=zeros64)
+function LinearDiffusivity(in_dims::Tuple{Int, Int, Int}, out_dims::Int; init_weight=glorot_uniform, init_bias=zeros64)
     return LinearDiffusivity{typeof(init_weight), typeof(init_bias)}(in_dims, out_dims, init_weight,
         init_bias)
 end
 
 function LuxCore.initialparameters(rng::AbstractRNG, l::LinearDiffusivity)
-    return (weight=l.init_weight(rng, l.out_dims, l.in_dims),
-            bias=l.init_bias(rng, l.out_dims, 1))
-end
-
-function LuxCore.initialparameters(rng::AbstractRNG, l::LinearDiffusivity)
-    return (weight=l.init_weight(rng, l.out_dims, l.in_dims),
+    return (weight=l.init_weight(rng, l.out_dims, l.in_dims...),
             bias=l.init_bias(rng, l.out_dims, 1))
 end
 
 LuxCore.initialstates(::AbstractRNG, ::LinearDiffusivity) = NamedTuple()
 
 # Define these:
-LuxCore.parameterlength(l::LinearDiffusivity) = l.out_dims * l.in_dims + l.out_dims
+LuxCore.parameterlength(l::LinearDiffusivity) = l.out_dims * l.in_dims[1] * l.in_dims[2] * l.in_dims[3] + l.out_dims
 LuxCore.statelength(::LinearDiffusivity) = 0
 
-function (l::LinearDiffusivity)(x::AbstractMatrix, ps, st::NamedTuple)
+function (l::LinearDiffusivity)(x::AbstractArray, ps, st::NamedTuple)
     y = ps.weight * x .+ ps.bias
     return y, st
 end
@@ -147,7 +142,8 @@ function diffusivity_NN_init(model)
     @allowscalar T_shape = size(model.tracers.T)
     @allowscalar e_shape = size(model.tracers.e)
 
-    @allowscalar in_dims  = T_shape[1] * T_shape[2] * T_shape[3] + e_shape[1] * e_shape[2] * e_shape[3]
+    #@allowscalar in_dims  = T_shape[1] * T_shape[2] * T_shape[3] + e_shape[1] * e_shape[2] * e_shape[3]
+    @allowscalar in_dims  = (T_shape[1], T_shape[2], T_shape[3] + e_shape[3])
     @allowscalar out_dims = T_shape[1] * T_shape[2] * T_shape[3]
 
     l = LinearDiffusivity(in_dims, out_dims) # Make sure architecture is GPU / Reactant
@@ -310,10 +306,13 @@ dJ  = Field{Face, Center, Nothing}(rmodel.grid)
 
 T_shape = size(rmodel.tracers.T)
 e_shape = size(rmodel.tracers.e)
-@allowscalar x = randn(Float64, T_shape[1] * T_shape[2] * T_shape[3] + e_shape[1] * e_shape[2] * e_shape[3], 1)
+@allowscalar x = randn(Float64, T_shape[1], T_shape[2], T_shape[3] + e_shape[3], 1)
 rx = x |> reactant_device()
 
 @show T_shape, e_shape
+
+@show typeof(rps.weight)
+@show typeof(rx)
 
 tic = time()
 rlinear_diff = @compile raise_first=true raise=true sync=true linear_diff(rx, rps, rst)
