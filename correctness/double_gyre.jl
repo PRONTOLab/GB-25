@@ -12,45 +12,50 @@ using Oceananigans.Operators: ℑzᵃᵃᶜ
 using SeawaterPolynomials
 
 using Enzyme
+using Lux
+using LuxCore
+using Random
 
 throw_error = true
 include_halos = true
 rtol = sqrt(eps(Float64))
 atol = sqrt(eps(Float64))
 
-#=
-struct NNDiffusivity
-    layers::Int
-    model::
+#
+# Here: design your NN structure
+#
+struct LinearDiffusivity{F1, F2} <: LuxCore.AbstractLuxLayer
+    in_dims::Int
+    out_dims::Int
+    init_weight::F1
+    init_bias::F2
 end
 
-# The NN for tracer e in CATKE. Modify struct above to fit:
-function NNDiffusivity{T}(G::Grid) where {T<:AbstractFloat}
-
-    @unpack nx,ny,bc= G
-    @unpack halo,haloη = G
-    @unpack halosstx,halossty = G
-
-    nqx = if (bc == "periodic") nx else nx+1 end      # q-grid in x-direction
-    nqy = ny+1                                        # q-grid in y-direction
-
-    outdim = 1
-    indim = 17
-
-    center_layers = Lux.Dense(indim => outdim, relu)
-
-    model_center = Lux.setup(Random.default_rng(), center_layers)
-    
-    center_input = Array{T}(undef, 9+4+4, nx, ny)
-
-    center_dinput = Array{T}(undef, 9+4+4, nx, ny)
-
-    d_center_res = Array{T}(undef, 1, nx, ny)
-
-
-    return NNDiffusivity{T, typeof(center_layers), typeof(model_center)}(; nx=nx,ny=ny,bc=bc,e_flux=e_flux, outdim, indim, center_layers, model_center)
+function LinearDiffusivity(in_dims::Int, out_dims::Int; init_weight=glorot_uniform, init_bias=zeros64)
+    return LinearDiffusivity{typeof(init_weight), typeof(init_bias)}(in_dims, out_dims, init_weight,
+        init_bias)
 end
-=#
+
+function LuxCore.initialparameters(rng::AbstractRNG, l::LinearDiffusivity)
+    return (weight=l.init_weight(rng, l.out_dims, l.in_dims),
+            bias=l.init_bias(rng, l.out_dims, 1))
+end
+
+function LuxCore.initialparameters(rng::AbstractRNG, l::LinearDiffusivity)
+    return (weight=l.init_weight(rng, l.out_dims, l.in_dims),
+            bias=l.init_bias(rng, l.out_dims, 1))
+end
+
+LuxCore.initialstates(::AbstractRNG, ::LinearDiffusivity) = NamedTuple()
+
+# Define these:
+LuxCore.parameterlength(l::LinearDiffusivity) = l.out_dims * l.in_dims + l.out_dims
+LuxCore.statelength(::LinearDiffusivity) = 0
+
+function (l::LinearDiffusivity)(x::AbstractMatrix, ps, st::NamedTuple)
+    y = ps.weight * x .+ ps.bias
+    return y, st
+end
 
 function set_tracers(grid;
                      dTdz::Real = 30.0 / 1800.0)
@@ -64,17 +69,6 @@ function set_tracers(grid;
     @allowscalar set!(Sᵢ, fₛ)
 
     return Tᵢ, Sᵢ
-end
-
-function resolution_to_points(resolution)
-    Nx = convert(Int, 384 / resolution)
-    Ny = convert(Int, 192 / resolution)
-    return Nx, Ny
-end
-
-function simple_latitude_longitude_grid(arch, resolution, Nz)
-    Nx, Ny = resolution_to_points(resolution)
-    return simple_latitude_longitude_grid(arch, Nx, Ny, Nz)
 end
 
 function simple_latitude_longitude_grid(arch, Nx, Ny, Nz; halo=(8, 8, 8))
@@ -100,21 +94,8 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     buoyancy = SeawaterBuoyancy(equation_of_state = SeawaterPolynomials.TEOS10EquationOfState(Oceananigans.defaults.FloatType))
 
     # Closures:
-    # diffusivity scheme we need for GM/Redi.
-    # κ_symmetric is the parameter we need to train for (can be scalar or a spatial field),
-    # κ_skew is GM parameter (also scalar or spatial field),
-    # we might want to use the Isopycnal Tensor instead of small slope (small slope common),
-    # unsure of slope limiter and time disc.
-    redi_diffusivity = IsopycnalSkewSymmetricDiffusivity(VerticallyImplicitTimeDiscretization(), Float64;
-                                                        κ_skew = 0.0,
-                                                        κ_symmetric = 0.0)
-                                                        #isopycnal_tensor = IsopycnalTensor(),
-                                                        #slope_limiter = FluxTapering(1e-2))
-
     horizontal_closure = HorizontalScalarDiffusivity(ν = 5000.0, κ = 1000.0)
-    #vertical_closure   = VerticalScalarDiffusivity(ν = 1e-2, κ = 1e-5) 
     vertical_closure   = Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity()
-    #vertical_closure = Oceananigans.TurbulenceClosures.TKEDissipationVerticalDiffusivity()
     closure = (horizontal_closure, vertical_closure)
 
     # Coriolis forces for a rotating Earth
@@ -141,7 +122,7 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     # How to incorporate a NN using a forcing:
     # Can set initial Je here:
     Je = ZFaceField(grid)
-    e_forcing = Forcing(div_Je, discrete_form=true, parameters=Je)
+    e_forcing = Forcing(div_Je, discrete_form=true, parameters=Je) # set to be forcing on tracer fields
 
     model = HydrostaticFreeSurfaceModel(; grid,
                                           free_surface        = free_surface,
@@ -160,6 +141,29 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     return model
 end
 
+# Initialize the NN for tracer flux:
+function diffusivity_NN_init(model)
+
+    @allowscalar T_shape = size(model.tracers.T)
+    @allowscalar e_shape = size(model.tracers.e)
+
+    @allowscalar in_dims  = T_shape[1] * T_shape[2] * T_shape[3] + e_shape[1] * e_shape[2] * e_shape[3]
+    @allowscalar out_dims = T_shape[1] * T_shape[2] * T_shape[3]
+
+    l = LinearDiffusivity(in_dims, out_dims) # Make sure architecture is GPU / Reactant
+
+    rng = Random.default_rng()
+    Random.seed!(rng, 0)
+
+    ps, st = LuxCore.setup(rng, l)
+
+    println("Parameter Length: ", LuxCore.parameterlength(l), "; State Length: ",
+        LuxCore.statelength(l))
+
+    return l, ps, st
+
+end
+
 function wind_stress_init(grid;
                             ρₒ::Real = 1026.0, # kg m⁻³, average density at the surface of the world ocean
                             Lφ::Real = 60, # Meridional length in degrees
@@ -174,23 +178,21 @@ function wind_stress_init(grid;
     return wind_stress
 end
 
-function first_time_step!(model)
-    Δt = model.clock.last_Δt
-    Oceananigans.TimeSteppers.first_time_step!(model, Δt)
-    return nothing
-end
-
-function time_step!(model)
-    Δt = model.clock.last_Δt + 0
-    Oceananigans.TimeSteppers.time_step!(model, Δt)
-    return nothing
-end
-
 function loop!(model, Ninner)
     Δt = model.clock.last_Δt + 0
     Oceananigans.TimeSteppers.first_time_step!(model, Δt)
     @trace track_numbers=false for _ = 1:(Ninner-1)
-        # Modify Je here: (though model.forcings.e or something)
+        Oceananigans.TimeSteppers.time_step!(model, Δt)
+    end
+    return nothing
+end
+
+function loop!(model, linear_diff, Ninner)
+    Δt = model.clock.last_Δt + 0
+    Oceananigans.TimeSteppers.first_time_step!(model, Δt)
+    @trace track_numbers=false for _ = 1:(Ninner-1)
+        # Modify Je here: (though model.forcing.e or model.forcing.e.data)
+        #set!(model.forcing.T, applyNN(diffusivity::NNDiffusivity)(input)) #same for s
         Oceananigans.TimeSteppers.time_step!(model, Δt)
     end
     return nothing
@@ -213,8 +215,40 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     return nothing
 end
 
+function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress, linear_diff)
+
+    set!(model.tracers.T, Tᵢ)
+    set!(model.tracers.S, Sᵢ)
+    set!(model.velocities.u.boundary_conditions.top.condition, wind_stress)
+
+    # Initialize the model
+    model.clock.iteration = 0
+    model.clock.time = 0
+    model.clock.last_Δt = 1200
+
+    # Step it forward
+    loop!(model, linear_diff, 10)
+
+    return nothing
+end
+
 function estimate_tracer_error(model, initial_temperature, initial_salinity, wind_stress)
     time_step_double_gyre!(model, initial_temperature, initial_salinity, wind_stress)
+    # Compute the mean mixed layer depth:
+    Nλ, Nφ, _ = size(model.grid)
+    
+    mean_sq_surface_u = 0.0
+    
+    for j = 1:Nφ, i = 1:Nλ
+        @allowscalar mean_sq_surface_u += @inbounds model.velocities.u[i, j, 1]^2
+    end
+    mean_sq_surface_u = mean_sq_surface_u / (Nλ * Nφ)
+    
+    return mean_sq_surface_u
+end
+
+function estimate_tracer_error(model, initial_temperature, initial_salinity, wind_stress, linear_diff)
+    time_step_double_gyre!(model, initial_temperature, initial_salinity, wind_stress, linear_diff)
     # Compute the mean mixed layer depth:
     Nλ, Nφ, _ = size(model.grid)
     
@@ -243,14 +277,22 @@ end
 
 Oceananigans.defaults.FloatType = Float64
 
+Nx = 32
+Ny = 32
+Nz = 8
+
 @info "Generating model..."
 rarch = ReactantState()
-rmodel = double_gyre_model(rarch, 62, 62, 15, 1200)
+rmodel = double_gyre_model(rarch, Nx, Ny, Nz, 1200)
 
 @info rmodel.buoyancy
 
 rTᵢ, rSᵢ      = set_tracers(rmodel.grid)
 rwind_stress = wind_stress_init(rmodel.grid)
+
+rlinear_diff, rps, rst = diffusivity_NN_init(rmodel)
+
+#@show rlinear_diff, rps, rst
 
 @info "Compiling..."
 
@@ -263,7 +305,7 @@ dJ  = Field{Face, Center, Nothing}(rmodel.grid)
 @info dmodel.closure
 
 tic = time()
-restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress)
+restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, rlinear_diff)
 #rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true differentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, dmodel, dTᵢ, dSᵢ, dJ)
 compile_toc = time() - tic
 
@@ -271,12 +313,12 @@ compile_toc = time() - tic
 
 
 @info "Running..."
-restimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress)
+restimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, rlinear_diff)
 
 
 @info "Running non-reactant for comparison..."
 varch = CPU()
-vmodel = double_gyre_model(varch, 62, 62, 15, 1200)
+vmodel = double_gyre_model(varch, Nx, Ny, Nz, 1200)
 
 @info "Initialized non-reactant model"
 
@@ -306,7 +348,7 @@ dedν, dJ = rdifferentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, dmod
 @allowscalar gradient_list = Array{Float64}[]
 
 for ϵ in ϵ_list
-    rmodelP = double_gyre_model(rarch, 62, 62, 15, 1200)
+    rmodelP = double_gyre_model(rarch, Nx, Ny, Nz, 1200)
     rTᵢP, rSᵢP      = set_tracers(rmodelP.grid)
     rwind_stressP = wind_stress_init(rmodelP.grid)
 
@@ -316,7 +358,7 @@ for ϵ in ϵ_list
 
     sq_surface_uP = restimate_tracer_error(rmodelP, rTᵢP, rSᵢP, rwind_stressP)
 
-    rmodelM = double_gyre_model(rarch, 62, 62, 15, 1200)
+    rmodelM = double_gyre_model(rarch, Nx, Ny, Nz, 1200)
     rTᵢM, rSᵢM      = set_tracers(rmodelM.grid)
     rwind_stressM = wind_stress_init(rmodelM.grid)
     @allowscalar rwind_stressM[i, j] = rwind_stressM[i, j] - ϵ * abs(rwind_stressM[i, j])
