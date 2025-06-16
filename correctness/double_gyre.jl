@@ -255,7 +255,7 @@ function time_step_double_gyre!(model, wind_stress)
                 bad_compute_barotropic_mode!, Vnp, v)
 
         sVp = Vp[8:end-8, 8:end-8, 1]
-        
+
         v[8:end-8, 8:end-8, 8:end-8] .= sVp
 
         pv2[8:end-8, 8:end-8, 8:end-8] .= sVp
@@ -270,7 +270,7 @@ end
     i, j = @index(Global, NTuple)
     @inbounds begin
         for k = Nz-1:-1:1
-            ϕ[i, j, k] -= ϕ[i, j, k+1]
+            ϕ[i, j, k] += ϕ[i, j, k+1]
         end
     end
 end
