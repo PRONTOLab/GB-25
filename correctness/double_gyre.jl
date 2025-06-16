@@ -108,13 +108,14 @@ using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: get_top_tra
                                            convective_length_scaleᶜᶜᶠ, stability_functionᶜᶜᶠ, stable_length_scaleᶜᶜᶠ, static_column_depthᶜᶜᵃ, scale
 
 using Oceananigans.BuoyancyFormulations: ∂z_b
-using Oceananigans.Solvers: solve!, solve_batched_tridiagonal_system_kernel!
+using Oceananigans.Solvers: solve!, solve_batched_tridiagonal_system_kernel!, get_coefficient
+
 using Oceananigans.Operators: ℑxᶜᵃᵃ, ℑyᵃᶠᵃ, ℑyᵃᶜᵃ, Az, volume, δxᶜᵃᵃ, δyᵃᶜᵃ, δzᵃᵃᶜ, V⁻¹ᶜᶜᶜ,
                               σⁿ, σ⁻, ∂zᶠᶜᶠ, δxᶠᶜᶠ, Δx⁻¹ᶠᶜᶠ, ∂yᶜᶠᶜ, active_weighted_ℑxyᶜᶠᶜ,
                               Δy⁻¹ᶜᶠᶜ, Δy_qᶠᶜᶜ, ℑxyᶜᶠᵃ, not_peripheral_node, peripheral_node,
                               Δyᶠᶜᶜ, δyᵃᶠᵃ, Ax_qᶠᶠᶜ, Ay_qᶜᶜᶜ, Az_qᶜᶠᶠ, δzᵃᵃᶜ, V⁻¹ᶜᶠᶜ,
                               Axᶠᶠᶜ, Ayᶜᶜᶜ, Azᶜᶠᶠ, ∂zᶜᶠᶠ, δzᶜᶠᶠ, Δyᶠᶠᶜ, Δzᶠᶠᶜ, Δxᶜᶜᶜ, Δzᶜᶜᶜ,
-                              Δxᶜᶠᶠ, Δyᶜᶠᶠ
+                              Δxᶜᶠᶠ, Δyᶜᶠᶠ, Δzᶠᶜᶜ, Δzᶜᶠᶜ
 
 using Oceananigans.Forcings: with_advective_forcing
 using Oceananigans.Advection: div_Uc, _advective_tracer_flux_x, _advective_tracer_flux_y, _advective_tracer_flux_z, U_dot_∇v
@@ -268,7 +269,7 @@ function bad_time_step!(model, Δt;
 
 
         launch!(architecture(implicit_solver), implicit_solver.grid, :xy,
-            solve_batched_tridiagonal_system_kernel!, field,
+            bad_solve_batched_tridiagonal_system_kernel!, field,
             implicit_solver.a,
             implicit_solver.b,
             implicit_solver.c,
@@ -289,8 +290,8 @@ function bad_time_step!(model, Δt;
     arch  = architecture(grid)
 
     launch!(architecture(grid), grid, :xy,
-            _compute_barotropic_mode!,
-            U̅, V̅, grid, u, v)
+            _bad_compute_barotropic_mode!,
+            V̅, grid, v)
 
     # add in "good" barotropic mode
     launch!(arch, grid, :xyz, _bad_barotropic_split_explicit_corrector!,
@@ -327,19 +328,53 @@ function bad_time_step!(model, Δt;
     u_kernel_args = tuple(start_momentum_kernel_args..., u_immersed_bc, end_momentum_kernel_args..., u_forcing)
     v_kernel_args = tuple(start_momentum_kernel_args..., v_immersed_bc, end_momentum_kernel_args..., v_forcing)
 
+    
     launch!(arch, grid, :xyz,
             compute_hydrostatic_free_surface_Gu!, model.timestepper.Gⁿ.u, grid, 
             u_kernel_args; active_cells_map=nothing)
+    
 
+    #=
+    launch!(arch, grid, :xyz,
+            bad_compute_hydrostatic_free_surface_Gu!, model.timestepper.Gⁿ.u, 
+            model.velocities; active_cells_map=nothing)
+    =#
 
     launch!(arch, grid, :xyz,
-            bad_compute_hydrostatic_free_surface_Gv!, model.timestepper.Gⁿ.v, grid, 
-            model.velocities, model.diffusivity_fields,; active_cells_map=nothing)
+            bad_compute_hydrostatic_free_surface_Gv!, model.timestepper.Gⁿ.v, 
+            model.velocities; active_cells_map=nothing)
 
     launch!(model.architecture, model.timestepper.Gⁿ.u.grid, :xy, _bad_apply_z_bcs!, model.timestepper.Gⁿ.u,
             model.timestepper.Gⁿ.u.grid, model.velocities.u.boundary_conditions.top)
 
     return nothing
+end
+
+@kernel function bad_solve_batched_tridiagonal_system_kernel!(ϕ, a, b, c, f, t, grid, p, args, tridiagonal_direction)
+    Nz = size(grid, 3)
+    i, j = @index(Global, NTuple)
+    bad_solve_batched_tridiagonal_system_z!(i, j, Nz, ϕ, a, b, c, f, t, grid, p, args, tridiagonal_direction)
+end
+
+@inline function bad_solve_batched_tridiagonal_system_z!(i, j, Nz, ϕ, a, b, c, f, t, grid, p, args, tridiagonal_direction)
+    @inbounds begin
+        f₁ = get_coefficient(i, j, 1, grid, f, p, tridiagonal_direction, args...)
+        ϕ[i, j, 1] = f₁
+
+        for k = Nz-1:-1:1
+            ϕ[i, j, k] -= t[i, j, k+1] * ϕ[i, j, k+1]
+        end
+    end
+end
+
+@kernel function _bad_compute_barotropic_mode!(V̅, grid, v)
+    i, j  = @index(Global, NTuple)
+
+    @inbounds V̅[i, j, 1] = grid.z.Δᵃᵃᶜ[1] * v[i, j, 1] 
+
+    for k in 2:grid.Nz
+        @inbounds V̅[i, j, 1] += grid.z.Δᵃᵃᶜ[k] * v[i, j, k] 
+    end
 end
 
 @kernel function _bad_barotropic_split_explicit_corrector!(v, V, V̅)
@@ -348,13 +383,14 @@ end
     @inbounds v[i, j, k] = v[i, j, k] + (V[i, j, 1] - V̅[i, j, 1])
 end
 
-@kernel function bad_compute_hydrostatic_free_surface_Gv!(Gv, grid, velocities, diffusivities)
+@kernel function bad_compute_hydrostatic_free_surface_Gu!(Gv, velocities)
     i, j, k = @index(Global, NTuple)
-    @inbounds Gv[i, j, k] = ( - (j > 1) * velocities[1][i+1, j-1, k]
-                                - (grid.Δyᶜᶠᵃ * grid.z.Δᵃᵃᶜ[k] * zero(grid)
-                                -  grid.Δyᶜᶠᵃ * grid.z.Δᵃᵃᶜ[k] * zero(grid)
-                                +  grid.Δxᶜᶜᵃ[j] * grid.z.Δᵃᵃᶜ[k] * zero(grid) 
-                                +  grid.Δxᶜᶠᵃ[j] * grid.Δyᶜᶠᵃ * (k == 1) * diffusivities.κu[i, j, k]))
+    @inbounds Gv[i, j, k] = - (j > 1) * velocities[2][i+1, j-1, k]
+end
+
+@kernel function bad_compute_hydrostatic_free_surface_Gv!(Gv, velocities)
+    i, j, k = @index(Global, NTuple)
+    @inbounds Gv[i, j, k] = - (j > 1) * velocities[1][i+1, j-1, k]
 end
 
 
