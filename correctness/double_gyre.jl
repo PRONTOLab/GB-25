@@ -230,15 +230,13 @@ end
     V̅[i, j, 1] = v[i+8, j+8, 1+8]
 end
 
-function estimate_tracer_error(u, v, grid, arch, Vnp, pv2, wind_stress)
+function estimate_tracer_error(u, v, grid, arch, Vnp, wind_stress)
     Nz = size(grid, 3)
 
     u = copy(u)
     v = copy(v)
 
     Vp = parent(Vnp)
-
-    pv2 = copy(pv2)
 
     v[8:end-8, 8:end-8, grid.Nz] .= wind_stress
 
@@ -258,9 +256,6 @@ function estimate_tracer_error(u, v, grid, arch, Vnp, pv2, wind_stress)
         sVp = Vp[8:end-8, 8:end-8, 1]
 
         v[8:end-8, 8:end-8, 8:end-8] .= sVp
-
-        pv2[8:end-8, 8:end-8, 8:end-8] .= sVp
-
     end
     
     mean_sq_surface_u = sum(u)
@@ -274,9 +269,8 @@ function estimate_tracer_error(model, wind_stress)
     v = copy(parent(model.velocities.v))
 
     Vnp = model.free_surface.filtered_state.V
-    pv2 = parent(model.diffusivity_fields.previous_velocities[2])
 
-    estimate_tracer_error(u, v, model.grid, model.architecture, Vnp, pv2, wind_stress)
+    estimate_tracer_error(u, v, model.grid, model.architecture, Vnp, wind_stress)
 end
 
 function differentiate_tracer_error(model, J, dmodel, dJ)
@@ -286,7 +280,6 @@ function differentiate_tracer_error(model, J, dmodel, dJ)
 
 
     Vnp = model.free_surface.filtered_state.V
-    pv2 = parent(model.diffusivity_fields.previous_velocities[2])
 
     dVnp = dmodel.free_surface.filtered_state.V
 
@@ -297,7 +290,6 @@ function differentiate_tracer_error(model, J, dmodel, dJ)
                     Const(model.grid),
                     Const(model.architecture),
                     Duplicated(Vnp, dVnp),
-                    Const(pv2),
                     Duplicated(J, dJ))
 
     return dedν, dJ
