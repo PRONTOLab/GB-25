@@ -242,7 +242,7 @@ function time_step_double_gyre!(model, wind_stress)
 
     arch = model.architecture
 
-    @trace track_numbers=false for _ = 1:5
+    @trace track_numbers=false for _ = 1:4
 
         v[8:end-8, 8:end-8, 8:end-8] .+= u
 
