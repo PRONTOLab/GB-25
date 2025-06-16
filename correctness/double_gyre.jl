@@ -233,12 +233,14 @@ function time_step_double_gyre!(model, wind_stress)
     u = parent(model.velocities.u)[8:end-8, 8:end-8, 8:end-8]
     v = parent(model.velocities.v)
 
-    Vp = parent(model.free_surface.filtered_state.V)
+    Vnp = model.free_surface.filtered_state.V
+    Vp = parent(Vnp)
 
     v[8:end-8, 8:end-8, grid.Nz] .= wind_stress    
 
-    pv1 = parent(model.diffusivity_fields.previous_velocities[1])
     pv2 = parent(model.diffusivity_fields.previous_velocities[2])
+
+    arch = model.architecture
 
     @trace track_numbers=false for _ = 1:5
 
@@ -246,16 +248,17 @@ function time_step_double_gyre!(model, wind_stress)
 
         u .+= v[9:end-7, 7:end-9, 8:end-8]
 
-        launch!(model.architecture, grid, :xy,
+        launch!(arch, grid, :xy,
             bad_solve_batched_tridiagonal_system_kernel!, u, Nz)
 
-        launch!(model.architecture, grid, :xy,
-                bad_compute_barotropic_mode!, model.free_surface.filtered_state.V, v)
+        launch!(arch, grid, :xy,
+                bad_compute_barotropic_mode!, Vnp, v)
 
-        v[8:end-8, 8:end-8, 8:end-8] .= Vp[8:end-8, 8:end-8, 1]
+        sVp = Vp[8:end-8, 8:end-8, 1]
+        
+        v[8:end-8, 8:end-8, 8:end-8] .= sVp
 
-        # pv1[8:end-8, 8:end-8, 8:end-8] .= u
-        pv2 .= v
+        pv2[8:end-8, 8:end-8, 8:end-8] .= sVp
 
     end
 
@@ -267,7 +270,7 @@ end
     i, j = @index(Global, NTuple)
     @inbounds begin
         for k = Nz-1:-1:1
-            ϕ[i, j, k] -= ϕ[i, j, k+1] / 2
+            ϕ[i, j, k] -= ϕ[i, j, k+1]
         end
     end
 end
