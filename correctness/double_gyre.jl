@@ -290,9 +290,13 @@ rmodel = double_gyre_model(rarch, Nx, Ny, Nz, 1200)
 rTᵢ, rSᵢ      = set_tracers(rmodel.grid)
 rwind_stress = wind_stress_init(rmodel.grid)
 
-rlinear_diff, rps, rst = diffusivity_NN_init(rmodel)
+linear_diff, ps, st = diffusivity_NN_init(rmodel)
 
-#@show rlinear_diff, rps, rst
+# Convert parameters and state to Reactant:
+rps = ps |> reactant_device()
+rst = st |> reactant_device()
+
+#@show linear_diff, rps, rst
 
 @info "Compiling..."
 
@@ -304,12 +308,25 @@ dJ  = Field{Face, Center, Nothing}(rmodel.grid)
 @info dmodel
 @info dmodel.closure
 
+T_shape = size(rmodel.tracers.T)
+e_shape = size(rmodel.tracers.e)
+@allowscalar x = randn(Float64, T_shape[1] * T_shape[2] * T_shape[3] + e_shape[1] * e_shape[2] * e_shape[3], 1)
+rx = x |> reactant_device()
+
+@show T_shape, e_shape
+
+tic = time()
+rlinear_diff = @compile raise_first=true raise=true sync=true linear_diff(rx, rps, rst)
+compile_toc_diff = time() - tic
+
+@show compile_toc_diff
+
 tic = time()
 restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, rlinear_diff)
 #rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true differentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, dmodel, dTᵢ, dSᵢ, dJ)
-compile_toc = time() - tic
+compile_toc_model = time() - tic
 
-@show compile_toc
+@show compile_toc_model
 
 
 @info "Running..."
