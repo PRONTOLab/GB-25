@@ -230,11 +230,13 @@ end
     V̅[i, j, 1] = v[i+8, j+8, 1+8]
 end
 
-function estimate_tracer_error(u, v, Nz, wind_stress)
+function estimate_tracer_error(u, Nz, wind_stress)
 
     u = copy(u)
-    v = copy(v)
 
+    v = similar(u, 78, 78, 31)
+    fill!(v, 0)
+    
     copyto!(@view(v[8:end-8, 8:end-8, Nz]), wind_stress)
 
     @trace track_numbers=false for _ = 1:3
@@ -260,11 +262,12 @@ end
 function estimate_tracer_error(model, wind_stress)
 
     u = parent(model.velocities.u)[8:end-8, 8:end-8, 8:end-8]
-    v = copy(parent(model.velocities.v))
 
     Nz = model.grid.Nz
 
-    estimate_tracer_error(u, v, Nz, wind_stress)
+    @show Nz
+
+    estimate_tracer_error(u, Nz, wind_stress)
 end
 
 function differentiate_tracer_error(model, J, dmodel, dJ)
