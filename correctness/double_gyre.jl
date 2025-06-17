@@ -232,7 +232,6 @@ function time_step_double_gyre!(model, wind_stress)
 
     v = parent(model.velocities.v)
     
-    # u = copy(parent(model.velocities.u)[8:end-8, 8:end-8, 8:end-8])
     u = similar(v, 63, 63, 16)
     fill!(u, 0)
     
@@ -240,7 +239,7 @@ function time_step_double_gyre!(model, wind_stress)
     Vp = parent(Vnp)
     @show Core.Typeof(Vnp), Core.Typeof(Vp)
 
-    v[8:end-8, 8:end-8, grid.Nz] .= wind_stress    
+    v[8:end-8, 8:end-8, 15] .= wind_stress    
 
     pv2 = parent(model.diffusivity_fields.previous_velocities[2])
 
