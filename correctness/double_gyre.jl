@@ -238,29 +238,26 @@ function estimate_tracer_error(u, v, grid, arch, Vnp, wind_stress)
 
     Vp = parent(Vnp)
 
-    v[8:end-8, 8:end-8, grid.Nz] .= wind_stress
+    copyto!(@view(v[8:end-8, 8:end-8, grid.Nz]), wind_stress)
 
     @trace track_numbers=false for _ = 1:3
 
         v[8:end-8, 8:end-8, 8:end-8] .+= u
 
-        u .= v[9:end-7, 7:end-9, 8:end-8]
+        copyto!(u, v[9:end-7, 7:end-9, 8:end-8])
 
-        # u[:, :, 7] .+= u[:, :, 8]
-        # u[:, :, 6] .+= u[:, :, 8]
-        # u[:, :, 5] .+= u[:, :, 8]
-        # u[:, :, 4] .+= u[:, :, 8]
-        u[:, :, 3] .+= u[:, :, 8]
-        u[:, :, 2] .+= u[:, :, 3]
+        copyto!(@view(u[:, :, 2]), u[:, :, 8])
 
         launch!(arch, grid, :xy,
                 bad_compute_barotropic_mode!, Vnp, v)
 
-        sVp = Vp[8:end-8, 8:end-8, 1]
+        sl = @view(v[8:end-8, 8:end-8, 8:end-8])
 
-        v[8:end-8, 8:end-8, 8:end-8] .= sVp
+        sVp = Reactant.TracedUtils.broadcast_to_size(Vp[8:end-8, 8:end-8, 1], size(sl))
+
+        copyto!(sl, sVp)
     end
-    
+
     mean_sq_surface_u = sum(u)
     
     return mean_sq_surface_u
