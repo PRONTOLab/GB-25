@@ -230,7 +230,7 @@ function time_step_double_gyre!(model, wind_stress)
     grid = model.grid
     Nz = size(grid, 3)
 
-    u = parent(model.velocities.u)[8:end-8, 8:end-8, 8:end-8]
+    u = copy(parent(model.velocities.u)[8:end-8, 8:end-8, 8:end-8])
     v = parent(model.velocities.v)
 
     Vnp = model.free_surface.filtered_state.V
@@ -249,7 +249,6 @@ function time_step_double_gyre!(model, wind_stress)
 
         u .+= v[9:end-7, 7:end-9, 8:end-8]
 
-        # u[:, :, 3] .+= u[:, :, 8]
         u[:, :, 2] .+= u[:, :, 8]
 
         launch!(arch, grid, :xy,
