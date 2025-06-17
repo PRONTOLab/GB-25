@@ -249,9 +249,8 @@ function time_step_double_gyre!(model, wind_stress)
 
         u .+= v[9:end-7, 7:end-9, 8:end-8]
 
-        for k = Nz-1:-1:1
-            u[:, :, k] .+= u[:, :, k+1]
-        end
+        u[:, :, 3] .+= u[:, :, 8]
+        u[:, :, 2] .+= u[:, :, 3]
 
         launch!(arch, grid, :xy,
                 bad_compute_barotropic_mode!, Vnp, v)
