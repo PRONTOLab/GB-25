@@ -230,9 +230,12 @@ function time_step_double_gyre!(model, wind_stress)
     grid = model.grid
     Nz = size(grid, 3)
 
-    u = copy(parent(model.velocities.u)[8:end-8, 8:end-8, 8:end-8])
     v = parent(model.velocities.v)
-
+    
+    # u = copy(parent(model.velocities.u)[8:end-8, 8:end-8, 8:end-8])
+    u = similar(v, 63, 63, 16)
+    fill!(u, 0)
+    
     Vnp = model.free_surface.filtered_state.V
     Vp = parent(Vnp)
     @show Core.Typeof(Vnp), Core.Typeof(Vp)
