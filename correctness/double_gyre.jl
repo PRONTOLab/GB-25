@@ -230,15 +230,12 @@ end
     V̅[i, j, 1] = v[i+8, j+8, 1+8]
 end
 
-function estimate_tracer_error(u, v, grid, arch, Vnp, wind_stress)
-    Nz = size(grid, 3)
+function estimate_tracer_error(u, v, Nz, wind_stress)
 
     u = copy(u)
     v = copy(v)
 
-    Vp = parent(Vnp)
-
-    copyto!(@view(v[8:end-8, 8:end-8, grid.Nz]), wind_stress)
+    copyto!(@view(v[8:end-8, 8:end-8, Nz]), wind_stress)
 
     @trace track_numbers=false for _ = 1:3
 
@@ -248,12 +245,9 @@ function estimate_tracer_error(u, v, grid, arch, Vnp, wind_stress)
 
         copyto!(@view(u[:, :, 2]), u[:, :, 8])
 
-        launch!(arch, grid, :xy,
-                bad_compute_barotropic_mode!, Vnp, v)
-
         sl = @view(v[8:end-8, 8:end-8, 8:end-8])
 
-        sVp = Reactant.TracedUtils.broadcast_to_size(Vp[8:end-8, 8:end-8, 1], size(sl))
+        sVp = Reactant.TracedUtils.broadcast_to_size(v[8:end-8, 8:end-8, 9], size(sl))
 
         copyto!(sl, sVp)
     end
@@ -264,32 +258,24 @@ function estimate_tracer_error(u, v, grid, arch, Vnp, wind_stress)
 end
 
 function estimate_tracer_error(model, wind_stress)
-    
+
     u = parent(model.velocities.u)[8:end-8, 8:end-8, 8:end-8]
     v = copy(parent(model.velocities.v))
 
-    Vnp = model.free_surface.filtered_state.V
+    Nz = model.grid.Nz
 
-    estimate_tracer_error(u, v, model.grid, model.architecture, Vnp, wind_stress)
+    estimate_tracer_error(u, v, Nz, wind_stress)
 end
 
 function differentiate_tracer_error(model, J, dmodel, dJ)
-
     u = parent(model.velocities.u)[8:end-8, 8:end-8, 8:end-8]
     v = copy(parent(model.velocities.v))
-
-
-    Vnp = model.free_surface.filtered_state.V
-
-    dVnp = dmodel.free_surface.filtered_state.V
 
     dedν = autodiff(set_strong_zero(Enzyme.Reverse),
                     estimate_tracer_error, Active,
                     Const(u),
                     Const(v),
-                    Const(model.grid),
-                    Const(model.architecture),
-                    Duplicated(Vnp, dVnp),
+                    Const(model.grid.Nz),
                     Duplicated(J, dJ))
 
     return dedν, dJ
