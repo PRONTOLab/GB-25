@@ -3,44 +3,41 @@ using Reactant
 using Enzyme
 
 function wind_stress_init()
-    res = ones(63, 1)
+    res = ones(1)
     res = Reactant.to_rarray(res)
     return res
 end
 
 
 txt = """
-  func.func @main(%1: tensor<63x1xf64>) -> (tensor<f64>) {
+  func.func @main(%1: tensor<1xf64>) -> (tensor<f64>) {
     %cst = stablehlo.constant dense<0.000000e+00> : tensor<f64>
     %c = stablehlo.constant dense<7> : tensor<i32>
     %c_0 = stablehlo.constant dense<0> : tensor<i64>
     %c_1 = stablehlo.constant dense<3> : tensor<i64>
     %c_2 = stablehlo.constant dense<1> : tensor<i64>
-    %cst_3 = stablehlo.constant dense<0.000000e+00> : tensor<78x31xf64>
-    %cst_4 = stablehlo.constant dense<0.000000e+00> : tensor<63x16xf64>
-    %cst_1 = stablehlo.constant dense<0.000000e+00> : tensor<63x1xf64>
+    %cst_4 = stablehlo.constant dense<0.000000e+00> : tensor<16xf64>
+    %cst_1 = stablehlo.constant dense<0.000000e+00> : tensor<1xf64>
 
-    %cst_8 = stablehlo.constant dense<0.000000e+00> : tensor<8x1xf64>
-
-    %cst_14 = stablehlo.constant dense<0.000000e+00> : tensor<63x14xf64>
-    %3:3 = stablehlo.while(%iterArg = %c_0, %iterArg_5 = %cst_1, %iterArg_6 = %cst_4) : tensor<i64>, tensor<63x1xf64>, tensor<63x16xf64> attributes {enzymexla.disable_min_cut}
+    %cst_14 = stablehlo.constant dense<0.000000e+00> : tensor<14xf64>
+    %3:3 = stablehlo.while(%iterArg = %c_0, %iterArg_5 = %cst_1, %iterArg_6 = %cst_4) : tensor<i64>, tensor<1xf64>, tensor<16xf64> attributes {enzymexla.disable_min_cut}
      cond {
       %9 = stablehlo.compare  LT, %iterArg, %c_1 : (tensor<i64>, tensor<i64>) -> tensor<i1>
       stablehlo.return %9 : tensor<i1>
     } do {
       %9 = stablehlo.add %iterArg, %c_2 : tensor<i64>
 
-      %16 = stablehlo.broadcast_in_dim %iterArg_5, dims = [0, 1] : (tensor<63x1xf64>) -> tensor<63x16xf64>
+      %16 = stablehlo.broadcast_in_dim %iterArg_5, dims = [0] : (tensor<1xf64>) -> tensor<16xf64>
 
-      %10 = stablehlo.add %16, %iterArg_6 : tensor<63x16xf64>
+      %10 = stablehlo.add %16, %iterArg_6 : tensor<16xf64>
 
-      %a12 = stablehlo.slice %10 [0:63, 7:8] : (tensor<63x16xf64>) -> tensor<63x1xf64>
+      %a12 = stablehlo.slice %10 [7:8] : (tensor<16xf64>) -> tensor<1xf64>
 
-      %14 = stablehlo.concatenate %a12, %1, %cst_14, dim = 1 : (tensor<63x1xf64>, tensor<63x1xf64>, tensor<63x14xf64>) -> tensor<63x16xf64>
-      %15 = stablehlo.slice %10 [0:63, 1:2] : (tensor<63x16xf64>) -> tensor<63x1xf64>
-      stablehlo.return %9, %15, %14 : tensor<i64>, tensor<63x1xf64>, tensor<63x16xf64>
+      %14 = stablehlo.concatenate %a12, %1, %cst_14, dim = 0 : (tensor<1xf64>, tensor<1xf64>, tensor<14xf64>) -> tensor<16xf64>
+      %15 = stablehlo.slice %10 [1:2] : (tensor<16xf64>) -> tensor<1xf64>
+      stablehlo.return %9, %15, %14 : tensor<i64>, tensor<1xf64>, tensor<16xf64>
     }
-    %6 = stablehlo.reduce(%3#2 init: %cst) applies stablehlo.add across dimensions = [0, 1] : (tensor<63x16xf64>, tensor<f64>) -> tensor<f64>
+    %6 = stablehlo.reduce(%3#2 init: %cst) applies stablehlo.add across dimensions = [0] : (tensor<16xf64>, tensor<f64>) -> tensor<f64>
     return %6 : tensor<f64>
   }
 """
@@ -83,11 +80,9 @@ compile_toc = time() - tic
 
 @show compile_toc
 
-i = 10
-
 dJ = rdifferentiate_tracer_error(rwind_stress, dJ)
 
-@allowscalar @show dJ[i, 1]
+@allowscalar @show dJ[1]
 
 # Produce finite-difference gradients for comparison:
 ϵ_list = [1e-1, 1e-2, 1e-3] #, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8]
@@ -97,14 +92,14 @@ dJ = rdifferentiate_tracer_error(rwind_stress, dJ)
 for ϵ in ϵ_list
     rwind_stressP = wind_stress_init()
 
-    @allowscalar diff = 2ϵ * abs(rwind_stressP[i, 1])
+    @allowscalar diff = 2ϵ * abs(rwind_stressP[1])
 
-    @allowscalar rwind_stressP[i, 1] = rwind_stressP[i, 1] + ϵ * abs(rwind_stressP[i, 1])
+    @allowscalar rwind_stressP[1] = rwind_stressP[1] + ϵ * abs(rwind_stressP[1])
 
     sq_surface_uP = restimate_tracer_error(rwind_stressP)
 
     rwind_stressM = wind_stress_init()
-    @allowscalar rwind_stressM[i, 1] = rwind_stressM[i, 1] - ϵ * abs(rwind_stressM[i, 1])
+    @allowscalar rwind_stressM[1] = rwind_stressM[1] - ϵ * abs(rwind_stressM[1])
 
     sq_surface_uM = restimate_tracer_error(rwind_stressM)
 
