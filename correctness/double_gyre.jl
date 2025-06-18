@@ -27,15 +27,11 @@ txt = """
     } do {
       %9 = stablehlo.add %iterArg, %c_2 : tensor<i64>
 
-      %16 = stablehlo.broadcast_in_dim %iterArg_5, dims = [0] : (tensor<1xf64>) -> tensor<16xf64>
+      %15 = stablehlo.slice %iterArg_6 [1:2] : (tensor<16xf64>) -> tensor<1xf64>
+      %10 = stablehlo.add %iterArg_5, %15 : tensor<1xf64>
 
-      %10 = stablehlo.add %16, %iterArg_6 : tensor<16xf64>
-
-      %a12 = stablehlo.slice %10 [7:8] : (tensor<16xf64>) -> tensor<1xf64>
-
-      %14 = stablehlo.concatenate %a12, %1, %cst_14, dim = 0 : (tensor<1xf64>, tensor<1xf64>, tensor<14xf64>) -> tensor<16xf64>
-      %15 = stablehlo.slice %10 [1:2] : (tensor<16xf64>) -> tensor<1xf64>
-      stablehlo.return %9, %15, %14 : tensor<i64>, tensor<1xf64>, tensor<16xf64>
+      %14 = stablehlo.concatenate %cst_1, %1, %cst_14, dim = 0 : (tensor<1xf64>, tensor<1xf64>, tensor<14xf64>) -> tensor<16xf64>
+      stablehlo.return %9, %10, %14 : tensor<i64>, tensor<1xf64>, tensor<16xf64>
     }
     %6 = stablehlo.reduce(%3#1 init: %cst) applies stablehlo.add across dimensions = [0] : (tensor<1xf64>, tensor<f64>) -> tensor<f64>
     return %6 : tensor<f64>
