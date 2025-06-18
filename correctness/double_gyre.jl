@@ -232,8 +232,6 @@ function time_step_double_gyre!(model, wind_stress)
     u = similar(v, 63, 63, 16)
     fill!(u, 0)
     
-    Vp = parent(model.free_surface.filtered_state.V)
-
     v[8:end-8, 8:end-8, 15] .= wind_stress    
 
     pv2 = parent(model.diffusivity_fields.previous_velocities[2])
@@ -246,9 +244,7 @@ function time_step_double_gyre!(model, wind_stress)
 
         u[:, :, 2] .+= u[:, :, 8]
 
-        Vp[8:end-8, 8:end-8, 1] .= v[8:end-8, 8:end-8, 9]
-
-        sVp = Vp[8:end-8, 8:end-8, 1]
+        sVp = v[8:end-8, 8:end-8, 9]
 
         v[8:end-8, 8:end-8, 8:end-8] .= sVp
 
