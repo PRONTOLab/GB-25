@@ -28,7 +28,7 @@ function estimate_tracer_error(v, pv02, wind_stress)
     @trace track_numbers=false for _ = 1:3
         copyto!(@view(v[8:end-8, 8:end-8, 8:end-8]), Reactant.Ops.add(v[8:end-8, 8:end-8, 8:end-8], u))
 
-        copyto!(u, v[9:end-7, 7:end-9, 8:end-8])
+        copyto!(u, v[9:end-7, 8:end-8, 8:end-8])
 
         copyto!(@view(u[:, :, 2]), Reactant.Ops.add(u[:, :, 2], u[:, :, 8]))
 
