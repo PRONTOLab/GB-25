@@ -267,9 +267,8 @@ function differentiate_tracer_error(model, J, dmodel, dJ)
     v = parent(model.velocities.v)
     pv02 = parent(model.diffusivity_fields.previous_velocities[2])
 
-
-    dv = parent(dmodel.velocities.v)
-    dpv02 = parent(dmodel.diffusivity_fields.previous_velocities[2])
+    dv = zero(v)
+    dpv02 = zero(pv02)
 
     dedν = autodiff(set_strong_zero(Enzyme.Reverse),
                     estimate_tracer_error, Active,
