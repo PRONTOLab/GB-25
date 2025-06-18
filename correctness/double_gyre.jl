@@ -18,8 +18,6 @@ function estimate_tracer_error(v, pv02, wind_stress)
     u = similar(v, 63, 16)
     fill!(u, 0)
     
-    # copyto!(@view(v[8:end-8, 15:15]), wind_stress)
-
     v0 = copy(v)
 
     pv2 = similar(u, 78, 31)
