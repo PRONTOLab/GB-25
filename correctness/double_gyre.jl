@@ -190,8 +190,10 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     model.clock.last_Δt = Δt
 
 
-    v = parent(model.velocities.v)
-    pv02 = parent(model.diffusivity_fields.previous_velocities[2])
+    v = Reactant.to_rarray(ones(78, 78, 31))
+    pv02 = Reactant.to_rarray(ones(78, 78, 31))
+    # pv02 = parent(model.diffusivity_fields.previous_velocities[2])
+    @show size(pv02)
 
     return (v, pv02)
 end
@@ -242,8 +244,8 @@ function estimate_tracer_error(model, wind_stress)
 end
 
 function differentiate_tracer_error(model, J, dJ)
-    v = model[1] # parent(model.velocities.v)
-    pv02 = model[2] # parent(model.diffusivity_fields.previous_velocities[2])
+    v = model[1]
+    pv02 = model[2]
 
     dv = zero(v)
     dpv02 = zero(pv02)
