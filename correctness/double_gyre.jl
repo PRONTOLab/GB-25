@@ -18,7 +18,7 @@ function estimate_tracer_error(v, pv02, wind_stress)
     u = similar(v, 63, 16)
     fill!(u, 0)
     
-    copyto!(@view(v[8:end-8, 15:15]), wind_stress)
+    # copyto!(@view(v[8:end-8, 15:15]), wind_stress)
 
     v0 = copy(v)
 
@@ -30,7 +30,7 @@ function estimate_tracer_error(v, pv02, wind_stress)
 
         copyto!(u, v[9:end-7, 8:end-8])
 
-        copyto!(@view(u[:, 2:2]), Reactant.Ops.add(u[:, 2:2], u[:, 8:8]))
+        copyto!(@view(u[:, 2:2]), wind_stress)
 
         sVp = Reactant.TracedUtils.broadcast_to_size(v[8:end-8, 9:9], size(v[8:end-8, 8:end-8]))
 
