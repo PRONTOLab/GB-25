@@ -23,21 +23,25 @@ txt = """
     %c_2 = stablehlo.constant dense<1> : tensor<i64>
     %cst_3 = stablehlo.constant dense<0.000000e+00> : tensor<78x31xf64>
     %cst_4 = stablehlo.constant dense<0.000000e+00> : tensor<63x16xf64>
+    %cst_1 = stablehlo.constant dense<0.000000e+00> : tensor<63x1xf64>
     %1 = stablehlo.reshape %arg2 : (tensor<1x63xf64>) -> tensor<63x1xf64>
-    %3:3 = stablehlo.while(%iterArg = %c_0, %iterArg_5 = %cst_4, %iterArg_6 = %cst_4) : tensor<i64>, tensor<63x16xf64>, tensor<63x16xf64> attributes {enzymexla.disable_min_cut}
+    %3:3 = stablehlo.while(%iterArg = %c_0, %iterArg_5 = %cst_1, %iterArg_6 = %cst_4) : tensor<i64>, tensor<63x1xf64>, tensor<63x16xf64> attributes {enzymexla.disable_min_cut}
      cond {
       %9 = stablehlo.compare  LT, %iterArg, %c_1 : (tensor<i64>, tensor<i64>) -> tensor<i1>
       stablehlo.return %9 : tensor<i1>
     } do {
       %9 = stablehlo.add %iterArg, %c_2 : tensor<i64>
-      %10 = stablehlo.add %iterArg_5, %iterArg_6 : tensor<63x16xf64>
+
+      %16 = stablehlo.broadcast_in_dim %iterArg_5, dims = [0, 1] : (tensor<63x1xf64>) -> tensor<63x16xf64>
+
+      %10 = stablehlo.add %16, %iterArg_6 : tensor<63x16xf64>
+
       %11 = stablehlo.dynamic_update_slice %cst_3, %10, %c, %c : (tensor<78x31xf64>, tensor<63x16xf64>, tensor<i32>, tensor<i32>) -> tensor<78x31xf64>
       %12 = stablehlo.slice %11 [8:71, 7:8] : (tensor<78x31xf64>) -> tensor<63x1xf64>
       %13 = stablehlo.slice %11 [8:71, 9:23] : (tensor<78x31xf64>) -> tensor<63x14xf64>
       %14 = stablehlo.concatenate %12, %1, %13, dim = 1 : (tensor<63x1xf64>, tensor<63x1xf64>, tensor<63x14xf64>) -> tensor<63x16xf64>
       %15 = stablehlo.slice %10 [0:63, 1:2] : (tensor<63x16xf64>) -> tensor<63x1xf64>
-      %16 = stablehlo.broadcast_in_dim %15, dims = [0, 1] : (tensor<63x1xf64>) -> tensor<63x16xf64>
-      stablehlo.return %9, %16, %14 : tensor<i64>, tensor<63x16xf64>, tensor<63x16xf64>
+      stablehlo.return %9, %15, %14 : tensor<i64>, tensor<63x1xf64>, tensor<63x16xf64>
     }
     %6 = stablehlo.reduce(%3#2 init: %cst) applies stablehlo.add across dimensions = [0, 1] : (tensor<63x16xf64>, tensor<f64>) -> tensor<f64>
     return %6 : tensor<f64>
