@@ -122,25 +122,6 @@ using Oceananigans.Coriolis: y_f_cross_U, fᶠᶠᵃ
 using KernelAbstractions: @kernel, @index
 using KernelAbstractions.Extras.LoopInfo: @unroll
 
-throw_error = true
-include_halos = true
-rtol = sqrt(eps(Float64))
-atol = sqrt(eps(Float64))
-
-function set_tracers(grid;
-                     dTdz::Real = 30.0 / 1800.0)
-    fₜ(λ, φ, z) = 30 + dTdz * z # + dTdz * model.grid.Lz * 1e-6 * Ξ(z)
-    fₛ(λ, φ, z) = 0 #35
-
-    Tᵢ = Field{Center, Center, Center}(grid)
-    Sᵢ = Field{Center, Center, Center}(grid)
-
-    @allowscalar set!(Tᵢ, fₜ)
-    @allowscalar set!(Sᵢ, fₛ)
-
-    return Tᵢ, Sᵢ
-end
-
 function resolution_to_points(resolution)
     Nx = convert(Int, 384 / resolution)
     Ny = convert(Int, 192 / resolution)
@@ -211,13 +192,9 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     return model
 end
 
-function wind_stress_init(grid;
-                            ρₒ::Real = 1026.0, # kg m⁻³, average density at the surface of the world ocean
-                            Lφ::Real = 60, # Meridional length in degrees
-                            φ₀::Real = 15.0 # Degrees north of equator for the southern edge
-                            )
+function wind_stress_init(arch)
     res = ones(63, 63)
-    if grid.architecture isa ReactantState
+    if arch isa ReactantState
         res = Reactant.to_rarray(res)
     end
     return res
@@ -262,7 +239,7 @@ function estimate_tracer_error(model, wind_stress)
     estimate_tracer_error(v, pv02, wind_stress)
 end
 
-function differentiate_tracer_error(model, J, dmodel, dJ)
+function differentiate_tracer_error(model, J, dJ)
 
     v = parent(model.velocities.v)
     pv02 = parent(model.diffusivity_fields.previous_velocities[2])
@@ -284,51 +261,23 @@ Oceananigans.defaults.FloatType = Float64
 @info "Generating model..."
 rarch = ReactantState()
 rmodel = double_gyre_model(rarch, 62, 62, 15, 1200)
-
-rTᵢ, rSᵢ      = set_tracers(rmodel.grid)
-rwind_stress = wind_stress_init(rmodel.grid)
+rwind_stress = wind_stress_init(rarch)
 
 @info "Compiling..."
 
-dmodel = Enzyme.make_zero(rmodel)
-dTᵢ = Field{Center, Center, Center}(rmodel.grid)
-dSᵢ = Field{Center, Center, Center}(rmodel.grid)
 dJ  = make_zero(rwind_stress) # Field{Face, Center, Nothing}(rmodel.grid)
 
 tic = time()
 restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(rmodel, rwind_stress)
-rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true differentiate_tracer_error(rmodel, rwind_stress, dmodel, dJ)
+rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true differentiate_tracer_error(rmodel, rwind_stress, dJ)
 compile_toc = time() - tic
 
 @show compile_toc
 
-#=
-@info "Running..."
-restimate_tracer_error(rmodel, rwind_stress)
-
-
-@info "Running non-reactant for comparison..."
-varch = CPU()
-vmodel = double_gyre_model(varch, 62, 62, 15, 1200)
-
-@info "Initialized non-reactant model"
-
-vTᵢ, vSᵢ      = set_tracers(vmodel.grid)
-vwind_stress = wind_stress_init(vmodel.grid)
-
-@info "Initialized non-reactant tracers and wind stress"
-
-estimate_tracer_error(vmodel, vwind_stress)
-
-GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
-
-@info "Done!"
-=#
-
 i = 10
 j = 10
 
-dedν, dJ = rdifferentiate_tracer_error(rmodel, rwind_stress, dmodel, dJ)
+dedν, dJ = rdifferentiate_tracer_error(rmodel, rwind_stress, dJ)
 
 @allowscalar @show dJ[i, j]
 
@@ -339,8 +288,7 @@ dedν, dJ = rdifferentiate_tracer_error(rmodel, rwind_stress, dmodel, dJ)
 
 for ϵ in ϵ_list
     rmodelP = double_gyre_model(rarch, 62, 62, 15, 1200)
-    rTᵢP, rSᵢP      = set_tracers(rmodelP.grid)
-    rwind_stressP = wind_stress_init(rmodelP.grid)
+    rwind_stressP = wind_stress_init(rarch)
 
     @allowscalar diff = 2ϵ * abs(rwind_stressP[i, j])
 
@@ -349,17 +297,13 @@ for ϵ in ϵ_list
     sq_surface_uP = restimate_tracer_error(rmodelP, rwind_stressP)
 
     rmodelM = double_gyre_model(rarch, 62, 62, 15, 1200)
-    rTᵢM, rSᵢM      = set_tracers(rmodelM.grid)
-    rwind_stressM = wind_stress_init(rmodelM.grid)
+    rwind_stressM = wind_stress_init(rarch)
     @allowscalar rwind_stressM[i, j] = rwind_stressM[i, j] - ϵ * abs(rwind_stressM[i, j])
 
     sq_surface_uM = restimate_tracer_error(rmodelM, rwind_stressM)
 
     dsq_surface_u = (sq_surface_uP - sq_surface_uM) / diff
 
-    #push!(gradient_list, dsq_surface_u)
     @show ϵ, dsq_surface_u
 
 end
-
-@info gradient_list
