@@ -3,35 +3,33 @@ using Reactant
 using Enzyme
 
 function wind_stress_init()
-    res = ones(1)
-    res = Reactant.to_rarray(res)
+    res = ConcreteRNumber(1.0)
     return res
 end
 
 
 txt = """
-  func.func @main(%1: tensor<1xf64>) -> (tensor<f64>) {
+  func.func @main(%1: tensor<f64>) -> (tensor<f64>) {
     %cst = stablehlo.constant dense<0.000000e+00> : tensor<f64>
 
     %c_0 = stablehlo.constant dense<0> : tensor<i64>
     %c_1 = stablehlo.constant dense<3> : tensor<i64>
     %c_2 = stablehlo.constant dense<1> : tensor<i64>
-    %cst_1 = stablehlo.constant dense<0.000000e+00> : tensor<1xf64>
+    %cst_1 = stablehlo.constant dense<0.000000e+00> : tensor<f64>
 
     %cst_14 = stablehlo.constant dense<0.000000e+00> : tensor<14xf64>
-    %3:3 = stablehlo.while(%iterArg = %c_0, %iterArg_5 = %cst_1, %iterArg_6 = %cst_1) : tensor<i64>, tensor<1xf64>, tensor<1xf64> attributes {enzymexla.disable_min_cut}
+    %3:3 = stablehlo.while(%iterArg = %c_0, %iterArg_5 = %cst_1, %iterArg_6 = %cst_1) : tensor<i64>, tensor<f64>, tensor<f64> attributes {enzymexla.disable_min_cut}
      cond {
       %9 = stablehlo.compare  LT, %iterArg, %c_1 : (tensor<i64>, tensor<i64>) -> tensor<i1>
       stablehlo.return %9 : tensor<i1>
     } do {
       %9 = stablehlo.add %iterArg, %c_2 : tensor<i64>
 
-      %10 = stablehlo.add %iterArg_5, %iterArg_6 : tensor<1xf64>
+      %10 = stablehlo.add %iterArg_5, %iterArg_6 : tensor<f64>
 
-      stablehlo.return %9, %10, %1 : tensor<i64>, tensor<1xf64>, tensor<1xf64>
+      stablehlo.return %9, %10, %1 : tensor<i64>, tensor<f64>, tensor<f64>
     }
-    %6 = stablehlo.reduce(%3#1 init: %cst) applies stablehlo.add across dimensions = [0] : (tensor<1xf64>, tensor<f64>) -> tensor<f64>
-    return %6 : tensor<f64>
+    return %3#1 : tensor<f64>
   }
 """
 function estimate_tracer_error(wind_stress) 
@@ -41,7 +39,7 @@ end
 function differentiate_tracer_error(J, dJ)
     dJ = copy(dJ)
 
-    autodiff(set_strong_zero(Enzyme.Reverse),
+    autodiff(Enzyme.Reverse,
                     estimate_tracer_error, Active,
                     Duplicated(J, dJ))
 
@@ -85,14 +83,14 @@ dJ = rdifferentiate_tracer_error(rwind_stress, dJ)
 for ϵ in ϵ_list
     rwind_stressP = wind_stress_init()
 
-    @allowscalar diff = 2ϵ * abs(rwind_stressP[1])
+    diff = 2ϵ * abs(rwind_stressP)
 
-    @allowscalar rwind_stressP[1] = rwind_stressP[1] + ϵ * abs(rwind_stressP[1])
+    rwind_stressP = ConcreteRNumber(rwind_stressP + ϵ * abs(rwind_stressP))
 
     sq_surface_uP = restimate_tracer_error(rwind_stressP)
 
     rwind_stressM = wind_stress_init()
-    @allowscalar rwind_stressM[1] = rwind_stressM[1] - ϵ * abs(rwind_stressM[1])
+    rwind_stressM = ConcreteRNumber(rwind_stressM - ϵ * abs(rwind_stressM))
 
     sq_surface_uM = restimate_tracer_error(rwind_stressM)
 
