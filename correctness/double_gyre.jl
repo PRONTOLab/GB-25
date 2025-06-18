@@ -34,11 +34,9 @@ txt = """
 
       %10 = stablehlo.add %16, %iterArg_6 : tensor<63x16xf64>
 
-      %a12 = stablehlo.slice %10 [8:63, 7:8] : (tensor<63x16xf64>) -> tensor<55x1xf64>
+      %a12 = stablehlo.slice %10 [0:63, 7:8] : (tensor<63x16xf64>) -> tensor<63x1xf64>
 
-      %con0 = stablehlo.concatenate %a12, %cst_8, dim = 0 : (tensor<55x1xf64>, tensor<8x1xf64>) -> tensor<63x1xf64>
-
-      %14 = stablehlo.concatenate %con0, %1, %cst_14, dim = 1 : (tensor<63x1xf64>, tensor<63x1xf64>, tensor<63x14xf64>) -> tensor<63x16xf64>
+      %14 = stablehlo.concatenate %a12, %1, %cst_14, dim = 1 : (tensor<63x1xf64>, tensor<63x1xf64>, tensor<63x14xf64>) -> tensor<63x16xf64>
       %15 = stablehlo.slice %10 [0:63, 1:2] : (tensor<63x16xf64>) -> tensor<63x1xf64>
       stablehlo.return %9, %15, %14 : tensor<i64>, tensor<63x1xf64>, tensor<63x16xf64>
     }
