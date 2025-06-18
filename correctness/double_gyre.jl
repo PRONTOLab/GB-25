@@ -3,9 +3,8 @@ using Reactant
 using Enzyme
 
 function double_gyre_model()
-    v = Reactant.to_rarray(ones(78, 31))
     pv02 = Reactant.to_rarray(ones(78, 31))
-    return (v, pv02)
+    return pv02
 end
 
 function wind_stress_init()
@@ -14,7 +13,39 @@ function wind_stress_init()
     return res
 end
 
-function estimate_tracer_error(v, pv02, wind_stress)    
+
+txt = """
+  func.func @main(%arg1: tensor<31x78xf64>, %arg2: tensor<1x63xf64>) -> (tensor<f64>) {
+    %cst = stablehlo.constant dense<0.000000e+00> : tensor<f64>
+    %c = stablehlo.constant dense<7> : tensor<i32>
+    %c_0 = stablehlo.constant dense<0> : tensor<i64>
+    %c_1 = stablehlo.constant dense<3> : tensor<i64>
+    %c_2 = stablehlo.constant dense<1> : tensor<i64>
+    %cst_3 = stablehlo.constant dense<0.000000e+00> : tensor<78x31xf64>
+    %cst_4 = stablehlo.constant dense<0.000000e+00> : tensor<63x16xf64>
+    %1 = stablehlo.reshape %arg2 : (tensor<1x63xf64>) -> tensor<63x1xf64>
+    %3:3 = stablehlo.while(%iterArg = %c_0, %iterArg_5 = %cst_4, %iterArg_6 = %cst_4) : tensor<i64>, tensor<63x16xf64>, tensor<63x16xf64> attributes {enzymexla.disable_min_cut}
+     cond {
+      %9 = stablehlo.compare  LT, %iterArg, %c_1 : (tensor<i64>, tensor<i64>) -> tensor<i1>
+      stablehlo.return %9 : tensor<i1>
+    } do {
+      %9 = stablehlo.add %iterArg, %c_2 : tensor<i64>
+      %10 = stablehlo.add %iterArg_5, %iterArg_6 : tensor<63x16xf64>
+      %11 = stablehlo.dynamic_update_slice %cst_3, %10, %c, %c : (tensor<78x31xf64>, tensor<63x16xf64>, tensor<i32>, tensor<i32>) -> tensor<78x31xf64>
+      %12 = stablehlo.slice %11 [8:71, 7:8] : (tensor<78x31xf64>) -> tensor<63x1xf64>
+      %13 = stablehlo.slice %11 [8:71, 9:23] : (tensor<78x31xf64>) -> tensor<63x14xf64>
+      %14 = stablehlo.concatenate %12, %1, %13, dim = 1 : (tensor<63x1xf64>, tensor<63x1xf64>, tensor<63x14xf64>) -> tensor<63x16xf64>
+      %15 = stablehlo.slice %10 [0:63, 1:2] : (tensor<63x16xf64>) -> tensor<63x1xf64>
+      %16 = stablehlo.broadcast_in_dim %15, dims = [0, 1] : (tensor<63x1xf64>) -> tensor<63x16xf64>
+      stablehlo.return %9, %16, %14 : tensor<i64>, tensor<63x16xf64>, tensor<63x16xf64>
+    }
+    %6 = stablehlo.reduce(%3#2 init: %cst) applies stablehlo.add across dimensions = [0, 1] : (tensor<63x16xf64>, tensor<f64>) -> tensor<f64>
+    return %6 : tensor<f64>
+  }
+"""
+function estimate_tracer_error(pv02, wind_stress) 
+    return (Reactant.Ops.hlo_call(txt, Reactant.materialize_traced_array(transpose(pv02)), Reactant.materialize_traced_array(transpose(wind_stress))))[1]
+
     u = similar(v, 63, 16)
     fill!(u, 0)
     
@@ -50,24 +81,16 @@ function estimate_tracer_error(v, pv02, wind_stress)
     return mean_sq_surface_u
 end
 
-function estimate_tracer_error(model, wind_stress)
-    estimate_tracer_error(model[1], model[2], wind_stress)
-end
-
-function differentiate_tracer_error(model, J, dJ)
-    v = model[1]
-    pv02 = model[2]
-
-    dv = zero(v)
+function differentiate_tracer_error(pv02, J, dJ)
     dpv02 = zero(pv02)
+    dJ = copy(dJ)
 
-    dedν = autodiff(set_strong_zero(Enzyme.Reverse),
+    autodiff(set_strong_zero(Enzyme.Reverse),
                     estimate_tracer_error, Active,
-                    Duplicated(v, dv),
                     Duplicated(pv02, dpv02),
                     Duplicated(J, dJ))
 
-    return dedν, dJ
+    return dJ
 end
 
 rmodel = double_gyre_model()
@@ -98,7 +121,7 @@ compile_toc = time() - tic
 
 i = 10
 
-dedν, dJ = rdifferentiate_tracer_error(rmodel, rwind_stress, dJ)
+dJ = rdifferentiate_tracer_error(rmodel, rwind_stress, dJ)
 
 @allowscalar @show dJ[i, 1]
 
