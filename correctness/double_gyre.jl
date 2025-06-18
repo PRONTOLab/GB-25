@@ -227,23 +227,16 @@ end
 
 function time_step_double_gyre!(model, wind_stress)
 
-    grid = model.grid
-    Nz = size(grid, 3)
-
     v = parent(model.velocities.v)
     
     u = similar(v, 63, 63, 16)
     fill!(u, 0)
     
-    Vnp = model.free_surface.filtered_state.V
-    Vp = parent(Vnp)
-    @show Core.Typeof(Vnp), Core.Typeof(Vp)
+    Vp = parent(model.free_surface.filtered_state.V)
 
     v[8:end-8, 8:end-8, 15] .= wind_stress    
 
     pv2 = parent(model.diffusivity_fields.previous_velocities[2])
-
-    arch = model.architecture
 
     @trace track_numbers=false for _ = 1:3
 
@@ -253,8 +246,7 @@ function time_step_double_gyre!(model, wind_stress)
 
         u[:, :, 2] .+= u[:, :, 8]
 
-        launch!(arch, grid, :xy,
-                bad_compute_barotropic_mode!, Vnp, v)
+        Vp[8:end-8, 8:end-8, 1] .= v[8:end-8, 8:end-8, 9]
 
         sVp = Vp[8:end-8, 8:end-8, 1]
 
