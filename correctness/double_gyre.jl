@@ -226,31 +226,36 @@ function wind_stress_init(grid;
 end
 
 function time_step_double_gyre!(model, wind_stress)
-
     v = parent(model.velocities.v)
+    pv02 = parent(model.diffusivity_fields.previous_velocities[2])
     
     u = similar(v, 63, 63, 16)
     fill!(u, 0)
     
-    v[8:end-8, 8:end-8, 15] .= wind_stress    
+    copyto!(@view(v[8:end-8, 8:end-8, 15]), wind_stress)
 
-    pv2 = parent(model.diffusivity_fields.previous_velocities[2])
+
+    pv2 = similar(u, 78, 78, 31)
+    fill!(pv2, 0)
 
     @trace track_numbers=false for _ = 1:3
 
-        v[8:end-8, 8:end-8, 8:end-8] .+= u
+        copyto!(@view(v[8:end-8, 8:end-8, 8:end-8]), Reactant.Ops.add(v[8:end-8, 8:end-8, 8:end-8], u))
 
-        u .= v[9:end-7, 7:end-9, 8:end-8]
+        copyto!(u, v[9:end-7, 7:end-9, 8:end-8])
 
-        u[:, :, 2] .+= u[:, :, 8]
+        copyto!(@view(u[:, :, 2]), Reactant.Ops.add(u[:, :, 2], u[:, :, 8]))
 
-        sVp = v[8:end-8, 8:end-8, 9]
+        sVp = Reactant.TracedUtils.broadcast_to_size(v[8:end-8, 8:end-8, 9], size(v[8:end-8, 8:end-8, 8:end-8]))
 
-        v[8:end-8, 8:end-8, 8:end-8] .= sVp
+        copyto!(@view(v[8:end-8, 8:end-8, 8:end-8]), sVp)
 
-        pv2[8:end-8, 8:end-8, 8:end-8] .= sVp
+        copyto!(@view(pv2[8:end-8, 8:end-8, 8:end-8]), sVp)
 
     end
+
+    copyto!(pv02, pv2)
+
 
     return u
 end
