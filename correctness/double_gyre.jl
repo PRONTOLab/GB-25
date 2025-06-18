@@ -216,6 +216,12 @@ function wind_stress_init(grid;
                             Lφ::Real = 60, # Meridional length in degrees
                             φ₀::Real = 15.0 # Degrees north of equator for the southern edge
                             )
+    res = ones(63, 63)
+    if grid.architecture isa ReactantState
+        res = Reactant.to_rarray(res)
+    end
+    return res
+
     wind_stress = Field{Face, Center, Nothing}(grid)
 
     τ₀ = 0.1 / ρₒ # N m⁻² / density of seawater
@@ -225,7 +231,8 @@ function wind_stress_init(grid;
     return parent(wind_stress)[8:end-8, 8:end-8, 1]
 end
 
-function time_step_double_gyre!(model, wind_stress)
+function estimate_tracer_error(model, wind_stress)
+
     v = parent(model.velocities.v)
     pv02 = parent(model.diffusivity_fields.previous_velocities[2])
     
@@ -256,20 +263,6 @@ function time_step_double_gyre!(model, wind_stress)
 
     copyto!(pv02, pv2)
 
-
-    return u
-end
-
-@kernel function bad_compute_barotropic_mode!(V̅, v)
-    i, j  = @index(Global, NTuple)
-    V̅[i, j, 1] = v[i+8, j+8, 1+8]
-end
-
-function estimate_tracer_error(model, wind_stress)
-    u = time_step_double_gyre!(model, wind_stress)
-    # Compute the mean mixed layer depth:
-    Nλ, Nφ, _ = size(model.grid)
-    
     mean_sq_surface_u = sum(u)
     
     return mean_sq_surface_u
