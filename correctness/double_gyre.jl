@@ -1,208 +1,16 @@
-using Oceananigans
-using Oceananigans.Architectures: ReactantState, architecture, AbstractArchitecture, convert_to_device
-using ClimaOcean
 using Reactant
-using GordonBell25
-#Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
-#Reactant.allowscalar(true)
-
-using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity
-
-using SeawaterPolynomials
 
 using Enzyme
 
-using Enzyme
-
-using Oceananigans: initialize!, prognostic_fields, instantiated_location, boundary_conditions
-using Oceananigans.Grids: AbstractGrid, XDirection, YDirection, ZDirection, inactive_cell, get_active_column_map
-using Oceananigans.TimeSteppers: update_state!, ab2_step!, tick!, calculate_pressure_correction!, correct_velocities_and_cache_previous_tendencies!, step_lagrangian_particles!, ab2_step_field!, implicit_step!, pressure_correct_velocities!, cache_previous_tendencies!, make_pressure_correction!
-using Oceananigans.Utils: @apply_regionally, launch!, configure_kernel, sum_of_velocities, KernelParameters, @constprop
-
-using Oceananigans.Models: update_model_field_time_series!, interior_tendency_kernel_parameters, complete_communication_and_compute_buffer!
-
-using Oceananigans.BoundaryConditions: update_boundary_condition!, 
-                                       replace_horizontal_vector_halos!, 
-                                       fill_halo_regions!, apply_x_bcs!,
-                                       apply_y_bcs!, apply_z_bcs!, _apply_z_bcs!, apply_z_bottom_bc!, apply_z_top_bc!, 
-                                       getbc, flip, update_boundary_conditions!, 
-                                       fill_open_boundary_regions!, 
-                                       permute_boundary_conditions, 
-                                       fill_halo_event!,
-                                       extract_west_bc, extract_east_bc, extract_south_bc, 
-                                       extract_north_bc, extract_bc, extract_bottom_bc, extract_top_bc,
-                                       fill_west_and_east_halo!, fill_south_and_north_halo!, fill_bottom_and_top_halo!, fill_first,
-                                       fill_halo_size, fill_halo_offset,
-                                       _fill_bottom_and_top_halo!, _fill_bottom_halo!, _fill_top_halo!,
-                                       _fill_flux_top_halo!
-
-using Oceananigans.Fields: tupled_fill_halo_regions!, location, immersed_boundary_condition, fill_reduced_field_halos!, default_indices, ReducedField, FullField
-using Oceananigans.Models.NonhydrostaticModels: compute_auxiliaries!, update_hydrostatic_pressure!
-using Oceananigans.Biogeochemistry: update_biogeochemical_state!, update_tendencies!, biogeochemical_drift_velocity, biogeochemical_transition, biogeochemical_auxiliary_fields
-
-using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fields!,
-                                                        compute_tendencies!,
-                                                        update_grid!,
-                                                        unscale_tracers!,
-                                                        compute_w_from_continuity!,
-                                                        w_kernel_parameters,
-                                                        p_kernel_parameters,
-                                                        step_free_surface!,
-                                                        compute_free_surface_tendency!,
-                                                        local_ab2_step!,
-                                                        ab2_step_velocities!,
-                                                        ab2_step_tracers!,
-                                                        compute_hydrostatic_boundary_tendency_contributions!,
-                                                        compute_hydrostatic_free_surface_tendency_contributions!,
-                                                        apply_flux_bcs!,
-                                                        compute_hydrostatic_momentum_tendencies!,
-                                                        compute_hydrostatic_free_surface_Gc!,
-                                                        hydrostatic_free_surface_tracer_tendency,
-                                                        barotropic_split_explicit_corrector!,
-                                                        _ab2_step_tracer_field!,
-                                                        hydrostatic_fields,
-                                                        compute_hydrostatic_free_surface_Gu!,
-                                                        compute_hydrostatic_free_surface_Gv!,
-                                                        ab2_step_grid!, ab2_step_velocities!, ab2_step_tracers!,
-                                                        hydrostatic_free_surface_v_velocity_tendency,
-                                                        grid_slope_contribution_y, ∂ⱼ_τ₂ⱼ
-
-
-using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: _compute_barotropic_mode!,
-                                                        _barotropic_split_explicit_corrector!,
-                                                        calculate_substeps,
-                                                        calculate_adaptive_settings,
-                                                        iterate_split_explicit!,
-                                                        _update_split_explicit_state!,
-                                                        _split_explicit_free_surface!,
-                                                        _split_explicit_barotropic_velocity!,
-                                                        compute_split_explicit_forcing!,
-                                                        initialize_free_surface_state!,
-                                                        initialize_free_surface_timestepper!,
-                                                        _compute_integrated_ab2_tendencies!,
-                                                        compute_barotropic_mode!,
-                                                        explicit_barotropic_pressure_y_gradient
-
-using Oceananigans.TurbulenceClosures: compute_diffusivities!, getclosure, clip, shear_production,
-                                       dissipation, closure_turbulent_velocity, ∇_dot_qᶜ,
-                                       immersed_∇_dot_qᶜ, Riᶜᶜᶠ, shear_squaredᶜᶜᶠ,
-                                       viscous_flux_vx, viscous_flux_vy, viscous_flux_vz,
-                                       time_discretization, ExplicitTimeDiscretization, ivd_viscous_flux_vz,
-                                       νz_σᶜᶠᶠ, νᶜᶠᶠ, viscosity_location, viscosity
-
-using Oceananigans.ImmersedBoundaries: get_active_cells_map, mask_immersed_field!
-
-using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: get_top_tracer_bcs,
-                                           update_previous_compute_time!,
-                                           time_step_catke_equation!,
-                                           compute_average_surface_buoyancy_flux!,
-                                           compute_CATKE_diffusivities!,
-                                           substep_turbulent_kinetic_energy!,
-                                           get_time_step,
-                                           κuᶜᶜᶠ, κcᶜᶜᶠ, κeᶜᶜᶠ,
-                                           mask_diffusivity,
-                                           explicit_buoyancy_flux,
-                                           dissipation_rate,
-                                           TKE_mixing_lengthᶜᶜᶠ,
-                                           turbulent_velocityᶜᶜᶜ,
-                                           convective_length_scaleᶜᶜᶠ, stability_functionᶜᶜᶠ, stable_length_scaleᶜᶜᶠ, static_column_depthᶜᶜᵃ, scale
-
-using Oceananigans.BuoyancyFormulations: ∂z_b
-using Oceananigans.Solvers: solve!, solve_batched_tridiagonal_system_kernel!
-using Oceananigans.Operators: ℑxᶜᵃᵃ, ℑyᵃᶠᵃ, ℑyᵃᶜᵃ, Az, volume, δxᶜᵃᵃ, δyᵃᶜᵃ, δzᵃᵃᶜ, V⁻¹ᶜᶜᶜ,
-                              σⁿ, σ⁻, ∂zᶠᶜᶠ, δxᶠᶜᶠ, Δx⁻¹ᶠᶜᶠ, ∂yᶜᶠᶜ, active_weighted_ℑxyᶜᶠᶜ,
-                              Δy⁻¹ᶜᶠᶜ, Δy_qᶠᶜᶜ, ℑxyᶜᶠᵃ, not_peripheral_node, peripheral_node,
-                              Δyᶠᶜᶜ, δyᵃᶠᵃ, Ax_qᶠᶠᶜ, Ay_qᶜᶜᶜ, Az_qᶜᶠᶠ, δzᵃᵃᶜ, V⁻¹ᶜᶠᶜ,
-                              Axᶠᶠᶜ, Ayᶜᶜᶜ, Azᶜᶠᶠ, ∂zᶜᶠᶠ, δzᶜᶠᶠ, Δyᶠᶠᶜ, Δzᶠᶠᶜ, Δxᶜᶜᶜ, Δzᶜᶜᶜ,
-                              Δxᶜᶠᶠ, Δyᶜᶠᶠ
-
-using Oceananigans.Forcings: with_advective_forcing
-using Oceananigans.Advection: div_Uc, _advective_tracer_flux_x, _advective_tracer_flux_y, _advective_tracer_flux_z, U_dot_∇v
-using Oceananigans.Coriolis: y_f_cross_U, fᶠᶠᵃ
-using KernelAbstractions: @kernel, @index
-using KernelAbstractions.Extras.LoopInfo: @unroll
-
-function resolution_to_points(resolution)
-    Nx = convert(Int, 384 / resolution)
-    Ny = convert(Int, 192 / resolution)
-    return Nx, Ny
-end
-
-function simple_latitude_longitude_grid(arch, resolution, Nz)
-    Nx, Ny = resolution_to_points(resolution)
-    return simple_latitude_longitude_grid(arch, Nx, Ny, Nz)
-end
-
-function simple_latitude_longitude_grid(arch, Nx, Ny, Nz; halo=(8, 8, 8))
-    z = exponential_z_faces(; Nz, depth=1800) # may need changing for very large Nz
-
-    grid = LatitudeLongitudeGrid(arch; size=(Nx, Ny, Nz), halo, z,
-        longitude = (0, 360), # Problem is here: when longitude is not periodic we get error
-        latitude = (15, 75),
-        topology = (Periodic, Bounded, Bounded)
-    )
-
-    return grid
-end
-
-function double_gyre_model(arch, Nx, Ny, Nz, Δt)
-
-    # Fewer substeps can be used at higher resolutions
-    free_surface = SplitExplicitFreeSurface(substeps=30)
-
-    # TEOS10 is a 54-term polynomial that relates temperature (T) and salinity (S) to buoyancy
-    buoyancy = SeawaterBuoyancy(equation_of_state = LinearEquationOfState(Oceananigans.defaults.FloatType))
-
-    vertical_closure   = Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity()
-
-    # Coriolis forces for a rotating Earth
-    coriolis = HydrostaticSphericalCoriolis()
-
-    tracers = (:T, :S, :e)
-
-    grid = simple_latitude_longitude_grid(arch, Nx, Ny, Nz)
-
-    momentum_advection = VectorInvariant() #WENOVectorInvariant(order=5)
-    tracer_advection   = Centered(order=2) #WENO(order=5)
-
-    #
-    # Momentum BCs:
-    #
-    no_slip_bc = ValueBoundaryCondition(Field{Face, Center, Nothing}(grid))
-    u_top_bc   = FluxBoundaryCondition(Field{Face, Center, Nothing}(grid))
-
-    u_bcs = FieldBoundaryConditions(north=no_slip_bc, south=no_slip_bc, top=u_top_bc)
-    v_bcs = FieldBoundaryConditions(east=no_slip_bc, west=no_slip_bc)
-
-    boundary_conditions = (u=u_bcs, )
-
-    model = HydrostaticFreeSurfaceModel(; grid,
-                                          free_surface = free_surface,
-                                          closure = vertical_closure,
-                                          buoyancy = buoyancy,
-                                          tracers = tracers,
-                                          coriolis = coriolis,
-                                          momentum_advection = nothing, #momentum_advection,
-                                          tracer_advection = nothing, #tracer_advection,
-                                          boundary_conditions = boundary_conditions)
-
-    set!(model.tracers.e, 1e-6)
-    model.clock.last_Δt = Δt
-
-
+function double_gyre_model()
     v = Reactant.to_rarray(ones(78, 78, 31))
     pv02 = Reactant.to_rarray(ones(78, 78, 31))
-    # pv02 = parent(model.diffusivity_fields.previous_velocities[2])
-    @show size(pv02)
-
     return (v, pv02)
 end
 
-function wind_stress_init(arch)
+function wind_stress_init()
     res = ones(63, 63)
-    if arch isa ReactantState
-        res = Reactant.to_rarray(res)
-    end
+    res = Reactant.to_rarray(res)
     return res
 end
 
@@ -259,12 +67,8 @@ function differentiate_tracer_error(model, J, dJ)
     return dedν, dJ
 end
 
-Oceananigans.defaults.FloatType = Float64
-
-@info "Generating model..."
-rarch = ReactantState()
-rmodel = double_gyre_model(rarch, 62, 62, 15, 1200)
-rwind_stress = wind_stress_init(rarch)
+rmodel = double_gyre_model()
+rwind_stress = wind_stress_init()
 
 @info "Compiling..."
 
@@ -290,8 +94,8 @@ dedν, dJ = rdifferentiate_tracer_error(rmodel, rwind_stress, dJ)
 @allowscalar gradient_list = Array{Float64}[]
 
 for ϵ in ϵ_list
-    rmodelP = double_gyre_model(rarch, 62, 62, 15, 1200)
-    rwind_stressP = wind_stress_init(rarch)
+    rmodelP = double_gyre_model()
+    rwind_stressP = wind_stress_init()
 
     @allowscalar diff = 2ϵ * abs(rwind_stressP[i, j])
 
@@ -299,8 +103,8 @@ for ϵ in ϵ_list
 
     sq_surface_uP = restimate_tracer_error(rmodelP, rwind_stressP)
 
-    rmodelM = double_gyre_model(rarch, 62, 62, 15, 1200)
-    rwind_stressM = wind_stress_init(rarch)
+    rmodelM = double_gyre_model()
+    rwind_stressM = wind_stress_init()
     @allowscalar rwind_stressM[i, j] = rwind_stressM[i, j] - ϵ * abs(rwind_stressM[i, j])
 
     sq_surface_uM = restimate_tracer_error(rmodelM, rwind_stressM)
