@@ -2,11 +2,6 @@ using Reactant
 
 using Enzyme
 
-function double_gyre_model()
-    pv02 = Reactant.to_rarray(ones(78, 31))
-    return pv02
-end
-
 function wind_stress_init()
     res = ones(63, 1)
     res = Reactant.to_rarray(res)
@@ -15,7 +10,7 @@ end
 
 
 txt = """
-  func.func @main(%arg1: tensor<31x78xf64>, %arg2: tensor<1x63xf64>) -> (tensor<f64>) {
+  func.func @main(%1: tensor<63x1xf64>) -> (tensor<f64>) {
     %cst = stablehlo.constant dense<0.000000e+00> : tensor<f64>
     %c = stablehlo.constant dense<7> : tensor<i32>
     %c_0 = stablehlo.constant dense<0> : tensor<i64>
@@ -28,7 +23,6 @@ txt = """
     %cst_8 = stablehlo.constant dense<0.000000e+00> : tensor<8x1xf64>
 
     %cst_14 = stablehlo.constant dense<0.000000e+00> : tensor<63x14xf64>
-    %1 = stablehlo.reshape %arg2 : (tensor<1x63xf64>) -> tensor<63x1xf64>
     %3:3 = stablehlo.while(%iterArg = %c_0, %iterArg_5 = %cst_1, %iterArg_6 = %cst_4) : tensor<i64>, tensor<63x1xf64>, tensor<63x16xf64> attributes {enzymexla.disable_min_cut}
      cond {
       %9 = stablehlo.compare  LT, %iterArg, %c_1 : (tensor<i64>, tensor<i64>) -> tensor<i1>
@@ -52,57 +46,20 @@ txt = """
     return %6 : tensor<f64>
   }
 """
-function estimate_tracer_error(pv02, wind_stress) 
-    return (Reactant.Ops.hlo_call(txt, Reactant.materialize_traced_array(transpose(pv02)), Reactant.materialize_traced_array(transpose(wind_stress))))[1]
-
-    u = similar(v, 63, 16)
-    fill!(u, 0)
-    
-    v0 = copy(v)
-
-    pv2 = similar(u, 78, 31)
-    fill!(pv2, 0)
-
-    @trace track_numbers=false for _ = 1:3
-        copyto!(@view(v[8:end-8, 8:end-8]), Reactant.Ops.add(v[8:end-8, 8:end-8], u))
-
-        copyto!(u, v[9:end-7, 8:end-8])
-
-        copyto!(@view(u[:, 2:2]), wind_stress)
-
-        sVp = Reactant.TracedUtils.broadcast_to_size(v[8:end-8, 9:9], size(v[8:end-8, 8:end-8]))
-
-        copyto!(@view(v[8:end-8, 8:end-8]), sVp)
-
-        copyto!(@view(pv2[8:end-8, 8:end-8]), sVp)
-
-    end
-
-    copyto!(pv02, pv2)
-
-    # adding this fixes
-    # copyto!(v, v0)
-
-    return Reactant.Ops.reduce(u, eltype(u)(0), [1, 2], +)
-
-    # mean_sq_surface_u = sum(u)
-    
-    return mean_sq_surface_u
+function estimate_tracer_error(wind_stress) 
+    return Reactant.Ops.hlo_call(txt, wind_stress)[1]
 end
 
-function differentiate_tracer_error(pv02, J, dJ)
-    dpv02 = zero(pv02)
+function differentiate_tracer_error(J, dJ)
     dJ = copy(dJ)
 
     autodiff(set_strong_zero(Enzyme.Reverse),
                     estimate_tracer_error, Active,
-                    Duplicated(pv02, dpv02),
                     Duplicated(J, dJ))
 
     return dJ
 end
 
-rmodel = double_gyre_model()
 rwind_stress = wind_stress_init()
 
 @info "Compiling..."
@@ -115,13 +72,13 @@ pass_pipeline = pre_pipeline * ",enzyme{postpasses=\"arith-raise{stablehlo=true}
 
 tic = time()
 
-println(@code_hlo optimize=pass_pipeline raise_first=true raise=true estimate_tracer_error(rmodel, rwind_stress))
-println(@code_hlo optimize=pre_pipeline raise_first=true raise=true differentiate_tracer_error(rmodel, rwind_stress, dJ))
-println(@code_hlo optimize=pass_pipeline raise_first=true raise=true differentiate_tracer_error(rmodel, rwind_stress, dJ))
+println(@code_hlo optimize=pass_pipeline raise_first=true raise=true estimate_tracer_error(rwind_stress))
+println(@code_hlo optimize=pre_pipeline raise_first=true raise=true differentiate_tracer_error(rwind_stress, dJ))
+println(@code_hlo optimize=pass_pipeline raise_first=true raise=true differentiate_tracer_error(rwind_stress, dJ))
 
 
-restimate_tracer_error = @compile optimize=pass_pipeline raise_first=true raise=true sync=true estimate_tracer_error(rmodel, rwind_stress)
-rdifferentiate_tracer_error = @compile optimize=pass_pipeline raise_first=true raise=true sync=true differentiate_tracer_error(rmodel, rwind_stress, dJ)
+restimate_tracer_error = @compile optimize=pass_pipeline raise_first=true raise=true sync=true estimate_tracer_error(rwind_stress)
+rdifferentiate_tracer_error = @compile optimize=pass_pipeline raise_first=true raise=true sync=true differentiate_tracer_error(rwind_stress, dJ)
 
 
 compile_toc = time() - tic
@@ -130,7 +87,7 @@ compile_toc = time() - tic
 
 i = 10
 
-dJ = rdifferentiate_tracer_error(rmodel, rwind_stress, dJ)
+dJ = rdifferentiate_tracer_error(rwind_stress, dJ)
 
 @allowscalar @show dJ[i, 1]
 
@@ -140,20 +97,18 @@ dJ = rdifferentiate_tracer_error(rmodel, rwind_stress, dJ)
 @allowscalar gradient_list = Array{Float64}[]
 
 for ϵ in ϵ_list
-    rmodelP = double_gyre_model()
     rwind_stressP = wind_stress_init()
 
     @allowscalar diff = 2ϵ * abs(rwind_stressP[i, 1])
 
     @allowscalar rwind_stressP[i, 1] = rwind_stressP[i, 1] + ϵ * abs(rwind_stressP[i, 1])
 
-    sq_surface_uP = restimate_tracer_error(rmodelP, rwind_stressP)
+    sq_surface_uP = restimate_tracer_error(rwind_stressP)
 
-    rmodelM = double_gyre_model()
     rwind_stressM = wind_stress_init()
     @allowscalar rwind_stressM[i, 1] = rwind_stressM[i, 1] - ϵ * abs(rwind_stressM[i, 1])
 
-    sq_surface_uM = restimate_tracer_error(rmodelM, rwind_stressM)
+    sq_surface_uM = restimate_tracer_error(rwind_stressM)
 
     dsq_surface_u = (sq_surface_uP - sq_surface_uM) / diff
 
