@@ -3,40 +3,40 @@ using Reactant
 using Enzyme
 
 function double_gyre_model()
-    v = Reactant.to_rarray(ones(78, 78, 31))
-    pv02 = Reactant.to_rarray(ones(78, 78, 31))
+    v = Reactant.to_rarray(ones(78, 31))
+    pv02 = Reactant.to_rarray(ones(78, 31))
     return (v, pv02)
 end
 
 function wind_stress_init()
-    res = ones(63, 63, 1)
+    res = ones(63, 1)
     res = Reactant.to_rarray(res)
     return res
 end
 
 function estimate_tracer_error(v, pv02, wind_stress)    
-    u = similar(v, 63, 78, 16)
+    u = similar(v, 63, 16)
     fill!(u, 0)
     
-    copyto!(@view(v[8:end-8, 8:end-8, 15:15]), wind_stress)
+    copyto!(@view(v[8:end-8, 15:15]), wind_stress)
 
     v0 = copy(v)
 
-    pv2 = similar(u, 78, 78, 31)
+    pv2 = similar(u, 78, 31)
     fill!(pv2, 0)
 
     @trace track_numbers=false for _ = 1:3
-        copyto!(@view(v[8:end-8, :, 8:end-8]), Reactant.Ops.add(v[8:end-8, :, 8:end-8], u))
+        copyto!(@view(v[8:end-8, 8:end-8]), Reactant.Ops.add(v[8:end-8, 8:end-8], u))
 
-        copyto!(u, v[9:end-7, :, 8:end-8])
+        copyto!(u, v[9:end-7, 8:end-8])
 
-        copyto!(@view(u[:, :, 2:2]), Reactant.Ops.add(u[:, :, 2:2], u[:, :, 8:8]))
+        copyto!(@view(u[:, 2:2]), Reactant.Ops.add(u[:, 2:2], u[:, 8:8]))
 
-        sVp = Reactant.TracedUtils.broadcast_to_size(v[8:end-8, :, 9:9], size(v[8:end-8, :, 8:end-8]))
+        sVp = Reactant.TracedUtils.broadcast_to_size(v[8:end-8, 9:9], size(v[8:end-8, 8:end-8]))
 
-        copyto!(@view(v[8:end-8, :, 8:end-8]), sVp)
+        copyto!(@view(v[8:end-8, 8:end-8]), sVp)
 
-        copyto!(@view(pv2[8:end-8, :, 8:end-8]), sVp)
+        copyto!(@view(pv2[8:end-8, 8:end-8]), sVp)
 
     end
 
@@ -45,7 +45,7 @@ function estimate_tracer_error(v, pv02, wind_stress)
     # adding this fixes
     # copyto!(v, v0)
 
-    return Reactant.Ops.reduce(u, eltype(u)(0), [1, 2, 3], +)
+    return Reactant.Ops.reduce(u, eltype(u)(0), [1, 2], +)
 
     # mean_sq_surface_u = sum(u)
     
@@ -99,11 +99,10 @@ compile_toc = time() - tic
 @show compile_toc
 
 i = 10
-j = 10
 
 dedν, dJ = rdifferentiate_tracer_error(rmodel, rwind_stress, dJ)
 
-@allowscalar @show dJ[i, j, 1]
+@allowscalar @show dJ[i, 1]
 
 # Produce finite-difference gradients for comparison:
 ϵ_list = [1e-1, 1e-2, 1e-3] #, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8]
@@ -114,15 +113,15 @@ for ϵ in ϵ_list
     rmodelP = double_gyre_model()
     rwind_stressP = wind_stress_init()
 
-    @allowscalar diff = 2ϵ * abs(rwind_stressP[i, j, 1])
+    @allowscalar diff = 2ϵ * abs(rwind_stressP[i, 1])
 
-    @allowscalar rwind_stressP[i, j, 1] = rwind_stressP[i, j, 1] + ϵ * abs(rwind_stressP[i, j, 1])
+    @allowscalar rwind_stressP[i, 1] = rwind_stressP[i, 1] + ϵ * abs(rwind_stressP[i, 1])
 
     sq_surface_uP = restimate_tracer_error(rmodelP, rwind_stressP)
 
     rmodelM = double_gyre_model()
     rwind_stressM = wind_stress_init()
-    @allowscalar rwind_stressM[i, j, 1] = rwind_stressM[i, j, 1] - ϵ * abs(rwind_stressM[i, j, 1])
+    @allowscalar rwind_stressM[i, 1] = rwind_stressM[i, 1] - ϵ * abs(rwind_stressM[i, 1])
 
     sq_surface_uM = restimate_tracer_error(rmodelM, rwind_stressM)
 
