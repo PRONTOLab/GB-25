@@ -221,21 +221,9 @@ function wind_stress_init(grid;
         res = Reactant.to_rarray(res)
     end
     return res
-
-    wind_stress = Field{Face, Center, Nothing}(grid)
-
-    τ₀ = 0.1 / ρₒ # N m⁻² / density of seawater
-    @inline τx(λ, φ) = τ₀ * cos(2π * (φ - φ₀) / Lφ)
-
-    set!(wind_stress, τx)
-    return parent(wind_stress)[8:end-8, 8:end-8, 1]
 end
 
-function estimate_tracer_error(model, wind_stress)
-
-    v = parent(model.velocities.v)
-    pv02 = parent(model.diffusivity_fields.previous_velocities[2])
-    
+function estimate_tracer_error(v, pv02, wind_stress)    
     u = similar(v, 63, 63, 16)
     fill!(u, 0)
     
@@ -268,11 +256,25 @@ function estimate_tracer_error(model, wind_stress)
     return mean_sq_surface_u
 end
 
+function estimate_tracer_error(model, wind_stress)
+    v = parent(model.velocities.v)
+    pv02 = parent(model.diffusivity_fields.previous_velocities[2])
+    estimate_tracer_error(v, pv02, wind_stress)
+end
+
 function differentiate_tracer_error(model, J, dmodel, dJ)
+
+    v = parent(model.velocities.v)
+    pv02 = parent(model.diffusivity_fields.previous_velocities[2])
+
+
+    dv = parent(dmodel.velocities.v)
+    dpv02 = parent(dmodel.diffusivity_fields.previous_velocities[2])
 
     dedν = autodiff(set_strong_zero(Enzyme.Reverse),
                     estimate_tracer_error, Active,
-                    Duplicated(model, dmodel),
+                    Duplicated(v, dv),
+                    Duplicated(pv02, dpv02),
                     Duplicated(J, dJ))
 
     return dedν, dJ
