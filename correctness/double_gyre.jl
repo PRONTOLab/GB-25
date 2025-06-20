@@ -36,7 +36,7 @@ function simple_latitude_longitude_grid(arch, Nx, Ny, Nz; halo=(8, 8, 8))
 
     grid = LatitudeLongitudeGrid(arch; size=(Nx, Ny, Nz), halo, z,
         longitude = (0, 360), # Problem is here: when longitude is not periodic we get error
-        latitude = (15, 75),
+        latitude = (-75, -45), # Tentative southern ocean latitude range
         topology = (Periodic, Bounded, Bounded)
     )
 
@@ -49,7 +49,7 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     free_surface = SplitExplicitFreeSurface(substeps=30)
 
     # TEOS10 is a 54-term polynomial that relates temperature (T) and salinity (S) to buoyancy
-    buoyancy = SeawaterBuoyancy(equation_of_state = LinearEquationOfState(Oceananigans.defaults.FloatType))
+    buoyancy = SeawaterBuoyancy(equation_of_state = SeawaterPolynomials.TEOS10EquationOfState(Oceananigans.defaults.FloatType))
 
     # Closures:
     # diffusivity scheme we need for GM/Redi.
@@ -67,7 +67,7 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     #vertical_closure   = VerticalScalarDiffusivity(ν = 1e-2, κ = 1e-5) 
     vertical_closure   = Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity()
     #vertical_closure = Oceananigans.TurbulenceClosures.TKEDissipationVerticalDiffusivity()
-    closure = (horizontal_closure, vertical_closure)
+    closure = (redi_diffusivity, vertical_closure)
 
     # Coriolis forces for a rotating Earth
     coriolis = HydrostaticSphericalCoriolis()
@@ -120,10 +120,10 @@ function wind_stress_init(grid;
     return wind_stress
 end
 
-function loop!(model, Ninner)
+function loop!(model)
     Δt = model.clock.last_Δt + 0
     Oceananigans.TimeSteppers.first_time_step!(model, Δt)
-    @trace track_numbers=false for _ = 1:(Ninner-1)
+    @trace mincut = false checkpointing = true track_numbers = false for _ = 1:16
         Oceananigans.TimeSteppers.time_step!(model, Δt)
     end
     return nothing
@@ -141,7 +141,7 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     model.clock.last_Δt = 1200
 
     # Step it forward
-    loop!(model, 10)
+    loop!(model)
 
     return nothing
 end
@@ -173,12 +173,15 @@ function differentiate_tracer_error(model, Tᵢ, Sᵢ, J, dmodel, dTᵢ, dSᵢ, 
     return dedν, dJ
 end
 
-Ninner = ConcreteRNumber(3)
+Nx = 362
+Ny = 32
+Nz = 30
+
 Oceananigans.defaults.FloatType = Float64
 
 @info "Generating model..."
 rarch = ReactantState()
-rmodel = double_gyre_model(rarch, 62, 62, 15, 1200)
+rmodel = double_gyre_model(rarch, Nx, Ny, Nz, 1200)
 
 @info rmodel.buoyancy
 
@@ -238,7 +241,7 @@ dedν, dJ = rdifferentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, dmod
 @allowscalar gradient_list = Array{Float64}[]
 
 for ϵ in ϵ_list
-    rmodelP = double_gyre_model(rarch, 62, 62, 15, 1200)
+    rmodelP = double_gyre_model(rarch, Nx, Ny, Nz, 1200)
     rTᵢP, rSᵢP      = set_tracers(rmodelP.grid)
     rwind_stressP = wind_stress_init(rmodelP.grid)
 
@@ -248,7 +251,7 @@ for ϵ in ϵ_list
 
     sq_surface_uP = restimate_tracer_error(rmodelP, rTᵢP, rSᵢP, rwind_stressP)
 
-    rmodelM = double_gyre_model(rarch, 62, 62, 15, 1200)
+    rmodelM = double_gyre_model(rarch, Nx, Ny, Nz, 1200)
     rTᵢM, rSᵢM      = set_tracers(rmodelM.grid)
     rwind_stressM = wind_stress_init(rmodelM.grid)
     @allowscalar rwind_stressM[i, j] = rwind_stressM[i, j] - ϵ * abs(rwind_stressM[i, j])
