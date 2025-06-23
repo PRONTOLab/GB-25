@@ -123,7 +123,7 @@ end
 function loop!(model)
     Δt = model.clock.last_Δt + 0
     Oceananigans.TimeSteppers.first_time_step!(model, Δt)
-    @trace checkpointing = true track_numbers = false for i = 1:16
+    @trace track_numbers = false for i = 1:20
         Oceananigans.TimeSteppers.time_step!(model, Δt)
     end
     return nothing
@@ -228,12 +228,25 @@ GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, at
 @info "Done!"
 =#
 
+
 i = 10
 j = 10
 
 dedν, dJ = rdifferentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, dmodel, dTᵢ, dSᵢ, dJ)
 
 @allowscalar @show dJ[i, j]
+
+#=
+Add plots of gradient fields here, want to do:
+
+1. Wind stress
+2. temperature
+3. salinity
+4. CATKE parameters
+
+=#
+
+
 
 # Produce finite-difference gradients for comparison:
 ϵ_list = [1e-1, 1e-2, 1e-3, 1e-4] #, 1e-5, 1e-6, 1e-7, 1e-8]
