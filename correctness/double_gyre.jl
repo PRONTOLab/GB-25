@@ -18,9 +18,11 @@ rtol = sqrt(eps(Float64))
 atol = sqrt(eps(Float64))
 
 function set_tracers(grid;
-                     dTdz::Real = 30.0 / 1800.0)
-    fₜ(λ, φ, z) = 30 + dTdz * z # + dTdz * model.grid.Lz * 1e-6 * Ξ(z)
-    fₛ(λ, φ, z) = 0 #35
+                     Lφ::Real = 30, # Meridional length in degrees
+                     φ₀::Real = -75.0 # Degrees north of equator for the southern edge)
+                    )
+    fₜ(λ, φ, z) = -2 + 12(φ - φ₀) * exp(z)
+    fₛ(λ, φ, z) = 0 #35 # This example does not use salinity
 
     Tᵢ = Field{Center, Center, Center}(grid)
     Sᵢ = Field{Center, Center, Center}(grid)
@@ -32,7 +34,7 @@ function set_tracers(grid;
 end
 
 function simple_latitude_longitude_grid(arch, Nx, Ny, Nz; halo=(8, 8, 8))
-    z = exponential_z_faces(; Nz, depth=1800) # may need changing for very large Nz
+    z = exponential_z_faces(; Nz, depth=4000) # may need changing for very large Nz
 
     grid = LatitudeLongitudeGrid(arch; size=(Nx, Ny, Nz), halo, z,
         longitude = (0, 360), # Problem is here: when longitude is not periodic we get error
@@ -108,13 +110,13 @@ end
 
 function wind_stress_init(grid;
                             ρₒ::Real = 1026.0, # kg m⁻³, average density at the surface of the world ocean
-                            Lφ::Real = 60, # Meridional length in degrees
-                            φ₀::Real = 15.0 # Degrees north of equator for the southern edge
+                            Lφ::Real = 30, # Meridional length in degrees
+                            φ₀::Real = -75.0 # Degrees north of equator for the southern edge
                             )
     wind_stress = Field{Face, Center, Nothing}(grid)
 
-    τ₀ = 0.1 / ρₒ # N m⁻² / density of seawater
-    @inline τx(λ, φ) = τ₀ * cos(2π * (φ - φ₀) / Lφ)
+    τ₀ = 0.2 # N m⁻² / density of seawater
+    @inline τx(λ, φ) = τ₀ * sin(π * (φ - φ₀) / (Lφ))
 
     set!(wind_stress, τx)
     return wind_stress
@@ -198,36 +200,149 @@ dJ  = Field{Face, Center, Nothing}(rmodel.grid)
 @info dmodel
 @info dmodel.closure
 
+using GLMakie
+
+@show rmodel.grid
+
+# Build init temperature fields:
+x, y, z = nodes(rmodel.grid, (Center(), Center(), Center()))
+T = rTᵢ
+
+fig, ax, hm = heatmap(view(T, :, :, Nz),
+                      colormap = :deep,
+                      axis = (xlabel = "x [degrees]",
+                              ylabel = "y [degrees]",
+                              title = "T(x, y, z=0, t=0)",
+                              titlesize = 24))
+
+Colorbar(fig[1, 2], hm, label = "[degrees C]")
+
+save("init_T_surface.png", fig)
+
+fig, ax, hm = heatmap(view(T, :, :, 1),
+                      colormap = :deep,
+                      axis = (xlabel = "x [degrees]",
+                              ylabel = "y [degrees]",
+                              title = "T(x, y, z=-4000, t=0)",
+                              titlesize = 24))
+
+Colorbar(fig[1, 2], hm, label = "[degrees C]")
+
+save("init_T_bottom.png", fig)
+
+# Energy:
+x, y, z = nodes(rmodel.grid, (Center(), Center(), Center()))
+e = rmodel.tracers.e
+
+fig, ax, hm = heatmap(view(e, :, :, Nz),
+                      colormap = :deep,
+                      axis = (xlabel = "x [degrees]",
+                              ylabel = "y [degrees]",
+                              title = "e(x, y, z=0, t=0)",
+                              titlesize = 24))
+
+Colorbar(fig[1, 2], hm, label = "[energy]")
+
+save("init_e_surface.png", fig)
+
+fig, ax, hm = heatmap(view(e, :, :, 1),
+                      colormap = :deep,
+                      axis = (xlabel = "x [degrees]",
+                              ylabel = "y [degrees]",
+                              title = "e(x, y, z=-4000, t=0)",
+                              titlesize = 24))
+
+Colorbar(fig[1, 2], hm, label = "[energy]")
+
+save("init_e_bottom.png", fig)
+
+# Wind stress:
+x, y, z = nodes(rmodel.grid, (Face(), Center(), Nothing()))
+fig, ax, hm = heatmap(view(rwind_stress, :, :),
+                      colormap = :deep,
+                      axis = (xlabel = "x [degrees]",
+                              ylabel = "y [degrees]",
+                              title = "zonal wind_stress(x, y, z=0, t=0)",
+                              titlesize = 24))
+
+Colorbar(fig[1, 2], hm, label = "[m/s]")
+
+save("init_wind_stress.png", fig)
+
+# As sanity checks we'll also plot initial gradients for each (should all be 0):
+# Build init temperature fields:
+x, y, z = nodes(rmodel.grid, (Center(), Center(), Center()))
+T = dTᵢ
+
+fig, ax, hm = heatmap(view(T, :, :, Nz),
+                      colormap = :deep,
+                      axis = (xlabel = "x [degrees]",
+                              ylabel = "y [degrees]",
+                              title = "dT(x, y, z=0, t=0)",
+                              titlesize = 24))
+
+Colorbar(fig[1, 2], hm, label = "[degrees C]")
+
+save("init_dT_surface.png", fig)
+
+fig, ax, hm = heatmap(view(T, :, :, 1),
+                      colormap = :deep,
+                      axis = (xlabel = "x [degrees]",
+                              ylabel = "y [degrees]",
+                              title = "dT(x, y, z=0, t=-4000)",
+                              titlesize = 24))
+
+Colorbar(fig[1, 2], hm, label = "[degrees C]")
+
+save("init_dT_bottom.png", fig)
+
+# Energy:
+x, y, z = nodes(rmodel.grid, (Center(), Center(), Center()))
+e = dmodel.tracers.e
+
+fig, ax, hm = heatmap(view(e, :, :, Nz),
+                      colormap = :deep,
+                      axis = (xlabel = "x [degrees]",
+                              ylabel = "y [degrees]",
+                              title = "de(x, y, z=0, t=0)",
+                              titlesize = 24))
+
+Colorbar(fig[1, 2], hm, label = "[energy]")
+
+save("init_de_surface.png", fig)
+
+fig, ax, hm = heatmap(view(e, :, :, 1),
+                      colormap = :deep,
+                      axis = (xlabel = "x [degrees]",
+                              ylabel = "y [degrees]",
+                              title = "de(x, y, z=0, t=-4000)",
+                              titlesize = 24))
+
+Colorbar(fig[1, 2], hm, label = "[energy]")
+
+save("init_de_bottom.png", fig)
+
+# Wind stress:
+x, y, z = nodes(rmodel.grid, (Face(), Center(), Nothing()))
+
+fig, ax, hm = heatmap(view(dJ, :, :),
+                      colormap = :deep,
+                      axis = (xlabel = "x [degrees]",
+                              ylabel = "y [degrees]",
+                              title = "dwind_stress(x, y, z=0, t=0)",
+                              titlesize = 24))
+
+Colorbar(fig[1, 2], hm, label = "[m/s]")
+
+save("init_dwind_stress.png", fig)
+
+
 tic = time()
 restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress)
 rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true differentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, dmodel, dTᵢ, dSᵢ, dJ)
 compile_toc = time() - tic
 
 @show compile_toc
-
-#=
-@info "Running..."
-restimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress)
-
-
-@info "Running non-reactant for comparison..."
-varch = CPU()
-vmodel = double_gyre_model(varch, 62, 62, 15, 1200)
-
-@info "Initialized non-reactant model"
-
-vTᵢ, vSᵢ      = set_tracers(vmodel.grid)
-vwind_stress = wind_stress_init(vmodel.grid)
-
-@info "Initialized non-reactant tracers and wind stress"
-
-estimate_tracer_error(vmodel, vTᵢ, vSᵢ, vwind_stress)
-
-GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
-
-@info "Done!"
-=#
-
 
 i = 10
 j = 10
@@ -246,6 +361,151 @@ Add plots of gradient fields here, want to do:
 
 =#
 
+# First gradient data:
+x, y, z = nodes(rmodel.grid, (Center(), Center(), Center()))
+T = dTᵢ
+
+fig, ax, hm = heatmap(view(T, :, :, 30),
+                      colormap = :deep,
+                      axis = (xlabel = "x [degrees]",
+                              ylabel = "y [degrees]",
+                              title = "dT(x, y, z=0, t=400min)",
+                              titlesize = 24))
+
+Colorbar(fig[1, 2], hm, label = "[degrees C]")
+
+save("final_dT_surface.png", fig)
+
+fig, ax, hm = heatmap(view(T, :, :, 1),
+                      colormap = :deep,
+                      axis = (xlabel = "x [degrees]",
+                              ylabel = "y [degrees]",
+                              title = "dT(x, y, z=-4000, t=400min)",
+                              titlesize = 24))
+
+Colorbar(fig[1, 2], hm, label = "[degrees C]")
+
+save("final_dT_bottom.png", fig)
+
+# Energy:
+x, y, z = nodes(rmodel.grid, (Center(), Center(), Center()))
+e = dmodel.tracers.e
+
+fig, ax, hm = heatmap(view(e, :, :, 30),
+                      colormap = :deep,
+                      axis = (xlabel = "x [degrees]",
+                              ylabel = "y [degrees]",
+                              title = "e(x, y, z=0, t=400min)",
+                              titlesize = 24))
+
+Colorbar(fig[1, 2], hm, label = "[energy]")
+
+save("final_de_surface.png", fig)
+
+fig, ax, hm = heatmap(view(e, :, :, 1),
+                      colormap = :deep,
+                      axis = (xlabel = "x [degrees]",
+                              ylabel = "y [degrees]",
+                              title = "T(x, y, z=-4000, t=400min)",
+                              titlesize = 24))
+
+Colorbar(fig[1, 2], hm, label = "[energy]")
+
+save("final_de_bottom.png", fig)
+
+# Wind stress:
+x, y, z = nodes(rmodel.grid, (Face(), Center(), Nothing()))
+
+fig, ax, hm = heatmap(view(dJ, :, :),
+                      colormap = :deep,
+                      axis = (xlabel = "x [degrees]",
+                              ylabel = "y [degrees]",
+                              title = "dwind_stress(x, y, z=0, t=400min)",
+                              titlesize = 24))
+
+Colorbar(fig[1, 2], hm, label = "[m/s]")
+
+save("final_dwind_stress.png", fig)
+
+# Build final temperature fields:
+x, y, z = nodes(rmodel.grid, (Center(), Center(), Center()))
+T = rmodel.tracers.T
+
+fig, ax, hm = heatmap(view(T, :, :, Nz),
+                      colormap = :deep,
+                      axis = (xlabel = "x [degrees]",
+                              ylabel = "y [degrees]",
+                              title = "T(x, y, z=0, t=400min)",
+                              titlesize = 24))
+
+Colorbar(fig[1, 2], hm, label = "[degrees C]")
+
+save("final_T_surface.png", fig)
+
+fig, ax, hm = heatmap(view(T, :, :, 1),
+                      colormap = :deep,
+                      axis = (xlabel = "x [degrees]",
+                              ylabel = "y [degrees]",
+                              title = "T(x, y, z=-4000, t=400min)",
+                              titlesize = 24))
+
+Colorbar(fig[1, 2], hm, label = "[degrees C]")
+
+save("final_T_bottom.png", fig)
+
+# Energy:
+x, y, z = nodes(rmodel.grid, (Center(), Center(), Center()))
+e = rmodel.tracers.e
+
+fig, ax, hm = heatmap(view(e, :, :, Nz),
+                      colormap = :deep,
+                      axis = (xlabel = "x [degrees]",
+                              ylabel = "y [degrees]",
+                              title = "e(x, y, z=0, t=400min)",
+                              titlesize = 24))
+
+Colorbar(fig[1, 2], hm, label = "[energy]")
+
+save("final_e_surface.png", fig)
+
+fig, ax, hm = heatmap(view(e, :, :, 1),
+                      colormap = :deep,
+                      axis = (xlabel = "x [degrees]",
+                              ylabel = "y [degrees]",
+                              title = "e(x, y, z=0, t=400min)",
+                              titlesize = 24))
+
+Colorbar(fig[1, 2], hm, label = "[energy]")
+
+save("final_e_bottom.png", fig)
+
+# Zonal velocity:
+x, y, z = nodes(rmodel.grid, (Face(), Center(), Center()))
+
+fig, ax, hm = heatmap(view(rmodel.velocities.u, :, :, Nz),
+                      colormap = :deep,
+                      axis = (xlabel = "x [degrees]",
+                              ylabel = "y [degrees]",
+                              title = "u(x, y, z=0, t=400min)",
+                              titlesize = 24))
+
+Colorbar(fig[1, 2], hm, label = "[m/s]")
+
+save("final_surface_u.png", fig)
+
+# Meridional velocity:
+x, y, z = nodes(rmodel.grid, (Center(), Face(), Center()))
+
+fig, ax, hm = heatmap(view(rmodel.velocities.v, :, :, Nz),
+                      colormap = :deep,
+                      axis = (xlabel = "x [degrees]",
+                              ylabel = "y [degrees]",
+                              title = "v(x, y, z=0, t=400min)",
+                              titlesize = 24))
+
+Colorbar(fig[1, 2], hm, label = "[m/s]")
+
+save("final_surface_v.png", fig)
 
 
 # Produce finite-difference gradients for comparison:
