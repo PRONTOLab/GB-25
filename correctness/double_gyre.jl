@@ -19,9 +19,10 @@ atol = sqrt(eps(Float64))
 
 function set_tracers(grid;
                      Lφ::Real = 30, # Meridional length in degrees
-                     φ₀::Real = -75.0 # Degrees north of equator for the southern edge)
+                     φ₀::Real = -75 # Degrees north of equator for the southern edge)
                     )
-    fₜ(λ, φ, z) = -2 + 12(φ - φ₀) * exp(z)
+    fₜ(λ, φ, z) = -2 + 12(φ - φ₀) * exp(z/800) / Lφ # passable, linear in y
+    #fₜ(λ, φ, z) = -2 + 12exp(z/800 + (φ₀ + φ)) experiment if it should be exponential in y
     fₛ(λ, φ, z) = 0 #35 # This example does not use salinity
 
     Tᵢ = Field{Center, Center, Center}(grid)
@@ -155,8 +156,8 @@ function estimate_tracer_error(model, initial_temperature, initial_salinity, win
     
     mean_sq_surface_u = 0.0
     
-    for j = 1:Nφ, i = 1:Nλ
-        @allowscalar mean_sq_surface_u += @inbounds model.velocities.u[i, j, 1]^2
+    for j0 = 1:Nφ, i0 = 1:Nλ
+        @allowscalar mean_sq_surface_u += @inbounds model.velocities.u[i0, j0, 1]^2
     end
     mean_sq_surface_u = mean_sq_surface_u / (Nλ * Nφ)
     
@@ -344,12 +345,7 @@ compile_toc = time() - tic
 
 @show compile_toc
 
-i = 10
-j = 10
-
 dedν, dJ = rdifferentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, dmodel, dTᵢ, dSᵢ, dJ)
-
-@allowscalar @show dJ[i, j]
 
 #=
 Add plots of gradient fields here, want to do:
@@ -506,6 +502,11 @@ fig, ax, hm = heatmap(view(rmodel.velocities.v, :, :, Nz),
 Colorbar(fig[1, 2], hm, label = "[m/s]")
 
 save("final_surface_v.png", fig)
+
+i = 10
+j = 10
+
+@allowscalar @show dJ[i, j]
 
 
 # Produce finite-difference gradients for comparison:
