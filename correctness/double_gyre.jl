@@ -152,9 +152,9 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
 end
 
 function estimate_tracer_error(model, initial_temperature, initial_salinity, wind_stress, mld)
-    time_step_double_gyre!(model, initial_temperature, initial_salinity, wind_stress)
+    #time_step_double_gyre!(model, initial_temperature, initial_salinity, wind_stress)
     # Compute the mean mixed layer depth:
-    #compute!(mld)
+    compute!(mld)
     Nλ, Nφ, _ = size(model.grid)
     
     avg_mld = 0.0
@@ -360,16 +360,16 @@ save("init_mld.png", fig)
 
 
 tic = time()
-#restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld)
-rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true differentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld,
-                                                                                                        dmodel, dTᵢ, dSᵢ, dJ, dmld)
+restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld)
+#rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true differentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld,
+#                                                                                                        dmodel, dTᵢ, dSᵢ, dJ, dmld)
 compile_toc = time() - tic
 
 @show compile_toc
 
-#restimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld)
+restimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld)
 
-dedν, dJ = rdifferentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld, dmodel, dTᵢ, dSᵢ, dJ, dmld)
+#dedν, dJ = rdifferentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld, dmodel, dTᵢ, dSᵢ, dJ, dmld)
 
 #=
 Add plots of gradient fields here, want to do:
