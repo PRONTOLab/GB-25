@@ -128,7 +128,7 @@ end
 function loop!(model)
     Δt = model.clock.last_Δt + 0
     Oceananigans.TimeSteppers.first_time_step!(model, Δt)
-    @trace checkpointing = true track_numbers = false for i = 1:16
+    @trace track_numbers = false for i = 1:16
         Oceananigans.TimeSteppers.time_step!(model, Δt)
     end
     return nothing
