@@ -128,7 +128,7 @@ end
 function loop!(model)
     Δt = model.clock.last_Δt + 0
     Oceananigans.TimeSteppers.first_time_step!(model, Δt)
-    @trace checkpointing = true track_numbers = false for i = 1:16
+    @trace checkpointing = true track_numbers = false for i = 1:100
         Oceananigans.TimeSteppers.time_step!(model, Δt)
     end
     return nothing
@@ -152,17 +152,22 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
 end
 
 function estimate_tracer_error(model, initial_temperature, initial_salinity, wind_stress, mld)
-    #time_step_double_gyre!(model, initial_temperature, initial_salinity, wind_stress)
+    time_step_double_gyre!(model, initial_temperature, initial_salinity, wind_stress)
     # Compute the mean mixed layer depth:
-    compute!(mld)
+    #compute!(mld)
     Nλ, Nφ, _ = size(model.grid)
-    
+    #=
     avg_mld = 0.0
     
     for j0 = 1:Nφ, i0 = 1:Nλ
-        @allowscalar avg_mld += @inbounds mld[i0, j0, 1]^2
+        @allowscalar avg_mld += @inbounds model.velocities.u[i0, j0, 1]^2
     end
     avg_mld = avg_mld / (Nλ * Nφ)
+    =#
+    # Hard way
+    c² = parent(model.velocities.u).^2
+    avg_mld = sum(c²)
+    #@allowscalar avg_mld = model.velocities.u[10, 10, 1] #sum(c²)
     
     return avg_mld
 end
@@ -361,15 +366,15 @@ save("init_mld.png", fig)
 
 tic = time()
 restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld)
-#rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true differentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld,
-#                                                                                                        dmodel, dTᵢ, dSᵢ, dJ, dmld)
+rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true differentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld,
+                                                                                                        dmodel, dTᵢ, dSᵢ, dJ, dmld)
 compile_toc = time() - tic
 
 @show compile_toc
 
-restimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld)
+#restimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld)
 
-#dedν, dJ = rdifferentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld, dmodel, dTᵢ, dSᵢ, dJ, dmld)
+dedν, dJ = rdifferentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld, dmodel, dTᵢ, dSᵢ, dJ, dmld)
 
 #=
 Add plots of gradient fields here, want to do:
@@ -512,7 +517,7 @@ fig, ax, hm = heatmap(view(rmodel.velocities.u, :, :, Nz),
 Colorbar(fig[1, 2], hm, label = "[m/s]")
 
 save("final_surface_u.png", fig)
-
+#=
 # Meridional velocity:
 x, y, z = nodes(rmodel.grid, (Center(), Face(), Center()))
 
@@ -524,7 +529,7 @@ fig, ax, hm = heatmap(view(rmodel.velocities.v, :, :, Nz),
                               titlesize = 24))
 
 Colorbar(fig[1, 2], hm, label = "[m/s]")
-
+=#
 save("final_surface_v.png", fig)
 
 # Mixed layer depth:
