@@ -81,8 +81,9 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
 
     underlying_grid = simple_latitude_longitude_grid(arch, Nx, Ny, Nz)
 
-    hill(x, y) = 100 * exp(-x^2 - y^2)
-    grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(hill))
+    ridge(λ, φ) = 4000 * ((λ-120) < 5) - 4000 #4000 * exp(-10(λ - 120)^2)
+    grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(ridge))
+    #grid = underlying_grid
 
     momentum_advection = VectorInvariant() #WENOVectorInvariant(order=5)
     tracer_advection   = Centered(order=2) #WENO(order=5)
@@ -188,7 +189,7 @@ function differentiate_tracer_error(model, Tᵢ, Sᵢ, J, mld, dmodel, dTᵢ, dS
     return dedν, dJ
 end
 
-Nx = 128
+Nx = 362 #128
 Ny = 32
 Nz = 30
 
@@ -220,37 +221,45 @@ dmld = MixedLayerDepthField(dmodel.buoyancy, dmodel.grid, dmodel.tracers)
 
 # Build init temperature fields:
 x, y, z = nodes(runderlying_grid, (Center(), Center(), Center()))
-T = rTᵢ
 
-fig, ax, hm = heatmap(view(T, :, :, Nz),
-                      colormap = :deep,
-                      axis = (xlabel = "x [degrees]",
-                              ylabel = "y [degrees]",
-                              title = "T(x, y, z=0, t=0)",
-                              titlesize = 24))
+T = interior(rmodel.tracers.T)
+T = convert(Array, T)
+
+#@show argmax(T)
+#@show T[1,32,30]
+
+fig, ax, hm = heatmap(view(T, 1:Nx, 1:Ny, Nz),
+                                colormap = :deep,
+                                axis = (xlabel = "x [degrees]",
+                                        ylabel = "y [degrees]",
+                                        title = "T(x, y, z=0, t=0)",
+                                        titlesize = 24))
 
 Colorbar(fig[1, 2], hm, label = "[degrees C]")
 
 resize_to_layout!(fig)
 save("init_T_surface.png", fig)
 
-fig, ax, hm = heatmap(view(T, :, :, 1),
-                      colormap = :deep,
-                      axis = (xlabel = "x [degrees]",
-                              ylabel = "y [degrees]",
-                              title = "T(x, y, z=-4000, t=0)",
-                              titlesize = 24))
+fig, ax, hm = heatmap(view(T, 1:Nx, 1:Ny, 1),
+                                        colormap = :deep,
+                                        axis = (xlabel = "x [degrees]",
+                                        ylabel = "y [degrees]",
+                                        title = "T(x, y, z=-4000, t=0)",
+                                        titlesize = 24))
 
 Colorbar(fig[1, 2], hm, label = "[degrees C]")
 
 resize_to_layout!(fig)
 save("init_T_bottom.png", fig)
 
+@show "Plotted initial T"
+
+#=
 # Energy:
 x, y, z = nodes(runderlying_grid, (Center(), Center(), Center()))
-e = rmodel.tracers.e
+e = interior(rmodel.tracers.e)
 
-fig, ax, hm = heatmap(view(e, :, :, Nz),
+@allowscalar fig, ax, hm = heatmap(view(e, 1:Nx, 1:Ny, Nz),
                       colormap = :deep,
                       axis = (xlabel = "x [degrees]",
                               ylabel = "y [degrees]",
@@ -262,7 +271,7 @@ Colorbar(fig[1, 2], hm, label = "[energy]")
 resize_to_layout!(fig)
 save("init_e_surface.png", fig)
 
-fig, ax, hm = heatmap(view(e, :, :, 1),
+@allowscalar fig, ax, hm = heatmap(view(e, 1:Nx, 1:Ny, 1),
                       colormap = :deep,
                       axis = (xlabel = "x [degrees]",
                               ylabel = "y [degrees]",
@@ -276,7 +285,10 @@ save("init_e_bottom.png", fig)
 
 # Wind stress:
 x, y, z = nodes(runderlying_grid, (Face(), Center(), Nothing()))
-fig, ax, hm = heatmap(view(rwind_stress, :, :),
+
+wind_stress = interior(rwind_stress)
+
+@allowscalar fig, ax, hm = heatmap(view(wind_stress, 1:Nx, 1:Ny),
                       colormap = :deep,
                       axis = (xlabel = "x [degrees]",
                               ylabel = "y [degrees]",
@@ -291,9 +303,9 @@ save("init_wind_stress.png", fig)
 # As sanity checks we'll also plot initial gradients for each (should all be 0):
 # Build init temperature fields:
 x, y, z = nodes(runderlying_grid, (Center(), Center(), Center()))
-T = dTᵢ
+T = interior(dTᵢ)
 
-fig, ax, hm = heatmap(view(T, :, :, Nz),
+@allowscalar fig, ax, hm = heatmap(view(T, 1:Nx, 1:Ny, Nz),
                       colormap = :deep,
                       axis = (xlabel = "x [degrees]",
                               ylabel = "y [degrees]",
@@ -305,7 +317,7 @@ Colorbar(fig[1, 2], hm, label = "[degrees C]")
 resize_to_layout!(fig)
 save("init_dT_surface.png", fig)
 
-fig, ax, hm = heatmap(view(T, :, :, 1),
+@allowscalar fig, ax, hm = heatmap(view(T, 1:Nx, 1:Ny, 1),
                       colormap = :deep,
                       axis = (xlabel = "x [degrees]",
                               ylabel = "y [degrees]",
@@ -319,9 +331,9 @@ save("init_dT_bottom.png", fig)
 
 # Energy:
 x, y, z = nodes(runderlying_grid, (Center(), Center(), Center()))
-e = dmodel.tracers.e
+e = interior(dmodel.tracers.e)
 
-fig, ax, hm = heatmap(view(e, :, :, Nz),
+@allowscalar fig, ax, hm = heatmap(view(e, 1:Nx, 1:Ny, Nz),
                       colormap = :deep,
                       axis = (xlabel = "x [degrees]",
                               ylabel = "y [degrees]",
@@ -333,7 +345,7 @@ Colorbar(fig[1, 2], hm, label = "[energy]")
 resize_to_layout!(fig)
 save("init_de_surface.png", fig)
 
-fig, ax, hm = heatmap(view(e, :, :, 1),
+@allowscalar fig, ax, hm = heatmap(view(e, 1:Nx, 1:Ny, 1),
                       colormap = :deep,
                       axis = (xlabel = "x [degrees]",
                               ylabel = "y [degrees]",
@@ -348,7 +360,9 @@ save("init_de_bottom.png", fig)
 # Wind stress:
 x, y, z = nodes(runderlying_grid, (Face(), Center(), Nothing()))
 
-fig, ax, hm = heatmap(view(dJ, :, :),
+interior_dJ = interior(dJ)
+
+@allowscalar fig, ax, hm = heatmap(view(interior_dJ, 1:Nx, 1:Ny),
                       colormap = :deep,
                       axis = (xlabel = "x [degrees]",
                               ylabel = "y [degrees]",
@@ -363,7 +377,9 @@ save("init_dwind_stress.png", fig)
 # Mixed layer depth:
 x, y, z = nodes(runderlying_grid, (Center(), Center(), Nothing()))
 
-fig, ax, hm = heatmap(view(mld, :, :),
+interior_mld = interior(mld)
+
+@allowscalar fig, ax, hm = heatmap(view(interior_mld, 1:Nx, 1:Ny),
                       colormap = :deep,
                       axis = (xlabel = "x [degrees]",
                               ylabel = "y [degrees]",
@@ -374,7 +390,7 @@ Colorbar(fig[1, 2], hm, label = "[m]")
 
 resize_to_layout!(fig)
 save("init_mld.png", fig)
-
+=#
 
 tic = time()
 restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld)
@@ -398,11 +414,12 @@ Add plots of gradient fields here, want to do:
 
 =#
 
+#=
 # First gradient data:
 x, y, z = nodes(runderlying_grid, (Center(), Center(), Center()))
-T = dTᵢ
+T = interior(dTᵢ)
 
-fig, ax, hm = heatmap(view(T, :, :, 30),
+@allowscalar fig, ax, hm = heatmap(view(T, 1:Nx, 1:Ny, Nz),
                       colormap = :deep,
                       axis = (xlabel = "x [degrees]",
                               ylabel = "y [degrees]",
@@ -413,7 +430,7 @@ Colorbar(fig[1, 2], hm, label = "[degrees C]")
 
 save("final_dT_surface.png", fig)
 
-fig, ax, hm = heatmap(view(T, :, :, 1),
+@allowscalar fig, ax, hm = heatmap(view(T, 1:Nx, 1:Ny, 1),
                       colormap = :deep,
                       axis = (xlabel = "x [degrees]",
                               ylabel = "y [degrees]",
@@ -426,9 +443,9 @@ save("final_dT_bottom.png", fig)
 
 # Energy:
 x, y, z = nodes(runderlying_grid, (Center(), Center(), Center()))
-e = dmodel.tracers.e
+e = interior(dmodel.tracers.e)
 
-fig, ax, hm = heatmap(view(e, :, :, 30),
+@allowscalar fig, ax, hm = heatmap(view(e, 1:Nx, 1:Ny, 30),
                       colormap = :deep,
                       axis = (xlabel = "x [degrees]",
                               ylabel = "y [degrees]",
@@ -439,7 +456,7 @@ Colorbar(fig[1, 2], hm, label = "[energy]")
 
 save("final_de_surface.png", fig)
 
-fig, ax, hm = heatmap(view(e, :, :, 1),
+@allowscalar fig, ax, hm = heatmap(view(e, 1:Nx, 1:Ny, 1),
                       colormap = :deep,
                       axis = (xlabel = "x [degrees]",
                               ylabel = "y [degrees]",
@@ -449,11 +466,14 @@ fig, ax, hm = heatmap(view(e, :, :, 1),
 Colorbar(fig[1, 2], hm, label = "[energy]")
 
 save("final_de_bottom.png", fig)
-
+=#
 # Wind stress:
 x, y, z = nodes(runderlying_grid, (Face(), Center(), Nothing()))
+interior_dJ = interior(dJ)
 
-fig, ax, hm = heatmap(view(dJ, :, :),
+interior_dJ = convert(Array, interior_dJ)
+
+fig, ax, hm = heatmap(view(interior_dJ, 1:Nx, 1:Ny),
                       colormap = :deep,
                       axis = (xlabel = "x [degrees]",
                               ylabel = "y [degrees]",
@@ -466,9 +486,10 @@ save("final_dwind_stress.png", fig)
 
 # Build final temperature fields:
 x, y, z = nodes(runderlying_grid, (Center(), Center(), Center()))
-T = rmodel.tracers.T
+T = interior(rmodel.tracers.T)
+T = convert(Array, T)
 
-fig, ax, hm = heatmap(view(T, :, :, Nz),
+fig, ax, hm = heatmap(view(T, 1:Nx, 1:Ny, Nz),
                       colormap = :deep,
                       axis = (xlabel = "x [degrees]",
                               ylabel = "y [degrees]",
@@ -479,7 +500,7 @@ Colorbar(fig[1, 2], hm, label = "[degrees C]")
 
 save("final_T_surface.png", fig)
 
-fig, ax, hm = heatmap(view(T, :, :, 1),
+fig, ax, hm = heatmap(view(T, 1:Nx, 1:Ny, 1),
                       colormap = :deep,
                       axis = (xlabel = "x [degrees]",
                               ylabel = "y [degrees]",
@@ -489,12 +510,12 @@ fig, ax, hm = heatmap(view(T, :, :, 1),
 Colorbar(fig[1, 2], hm, label = "[degrees C]")
 
 save("final_T_bottom.png", fig)
-
+#=
 # Energy:
 x, y, z = nodes(runderlying_grid, (Center(), Center(), Center()))
-e = rmodel.tracers.e
+e = interior(rmodel.tracers.e)
 
-fig, ax, hm = heatmap(view(e, :, :, Nz),
+@allowscalar fig, ax, hm = heatmap(view(e, 1:Nx, 1:Ny, Nz),
                       colormap = :deep,
                       axis = (xlabel = "x [degrees]",
                               ylabel = "y [degrees]",
@@ -505,7 +526,7 @@ Colorbar(fig[1, 2], hm, label = "[energy]")
 
 save("final_e_surface.png", fig)
 
-fig, ax, hm = heatmap(view(e, :, :, 1),
+@allowscalar fig, ax, hm = heatmap(view(e, 1:Nx, 1:Ny, 1),
                       colormap = :deep,
                       axis = (xlabel = "x [degrees]",
                               ylabel = "y [degrees]",
@@ -519,7 +540,9 @@ save("final_e_bottom.png", fig)
 # Zonal velocity:
 x, y, z = nodes(runderlying_grid, (Face(), Center(), Center()))
 
-fig, ax, hm = heatmap(view(rmodel.velocities.u, :, :, Nz),
+u = interior(rmodel.velocities.u)
+
+@allowscalar fig, ax, hm = heatmap(view(u, 1:Nx, 1:Ny, Nz),
                       colormap = :deep,
                       axis = (xlabel = "x [degrees]",
                               ylabel = "y [degrees]",
@@ -547,7 +570,9 @@ save("final_surface_v.png", fig)
 # Mixed layer depth:
 x, y, z = nodes(runderlying_grid, (Center(), Center(), Nothing()))
 
-fig, ax, hm = heatmap(view(mld, :, :),
+interior_mld = interior(mld)
+
+@allowscalar fig, ax, hm = heatmap(view(interior_mld, 1:Nx, 1:Ny),
                       colormap = :deep,
                       axis = (xlabel = "x [degrees]",
                               ylabel = "y [degrees]",
@@ -557,6 +582,7 @@ fig, ax, hm = heatmap(view(mld, :, :),
 Colorbar(fig[1, 2], hm, label = "[m]")
 
 save("final_mld.png", fig)
+=#
 
 i = 10
 j = 10
