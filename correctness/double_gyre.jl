@@ -79,7 +79,10 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
 
     tracers = (:T, :S, :e)
 
-    grid = simple_latitude_longitude_grid(arch, Nx, Ny, Nz)
+    underlying_grid = simple_latitude_longitude_grid(arch, Nx, Ny, Nz)
+
+    hill(x, y) = 100 * exp(-x^2 - y^2)
+    grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(hill))
 
     momentum_advection = VectorInvariant() #WENOVectorInvariant(order=5)
     tracer_advection   = Centered(order=2) #WENO(order=5)
@@ -108,7 +111,7 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     set!(model.tracers.e, 1e-6)
     model.clock.last_Δt = Δt
 
-    return model
+    return model, underlying_grid
 end
 
 function wind_stress_init(grid;
@@ -128,7 +131,7 @@ end
 function loop!(model)
     Δt = model.clock.last_Δt + 0
     Oceananigans.TimeSteppers.first_time_step!(model, Δt)
-    @trace checkpointing = true track_numbers = false for i = 1:100
+    @trace track_numbers = false for i = 1:99
         Oceananigans.TimeSteppers.time_step!(model, Δt)
     end
     return nothing
@@ -155,7 +158,7 @@ function estimate_tracer_error(model, initial_temperature, initial_salinity, win
     time_step_double_gyre!(model, initial_temperature, initial_salinity, wind_stress)
     # Compute the mean mixed layer depth:
     #compute!(mld)
-    Nλ, Nφ, _ = size(model.grid)
+    Nλ, Nφ, Nz = size(model.grid)
     #=
     avg_mld = 0.0
     
@@ -165,8 +168,8 @@ function estimate_tracer_error(model, initial_temperature, initial_salinity, win
     avg_mld = avg_mld / (Nλ * Nφ)
     =#
     # Hard way
-    c² = parent(model.velocities.u).^2
-    avg_mld = sum(c²)
+    c² = parent(model.tracers.T).^2
+    avg_mld = sum(c²) / (Nλ * Nφ * Nz)
     #@allowscalar avg_mld = model.velocities.u[10, 10, 1] #sum(c²)
     
     return avg_mld
@@ -185,7 +188,7 @@ function differentiate_tracer_error(model, Tᵢ, Sᵢ, J, mld, dmodel, dTᵢ, dS
     return dedν, dJ
 end
 
-Nx = 362
+Nx = 128
 Ny = 32
 Nz = 30
 
@@ -193,7 +196,7 @@ Oceananigans.defaults.FloatType = Float64
 
 @info "Generating model..."
 rarch = ReactantState()
-rmodel = double_gyre_model(rarch, Nx, Ny, Nz, 1200)
+rmodel, runderlying_grid = double_gyre_model(rarch, Nx, Ny, Nz, 1200)
 
 @info rmodel.buoyancy
 
@@ -212,13 +215,11 @@ dJ  = Field{Face, Center, Nothing}(rmodel.grid)
 
 using GLMakie
 
-@show rmodel.grid
-
 mld  = MixedLayerDepthField(rmodel.buoyancy, rmodel.grid, rmodel.tracers)
 dmld = MixedLayerDepthField(dmodel.buoyancy, dmodel.grid, dmodel.tracers)
 
 # Build init temperature fields:
-x, y, z = nodes(rmodel.grid, (Center(), Center(), Center()))
+x, y, z = nodes(runderlying_grid, (Center(), Center(), Center()))
 T = rTᵢ
 
 fig, ax, hm = heatmap(view(T, :, :, Nz),
@@ -230,6 +231,7 @@ fig, ax, hm = heatmap(view(T, :, :, Nz),
 
 Colorbar(fig[1, 2], hm, label = "[degrees C]")
 
+resize_to_layout!(fig)
 save("init_T_surface.png", fig)
 
 fig, ax, hm = heatmap(view(T, :, :, 1),
@@ -241,10 +243,11 @@ fig, ax, hm = heatmap(view(T, :, :, 1),
 
 Colorbar(fig[1, 2], hm, label = "[degrees C]")
 
+resize_to_layout!(fig)
 save("init_T_bottom.png", fig)
 
 # Energy:
-x, y, z = nodes(rmodel.grid, (Center(), Center(), Center()))
+x, y, z = nodes(runderlying_grid, (Center(), Center(), Center()))
 e = rmodel.tracers.e
 
 fig, ax, hm = heatmap(view(e, :, :, Nz),
@@ -256,6 +259,7 @@ fig, ax, hm = heatmap(view(e, :, :, Nz),
 
 Colorbar(fig[1, 2], hm, label = "[energy]")
 
+resize_to_layout!(fig)
 save("init_e_surface.png", fig)
 
 fig, ax, hm = heatmap(view(e, :, :, 1),
@@ -267,10 +271,11 @@ fig, ax, hm = heatmap(view(e, :, :, 1),
 
 Colorbar(fig[1, 2], hm, label = "[energy]")
 
+resize_to_layout!(fig)
 save("init_e_bottom.png", fig)
 
 # Wind stress:
-x, y, z = nodes(rmodel.grid, (Face(), Center(), Nothing()))
+x, y, z = nodes(runderlying_grid, (Face(), Center(), Nothing()))
 fig, ax, hm = heatmap(view(rwind_stress, :, :),
                       colormap = :deep,
                       axis = (xlabel = "x [degrees]",
@@ -280,11 +285,12 @@ fig, ax, hm = heatmap(view(rwind_stress, :, :),
 
 Colorbar(fig[1, 2], hm, label = "[m/s]")
 
+resize_to_layout!(fig)
 save("init_wind_stress.png", fig)
 
 # As sanity checks we'll also plot initial gradients for each (should all be 0):
 # Build init temperature fields:
-x, y, z = nodes(rmodel.grid, (Center(), Center(), Center()))
+x, y, z = nodes(runderlying_grid, (Center(), Center(), Center()))
 T = dTᵢ
 
 fig, ax, hm = heatmap(view(T, :, :, Nz),
@@ -296,6 +302,7 @@ fig, ax, hm = heatmap(view(T, :, :, Nz),
 
 Colorbar(fig[1, 2], hm, label = "[degrees C]")
 
+resize_to_layout!(fig)
 save("init_dT_surface.png", fig)
 
 fig, ax, hm = heatmap(view(T, :, :, 1),
@@ -307,10 +314,11 @@ fig, ax, hm = heatmap(view(T, :, :, 1),
 
 Colorbar(fig[1, 2], hm, label = "[degrees C]")
 
+resize_to_layout!(fig)
 save("init_dT_bottom.png", fig)
 
 # Energy:
-x, y, z = nodes(rmodel.grid, (Center(), Center(), Center()))
+x, y, z = nodes(runderlying_grid, (Center(), Center(), Center()))
 e = dmodel.tracers.e
 
 fig, ax, hm = heatmap(view(e, :, :, Nz),
@@ -322,6 +330,7 @@ fig, ax, hm = heatmap(view(e, :, :, Nz),
 
 Colorbar(fig[1, 2], hm, label = "[energy]")
 
+resize_to_layout!(fig)
 save("init_de_surface.png", fig)
 
 fig, ax, hm = heatmap(view(e, :, :, 1),
@@ -333,10 +342,11 @@ fig, ax, hm = heatmap(view(e, :, :, 1),
 
 Colorbar(fig[1, 2], hm, label = "[energy]")
 
+resize_to_layout!(fig)
 save("init_de_bottom.png", fig)
 
 # Wind stress:
-x, y, z = nodes(rmodel.grid, (Face(), Center(), Nothing()))
+x, y, z = nodes(runderlying_grid, (Face(), Center(), Nothing()))
 
 fig, ax, hm = heatmap(view(dJ, :, :),
                       colormap = :deep,
@@ -347,10 +357,11 @@ fig, ax, hm = heatmap(view(dJ, :, :),
 
 Colorbar(fig[1, 2], hm, label = "[m/s]")
 
+resize_to_layout!(fig)
 save("init_dwind_stress.png", fig)
 
 # Mixed layer depth:
-x, y, z = nodes(rmodel.grid, (Center(), Center(), Nothing()))
+x, y, z = nodes(runderlying_grid, (Center(), Center(), Nothing()))
 
 fig, ax, hm = heatmap(view(mld, :, :),
                       colormap = :deep,
@@ -361,20 +372,21 @@ fig, ax, hm = heatmap(view(mld, :, :),
 
 Colorbar(fig[1, 2], hm, label = "[m]")
 
+resize_to_layout!(fig)
 save("init_mld.png", fig)
 
 
 tic = time()
 restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld)
-rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true differentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld,
-                                                                                                        dmodel, dTᵢ, dSᵢ, dJ, dmld)
+#rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true differentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld,
+#                                                                                                        dmodel, dTᵢ, dSᵢ, dJ, dmld)
 compile_toc = time() - tic
 
 @show compile_toc
 
 #restimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld)
 
-dedν, dJ = rdifferentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld, dmodel, dTᵢ, dSᵢ, dJ, dmld)
+#dedν, dJ = rdifferentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld, dmodel, dTᵢ, dSᵢ, dJ, dmld)
 
 #=
 Add plots of gradient fields here, want to do:
@@ -387,7 +399,7 @@ Add plots of gradient fields here, want to do:
 =#
 
 # First gradient data:
-x, y, z = nodes(rmodel.grid, (Center(), Center(), Center()))
+x, y, z = nodes(runderlying_grid, (Center(), Center(), Center()))
 T = dTᵢ
 
 fig, ax, hm = heatmap(view(T, :, :, 30),
@@ -413,7 +425,7 @@ Colorbar(fig[1, 2], hm, label = "[degrees C]")
 save("final_dT_bottom.png", fig)
 
 # Energy:
-x, y, z = nodes(rmodel.grid, (Center(), Center(), Center()))
+x, y, z = nodes(runderlying_grid, (Center(), Center(), Center()))
 e = dmodel.tracers.e
 
 fig, ax, hm = heatmap(view(e, :, :, 30),
@@ -439,7 +451,7 @@ Colorbar(fig[1, 2], hm, label = "[energy]")
 save("final_de_bottom.png", fig)
 
 # Wind stress:
-x, y, z = nodes(rmodel.grid, (Face(), Center(), Nothing()))
+x, y, z = nodes(runderlying_grid, (Face(), Center(), Nothing()))
 
 fig, ax, hm = heatmap(view(dJ, :, :),
                       colormap = :deep,
@@ -453,7 +465,7 @@ Colorbar(fig[1, 2], hm, label = "[m/s]")
 save("final_dwind_stress.png", fig)
 
 # Build final temperature fields:
-x, y, z = nodes(rmodel.grid, (Center(), Center(), Center()))
+x, y, z = nodes(runderlying_grid, (Center(), Center(), Center()))
 T = rmodel.tracers.T
 
 fig, ax, hm = heatmap(view(T, :, :, Nz),
@@ -479,7 +491,7 @@ Colorbar(fig[1, 2], hm, label = "[degrees C]")
 save("final_T_bottom.png", fig)
 
 # Energy:
-x, y, z = nodes(rmodel.grid, (Center(), Center(), Center()))
+x, y, z = nodes(runderlying_grid, (Center(), Center(), Center()))
 e = rmodel.tracers.e
 
 fig, ax, hm = heatmap(view(e, :, :, Nz),
@@ -505,7 +517,7 @@ Colorbar(fig[1, 2], hm, label = "[energy]")
 save("final_e_bottom.png", fig)
 
 # Zonal velocity:
-x, y, z = nodes(rmodel.grid, (Face(), Center(), Center()))
+x, y, z = nodes(runderlying_grid, (Face(), Center(), Center()))
 
 fig, ax, hm = heatmap(view(rmodel.velocities.u, :, :, Nz),
                       colormap = :deep,
@@ -533,7 +545,7 @@ Colorbar(fig[1, 2], hm, label = "[m/s]")
 save("final_surface_v.png", fig)
 
 # Mixed layer depth:
-x, y, z = nodes(rmodel.grid, (Center(), Center(), Nothing()))
+x, y, z = nodes(runderlying_grid, (Center(), Center(), Nothing()))
 
 fig, ax, hm = heatmap(view(mld, :, :),
                       colormap = :deep,
@@ -549,7 +561,7 @@ save("final_mld.png", fig)
 i = 10
 j = 10
 
-@allowscalar @show dJ[i, j]
+#@allowscalar @show dJ[i, j]
 
 
 # Produce finite-difference gradients for comparison:
@@ -558,7 +570,7 @@ j = 10
 @allowscalar gradient_list = Array{Float64}[]
 
 for ϵ in ϵ_list
-    rmodelP = double_gyre_model(rarch, Nx, Ny, Nz, 1200)
+    rmodelP, _ = double_gyre_model(rarch, Nx, Ny, Nz, 1200)
     rTᵢP, rSᵢP      = set_tracers(rmodelP.grid)
     rwind_stressP = wind_stress_init(rmodelP.grid)
 
@@ -568,7 +580,7 @@ for ϵ in ϵ_list
 
     sq_surface_uP = restimate_tracer_error(rmodelP, rTᵢP, rSᵢP, rwind_stressP, mld)
 
-    rmodelM = double_gyre_model(rarch, Nx, Ny, Nz, 1200)
+    rmodelM, _ = double_gyre_model(rarch, Nx, Ny, Nz, 1200)
     rTᵢM, rSᵢM      = set_tracers(rmodelM.grid)
     rwind_stressM = wind_stress_init(rmodelM.grid)
     @allowscalar rwind_stressM[i, j] = rwind_stressM[i, j] - ϵ * abs(rwind_stressM[i, j])
