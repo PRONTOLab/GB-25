@@ -128,7 +128,7 @@ end
 function loop!(model)
     Δt = model.clock.last_Δt + 0
     Oceananigans.TimeSteppers.first_time_step!(model, Δt)
-    @trace checkpointing = true track_numbers = false for i = 1:100
+    @trace checkpointing = true track_numbers = false for i = 1:9
         Oceananigans.TimeSteppers.time_step!(model, Δt)
     end
     return nothing
@@ -210,12 +210,14 @@ dJ  = Field{Face, Center, Nothing}(rmodel.grid)
 @info dmodel
 @info dmodel.closure
 
-using GLMakie
+#using GLMakie
 
 @show rmodel.grid
 
 mld  = MixedLayerDepthField(rmodel.buoyancy, rmodel.grid, rmodel.tracers)
 dmld = MixedLayerDepthField(dmodel.buoyancy, dmodel.grid, dmodel.tracers)
+
+#=
 
 # Build init temperature fields:
 x, y, z = nodes(rmodel.grid, (Center(), Center(), Center()))
@@ -362,7 +364,7 @@ fig, ax, hm = heatmap(view(mld, :, :),
 Colorbar(fig[1, 2], hm, label = "[m]")
 
 save("init_mld.png", fig)
-
+=#
 
 tic = time()
 restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld)
@@ -386,6 +388,7 @@ Add plots of gradient fields here, want to do:
 
 =#
 
+#=
 # First gradient data:
 x, y, z = nodes(rmodel.grid, (Center(), Center(), Center()))
 T = dTᵢ
@@ -517,6 +520,8 @@ fig, ax, hm = heatmap(view(rmodel.velocities.u, :, :, Nz),
 Colorbar(fig[1, 2], hm, label = "[m/s]")
 
 save("final_surface_u.png", fig)
+=#
+
 #=
 # Meridional velocity:
 x, y, z = nodes(rmodel.grid, (Center(), Face(), Center()))
@@ -530,6 +535,7 @@ fig, ax, hm = heatmap(view(rmodel.velocities.v, :, :, Nz),
 
 Colorbar(fig[1, 2], hm, label = "[m/s]")
 =#
+#=
 save("final_surface_v.png", fig)
 
 # Mixed layer depth:
@@ -545,6 +551,8 @@ fig, ax, hm = heatmap(view(mld, :, :),
 Colorbar(fig[1, 2], hm, label = "[m]")
 
 save("final_mld.png", fig)
+=#
+
 
 i = 10
 j = 10
