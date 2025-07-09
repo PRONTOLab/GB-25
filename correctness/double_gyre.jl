@@ -81,9 +81,8 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
 
     underlying_grid = simple_latitude_longitude_grid(arch, Nx, Ny, Nz)
 
-    ridge(λ, φ) = 4000 * ((λ-120) < 5) - 4000 #4000 * exp(-10(λ - 120)^2)
+    ridge(λ, φ) = 4000exp(-0.25(λ - 120)^2) * (1 / (1 + exp(-10(φ+45))) + 1 / (1 + exp(-10(-φ-55)))) - 4000 # might be needed
     grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(ridge))
-    #grid = underlying_grid
 
     momentum_advection = VectorInvariant() #WENOVectorInvariant(order=5)
     tracer_advection   = Centered(order=2) #WENO(order=5)
@@ -95,9 +94,9 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     u_top_bc   = FluxBoundaryCondition(Field{Face, Center, Nothing}(grid))
 
     u_bcs = FieldBoundaryConditions(north=no_slip_bc, south=no_slip_bc, top=u_top_bc)
-    v_bcs = FieldBoundaryConditions(east=no_slip_bc, west=no_slip_bc)
+    #v_bcs = FieldBoundaryConditions(east=no_slip_bc, west=no_slip_bc) # Not used since periodic
 
-    boundary_conditions = (u=u_bcs, )
+    boundary_conditions = (u=u_bcs,)
 
     model = HydrostaticFreeSurfaceModel(; grid,
                                           free_surface = free_surface,
@@ -122,7 +121,7 @@ function wind_stress_init(grid;
                             )
     wind_stress = Field{Face, Center, Nothing}(grid)
 
-    τ₀ = 0.2 # N m⁻² / density of seawater
+    τ₀ = 0.2 / ρₒ # N m⁻² / density of seawater
     @inline τx(λ, φ) = τ₀ * sin(π * (φ - φ₀) / (Lφ))
 
     set!(wind_stress, τx)
@@ -132,7 +131,7 @@ end
 function loop!(model)
     Δt = model.clock.last_Δt + 0
     Oceananigans.TimeSteppers.first_time_step!(model, Δt)
-    @trace track_numbers = false for i = 1:99
+    @trace mincut = true track_numbers = false for i = 1:999
         Oceananigans.TimeSteppers.time_step!(model, Δt)
     end
     return nothing
@@ -195,6 +194,19 @@ Nz = 30
 
 Oceananigans.defaults.FloatType = Float64
 
+@info "Producing non-reactant model as a comparison:"
+varch = CPU()
+vmodel, vunderlying_grid = double_gyre_model(varch, Nx, Ny, Nz, 1200)
+
+@info vmodel.buoyancy
+
+vTᵢ, vSᵢ     = set_tracers(vmodel.grid)
+vwind_stress = wind_stress_init(vmodel.grid)
+
+vmld  = MixedLayerDepthField(vmodel.buoyancy, vmodel.grid, vmodel.tracers)
+
+set!(vmodel.tracers.T, vTᵢ)
+
 @info "Generating model..."
 rarch = ReactantState()
 rmodel, runderlying_grid = double_gyre_model(rarch, Nx, Ny, Nz, 1200)
@@ -204,7 +216,7 @@ rmodel, runderlying_grid = double_gyre_model(rarch, Nx, Ny, Nz, 1200)
 rTᵢ, rSᵢ     = set_tracers(rmodel.grid)
 rwind_stress = wind_stress_init(rmodel.grid)
 
-@info "Compiling..."
+@info "Generating Gradients"
 
 dmodel = Enzyme.make_zero(rmodel)
 dTᵢ = Field{Center, Center, Center}(rmodel.grid)
@@ -219,8 +231,12 @@ using GLMakie
 mld  = MixedLayerDepthField(rmodel.buoyancy, rmodel.grid, rmodel.tracers)
 dmld = MixedLayerDepthField(dmodel.buoyancy, dmodel.grid, dmodel.tracers)
 
+set!(rmodel.tracers.T, rTᵢ)
+
 # Build init temperature fields:
 x, y, z = nodes(runderlying_grid, (Center(), Center(), Center()))
+
+@show x, y, z
 
 T = interior(rmodel.tracers.T)
 T = convert(Array, T)
@@ -252,14 +268,32 @@ Colorbar(fig[1, 2], hm, label = "[degrees C]")
 resize_to_layout!(fig)
 save("init_T_bottom.png", fig)
 
-@show "Plotted initial T"
+@info "Plotted initial T"
 
-#=
+
+# Ridge:
+x, y, z = nodes(runderlying_grid, (Center(), Center(), Nothing()))
+interior_h = interior(rmodel.grid.immersed_boundary.bottom_height)
+interior_h = convert(Array, interior_h)
+
+fig, ax, hm = heatmap(view(interior_h, 1:Nx, 1:Ny),
+                      colormap = :deep,
+                      axis = (xlabel = "x [degrees]",
+                              ylabel = "y [degrees]",
+                              title = "bottom height(x, y, z=0, t=0)",
+                              titlesize = 24))
+
+Colorbar(fig[1, 2], hm, label = "m")
+
+save("bottom_height.png", fig)
+
+
 # Energy:
 x, y, z = nodes(runderlying_grid, (Center(), Center(), Center()))
 e = interior(rmodel.tracers.e)
+e = convert(Array, e)
 
-@allowscalar fig, ax, hm = heatmap(view(e, 1:Nx, 1:Ny, Nz),
+fig, ax, hm = heatmap(view(e, 1:Nx, 1:Ny, Nz),
                       colormap = :deep,
                       axis = (xlabel = "x [degrees]",
                               ylabel = "y [degrees]",
@@ -271,7 +305,7 @@ Colorbar(fig[1, 2], hm, label = "[energy]")
 resize_to_layout!(fig)
 save("init_e_surface.png", fig)
 
-@allowscalar fig, ax, hm = heatmap(view(e, 1:Nx, 1:Ny, 1),
+fig, ax, hm = heatmap(view(e, 1:Nx, 1:Ny, 1),
                       colormap = :deep,
                       axis = (xlabel = "x [degrees]",
                               ylabel = "y [degrees]",
@@ -283,6 +317,7 @@ Colorbar(fig[1, 2], hm, label = "[energy]")
 resize_to_layout!(fig)
 save("init_e_bottom.png", fig)
 
+#=
 # Wind stress:
 x, y, z = nodes(runderlying_grid, (Face(), Center(), Nothing()))
 
@@ -392,6 +427,15 @@ resize_to_layout!(fig)
 save("init_mld.png", fig)
 =#
 
+@info "Comparing initial model states:"
+throw_error   = false
+include_halos = false
+rtol          = sqrt(eps(Float64))
+atol          = sqrt(eps(Float64))
+
+GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
+
+@info "Compiling..."
 tic = time()
 restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld)
 #rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true differentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld,
@@ -400,7 +444,20 @@ compile_toc = time() - tic
 
 @show compile_toc
 
-#restimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld)
+@info "Running..."
+
+tic = time()
+restimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld)
+rrun_toc = time() - tic
+@show rrun_toc
+
+#=
+tic = time()
+estimate_tracer_error(vmodel, vTᵢ, vSᵢ, vwind_stress, vmld)
+vrun_toc = time() - tic
+@show vrun_toc
+GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
+=#
 
 #dedν, dJ = rdifferentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld, dmodel, dTᵢ, dSᵢ, dJ, dmld)
 
@@ -510,12 +567,13 @@ fig, ax, hm = heatmap(view(T, 1:Nx, 1:Ny, 1),
 Colorbar(fig[1, 2], hm, label = "[degrees C]")
 
 save("final_T_bottom.png", fig)
-#=
+
 # Energy:
 x, y, z = nodes(runderlying_grid, (Center(), Center(), Center()))
 e = interior(rmodel.tracers.e)
+e = convert(Array, e)
 
-@allowscalar fig, ax, hm = heatmap(view(e, 1:Nx, 1:Ny, Nz),
+fig, ax, hm = heatmap(view(e, 1:Nx, 1:Ny, Nz),
                       colormap = :deep,
                       axis = (xlabel = "x [degrees]",
                               ylabel = "y [degrees]",
@@ -526,7 +584,7 @@ Colorbar(fig[1, 2], hm, label = "[energy]")
 
 save("final_e_surface.png", fig)
 
-@allowscalar fig, ax, hm = heatmap(view(e, 1:Nx, 1:Ny, 1),
+fig, ax, hm = heatmap(view(e, 1:Nx, 1:Ny, 1),
                       colormap = :deep,
                       axis = (xlabel = "x [degrees]",
                               ylabel = "y [degrees]",
@@ -541,8 +599,9 @@ save("final_e_bottom.png", fig)
 x, y, z = nodes(runderlying_grid, (Face(), Center(), Center()))
 
 u = interior(rmodel.velocities.u)
+u = convert(Array, u)
 
-@allowscalar fig, ax, hm = heatmap(view(u, 1:Nx, 1:Ny, Nz),
+fig, ax, hm = heatmap(view(u, 1:Nx, 1:Ny, Nz),
                       colormap = :deep,
                       axis = (xlabel = "x [degrees]",
                               ylabel = "y [degrees]",
@@ -564,15 +623,17 @@ fig, ax, hm = heatmap(view(rmodel.velocities.v, :, :, Nz),
                               titlesize = 24))
 
 Colorbar(fig[1, 2], hm, label = "[m/s]")
-=#
+
 save("final_surface_v.png", fig)
+=#
 
 # Mixed layer depth:
 x, y, z = nodes(runderlying_grid, (Center(), Center(), Nothing()))
 
 interior_mld = interior(mld)
+interior_mld = convert(Array, interior_mld)
 
-@allowscalar fig, ax, hm = heatmap(view(interior_mld, 1:Nx, 1:Ny),
+fig, ax, hm = heatmap(view(interior_mld, 1:Nx, 1:Ny),
                       colormap = :deep,
                       axis = (xlabel = "x [degrees]",
                               ylabel = "y [degrees]",
@@ -582,7 +643,7 @@ interior_mld = interior(mld)
 Colorbar(fig[1, 2], hm, label = "[m]")
 
 save("final_mld.png", fig)
-=#
+
 
 i = 10
 j = 10
