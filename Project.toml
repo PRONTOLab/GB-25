@@ -37,7 +37,7 @@ Printf = "1"
 Profile = "1"
 Reactant = "0.2.144"
 ReactantCore = "0.1"
-Reactant_jll = "0.0.215"
+Reactant_jll = "0.0.216"
 SeawaterPolynomials = "0.3.9"
 Serialization = "1"
 
