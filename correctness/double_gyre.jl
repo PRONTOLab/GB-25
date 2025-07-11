@@ -119,7 +119,7 @@ function wind_stress_init(grid;
     wind_stress = Field{Face, Center, Nothing}(grid)
 
     τ₀ = 0.2 # N m⁻² / density of seawater
-    @inline τx(λ, φ) = τ₀ * sin(π * (φ - φ₀) / (Lφ))
+    @inline τx(λ, φ) = (τ₀ / ρₒ) * sin(π * (φ - φ₀) / (Lφ))
 
     set!(wind_stress, τx)
     return wind_stress
@@ -154,7 +154,7 @@ end
 function estimate_tracer_error(model, initial_temperature, initial_salinity, wind_stress, mld)
     time_step_double_gyre!(model, initial_temperature, initial_salinity, wind_stress)
     # Compute the mean mixed layer depth:
-    #compute!(mld)
+    compute!(mld)
     Nλ, Nφ, _ = size(model.grid)
     #=
     avg_mld = 0.0
@@ -210,13 +210,13 @@ dJ  = Field{Face, Center, Nothing}(rmodel.grid)
 @info dmodel
 @info dmodel.closure
 
-using GLMakie
-
 @show rmodel.grid
 
 mld  = MixedLayerDepthField(rmodel.buoyancy, rmodel.grid, rmodel.tracers)
 dmld = MixedLayerDepthField(dmodel.buoyancy, dmodel.grid, dmodel.tracers)
 
+#=
+using GLMakie
 # Build init temperature fields:
 x, y, z = nodes(rmodel.grid, (Center(), Center(), Center()))
 T = rTᵢ
@@ -363,18 +363,18 @@ Colorbar(fig[1, 2], hm, label = "[m]")
 
 save("init_mld.png", fig)
 
-
+=#
 tic = time()
 restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld)
-rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true differentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld,
-                                                                                                        dmodel, dTᵢ, dSᵢ, dJ, dmld)
+#rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true differentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld,
+#                                                                                                        dmodel, dTᵢ, dSᵢ, dJ, dmld)
 compile_toc = time() - tic
 
 @show compile_toc
 
-#restimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld)
+restimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld)
 
-dedν, dJ = rdifferentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld, dmodel, dTᵢ, dSᵢ, dJ, dmld)
+#dedν, dJ = rdifferentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld, dmodel, dTᵢ, dSᵢ, dJ, dmld)
 
 #=
 Add plots of gradient fields here, want to do:
@@ -385,7 +385,7 @@ Add plots of gradient fields here, want to do:
 4. CATKE parameters
 
 =#
-
+#=
 # First gradient data:
 x, y, z = nodes(rmodel.grid, (Center(), Center(), Center()))
 T = dTᵢ
@@ -583,3 +583,4 @@ for ϵ in ϵ_list
 end
 
 @info gradient_list
+=#
