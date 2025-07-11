@@ -131,7 +131,7 @@ end
 function loop!(model)
     Δt = model.clock.last_Δt + 0
     Oceananigans.TimeSteppers.first_time_step!(model, Δt)
-    @trace mincut = true track_numbers = false for i = 1:999
+    @trace mincut = true track_numbers = false for i = 1:10
         Oceananigans.TimeSteppers.time_step!(model, Δt)
     end
     return nothing
@@ -438,8 +438,8 @@ GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, at
 @info "Compiling..."
 tic = time()
 restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld)
-#rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true differentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld,
-#                                                                                                        dmodel, dTᵢ, dSᵢ, dJ, dmld)
+rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true differentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld,
+                                                                                                        dmodel, dTᵢ, dSᵢ, dJ, dmld)
 compile_toc = time() - tic
 
 @show compile_toc
@@ -447,7 +447,8 @@ compile_toc = time() - tic
 @info "Running..."
 
 tic = time()
-restimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld)
+#restimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld)
+dedν, dJ = rdifferentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld, dmodel, dTᵢ, dSᵢ, dJ, dmld)
 rrun_toc = time() - tic
 @show rrun_toc
 
@@ -648,7 +649,7 @@ save("final_mld.png", fig)
 i = 10
 j = 10
 
-#@allowscalar @show dJ[i, j]
+@allowscalar @show dJ[i, j]
 
 
 # Produce finite-difference gradients for comparison:
