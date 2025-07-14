@@ -8,7 +8,6 @@
     return N² * z + Δb * μ + 1e-2 * Δb * randn()
 end
 
-
 function baroclinic_instability_model(arch; resolution, Nz, kw...)
     Nx, Ny = resolution_to_points(resolution)
     return baroclinic_instability_model(arch, Nx, Ny, Nz; kw...)
@@ -26,8 +25,8 @@ function baroclinic_instability_model(arch, Nx, Ny, Nz; Δt,
     buoyancy = SeawaterBuoyancy(
         equation_of_state = SeawaterPolynomials.TEOS10EquationOfState(Oceananigans.defaults.FloatType)),
 
-    closure = nothing,    
-    # closure = Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity(),
+    # closure = nothing,    
+    closure = Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity(),
     # closure = VerticalScalarDiffusivity(VerticallyImplicitTimeDiscretization(), κ=1e-5, ν=1e-4),
 
     # Coriolis forces for a rotating Earth
