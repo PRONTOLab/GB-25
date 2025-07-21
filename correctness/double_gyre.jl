@@ -9,6 +9,8 @@ using GordonBell25
 using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity
 using ClimaOcean.Diagnostics: MixedLayerDepthField
 
+using Oceananigans.Grids: λnode, φnode, znode
+
 
 using SeawaterPolynomials
 
@@ -86,7 +88,25 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
 
     momentum_advection = VectorInvariant() #WENOVectorInvariant(order=5)
     tracer_advection   = Centered(order=2) #WENO(order=5)
+    
+    #
+    # Temperature Relaxation Enforced as a Flux BC:
+    #
+    ρₒ = 1026.0 # kg m⁻³, average density at the surface of the world ocean
+    cₚ = 3994   # specific heat, J / kg * K
+    Lφ =  30
+    φ₀ = -60
+    τ  = 864000 # Relaxation timescale, equal to 10 days
 
+    # TODO: replace with discrete form
+    surface_condition_T(i, j, grid, clock, model_fields) = (ρₒ/τ) * (model_fields.T[i, j, Nz] - (-2 + 12(φnode(j, grid, Center()) - φ₀) / Lφ))
+    T_top_bc = FluxBoundaryCondition(surface_condition_T, discrete_form=true)
+    
+    north_condition_T(i, k, grid, clock, model_fields) = (ρₒ/τ) * (model_fields.T[i, Ny, k] - (-2 + 12(-30 - φ₀) * exp(znode(k, grid, Center())/800) / Lφ))
+    T_north_bc = FluxBoundaryCondition(north_condition_T, discrete_form=true)
+
+    T_bcs = FieldBoundaryConditions(north=T_north_bc, top=T_top_bc)
+    
     #
     # Momentum BCs:
     #
@@ -96,7 +116,7 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     u_bcs = FieldBoundaryConditions(north=no_slip_bc, south=no_slip_bc, top=u_top_bc)
     #v_bcs = FieldBoundaryConditions(east=no_slip_bc, west=no_slip_bc) # Not used since periodic
 
-    boundary_conditions = (u=u_bcs,)
+    boundary_conditions = (u=u_bcs, T=T_bcs)
 
     model = HydrostaticFreeSurfaceModel(; grid,
                                           free_surface = free_surface,
@@ -131,7 +151,7 @@ end
 function loop!(model)
     Δt = model.clock.last_Δt + 0
     Oceananigans.TimeSteppers.first_time_step!(model, Δt)
-    @trace mincut = true track_numbers = false for i = 1:10
+    @trace mincut = true track_numbers = false for i = 1:9
         Oceananigans.TimeSteppers.time_step!(model, Δt)
     end
     return nothing
@@ -154,7 +174,7 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     return nothing
 end
 
-function estimate_tracer_error(model, initial_temperature, initial_salinity, wind_stress, mld)
+function estimate_tracer_error(model, initial_temperature, initial_salinity, wind_stress, mld, zonal_transport)
     time_step_double_gyre!(model, initial_temperature, initial_salinity, wind_stress)
     # Compute the mean mixed layer depth:
     #compute!(mld)
@@ -168,11 +188,15 @@ function estimate_tracer_error(model, initial_temperature, initial_salinity, win
     avg_mld = avg_mld / (Nλ * Nφ)
     =#
     # Hard way
-    c² = parent(model.tracers.T).^2
-    avg_mld = sum(c²) / (Nλ * Nφ * Nz)
+    #c² = parent(model.tracers.T).^2
+    #avg_mld = sum(c²) / (Nλ * Nφ * Nz)
     #@allowscalar avg_mld = model.velocities.u[10, 10, 1] #sum(c²)
+    #return avg_mld
+
+    # Alternative: zonal transport
+    compute!(zonal_transport)
     
-    return avg_mld
+    return zonal_transport
 end
 
 function differentiate_tracer_error(model, Tᵢ, Sᵢ, J, mld, dmodel, dTᵢ, dSᵢ, dJ, dmld)
@@ -204,8 +228,13 @@ vTᵢ, vSᵢ     = set_tracers(vmodel.grid)
 vwind_stress = wind_stress_init(vmodel.grid)
 
 vmld  = MixedLayerDepthField(vmodel.buoyancy, vmodel.grid, vmodel.tracers)
+vzonal_transport = Field(Integral(vmodel.velocities.u, dims=(2,3)))
 
 set!(vmodel.tracers.T, vTᵢ)
+
+vresult = estimate_tracer_error(vmodel, vTᵢ, vSᵢ, vwind_stress, vmld, vzonal_transport)
+
+@show vresult
 
 @info "Generating model..."
 rarch = ReactantState()
@@ -230,6 +259,11 @@ using GLMakie
 
 mld  = MixedLayerDepthField(rmodel.buoyancy, rmodel.grid, rmodel.tracers)
 dmld = MixedLayerDepthField(dmodel.buoyancy, dmodel.grid, dmodel.tracers)
+
+@allowscalar @show Integral(rmodel.velocities.u, dims=(2,3))
+
+@allowscalar rzonal_transport = Field(Integral(rmodel.velocities.u))# , dims=(2,3)))
+@allowscalar dzonal_transport = Field(Integral(dmodel.velocities.u))# , dims=(2,3)))
 
 set!(rmodel.tracers.T, rTᵢ)
 
@@ -437,9 +471,9 @@ GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, at
 
 @info "Compiling..."
 tic = time()
-restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld)
-rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true differentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld,
-                                                                                                        dmodel, dTᵢ, dSᵢ, dJ, dmld)
+restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld, rzonal_transport)
+#rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true differentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld,
+#                                                                                                        dmodel, dTᵢ, dSᵢ, dJ, dmld)
 compile_toc = time() - tic
 
 @show compile_toc
@@ -447,14 +481,14 @@ compile_toc = time() - tic
 @info "Running..."
 
 tic = time()
-#restimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld)
-dedν, dJ = rdifferentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld, dmodel, dTᵢ, dSᵢ, dJ, dmld)
+restimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld, rzonal_transport)
+#dedν, dJ = rdifferentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld, dmodel, dTᵢ, dSᵢ, dJ, dmld)
 rrun_toc = time() - tic
 @show rrun_toc
 
 #=
 tic = time()
-estimate_tracer_error(vmodel, vTᵢ, vSᵢ, vwind_stress, vmld)
+result = estimate_tracer_error(vmodel, vTᵢ, vSᵢ, vwind_stress, vmld)
 vrun_toc = time() - tic
 @show vrun_toc
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
@@ -649,9 +683,9 @@ save("final_mld.png", fig)
 i = 10
 j = 10
 
-@allowscalar @show dJ[i, j]
+#@allowscalar @show dJ[i, j]
 
-
+#=
 # Produce finite-difference gradients for comparison:
 ϵ_list = [1e-1, 1e-2, 1e-3, 1e-4] #, 1e-5, 1e-6, 1e-7, 1e-8]
 
@@ -683,3 +717,4 @@ for ϵ in ϵ_list
 end
 
 @info gradient_list
+=#
