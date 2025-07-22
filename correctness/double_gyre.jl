@@ -9,7 +9,9 @@ using GordonBell25
 using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity
 using ClimaOcean.Diagnostics: MixedLayerDepthField
 
-using Oceananigans.Grids: λnode, φnode, znode
+using Oceananigans.Grids: λnode, φnode, znode, new_data
+
+using Oceananigans.Fields: location, scan_indices, indices, FieldStatus, compute_at!, get_neutral_mask, interior, condition_operand
 
 
 using SeawaterPolynomials
@@ -20,23 +22,6 @@ throw_error = true
 include_halos = true
 rtol = sqrt(eps(Float64))
 atol = sqrt(eps(Float64))
-
-function set_tracers(grid;
-                     Lφ::Real = 30, # Meridional length in degrees
-                     φ₀::Real = -60 # Degrees north of equator for the southern edge)
-                    )
-    fₜ(λ, φ, z) = -2 + 12(φ - φ₀) * exp(z/800) / Lφ # passable, linear in y
-    #fₜ(λ, φ, z) = -2 + 12exp(z/800 + (φ₀ + φ)) experiment if it should be exponential in y
-    fₛ(λ, φ, z) = 0 #35 # This example does not use salinity
-
-    Tᵢ = Field{Center, Center, Center}(grid)
-    Sᵢ = Field{Center, Center, Center}(grid)
-
-    @allowscalar set!(Tᵢ, fₜ)
-    @allowscalar set!(Sᵢ, fₛ)
-
-    return Tᵢ, Sᵢ
-end
 
 function simple_latitude_longitude_grid(arch, Nx, Ny, Nz; halo=(8, 8, 8))
     z = exponential_z_faces(; Nz, depth=4000) # may need changing for very large Nz
@@ -114,7 +99,6 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     u_top_bc   = FluxBoundaryCondition(Field{Face, Center, Nothing}(grid))
 
     u_bcs = FieldBoundaryConditions(north=no_slip_bc, south=no_slip_bc, top=u_top_bc)
-    #v_bcs = FieldBoundaryConditions(east=no_slip_bc, west=no_slip_bc) # Not used since periodic
 
     boundary_conditions = (u=u_bcs, T=T_bcs)
 
@@ -134,587 +118,66 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     return model, underlying_grid
 end
 
-function wind_stress_init(grid;
-                            ρₒ::Real = 1026.0, # kg m⁻³, average density at the surface of the world ocean
-                            Lφ::Real = 30, # Meridional length in degrees
-                            φ₀::Real = -60.0 # Degrees north of equator for the southern edge
-                            )
-    wind_stress = Field{Face, Center, Nothing}(grid)
-
-    τ₀ = 0.2 / ρₒ # N m⁻² / density of seawater
-    @inline τx(λ, φ) = τ₀ * sin(π * (φ - φ₀) / (Lφ))
-
-    set!(wind_stress, τx)
-    return wind_stress
-end
-
-function loop!(model)
-    Δt = model.clock.last_Δt + 0
-    Oceananigans.TimeSteppers.first_time_step!(model, Δt)
-    @trace mincut = true track_numbers = false for i = 1:9
-        Oceananigans.TimeSteppers.time_step!(model, Δt)
-    end
-    return nothing
-end
-
-function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
-
-    set!(model.tracers.T, Tᵢ)
-    set!(model.tracers.S, Sᵢ)
-    set!(model.velocities.u.boundary_conditions.top.condition, wind_stress)
-
-    # Initialize the model
-    model.clock.iteration = 0
-    model.clock.time = 0
-    model.clock.last_Δt = 1200
-
-    # Step it forward
-    loop!(model)
-
-    return nothing
-end
-
-function estimate_tracer_error(model, initial_temperature, initial_salinity, wind_stress, mld, zonal_transport)
-    time_step_double_gyre!(model, initial_temperature, initial_salinity, wind_stress)
-    # Compute the mean mixed layer depth:
-    #compute!(mld)
-    Nλ, Nφ, Nz = size(model.grid)
-    #=
-    avg_mld = 0.0
-    
-    for j0 = 1:Nφ, i0 = 1:Nλ
-        @allowscalar avg_mld += @inbounds model.velocities.u[i0, j0, 1]^2
-    end
-    avg_mld = avg_mld / (Nλ * Nφ)
-    =#
-    # Hard way
-    #c² = parent(model.tracers.T).^2
-    #avg_mld = sum(c²) / (Nλ * Nφ * Nz)
-    #@allowscalar avg_mld = model.velocities.u[10, 10, 1] #sum(c²)
-    #return avg_mld
-
-    # Alternative: zonal transport
-    compute!(zonal_transport)
-    
-    return zonal_transport
-end
-
-function differentiate_tracer_error(model, Tᵢ, Sᵢ, J, mld, dmodel, dTᵢ, dSᵢ, dJ, dmld)
-
-    dedν = autodiff(set_strong_zero(Enzyme.Reverse),
-                    estimate_tracer_error, Active,
-                    Duplicated(model, dmodel),
-                    Duplicated(Tᵢ, dTᵢ),
-                    Duplicated(Sᵢ, dSᵢ),
-                    Duplicated(J, dJ),
-                    Duplicated(mld, dmld))
-
-    return dedν, dJ
-end
-
 Nx = 362 #128
 Ny = 32
 Nz = 30
 
 Oceananigans.defaults.FloatType = Float64
 
-@info "Producing non-reactant model as a comparison:"
-varch = CPU()
-vmodel, vunderlying_grid = double_gyre_model(varch, Nx, Ny, Nz, 1200)
-
-@info vmodel.buoyancy
-
-vTᵢ, vSᵢ     = set_tracers(vmodel.grid)
-vwind_stress = wind_stress_init(vmodel.grid)
-
-vmld  = MixedLayerDepthField(vmodel.buoyancy, vmodel.grid, vmodel.tracers)
-vzonal_transport = Field(Integral(vmodel.velocities.u, dims=(2,3)))
-
-set!(vmodel.tracers.T, vTᵢ)
-
-vresult = estimate_tracer_error(vmodel, vTᵢ, vSᵢ, vwind_stress, vmld, vzonal_transport)
-
-@show vresult
-
 @info "Generating model..."
 rarch = ReactantState()
 rmodel, runderlying_grid = double_gyre_model(rarch, Nx, Ny, Nz, 1200)
 
-@info rmodel.buoyancy
+@allowscalar scan = Integral(rmodel.velocities.u, dims=(2,3))
 
-rTᵢ, rSᵢ     = set_tracers(rmodel.grid)
-rwind_stress = wind_stress_init(rmodel.grid)
+operand = scan.operand
+grid = operand.grid
+LX, LY, LZ = loc = location(scan)
+thing = scan_indices(scan.type, indices(operand); dims=scan.dims)
 
-@info "Generating Gradients"
+data = new_data(grid, loc, thing)
+recompute_safely = false
 
-dmodel = Enzyme.make_zero(rmodel)
-dTᵢ = Field{Center, Center, Center}(rmodel.grid)
-dSᵢ = Field{Center, Center, Center}(rmodel.grid)
-dJ  = Field{Face, Center, Nothing}(rmodel.grid)
+boundary_conditions = FieldBoundaryConditions(grid, loc, thing)
+status = recompute_safely ? nothing : FieldStatus()
 
-@info dmodel
-@info dmodel.closure
-
-using GLMakie
-
-mld  = MixedLayerDepthField(rmodel.buoyancy, rmodel.grid, rmodel.tracers)
-dmld = MixedLayerDepthField(dmodel.buoyancy, dmodel.grid, dmodel.tracers)
-
-@allowscalar @show Integral(rmodel.velocities.u, dims=(2,3))
-
-@allowscalar rzonal_transport = Field(Integral(rmodel.velocities.u))# , dims=(2,3)))
-@allowscalar dzonal_transport = Field(Integral(dmodel.velocities.u))# , dims=(2,3)))
-
-set!(rmodel.tracers.T, rTᵢ)
-
-# Build init temperature fields:
-x, y, z = nodes(runderlying_grid, (Center(), Center(), Center()))
-
-@show x, y, z
-
-T = interior(rmodel.tracers.T)
-T = convert(Array, T)
-
-#@show argmax(T)
-#@show T[1,32,30]
-
-fig, ax, hm = heatmap(view(T, 1:Nx, 1:Ny, Nz),
-                                colormap = :deep,
-                                axis = (xlabel = "x [degrees]",
-                                        ylabel = "y [degrees]",
-                                        title = "T(x, y, z=0, t=0)",
-                                        titlesize = 24))
-
-Colorbar(fig[1, 2], hm, label = "[degrees C]")
-
-resize_to_layout!(fig)
-save("init_T_surface.png", fig)
-
-fig, ax, hm = heatmap(view(T, 1:Nx, 1:Ny, 1),
-                                        colormap = :deep,
-                                        axis = (xlabel = "x [degrees]",
-                                        ylabel = "y [degrees]",
-                                        title = "T(x, y, z=-4000, t=0)",
-                                        titlesize = 24))
-
-Colorbar(fig[1, 2], hm, label = "[degrees C]")
-
-resize_to_layout!(fig)
-save("init_T_bottom.png", fig)
-
-@info "Plotted initial T"
-
-
-# Ridge:
-x, y, z = nodes(runderlying_grid, (Center(), Center(), Nothing()))
-interior_h = interior(rmodel.grid.immersed_boundary.bottom_height)
-interior_h = convert(Array, interior_h)
-
-fig, ax, hm = heatmap(view(interior_h, 1:Nx, 1:Ny),
-                      colormap = :deep,
-                      axis = (xlabel = "x [degrees]",
-                              ylabel = "y [degrees]",
-                              title = "bottom height(x, y, z=0, t=0)",
-                              titlesize = 24))
-
-Colorbar(fig[1, 2], hm, label = "m")
-
-save("bottom_height.png", fig)
-
-
-# Energy:
-x, y, z = nodes(runderlying_grid, (Center(), Center(), Center()))
-e = interior(rmodel.tracers.e)
-e = convert(Array, e)
-
-fig, ax, hm = heatmap(view(e, 1:Nx, 1:Ny, Nz),
-                      colormap = :deep,
-                      axis = (xlabel = "x [degrees]",
-                              ylabel = "y [degrees]",
-                              title = "e(x, y, z=0, t=0)",
-                              titlesize = 24))
-
-Colorbar(fig[1, 2], hm, label = "[energy]")
-
-resize_to_layout!(fig)
-save("init_e_surface.png", fig)
-
-fig, ax, hm = heatmap(view(e, 1:Nx, 1:Ny, 1),
-                      colormap = :deep,
-                      axis = (xlabel = "x [degrees]",
-                              ylabel = "y [degrees]",
-                              title = "e(x, y, z=-4000, t=0)",
-                              titlesize = 24))
-
-Colorbar(fig[1, 2], hm, label = "[energy]")
-
-resize_to_layout!(fig)
-save("init_e_bottom.png", fig)
+@allowscalar rzonal_transport = Field(loc, grid, data, boundary_conditions, thing, scan, status)
 
 #=
-# Wind stress:
-x, y, z = nodes(runderlying_grid, (Face(), Center(), Nothing()))
-
-wind_stress = interior(rwind_stress)
-
-@allowscalar fig, ax, hm = heatmap(view(wind_stress, 1:Nx, 1:Ny),
-                      colormap = :deep,
-                      axis = (xlabel = "x [degrees]",
-                              ylabel = "y [degrees]",
-                              title = "zonal wind_stress(x, y, z=0, t=0)",
-                              titlesize = 24))
-
-Colorbar(fig[1, 2], hm, label = "[m/s]")
-
-resize_to_layout!(fig)
-save("init_wind_stress.png", fig)
-
-# As sanity checks we'll also plot initial gradients for each (should all be 0):
-# Build init temperature fields:
-x, y, z = nodes(runderlying_grid, (Center(), Center(), Center()))
-T = interior(dTᵢ)
-
-@allowscalar fig, ax, hm = heatmap(view(T, 1:Nx, 1:Ny, Nz),
-                      colormap = :deep,
-                      axis = (xlabel = "x [degrees]",
-                              ylabel = "y [degrees]",
-                              title = "dT(x, y, z=0, t=0)",
-                              titlesize = 24))
-
-Colorbar(fig[1, 2], hm, label = "[degrees C]")
-
-resize_to_layout!(fig)
-save("init_dT_surface.png", fig)
-
-@allowscalar fig, ax, hm = heatmap(view(T, 1:Nx, 1:Ny, 1),
-                      colormap = :deep,
-                      axis = (xlabel = "x [degrees]",
-                              ylabel = "y [degrees]",
-                              title = "dT(x, y, z=0, t=-4000)",
-                              titlesize = 24))
-
-Colorbar(fig[1, 2], hm, label = "[degrees C]")
-
-resize_to_layout!(fig)
-save("init_dT_bottom.png", fig)
-
-# Energy:
-x, y, z = nodes(runderlying_grid, (Center(), Center(), Center()))
-e = interior(dmodel.tracers.e)
-
-@allowscalar fig, ax, hm = heatmap(view(e, 1:Nx, 1:Ny, Nz),
-                      colormap = :deep,
-                      axis = (xlabel = "x [degrees]",
-                              ylabel = "y [degrees]",
-                              title = "de(x, y, z=0, t=0)",
-                              titlesize = 24))
-
-Colorbar(fig[1, 2], hm, label = "[energy]")
-
-resize_to_layout!(fig)
-save("init_de_surface.png", fig)
-
-@allowscalar fig, ax, hm = heatmap(view(e, 1:Nx, 1:Ny, 1),
-                      colormap = :deep,
-                      axis = (xlabel = "x [degrees]",
-                              ylabel = "y [degrees]",
-                              title = "de(x, y, z=0, t=-4000)",
-                              titlesize = 24))
-
-Colorbar(fig[1, 2], hm, label = "[energy]")
-
-resize_to_layout!(fig)
-save("init_de_bottom.png", fig)
-
-# Wind stress:
-x, y, z = nodes(runderlying_grid, (Face(), Center(), Nothing()))
-
-interior_dJ = interior(dJ)
-
-@allowscalar fig, ax, hm = heatmap(view(interior_dJ, 1:Nx, 1:Ny),
-                      colormap = :deep,
-                      axis = (xlabel = "x [degrees]",
-                              ylabel = "y [degrees]",
-                              title = "dwind_stress(x, y, z=0, t=0)",
-                              titlesize = 24))
-
-Colorbar(fig[1, 2], hm, label = "[m/s]")
-
-resize_to_layout!(fig)
-save("init_dwind_stress.png", fig)
-
-# Mixed layer depth:
-x, y, z = nodes(runderlying_grid, (Center(), Center(), Nothing()))
-
-interior_mld = interior(mld)
-
-@allowscalar fig, ax, hm = heatmap(view(interior_mld, 1:Nx, 1:Ny),
-                      colormap = :deep,
-                      axis = (xlabel = "x [degrees]",
-                              ylabel = "y [degrees]",
-                              title = "mld(x, y, t=0)",
-                              titlesize = 24))
-
-Colorbar(fig[1, 2], hm, label = "[m]")
-
-resize_to_layout!(fig)
-save("init_mld.png", fig)
-=#
-
-@info "Comparing initial model states:"
-throw_error   = false
-include_halos = false
-rtol          = sqrt(eps(Float64))
-atol          = sqrt(eps(Float64))
-
-GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
-
-@info "Compiling..."
-tic = time()
-restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld, rzonal_transport)
-#rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true differentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld,
-#                                                                                                        dmodel, dTᵢ, dSᵢ, dJ, dmld)
-compile_toc = time() - tic
-
-@show compile_toc
-
-@info "Running..."
-
-tic = time()
-restimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld, rzonal_transport)
-#dedν, dJ = rdifferentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld, dmodel, dTᵢ, dSᵢ, dJ, dmld)
-rrun_toc = time() - tic
-@show rrun_toc
-
-#=
-tic = time()
-result = estimate_tracer_error(vmodel, vTᵢ, vSᵢ, vwind_stress, vmld)
-vrun_toc = time() - tic
-@show vrun_toc
-GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
-=#
-
-#dedν, dJ = rdifferentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld, dmodel, dTᵢ, dSᵢ, dJ, dmld)
-
-#=
-Add plots of gradient fields here, want to do:
-
-1. Wind stress
-2. temperature
-3. salinity
-4. CATKE parameters
-
-=#
-
-#=
-# First gradient data:
-x, y, z = nodes(runderlying_grid, (Center(), Center(), Center()))
-T = interior(dTᵢ)
-
-@allowscalar fig, ax, hm = heatmap(view(T, 1:Nx, 1:Ny, Nz),
-                      colormap = :deep,
-                      axis = (xlabel = "x [degrees]",
-                              ylabel = "y [degrees]",
-                              title = "dT(x, y, z=0, t=400min)",
-                              titlesize = 24))
-
-Colorbar(fig[1, 2], hm, label = "[degrees C]")
-
-save("final_dT_surface.png", fig)
-
-@allowscalar fig, ax, hm = heatmap(view(T, 1:Nx, 1:Ny, 1),
-                      colormap = :deep,
-                      axis = (xlabel = "x [degrees]",
-                              ylabel = "y [degrees]",
-                              title = "dT(x, y, z=-4000, t=400min)",
-                              titlesize = 24))
-
-Colorbar(fig[1, 2], hm, label = "[degrees C]")
-
-save("final_dT_bottom.png", fig)
-
-# Energy:
-x, y, z = nodes(runderlying_grid, (Center(), Center(), Center()))
-e = interior(dmodel.tracers.e)
-
-@allowscalar fig, ax, hm = heatmap(view(e, 1:Nx, 1:Ny, 30),
-                      colormap = :deep,
-                      axis = (xlabel = "x [degrees]",
-                              ylabel = "y [degrees]",
-                              title = "e(x, y, z=0, t=400min)",
-                              titlesize = 24))
-
-Colorbar(fig[1, 2], hm, label = "[energy]")
-
-save("final_de_surface.png", fig)
-
-@allowscalar fig, ax, hm = heatmap(view(e, 1:Nx, 1:Ny, 1),
-                      colormap = :deep,
-                      axis = (xlabel = "x [degrees]",
-                              ylabel = "y [degrees]",
-                              title = "T(x, y, z=-4000, t=400min)",
-                              titlesize = 24))
-
-Colorbar(fig[1, 2], hm, label = "[energy]")
-
-save("final_de_bottom.png", fig)
-=#
-# Wind stress:
-x, y, z = nodes(runderlying_grid, (Face(), Center(), Nothing()))
-interior_dJ = interior(dJ)
-
-interior_dJ = convert(Array, interior_dJ)
-
-fig, ax, hm = heatmap(view(interior_dJ, 1:Nx, 1:Ny),
-                      colormap = :deep,
-                      axis = (xlabel = "x [degrees]",
-                              ylabel = "y [degrees]",
-                              title = "dwind_stress(x, y, z=0, t=400min)",
-                              titlesize = 24))
-
-Colorbar(fig[1, 2], hm, label = "[m/s]")
-
-save("final_dwind_stress.png", fig)
-
-# Build final temperature fields:
-x, y, z = nodes(runderlying_grid, (Center(), Center(), Center()))
-T = interior(rmodel.tracers.T)
-T = convert(Array, T)
-
-fig, ax, hm = heatmap(view(T, 1:Nx, 1:Ny, Nz),
-                      colormap = :deep,
-                      axis = (xlabel = "x [degrees]",
-                              ylabel = "y [degrees]",
-                              title = "T(x, y, z=0, t=400min)",
-                              titlesize = 24))
-
-Colorbar(fig[1, 2], hm, label = "[degrees C]")
-
-save("final_T_surface.png", fig)
-
-fig, ax, hm = heatmap(view(T, 1:Nx, 1:Ny, 1),
-                      colormap = :deep,
-                      axis = (xlabel = "x [degrees]",
-                              ylabel = "y [degrees]",
-                              title = "T(x, y, z=-4000, t=400min)",
-                              titlesize = 24))
-
-Colorbar(fig[1, 2], hm, label = "[degrees C]")
-
-save("final_T_bottom.png", fig)
-
-# Energy:
-x, y, z = nodes(runderlying_grid, (Center(), Center(), Center()))
-e = interior(rmodel.tracers.e)
-e = convert(Array, e)
-
-fig, ax, hm = heatmap(view(e, 1:Nx, 1:Ny, Nz),
-                      colormap = :deep,
-                      axis = (xlabel = "x [degrees]",
-                              ylabel = "y [degrees]",
-                              title = "e(x, y, z=0, t=400min)",
-                              titlesize = 24))
-
-Colorbar(fig[1, 2], hm, label = "[energy]")
-
-save("final_e_surface.png", fig)
-
-fig, ax, hm = heatmap(view(e, 1:Nx, 1:Ny, 1),
-                      colormap = :deep,
-                      axis = (xlabel = "x [degrees]",
-                              ylabel = "y [degrees]",
-                              title = "e(x, y, z=0, t=400min)",
-                              titlesize = 24))
-
-Colorbar(fig[1, 2], hm, label = "[energy]")
-
-save("final_e_bottom.png", fig)
-
-# Zonal velocity:
-x, y, z = nodes(runderlying_grid, (Face(), Center(), Center()))
-
-u = interior(rmodel.velocities.u)
-u = convert(Array, u)
-
-fig, ax, hm = heatmap(view(u, 1:Nx, 1:Ny, Nz),
-                      colormap = :deep,
-                      axis = (xlabel = "x [degrees]",
-                              ylabel = "y [degrees]",
-                              title = "u(x, y, z=0, t=400min)",
-                              titlesize = 24))
-
-Colorbar(fig[1, 2], hm, label = "[m/s]")
-
-save("final_surface_u.png", fig)
-#=
-# Meridional velocity:
-x, y, z = nodes(rmodel.grid, (Center(), Face(), Center()))
-
-fig, ax, hm = heatmap(view(rmodel.velocities.v, :, :, Nz),
-                      colormap = :deep,
-                      axis = (xlabel = "x [degrees]",
-                              ylabel = "y [degrees]",
-                              title = "v(x, y, z=0, t=400min)",
-                              titlesize = 24))
-
-Colorbar(fig[1, 2], hm, label = "[m/s]")
-
-save("final_surface_v.png", fig)
-=#
-
-# Mixed layer depth:
-x, y, z = nodes(runderlying_grid, (Center(), Center(), Nothing()))
-
-interior_mld = interior(mld)
-interior_mld = convert(Array, interior_mld)
-
-fig, ax, hm = heatmap(view(interior_mld, 1:Nx, 1:Ny),
-                      colormap = :deep,
-                      axis = (xlabel = "x [degrees]",
-                              ylabel = "y [degrees]",
-                              title = "mld(x, y, t=400min)",
-                              titlesize = 24))
-
-Colorbar(fig[1, 2], hm, label = "[m]")
-
-save("final_mld.png", fig)
-
-
-i = 10
-j = 10
-
-#@allowscalar @show dJ[i, j]
-
-#=
-# Produce finite-difference gradients for comparison:
-ϵ_list = [1e-1, 1e-2, 1e-3, 1e-4] #, 1e-5, 1e-6, 1e-7, 1e-8]
-
-@allowscalar gradient_list = Array{Float64}[]
-
-for ϵ in ϵ_list
-    rmodelP, _ = double_gyre_model(rarch, Nx, Ny, Nz, 1200)
-    rTᵢP, rSᵢP      = set_tracers(rmodelP.grid)
-    rwind_stressP = wind_stress_init(rmodelP.grid)
-
-    @allowscalar diff = 2ϵ * abs(rwind_stressP[i, j])
-
-    @allowscalar rwind_stressP[i, j] = rwind_stressP[i, j] + ϵ * abs(rwind_stressP[i, j])
-
-    sq_surface_uP = restimate_tracer_error(rmodelP, rTᵢP, rSᵢP, rwind_stressP, mld)
-
-    rmodelM, _ = double_gyre_model(rarch, Nx, Ny, Nz, 1200)
-    rTᵢM, rSᵢM      = set_tracers(rmodelM.grid)
-    rwind_stressM = wind_stress_init(rmodelM.grid)
-    @allowscalar rwind_stressM[i, j] = rwind_stressM[i, j] - ϵ * abs(rwind_stressM[i, j])
-
-    sq_surface_uM = restimate_tracer_error(rmodelM, rTᵢM, rSᵢM, rwind_stressM, mld)
-
-    dsq_surface_u = (sq_surface_uP - sq_surface_uM) / diff
-
-    #push!(gradient_list, dsq_surface_u)
-    @show ϵ, dsq_surface_u
-
+for reduction in (:sum, :maximum, :minimum, :all, :any, :prod)
+
+    reduction! = Symbol(reduction, '!')
+
+    @eval begin
+
+        function Base.$(reduction!)(r,
+                                    a;
+                                    condition = nothing,
+                                    mask = get_neutral_mask(Base.$(reduction!)),
+                                    kwargs...)
+
+            return Base.$(reduction!)(identity,
+                                      interior(r),
+                                      condition_operand(a, condition, mask);
+                                      kwargs...)
+        end
+    end
 end
-
-@info gradient_list
 =#
+
+#compute!(rzonal_transport)
+
+s = rzonal_transport.operand
+compute_at!(s.operand, nothing)
+
+#@allowscalar @doc s.scan!
+
+@allowscalar @show s.operand
+
+@allowscalar @show condition_operand(s.operand, nothing, 0)
+
+#@allowscalar sum!(identity, interior(rzonal_transport), condition_operand(s.operand, nothing, 0))
+
+#@allowscalar sum!(rzonal_transport, s.operand)
+
+@allowscalar rzonal_transport = Field(Integral(rmodel.velocities.u))
