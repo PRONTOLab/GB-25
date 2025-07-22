@@ -66,10 +66,7 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
 
     tracers = (:T, :S, :e)
 
-    underlying_grid = simple_latitude_longitude_grid(arch, Nx, Ny, Nz)
-
-    ridge(λ, φ) = 4000exp(-0.25(λ - 120)^2) * (1 / (1 + exp(-10(φ+45))) + 1 / (1 + exp(-10(-φ-55)))) - 4000 # might be needed
-    grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(ridge))
+    grid = simple_latitude_longitude_grid(arch, Nx, Ny, Nz)
 
     momentum_advection = VectorInvariant() #WENOVectorInvariant(order=5)
     tracer_advection   = Centered(order=2) #WENO(order=5)
@@ -115,7 +112,7 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     set!(model.tracers.e, 1e-6)
     model.clock.last_Δt = Δt
 
-    return model, underlying_grid
+    return model
 end
 
 Nx = 362 #128
@@ -126,7 +123,9 @@ Oceananigans.defaults.FloatType = Float64
 
 @info "Generating model..."
 rarch = ReactantState()
-rmodel, runderlying_grid = double_gyre_model(rarch, Nx, Ny, Nz, 1200)
+rmodel = double_gyre_model(rarch, Nx, Ny, Nz, 1200)
+
+@allowscalar @show rmodel.grid
 
 @allowscalar scan = Integral(rmodel.velocities.u, dims=(2,3))
 
@@ -143,41 +142,25 @@ status = recompute_safely ? nothing : FieldStatus()
 
 @allowscalar rzonal_transport = Field(loc, grid, data, boundary_conditions, thing, scan, status)
 
-#=
-for reduction in (:sum, :maximum, :minimum, :all, :any, :prod)
-
-    reduction! = Symbol(reduction, '!')
-
-    @eval begin
-
-        function Base.$(reduction!)(r,
-                                    a;
-                                    condition = nothing,
-                                    mask = get_neutral_mask(Base.$(reduction!)),
-                                    kwargs...)
-
-            return Base.$(reduction!)(identity,
-                                      interior(r),
-                                      condition_operand(a, condition, mask);
-                                      kwargs...)
-        end
-    end
-end
-=#
+@allowscalar @show scan
 
 #compute!(rzonal_transport)
 
 s = rzonal_transport.operand
 compute_at!(s.operand, nothing)
 
-#@allowscalar @doc s.scan!
-
 @allowscalar @show s.operand
 
 @allowscalar @show condition_operand(s.operand, nothing, 0)
+
+thing_operand = rmodel.velocities.u * 2
+
+@allowscalar @show thing_operand
+# Does this work?
+@allowscalar sum!(identity, interior(rzonal_transport), thing_operand)
 
 #@allowscalar sum!(identity, interior(rzonal_transport), condition_operand(s.operand, nothing, 0))
 
 #@allowscalar sum!(rzonal_transport, s.operand)
 
-@allowscalar rzonal_transport = Field(Integral(rmodel.velocities.u))
+#@allowscalar rzonal_transport = Field(Integral(rmodel.velocities.u))
