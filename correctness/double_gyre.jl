@@ -153,11 +153,20 @@ compute_at!(s.operand, nothing)
 
 @allowscalar @show condition_operand(s.operand, nothing, 0)
 
-thing_operand = rmodel.velocities.u * 2
+thing_operand = rmodel.velocities.u * rmodel.velocities.u
 
-@allowscalar @show thing_operand
+@show thing_operand
 # Does this work?
-@allowscalar sum!(identity, interior(rzonal_transport), thing_operand)
+
+new_thing = Base.initarray!(interior(rzonal_transport), identity, Base.add_sum, true, thing_operand)
+
+@show new_thing
+
+@allowscalar Reactant.compile(Reactant.mymapreducedim!, (identity, Base.add_sum, new_thing, thing_operand))
+
+#@allowscalar Base.mapreducedim!(identity, Base.add_sum, new_thing, thing_operand)
+
+#@allowscalar sum!(identity, interior(rzonal_transport), thing_operand)
 
 #@allowscalar sum!(identity, interior(rzonal_transport), condition_operand(s.operand, nothing, 0))
 
