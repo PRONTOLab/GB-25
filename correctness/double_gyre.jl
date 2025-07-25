@@ -174,7 +174,7 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     return nothing
 end
 
-function estimate_tracer_error(model, initial_temperature, initial_salinity, wind_stress, mld, zonal_transport)
+function estimate_tracer_error(model, initial_temperature, initial_salinity, wind_stress, mld)
     time_step_double_gyre!(model, initial_temperature, initial_salinity, wind_stress)
     # Compute the mean mixed layer depth:
     #compute!(mld)
@@ -188,15 +188,9 @@ function estimate_tracer_error(model, initial_temperature, initial_salinity, win
     avg_mld = avg_mld / (Nλ * Nφ)
     =#
     # Hard way
-    #c² = parent(model.tracers.T).^2
-    #avg_mld = sum(c²) / (Nλ * Nφ * Nz)
-    #@allowscalar avg_mld = model.velocities.u[10, 10, 1] #sum(c²)
-    #return avg_mld
-
-    # Alternative: zonal transport
-    compute!(zonal_transport)
-    
-    return zonal_transport
+    c² = parent(model.tracers.T).^2
+    avg_mld = sum(c²) / (Nλ * Nφ * Nz)
+    return avg_mld
 end
 
 function differentiate_tracer_error(model, Tᵢ, Sᵢ, J, mld, dmodel, dTᵢ, dSᵢ, dJ, dmld)
@@ -259,11 +253,6 @@ using GLMakie
 
 mld  = MixedLayerDepthField(rmodel.buoyancy, rmodel.grid, rmodel.tracers)
 dmld = MixedLayerDepthField(dmodel.buoyancy, dmodel.grid, dmodel.tracers)
-
-@allowscalar @show Integral(rmodel.velocities.u, dims=(2,3))
-
-@allowscalar rzonal_transport = Field(Integral(rmodel.velocities.u))# , dims=(2,3)))
-@allowscalar dzonal_transport = Field(Integral(dmodel.velocities.u))# , dims=(2,3)))
 
 set!(rmodel.tracers.T, rTᵢ)
 
@@ -471,7 +460,7 @@ GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, at
 
 @info "Compiling..."
 tic = time()
-restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld, rzonal_transport)
+restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld)
 #rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true differentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld,
 #                                                                                                        dmodel, dTᵢ, dSᵢ, dJ, dmld)
 compile_toc = time() - tic
@@ -481,7 +470,7 @@ compile_toc = time() - tic
 @info "Running..."
 
 tic = time()
-restimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld, rzonal_transport)
+restimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld)
 #dedν, dJ = rdifferentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld, dmodel, dTᵢ, dSᵢ, dJ, dmld)
 rrun_toc = time() - tic
 @show rrun_toc
