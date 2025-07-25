@@ -99,10 +99,10 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     τ  = 864000 # Relaxation timescale, equal to 10 days
 
     # TODO: replace with discrete form
-    surface_condition_T(i, j, grid, clock, model_fields) = (ρₒ/τ) * (model_fields.T[i, j, Nz] - (-2 + 12(φnode(j, grid, Center()) - φ₀) / Lφ))
+    surface_condition_T(i, j, grid, clock, model_fields) = (1/τ) * (model_fields.T[i, j, Nz] - (-2 + 12(φnode(j, grid, Center()) - φ₀) / Lφ))
     T_top_bc = FluxBoundaryCondition(surface_condition_T, discrete_form=true)
     
-    north_condition_T(i, k, grid, clock, model_fields) = (ρₒ/τ) * (model_fields.T[i, Ny, k] - (-2 + 12(-30 - φ₀) * exp(znode(k, grid, Center())/800) / Lφ))
+    north_condition_T(i, k, grid, clock, model_fields) = (1/τ) * (model_fields.T[i, Ny, k] - (-2 + 12(-30 - φ₀) * exp(znode(k, grid, Center())/800) / Lφ))
     T_north_bc = FluxBoundaryCondition(north_condition_T, discrete_form=true)
 
     T_bcs = FieldBoundaryConditions(north=T_north_bc, top=T_top_bc)
@@ -151,7 +151,7 @@ end
 function loop!(model)
     Δt = model.clock.last_Δt + 0
     Oceananigans.TimeSteppers.first_time_step!(model, Δt)
-    @trace mincut = true track_numbers = false for i = 1:9
+    @trace mincut = true track_numbers = false for i = 1:1499
         Oceananigans.TimeSteppers.time_step!(model, Δt)
     end
     return nothing
@@ -226,9 +226,9 @@ vzonal_transport = Field(Integral(vmodel.velocities.u, dims=(2,3)))
 
 set!(vmodel.tracers.T, vTᵢ)
 
-vresult = estimate_tracer_error(vmodel, vTᵢ, vSᵢ, vwind_stress, vmld, vzonal_transport)
+#vresult = estimate_tracer_error(vmodel, vTᵢ, vSᵢ, vwind_stress, vmld)
 
-@show vresult
+#@show vresult
 
 @info "Generating model..."
 rarch = ReactantState()
