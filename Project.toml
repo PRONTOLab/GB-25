@@ -23,7 +23,6 @@ Serialization = "9e88b42a-f829-5b0c-bbe9-9e923198166b"
 
 [compat]
 CUDA = "5.7.1"
-ClimaOcean = "0.5.10"
 Dates = "1"
 HDF5_jll = "=1.14.3"
 KernelAbstractions = "0.9.34"
