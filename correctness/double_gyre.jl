@@ -13,6 +13,30 @@ using Oceananigans.Grids: λnode, φnode, znode, new_data
 
 using Oceananigans.Fields: location, scan_indices, indices, FieldStatus, compute_at!, get_neutral_mask, interior, condition_operand
 
+# https://github.com/CliMA/Oceananigans.jl/blob/c29939097a8d2f42966e930f2f2605803bf5d44c/src/AbstractOperations/binary_operations.jl#L5
+Base.@nospecializeinfer function Reactant.traced_type_inner(
+    @nospecialize(OA::Type{Oceananigans.AbstractOperations.BinaryOperation{LX, LY, LZ, O, A, B, IA, IB, G, T}}),
+    seen,
+    mode::Reactant.TraceMode,
+    @nospecialize(track_numbers::Type),
+    @nospecialize(sharding),
+    @nospecialize(runtime)
+) where {LX, LY, LZ, O, A, B, IA, IB, G, T}
+    LX2 = Reactant.traced_type_inner(LX, seen, mode, track_numbers, sharding, runtime)
+    LY2 = Reactant.traced_type_inner(LY, seen, mode, track_numbers, sharding, runtime)
+    LZ2 = Reactant.traced_type_inner(LZ, seen, mode, track_numbers, sharding, runtime)
+
+    O2 = Reactant.traced_type_inner(O, seen, mode, track_numbers, sharding, runtime)
+
+    A2 = Reactant.traced_type_inner(A, seen, mode, track_numbers, sharding, runtime)
+    B2 = Reactant.traced_type_inner(B, seen, mode, track_numbers, sharding, runtime)
+    IA2 = Reactant.traced_type_inner(IA, seen, mode, track_numbers, sharding, runtime)
+    IB2 = Reactant.traced_type_inner(IB, seen, mode, track_numbers, sharding, runtime)
+    G2 = Reactant.traced_type_inner(G, seen, mode, track_numbers, sharding, runtime)
+
+    T2 = eltype(G2)
+    return Oceananigans.AbstractOperations.BinaryOperation{LX2, LY2, LZ2, O2, A2, B2, IA2, IB2, G2, T2}
+end
 
 using SeawaterPolynomials
 
