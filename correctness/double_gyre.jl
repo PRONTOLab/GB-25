@@ -11,7 +11,7 @@ using ClimaOcean.Diagnostics: MixedLayerDepthField
 
 using Oceananigans.Grids: λnode, φnode, znode, new_data
 
-using Oceananigans.Fields: location, scan_indices, indices, FieldStatus, compute_at!, get_neutral_mask, interior, condition_operand
+using Oceananigans.Fields: instantiated_location, location, scan_indices, indices, FieldStatus, compute_at!, get_neutral_mask, interior, condition_operand
 
 # https://github.com/CliMA/Oceananigans.jl/blob/c29939097a8d2f42966e930f2f2605803bf5d44c/src/AbstractOperations/binary_operations.jl#L5
 Base.@nospecializeinfer function Reactant.traced_type_inner(
@@ -155,7 +155,7 @@ rmodel = double_gyre_model(rarch, Nx, Ny, Nz, 1200)
 
 operand = scan.operand
 grid = operand.grid
-LX, LY, LZ = loc = location(scan)
+LX, LY, LZ = loc = instantiated_location(scan)
 thing = scan_indices(scan.type, indices(operand); dims=scan.dims)
 
 data = new_data(grid, loc, thing)
@@ -166,10 +166,7 @@ status = recompute_safely ? nothing : FieldStatus()
 
 @allowscalar rzonal_transport = Field(loc, grid, data, boundary_conditions, thing, scan, status)
 
-@allowscalar @show scan
-
-#compute!(rzonal_transport)
-
+#=
 s = rzonal_transport.operand
 compute_at!(s.operand, nothing)
 
@@ -185,8 +182,8 @@ new_thing = Base.initarray!(interior(rzonal_transport), identity, Base.add_sum, 
 @show Base.add_sum
 @show new_thing
 @show thing_operand
-
-@allowscalar Reactant.compile(Reactant.mymapreducedim!, (identity, Base.add_sum, new_thing, thing_operand))
+=#
+#@allowscalar Reactant.compile(Reactant.mymapreducedim!, (identity, Base.add_sum, new_thing, thing_operand))
 
 #@allowscalar Base.mapreducedim!(identity, Base.add_sum, new_thing, thing_operand)
 
@@ -196,4 +193,6 @@ new_thing = Base.initarray!(interior(rzonal_transport), identity, Base.add_sum, 
 
 #@allowscalar sum!(rzonal_transport, s.operand)
 
-#@allowscalar rzonal_transport = Field(Integral(rmodel.velocities.u))
+#compute!(rzonal_transport)
+
+@allowscalar rzonal_transport = Field(Integral(rmodel.velocities.u))
