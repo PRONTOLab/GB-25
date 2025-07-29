@@ -151,7 +151,7 @@ rmodel = double_gyre_model(rarch, Nx, Ny, Nz, 1200)
 
 @allowscalar @show rmodel.grid
 
-@allowscalar scan = Integral(rmodel.velocities.u, dims=(2,3))
+@allowscalar scan = Integral(rmodel.velocities.u) #, dims=(2,3))
 
 operand = scan.operand
 grid = operand.grid
@@ -166,7 +166,7 @@ status = recompute_safely ? nothing : FieldStatus()
 
 @allowscalar rzonal_transport = Field(loc, grid, data, boundary_conditions, thing, scan, status)
 
-#=
+
 s = rzonal_transport.operand
 compute_at!(s.operand, nothing)
 
@@ -174,7 +174,7 @@ compute_at!(s.operand, nothing)
 
 @allowscalar @show condition_operand(s.operand, nothing, 0)
 
-thing_operand = rmodel.velocities.u * rmodel.velocities.u
+thing_operand = condition_operand(s.operand, nothing, 0)
 
 new_thing = Base.initarray!(interior(rzonal_transport), identity, Base.add_sum, true, thing_operand)
 
@@ -182,8 +182,8 @@ new_thing = Base.initarray!(interior(rzonal_transport), identity, Base.add_sum, 
 @show Base.add_sum
 @show new_thing
 @show thing_operand
-=#
-#@allowscalar Reactant.compile(Reactant.mymapreducedim!, (identity, Base.add_sum, new_thing, thing_operand))
+
+@allowscalar Reactant.compile(Reactant.mymapreducedim!, (identity, Base.add_sum, new_thing, thing_operand))
 
 #@allowscalar Base.mapreducedim!(identity, Base.add_sum, new_thing, thing_operand)
 
@@ -195,4 +195,4 @@ new_thing = Base.initarray!(interior(rzonal_transport), identity, Base.add_sum, 
 
 #compute!(rzonal_transport)
 
-@allowscalar rzonal_transport = Field(Integral(rmodel.velocities.u))
+#@allowscalar rzonal_transport = Field(Integral(rmodel.velocities.u))
