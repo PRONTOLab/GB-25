@@ -4,13 +4,18 @@ using Dates
 ENV["JULIA_DEBUG"] = "Reactant_jll,Reactant"
 
 using GordonBell25
-using GordonBell25: first_time_step!, time_step!, loop!, factors
+using GordonBell25: first_time_step!, time_step!, loop!, factors, is_distributed_env_present
 using Oceananigans
 using Oceananigans.Units
 using Oceananigans.Architectures: ReactantState
 using Random
 using Printf
 using Reactant
+
+if !is_distributed_env_present()
+    using MPI
+    MPI.Init()
+end
 
 jobid_procid = GordonBell25.get_jobid_procid()
 
