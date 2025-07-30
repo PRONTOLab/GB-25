@@ -70,3 +70,24 @@ get_jobid_procid() =
         ".",
         get(ENV, "SLURM_PROCID", string(getpid()))
     )
+
+"""
+    is_distributed_env_present() :: Bool
+
+Return whether a distributed environment (e.g. Slurm, OpenMPI, generic MPI, Gke TPU, Gce TPU, etc...) is detected.
+"""
+function is_distributed_env_present()
+    # Adapted from https://github.com/EnzymeAD/Reactant.jl/blob/7bbd7ae5d88151a1a966d257e414c9c2cbc1fd84/src/Distributed.jl#L98
+    detector_list= [
+        Reactant.Distributed.SlurmEnvDetector(),
+        Reactant.Distributed.OpenMPIORTEEnvDetector(),
+        Reactant.Distributed.MPIEnvDetector(),
+        # Keep this at the end since parsing for this is a bit flaky
+        Reactant.Distributed.OpenMPIPMIXEnvDetector(),
+        # Cloud TPU environments
+        Reactant.Distributed.GkeTPUCluster(),
+        Reactant.Distributed.GceTPUCluster(),
+    ]
+
+    return !isnothing(findfirst(Reactant.Distributed.is_env_present, detector_list))
+end
