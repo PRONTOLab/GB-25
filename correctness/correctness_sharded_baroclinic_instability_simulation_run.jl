@@ -2,6 +2,11 @@ using GordonBell25
 using Oceananigans
 using Reactant
 
+if !GordonBell25.is_distributed_env_present()
+    using MPI
+    MPI.Init()
+end
+
 throw_error = true
 include_halos = true
 rtol = sqrt(eps(Float64))
