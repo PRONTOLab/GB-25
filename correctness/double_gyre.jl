@@ -1,17 +1,17 @@
 using Oceananigans
 using Oceananigans.Architectures: ReactantState
-using ClimaOcean
 using Reactant
 using GordonBell25
 #Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
 #Reactant.allowscalar(true)
 
 using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity
-using ClimaOcean.Diagnostics: MixedLayerDepthField
 
 using Oceananigans.Grids: λnode, φnode, znode, new_data
 
 using Oceananigans.Fields: instantiated_location, location, scan_indices, indices, FieldStatus, compute_at!, get_neutral_mask, interior, condition_operand
+
+using Oceananigans.Operators: Δzᵃᵃᶜ
 
 # https://github.com/CliMA/Oceananigans.jl/blob/c29939097a8d2f42966e930f2f2605803bf5d44c/src/AbstractOperations/binary_operations.jl#L5
 Base.@nospecializeinfer function Reactant.traced_type_inner(
@@ -46,6 +46,22 @@ throw_error = true
 include_halos = true
 rtol = sqrt(eps(Float64))
 atol = sqrt(eps(Float64))
+
+@inline exponential_profile(z, Lz, h) = (exp(z / h) - exp(-Lz / h)) / (1 - exp(-Lz / h))
+
+function exponential_z_faces(; Nz, depth, h = Nz / 4.5)
+
+    k = collect(1:Nz+1)
+    z_faces = exponential_profile.(k, Nz, h)
+
+    # Normalize
+    z_faces .-= z_faces[1]
+    z_faces .*= - depth / z_faces[end]
+
+    z_faces[1] = 0.0
+
+    return reverse(z_faces)
+end
 
 function simple_latitude_longitude_grid(arch, Nx, Ny, Nz; halo=(8, 8, 8))
     z = exponential_z_faces(; Nz, depth=4000) # may need changing for very large Nz
@@ -150,8 +166,18 @@ rarch = ReactantState()
 rmodel = double_gyre_model(rarch, Nx, Ny, Nz, 1200)
 
 @allowscalar @show rmodel.grid
+@allowscalar @show rmodel.grid.Δyᶠᶜᵃ
+@allowscalar @show typeof(rmodel.grid.Δyᶠᶜᵃ)
+@allowscalar @show rmodel.grid.z.Δᵃᵃᶜ
+@allowscalar @show typeof(rmodel.grid.z.Δᵃᵃᶜ)
 
-@allowscalar scan = Integral(rmodel.velocities.u) #, dims=(2,3))
+i = [1,1]
+j = [1,1]
+k = [1,1]
+
+@allowscalar @show Δzᵃᵃᶜ(i, j, k, rmodel.grid)
+
+@allowscalar scan = Integral(rmodel.velocities.u, dims=(2,3))
 
 operand = scan.operand
 grid = operand.grid
