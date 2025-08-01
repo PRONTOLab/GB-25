@@ -6,7 +6,7 @@ using GordonBell25
 #Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
 #Reactant.allowscalar(true)
 
-using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity
+using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity, SmallSlopeIsopycnalTensor, FluxTapering, CATKEVerticalDiffusivity
 using ClimaOcean.Diagnostics: MixedLayerDepthField
 
 using Oceananigans.Grids: λnode, φnode, znode
@@ -64,17 +64,15 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     # κ_skew is GM parameter (also scalar or spatial field),
     # we might want to use the Isopycnal Tensor instead of small slope (small slope common),
     # unsure of slope limiter and time disc.
-    redi_diffusivity = IsopycnalSkewSymmetricDiffusivity(VerticallyImplicitTimeDiscretization(), Float64;
-                                                        κ_skew = 0.0,
-                                                        κ_symmetric = 0.0)
-                                                        #isopycnal_tensor = IsopycnalTensor(),
-                                                        #slope_limiter = FluxTapering(1e-2))
+    redi_diffusivity   = IsopycnalSkewSymmetricDiffusivity(VerticallyImplicitTimeDiscretization(), Float64;
+                                                           κ_skew = 1000,
+                                                           κ_symmetric = 1000,
+                                                           isopycnal_tensor = SmallSlopeIsopycnalTensor(),
+                                                           slope_limiter = FluxTapering(1e-2))
 
-    horizontal_closure = HorizontalScalarDiffusivity(ν = 5000.0, κ = 1000.0)
-    #vertical_closure   = VerticalScalarDiffusivity(ν = 1e-2, κ = 1e-5) 
+    horizontal_closure = HorizontalScalarDiffusivity(ν = 2000, κ = 0)
     vertical_closure   = Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity()
-    #vertical_closure = Oceananigans.TurbulenceClosures.TKEDissipationVerticalDiffusivity()
-    closure = (redi_diffusivity, vertical_closure)
+    closure            = (redi_diffusivity, horizontal_closure, vertical_closure)
 
     # Coriolis forces for a rotating Earth
     coriolis = HydrostaticSphericalCoriolis()
@@ -86,8 +84,8 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     ridge(λ, φ) = 4000exp(-0.25(λ - 120)^2) * (1 / (1 + exp(-10(φ+45))) + 1 / (1 + exp(-10(-φ-55)))) - 4000 # might be needed
     grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(ridge))
 
-    momentum_advection = VectorInvariant() #WENOVectorInvariant(order=5)
-    tracer_advection   = Centered(order=2) #WENO(order=5)
+    momentum_advection = VectorInvariant()
+    tracer_advection   = Centered(order=2)
     
     #
     # Temperature Relaxation Enforced as a Flux BC:
@@ -99,10 +97,10 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     τ  = 864000 # Relaxation timescale, equal to 10 days
 
     # TODO: replace with discrete form
-    surface_condition_T(i, j, grid, clock, model_fields) = (1/τ) * (model_fields.T[i, j, Nz] - (-2 + 12(φnode(j, grid, Center()) - φ₀) / Lφ))
+    surface_condition_T(i, j, grid, clock, model_fields) = (cₚ / τ) * (model_fields.T[i, j, Nz] - (-2 + 12(φnode(j, grid, Center()) - φ₀) / Lφ))
     T_top_bc = FluxBoundaryCondition(surface_condition_T, discrete_form=true)
     
-    north_condition_T(i, k, grid, clock, model_fields) = (1/τ) * (model_fields.T[i, Ny, k] - (-2 + 12(-30 - φ₀) * exp(znode(k, grid, Center())/800) / Lφ))
+    north_condition_T(i, k, grid, clock, model_fields) = (cₚ / τ) * (model_fields.T[i, Ny, k] - (-2 + 12(-30 - φ₀) * exp(znode(k, grid, Center())/800) / Lφ))
     T_north_bc = FluxBoundaryCondition(north_condition_T, discrete_form=true)
 
     T_bcs = FieldBoundaryConditions(north=T_north_bc, top=T_top_bc)
@@ -110,13 +108,13 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     #
     # Momentum BCs:
     #
-    no_slip_bc = ValueBoundaryCondition(Field{Face, Center, Nothing}(grid))
+    no_slip_bc = ValueBoundaryCondition(0.0)
     u_top_bc   = FluxBoundaryCondition(Field{Face, Center, Nothing}(grid))
 
-    u_bcs = FieldBoundaryConditions(north=no_slip_bc, south=no_slip_bc, top=u_top_bc)
-    #v_bcs = FieldBoundaryConditions(east=no_slip_bc, west=no_slip_bc) # Not used since periodic
+    u_bcs = FieldBoundaryConditions(north=no_slip_bc, south=no_slip_bc, top=u_top_bc, immersed=no_slip_bc)
+    v_bcs = FieldBoundaryConditions(immersed=no_slip_bc)
 
-    boundary_conditions = (u=u_bcs, T=T_bcs)
+    boundary_conditions = (u=u_bcs, T=T_bcs, v=v_bcs)
 
     model = HydrostaticFreeSurfaceModel(; grid,
                                           free_surface = free_surface,
@@ -128,7 +126,7 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
                                           tracer_advection = tracer_advection,
                                           boundary_conditions = boundary_conditions)
 
-    set!(model.tracers.e, 1e-6)
+    #set!(model.tracers.e, 1e-6)
     model.clock.last_Δt = Δt
 
     return model, underlying_grid
@@ -151,7 +149,7 @@ end
 function loop!(model)
     Δt = model.clock.last_Δt + 0
     Oceananigans.TimeSteppers.first_time_step!(model, Δt)
-    @trace mincut = true track_numbers = false for i = 1:1499
+    @trace mincut = true track_numbers = false for i = 1:9
         Oceananigans.TimeSteppers.time_step!(model, Δt)
     end
     return nothing
@@ -166,7 +164,6 @@ function time_step_double_gyre!(model, Tᵢ, Sᵢ, wind_stress)
     # Initialize the model
     model.clock.iteration = 0
     model.clock.time = 0
-    model.clock.last_Δt = 1200
 
     # Step it forward
     loop!(model)
@@ -209,12 +206,13 @@ end
 Nx = 362 #128
 Ny = 32
 Nz = 30
+time_step = 600
 
 Oceananigans.defaults.FloatType = Float64
 
 @info "Producing non-reactant model as a comparison:"
 varch = CPU()
-vmodel, vunderlying_grid = double_gyre_model(varch, Nx, Ny, Nz, 1200)
+vmodel, vunderlying_grid = double_gyre_model(varch, Nx, Ny, Nz, time_step)
 
 @info vmodel.buoyancy
 
@@ -232,7 +230,7 @@ set!(vmodel.tracers.T, vTᵢ)
 
 @info "Generating model..."
 rarch = ReactantState()
-rmodel, runderlying_grid = double_gyre_model(rarch, Nx, Ny, Nz, 1200)
+rmodel, runderlying_grid = double_gyre_model(rarch, Nx, Ny, Nz, time_step)
 
 @info rmodel.buoyancy
 
@@ -267,6 +265,13 @@ T = convert(Array, T)
 #@show argmax(T)
 #@show T[1,32,30]
 
+#
+# Plotting:
+#
+graph_directory = "run_steps10_timestep600_windstressPos_ridgeFull_relaxationC_e0_Nz30/"
+
+mkdir(graph_directory)
+
 fig, ax, hm = heatmap(view(T, 1:Nx, 1:Ny, Nz),
                                 colormap = :deep,
                                 axis = (xlabel = "x [degrees]",
@@ -277,7 +282,7 @@ fig, ax, hm = heatmap(view(T, 1:Nx, 1:Ny, Nz),
 Colorbar(fig[1, 2], hm, label = "[degrees C]")
 
 resize_to_layout!(fig)
-save("init_T_surface.png", fig)
+save(graph_directory * "init_T_surface.png", fig)
 
 fig, ax, hm = heatmap(view(T, 1:Nx, 1:Ny, 1),
                                         colormap = :deep,
@@ -289,7 +294,7 @@ fig, ax, hm = heatmap(view(T, 1:Nx, 1:Ny, 1),
 Colorbar(fig[1, 2], hm, label = "[degrees C]")
 
 resize_to_layout!(fig)
-save("init_T_bottom.png", fig)
+save(graph_directory * "init_T_bottom.png", fig)
 
 @info "Plotted initial T"
 
@@ -308,7 +313,7 @@ fig, ax, hm = heatmap(view(interior_h, 1:Nx, 1:Ny),
 
 Colorbar(fig[1, 2], hm, label = "m")
 
-save("bottom_height.png", fig)
+save(graph_directory * "bottom_height.png", fig)
 
 
 # Energy:
@@ -326,7 +331,7 @@ fig, ax, hm = heatmap(view(e, 1:Nx, 1:Ny, Nz),
 Colorbar(fig[1, 2], hm, label = "[energy]")
 
 resize_to_layout!(fig)
-save("init_e_surface.png", fig)
+save(graph_directory * "init_e_surface.png", fig)
 
 fig, ax, hm = heatmap(view(e, 1:Nx, 1:Ny, 1),
                       colormap = :deep,
@@ -338,9 +343,9 @@ fig, ax, hm = heatmap(view(e, 1:Nx, 1:Ny, 1),
 Colorbar(fig[1, 2], hm, label = "[energy]")
 
 resize_to_layout!(fig)
-save("init_e_bottom.png", fig)
+save(graph_directory * "init_e_bottom.png", fig)
 
-#=
+
 # Wind stress:
 x, y, z = nodes(runderlying_grid, (Face(), Center(), Nothing()))
 
@@ -356,8 +361,9 @@ wind_stress = interior(rwind_stress)
 Colorbar(fig[1, 2], hm, label = "[m/s]")
 
 resize_to_layout!(fig)
-save("init_wind_stress.png", fig)
+save(graph_directory * "init_wind_stress.png", fig)
 
+#=
 # As sanity checks we'll also plot initial gradients for each (should all be 0):
 # Build init temperature fields:
 x, y, z = nodes(runderlying_grid, (Center(), Center(), Center()))
@@ -475,13 +481,13 @@ restimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld)
 rrun_toc = time() - tic
 @show rrun_toc
 
-#=
+
 tic = time()
 result = estimate_tracer_error(vmodel, vTᵢ, vSᵢ, vwind_stress, vmld)
 vrun_toc = time() - tic
 @show vrun_toc
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
-=#
+
 
 #dedν, dJ = rdifferentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld, dmodel, dTᵢ, dSᵢ, dJ, dmld)
 
@@ -563,7 +569,7 @@ fig, ax, hm = heatmap(view(interior_dJ, 1:Nx, 1:Ny),
 
 Colorbar(fig[1, 2], hm, label = "[m/s]")
 
-save("final_dwind_stress.png", fig)
+save(graph_directory * "final_dwind_stress.png", fig)
 
 # Build final temperature fields:
 x, y, z = nodes(runderlying_grid, (Center(), Center(), Center()))
@@ -579,7 +585,7 @@ fig, ax, hm = heatmap(view(T, 1:Nx, 1:Ny, Nz),
 
 Colorbar(fig[1, 2], hm, label = "[degrees C]")
 
-save("final_T_surface.png", fig)
+save(graph_directory * "final_T_surface.png", fig)
 
 fig, ax, hm = heatmap(view(T, 1:Nx, 1:Ny, 1),
                       colormap = :deep,
@@ -590,7 +596,7 @@ fig, ax, hm = heatmap(view(T, 1:Nx, 1:Ny, 1),
 
 Colorbar(fig[1, 2], hm, label = "[degrees C]")
 
-save("final_T_bottom.png", fig)
+save(graph_directory * "final_T_bottom.png", fig)
 
 # Energy:
 x, y, z = nodes(runderlying_grid, (Center(), Center(), Center()))
@@ -606,7 +612,7 @@ fig, ax, hm = heatmap(view(e, 1:Nx, 1:Ny, Nz),
 
 Colorbar(fig[1, 2], hm, label = "[energy]")
 
-save("final_e_surface.png", fig)
+save(graph_directory * "final_e_surface.png", fig)
 
 fig, ax, hm = heatmap(view(e, 1:Nx, 1:Ny, 1),
                       colormap = :deep,
@@ -617,7 +623,7 @@ fig, ax, hm = heatmap(view(e, 1:Nx, 1:Ny, 1),
 
 Colorbar(fig[1, 2], hm, label = "[energy]")
 
-save("final_e_bottom.png", fig)
+save(graph_directory * "final_e_bottom.png", fig)
 
 # Zonal velocity:
 x, y, z = nodes(runderlying_grid, (Face(), Center(), Center()))
@@ -634,12 +640,26 @@ fig, ax, hm = heatmap(view(u, 1:Nx, 1:Ny, Nz),
 
 Colorbar(fig[1, 2], hm, label = "[m/s]")
 
-save("final_surface_u.png", fig)
-#=
+save(graph_directory * "final_surface_u.png", fig)
+
+fig, ax, hm = heatmap(view(u, 1:Nx, 1:Ny, 1),
+                      colormap = :deep,
+                      axis = (xlabel = "x [degrees]",
+                              ylabel = "y [degrees]",
+                              title = "u(x, y, z=0, t=400min)",
+                              titlesize = 24))
+
+Colorbar(fig[1, 2], hm, label = "[m/s]")
+
+save(graph_directory * "final_deep_u.png", fig)
+
 # Meridional velocity:
 x, y, z = nodes(rmodel.grid, (Center(), Face(), Center()))
 
-fig, ax, hm = heatmap(view(rmodel.velocities.v, :, :, Nz),
+v = interior(rmodel.velocities.v)
+v = convert(Array, v)
+
+fig, ax, hm = heatmap(view(v, 1:Nx, 1:Ny, Nz),
                       colormap = :deep,
                       axis = (xlabel = "x [degrees]",
                               ylabel = "y [degrees]",
@@ -648,8 +668,19 @@ fig, ax, hm = heatmap(view(rmodel.velocities.v, :, :, Nz),
 
 Colorbar(fig[1, 2], hm, label = "[m/s]")
 
-save("final_surface_v.png", fig)
-=#
+save(graph_directory * "final_surface_v.png", fig)
+
+fig, ax, hm = heatmap(view(v, 1:Nx, 1:Ny, 1),
+                      colormap = :deep,
+                      axis = (xlabel = "x [degrees]",
+                              ylabel = "y [degrees]",
+                              title = "v(x, y, z=0, t=400min)",
+                              titlesize = 24))
+
+Colorbar(fig[1, 2], hm, label = "[m/s]")
+
+save(graph_directory * "final_deep_v.png", fig)
+
 
 # Mixed layer depth:
 x, y, z = nodes(runderlying_grid, (Center(), Center(), Nothing()))
@@ -666,7 +697,7 @@ fig, ax, hm = heatmap(view(interior_mld, 1:Nx, 1:Ny),
 
 Colorbar(fig[1, 2], hm, label = "[m]")
 
-save("final_mld.png", fig)
+save(graph_directory * "final_mld.png", fig)
 
 
 i = 10
@@ -681,7 +712,7 @@ j = 10
 @allowscalar gradient_list = Array{Float64}[]
 
 for ϵ in ϵ_list
-    rmodelP, _ = double_gyre_model(rarch, Nx, Ny, Nz, 1200)
+    rmodelP, _ = double_gyre_model(rarch, Nx, Ny, Nz, time_step)
     rTᵢP, rSᵢP      = set_tracers(rmodelP.grid)
     rwind_stressP = wind_stress_init(rmodelP.grid)
 
@@ -691,7 +722,7 @@ for ϵ in ϵ_list
 
     sq_surface_uP = restimate_tracer_error(rmodelP, rTᵢP, rSᵢP, rwind_stressP, mld)
 
-    rmodelM, _ = double_gyre_model(rarch, Nx, Ny, Nz, 1200)
+    rmodelM, _ = double_gyre_model(rarch, Nx, Ny, Nz, time_step)
     rTᵢM, rSᵢM      = set_tracers(rmodelM.grid)
     rwind_stressM = wind_stress_init(rmodelM.grid)
     @allowscalar rwind_stressM[i, j] = rwind_stressM[i, j] - ϵ * abs(rwind_stressM[i, j])
