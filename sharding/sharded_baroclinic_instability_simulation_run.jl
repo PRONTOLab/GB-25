@@ -51,9 +51,9 @@ end
 
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 H = 8
-Tx = 32 * 48 * Rx
-Ty = 32 * 24 * Ry
-Nz = 4
+Tx = parse(Int, get(ENV, "GB25_GRID_X", "1536")) * Rx
+Ty = parse(Int, get(ENV, "GB25_GRID_Y",  "768")) * Ry
+Nz = parse(Int, get(ENV, "GB25_GRID_Z",    "4"))
 
 Nx = Tx - 2H
 Ny = Ty - 2H
