@@ -1,6 +1,6 @@
 using Oceananigans
 using Oceananigans.Architectures: ReactantState
-using ClimaOcean
+#using ClimaOcean
 using Reactant
 using GordonBell25
 #Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
@@ -11,6 +11,30 @@ using ClimaOcean.Diagnostics: MixedLayerDepthField
 
 using Oceananigans.Grids: λnode, φnode, znode
 
+# https://github.com/CliMA/Oceananigans.jl/blob/c29939097a8d2f42966e930f2f2605803bf5d44c/src/AbstractOperations/binary_operations.jl#L5
+Base.@nospecializeinfer function Reactant.traced_type_inner(
+    @nospecialize(OA::Type{Oceananigans.AbstractOperations.BinaryOperation{LX, LY, LZ, O, A, B, IA, IB, G, T}}),
+    seen,
+    mode::Reactant.TraceMode,
+    @nospecialize(track_numbers::Type),
+    @nospecialize(sharding),
+    @nospecialize(runtime)
+) where {LX, LY, LZ, O, A, B, IA, IB, G, T}
+    LX2 = Reactant.traced_type_inner(LX, seen, mode, track_numbers, sharding, runtime)
+    LY2 = Reactant.traced_type_inner(LY, seen, mode, track_numbers, sharding, runtime)
+    LZ2 = Reactant.traced_type_inner(LZ, seen, mode, track_numbers, sharding, runtime)
+
+    O2 = Reactant.traced_type_inner(O, seen, mode, track_numbers, sharding, runtime)
+
+    A2 = Reactant.traced_type_inner(A, seen, mode, track_numbers, sharding, runtime)
+    B2 = Reactant.traced_type_inner(B, seen, mode, track_numbers, sharding, runtime)
+    IA2 = Reactant.traced_type_inner(IA, seen, mode, track_numbers, sharding, runtime)
+    IB2 = Reactant.traced_type_inner(IB, seen, mode, track_numbers, sharding, runtime)
+    G2 = Reactant.traced_type_inner(G, seen, mode, track_numbers, sharding, runtime)
+
+    T2 = eltype(G2)
+    return Oceananigans.AbstractOperations.BinaryOperation{LX2, LY2, LZ2, O2, A2, B2, IA2, IB2, G2, T2}
+end
 
 using SeawaterPolynomials
 
@@ -36,6 +60,22 @@ function set_tracers(grid;
     @allowscalar set!(Sᵢ, fₛ)
 
     return Tᵢ, Sᵢ
+end
+
+@inline exponential_profile(z, Lz, h) = (exp(z / h) - exp(-Lz / h)) / (1 - exp(-Lz / h))
+
+function exponential_z_faces(; Nz, depth, h = Nz / 4.5)
+
+    k = collect(1:Nz+1)
+    z_faces = exponential_profile.(k, Nz, h)
+
+    # Normalize
+    z_faces .-= z_faces[1]
+    z_faces .*= - depth / z_faces[end]
+
+    z_faces[1] = 0.0
+
+    return reverse(z_faces)
 end
 
 function simple_latitude_longitude_grid(arch, Nx, Ny, Nz; halo=(8, 8, 8))
@@ -227,7 +267,7 @@ vmodel, vunderlying_grid = double_gyre_model(varch, Nx, Ny, Nz, 1200)
 vTᵢ, vSᵢ     = set_tracers(vmodel.grid)
 vwind_stress = wind_stress_init(vmodel.grid)
 
-vmld  = MixedLayerDepthField(vmodel.buoyancy, vmodel.grid, vmodel.tracers)
+vmld  = vSᵢ #MixedLayerDepthField(vmodel.buoyancy, vmodel.grid, vmodel.tracers)
 vzonal_transport = Field(Integral(vmodel.velocities.u, dims=(2,3)))
 
 set!(vmodel.tracers.T, vTᵢ)
@@ -257,13 +297,13 @@ dJ  = Field{Face, Center, Nothing}(rmodel.grid)
 
 using GLMakie
 
-mld  = MixedLayerDepthField(rmodel.buoyancy, rmodel.grid, rmodel.tracers)
-dmld = MixedLayerDepthField(dmodel.buoyancy, dmodel.grid, dmodel.tracers)
+mld  = rSᵢ #MixedLayerDepthField(rmodel.buoyancy, rmodel.grid, rmodel.tracers)
+dmld = dSᵢ #MixedLayerDepthField(dmodel.buoyancy, dmodel.grid, dmodel.tracers)
 
 @allowscalar @show Integral(rmodel.velocities.u, dims=(2,3))
 
-@allowscalar rzonal_transport = Field(Integral(rmodel.velocities.u))# , dims=(2,3)))
-@allowscalar dzonal_transport = Field(Integral(dmodel.velocities.u))# , dims=(2,3)))
+@allowscalar rzonal_transport = Field(Integral(rmodel.velocities.u, dims=(2,3)))
+@allowscalar dzonal_transport = Field(Integral(dmodel.velocities.u, dims=(2,3)))
 
 set!(rmodel.tracers.T, rTᵢ)
 
@@ -304,7 +344,7 @@ save("init_T_bottom.png", fig)
 
 @info "Plotted initial T"
 
-
+#=
 # Ridge:
 x, y, z = nodes(runderlying_grid, (Center(), Center(), Nothing()))
 interior_h = interior(rmodel.grid.immersed_boundary.bottom_height)
@@ -320,7 +360,7 @@ fig, ax, hm = heatmap(view(interior_h, 1:Nx, 1:Ny),
 Colorbar(fig[1, 2], hm, label = "m")
 
 save("bottom_height.png", fig)
-
+=#
 
 # Energy:
 x, y, z = nodes(runderlying_grid, (Center(), Center(), Center()))
