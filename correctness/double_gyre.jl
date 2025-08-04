@@ -164,7 +164,7 @@ Oceananigans.defaults.FloatType = Float64
 @info "Generating model..."
 rarch = ReactantState()
 rmodel = double_gyre_model(rarch, Nx, Ny, Nz, 1200)
-
+#=
 @allowscalar @show rmodel.grid
 @allowscalar @show rmodel.grid.Δyᶠᶜᵃ
 @allowscalar @show typeof(rmodel.grid.Δyᶠᶜᵃ)
@@ -191,8 +191,8 @@ boundary_conditions = FieldBoundaryConditions(grid, loc, thing)
 status = recompute_safely ? nothing : FieldStatus()
 
 @allowscalar rzonal_transport = Field(loc, grid, data, boundary_conditions, thing, scan, status)
-
-
+=#
+#=
 s = rzonal_transport.operand
 compute_at!(s.operand, nothing)
 
@@ -208,8 +208,8 @@ new_thing = Base.initarray!(interior(rzonal_transport), identity, Base.add_sum, 
 @show Base.add_sum
 @show new_thing
 @show thing_operand
-
-@allowscalar Reactant.compile(Reactant.mymapreducedim!, (identity, Base.add_sum, new_thing, thing_operand))
+=#
+#@allowscalar Reactant.compile(Reactant.mymapreducedim!, (identity, Base.add_sum, new_thing, thing_operand))
 
 #@allowscalar Base.mapreducedim!(identity, Base.add_sum, new_thing, thing_operand)
 
@@ -221,4 +221,4 @@ new_thing = Base.initarray!(interior(rzonal_transport), identity, Base.add_sum, 
 
 #compute!(rzonal_transport)
 
-#@allowscalar rzonal_transport = Field(Integral(rmodel.velocities.u))
+@allowscalar rzonal_transport = Field(Integral(rmodel.velocities.u, dims=(2,3)))
