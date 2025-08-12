@@ -106,7 +106,10 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
 
     tracers = (:T, :S, :e)
 
-    grid = simple_latitude_longitude_grid(arch, Nx, Ny, Nz)
+    underlying_grid = simple_latitude_longitude_grid(arch, Nx, Ny, Nz)
+
+    ridge(λ, φ) = 4000exp(-0.25(λ - 120)^2) * (1 / (1 + exp(-10(φ+45))) + 1 / (1 + exp(-10(-φ-55)))) - 4000 # might be needed
+    grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(ridge))
 
     momentum_advection = VectorInvariant() #WENOVectorInvariant(order=5)
     tracer_advection   = Centered(order=2) #WENO(order=5)
