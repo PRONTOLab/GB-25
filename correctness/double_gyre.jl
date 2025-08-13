@@ -7,6 +7,7 @@ using GordonBell25
 #Reactant.allowscalar(true)
 
 using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity, SmallSlopeIsopycnalTensor, FluxTapering, CATKEVerticalDiffusivity
+using Oceananigans.BoundaryConditions: NoFluxBoundaryCondition
 using ClimaOcean.Diagnostics: MixedLayerDepthField
 
 using Oceananigans.Grids: λnode, φnode, znode
@@ -17,7 +18,7 @@ using SeawaterPolynomials
 using Enzyme
 
 throw_error = true
-include_halos = true
+include_halos = false
 rtol = sqrt(eps(Float64))
 atol = sqrt(eps(Float64))
 
@@ -27,7 +28,7 @@ function set_tracers(grid;
                     )
     fₜ(λ, φ, z) = -2 + 12(φ - φ₀) * exp(z/800) / Lφ # passable, linear in y
     #fₜ(λ, φ, z) = -2 + 12exp(z/800 + (φ₀ + φ)) experiment if it should be exponential in y
-    fₛ(λ, φ, z) = 0 #35 # This example does not use salinity
+    fₛ(λ, φ, z) = 30
 
     Tᵢ = Field{Center, Center, Center}(grid)
     Sᵢ = Field{Center, Center, Center}(grid)
@@ -70,7 +71,7 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
                                                            isopycnal_tensor = SmallSlopeIsopycnalTensor(),
                                                            slope_limiter = FluxTapering(1e-2))
 
-    horizontal_closure = HorizontalScalarDiffusivity(ν = 2000, κ = 0)
+    horizontal_closure = HorizontalScalarDiffusivity(ν = 10000, κ = 100)
     vertical_closure   = Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity()
     closure            = (redi_diffusivity, horizontal_closure, vertical_closure)
 
@@ -81,7 +82,7 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
 
     underlying_grid = simple_latitude_longitude_grid(arch, Nx, Ny, Nz)
 
-    ridge(λ, φ) = 4000exp(-0.25(λ - 120)^2) * (1 / (1 + exp(-10(φ+45))) + 1 / (1 + exp(-10(-φ-55)))) - 4000 # might be needed
+    ridge(λ, φ) = 4100exp(-0.005(λ - 120)^2) * (1 / (1 + exp(-3*(φ+48))) + 1 / (1 + exp(-3*(-φ-52)))) - 4000 # might be needed
     grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(ridge))
 
     momentum_advection = VectorInvariant()
@@ -97,10 +98,10 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     τ  = 864000 # Relaxation timescale, equal to 10 days
 
     # TODO: replace with discrete form
-    surface_condition_T(i, j, grid, clock, model_fields) = (cₚ / τ) * (model_fields.T[i, j, Nz] - (-2 + 12(φnode(j, grid, Center()) - φ₀) / Lφ))
+    surface_condition_T(i, j, grid, clock, model_fields) = (ρₒ / τ) * (model_fields.T[i, j, Nz] - (-2 + 12(φnode(j, grid, Center()) - φ₀) / Lφ))
     T_top_bc = FluxBoundaryCondition(surface_condition_T, discrete_form=true)
     
-    north_condition_T(i, k, grid, clock, model_fields) = (cₚ / τ) * (model_fields.T[i, Ny, k] - (-2 + 12(-30 - φ₀) * exp(znode(k, grid, Center())/800) / Lφ))
+    north_condition_T(i, k, grid, clock, model_fields) = (ρₒ / τ) * (model_fields.T[i, Ny, k] - (-2 + 12(-30 - φ₀) * exp(znode(k, grid, Center())/800) / Lφ))
     T_north_bc = FluxBoundaryCondition(north_condition_T, discrete_form=true)
 
     T_bcs = FieldBoundaryConditions(north=T_north_bc, top=T_top_bc)
@@ -111,8 +112,26 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     no_slip_bc = ValueBoundaryCondition(0.0)
     u_top_bc   = FluxBoundaryCondition(Field{Face, Center, Nothing}(grid))
 
-    u_bcs = FieldBoundaryConditions(north=no_slip_bc, south=no_slip_bc, top=u_top_bc, immersed=no_slip_bc)
-    v_bcs = FieldBoundaryConditions(immersed=no_slip_bc)
+    @inline linear_drag_u(i, j, grid, clock, model_fields)                = -0.2 * model_fields.u[i, j, 1]
+    @inline immersed_linear_drag_u(i, j, k, grid, clock, model_fields)    = -0.2  * model_fields.u[i, j, k] #- 0.2 * model_fields.u[i, j, k]
+    @inline immersed_linear_drag_u_NE(i, j, k, grid, clock, model_fields) =  0.2 * model_fields.u[i, j, k]  # Inverted for N / E BC
+
+    @inline linear_drag_v(i, j, grid, clock, model_fields)                = -0.2 * model_fields.v[i, j, 1]
+    @inline immersed_linear_drag_v(i, j, k, grid, clock, model_fields)    = -0.2 * model_fields.v[i, j, k] #- 0.2 * model_fields.v[i, j, k]
+    @inline immersed_linear_drag_v_NE(i, j, k, grid, clock, model_fields) =  0.2 * model_fields.v[i, j, k]  # Inverted for N / E BC
+
+    drag_u             = FluxBoundaryCondition(linear_drag_u, discrete_form=true)
+    immersed_drag_u    = FluxBoundaryCondition(immersed_linear_drag_u, discrete_form=true)
+    immersed_drag_u_NE = FluxBoundaryCondition(immersed_linear_drag_u_NE, discrete_form=true)
+    u_immersed_bc      = ImmersedBoundaryCondition(bottom=immersed_drag_u) #, south=immersed_drag_u, west=immersed_drag_u, north=immersed_drag_u_NE, east=immersed_drag_u_NE)
+
+    drag_v             = FluxBoundaryCondition(linear_drag_v, discrete_form=true)
+    immersed_drag_v    = FluxBoundaryCondition(immersed_linear_drag_v, discrete_form=true)
+    immersed_drag_v_NE = FluxBoundaryCondition(immersed_linear_drag_v_NE, discrete_form=true)
+    v_immersed_bc      = ImmersedBoundaryCondition(bottom=immersed_drag_v) #, south=immersed_drag_v, west=immersed_drag_v, north=immersed_drag_v_NE, east=immersed_drag_v_NE)
+
+    u_bcs = FieldBoundaryConditions(north=no_slip_bc, south=no_slip_bc, bottom=drag_u, top=u_top_bc) #, immersed=u_immersed_bc) #, immersed=no_slip_bc)
+    v_bcs = FieldBoundaryConditions(bottom=drag_v) #, immersed=v_immersed_bc)
 
     boundary_conditions = (u=u_bcs, T=T_bcs, v=v_bcs)
 
@@ -140,7 +159,7 @@ function wind_stress_init(grid;
     wind_stress = Field{Face, Center, Nothing}(grid)
 
     τ₀ = 0.2 / ρₒ # N m⁻² / density of seawater
-    @inline τx(λ, φ) = τ₀ * sin(π * (φ - φ₀) / (Lφ))
+    @inline τx(λ, φ) = -τ₀ * sin(π * (φ - φ₀) / (Lφ))
 
     set!(wind_stress, τx)
     return wind_stress
@@ -149,7 +168,7 @@ end
 function loop!(model)
     Δt = model.clock.last_Δt + 0
     Oceananigans.TimeSteppers.first_time_step!(model, Δt)
-    @trace mincut = true track_numbers = false for i = 1:9
+    @trace mincut = true track_numbers = false for i = 1:9999
         Oceananigans.TimeSteppers.time_step!(model, Δt)
     end
     return nothing
@@ -205,7 +224,7 @@ end
 
 Nx = 362 #128
 Ny = 32
-Nz = 30
+Nz = 50
 time_step = 600
 
 Oceananigans.defaults.FloatType = Float64
@@ -244,8 +263,8 @@ dTᵢ = Field{Center, Center, Center}(rmodel.grid)
 dSᵢ = Field{Center, Center, Center}(rmodel.grid)
 dJ  = Field{Face, Center, Nothing}(rmodel.grid)
 
-@info dmodel
-@info dmodel.closure
+@info rmodel
+@info rmodel.closure
 
 using GLMakie
 
@@ -254,26 +273,26 @@ dmld = MixedLayerDepthField(dmodel.buoyancy, dmodel.grid, dmodel.tracers)
 
 set!(rmodel.tracers.T, rTᵢ)
 
-# Build init temperature fields:
-x, y, z = nodes(runderlying_grid, (Center(), Center(), Center()))
-
-@show x, y, z
-
-T = interior(rmodel.tracers.T)
-T = convert(Array, T)
-
 #@show argmax(T)
 #@show T[1,32,30]
 
 #
 # Plotting:
 #
-graph_directory = "run_steps10_timestep600_windstressPos_ridgeFull_relaxationC_e0_Nz30/"
+graph_directory = "run_steps10000_timestep600_salinity30_windstressNeg02_ridgeFull_relaxationP_e0_Nz50_horizontalvisc10000_horizontaldiff100_ridgeWidthX50_ridgeSmoothed_linearBottomDragBottomOnly/"
 
 mkdir(graph_directory)
 
+# Build init temperature fields:
+x, y, z = nodes(runderlying_grid, (Center(), Center(), Center()))
+@show x, y, z
+T = interior(rmodel.tracers.T)
+T = convert(Array, T)
+max_T_surface = maximum(abs.(T[1:Nx,1:Ny,Nz]))
+
 fig, ax, hm = heatmap(view(T, 1:Nx, 1:Ny, Nz),
-                                colormap = :deep,
+                                colormap = :thermal,
+                                #colorrange = (-max_T_surface, max_T_surface),
                                 axis = (xlabel = "x [degrees]",
                                         ylabel = "y [degrees]",
                                         title = "T(x, y, z=0, t=0)",
@@ -284,8 +303,11 @@ Colorbar(fig[1, 2], hm, label = "[degrees C]")
 resize_to_layout!(fig)
 save(graph_directory * "init_T_surface.png", fig)
 
+max_T_deep = maximum(abs.(T[1:Nx,1:Ny,1]))
+
 fig, ax, hm = heatmap(view(T, 1:Nx, 1:Ny, 1),
-                                        colormap = :deep,
+                                        colormap = :thermal,
+                                        #colorrange = (-max_T_deep, max_T_deep),
                                         axis = (xlabel = "x [degrees]",
                                         ylabel = "y [degrees]",
                                         title = "T(x, y, z=-4000, t=0)",
@@ -314,6 +336,26 @@ fig, ax, hm = heatmap(view(interior_h, 1:Nx, 1:Ny),
 Colorbar(fig[1, 2], hm, label = "m")
 
 save(graph_directory * "bottom_height.png", fig)
+
+# Sea Surface Height:
+x, y, z = nodes(runderlying_grid, (Center(), Center(), Face()))
+interior_η = interior(rmodel.free_surface.η)
+interior_η = convert(Array, interior_η)
+
+max_η = maximum(abs.(interior_η))
+@show max_η
+
+fig, ax, hm = heatmap(view(interior_η, 1:Nx, 1:Ny, 1),
+                      colormap = :seismic,
+                      #colorrange = (-max_η, max_η),
+                      axis = (xlabel = "x [degrees]",
+                              ylabel = "y [degrees]",
+                              title = "SSH(x, y, t=0)",
+                              titlesize = 24))
+
+Colorbar(fig[1, 2], hm, label = "m")
+
+save(graph_directory * "init_SSH.png", fig)
 
 
 # Energy:
@@ -355,7 +397,7 @@ wind_stress = interior(rwind_stress)
                       colormap = :deep,
                       axis = (xlabel = "x [degrees]",
                               ylabel = "y [degrees]",
-                              title = "zonal wind_stress(x, y, z=0, t=0)",
+                              title = "zonal wind_stress(x, y, t=0)",
                               titlesize = 24))
 
 Colorbar(fig[1, 2], hm, label = "[m/s]")
@@ -481,13 +523,13 @@ restimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld)
 rrun_toc = time() - tic
 @show rrun_toc
 
-
+#=
 tic = time()
 result = estimate_tracer_error(vmodel, vTᵢ, vSᵢ, vwind_stress, vmld)
 vrun_toc = time() - tic
 @show vrun_toc
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
-
+=#
 
 #dedν, dJ = rdifferentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld, dmodel, dTᵢ, dSᵢ, dJ, dmld)
 
@@ -564,7 +606,7 @@ fig, ax, hm = heatmap(view(interior_dJ, 1:Nx, 1:Ny),
                       colormap = :deep,
                       axis = (xlabel = "x [degrees]",
                               ylabel = "y [degrees]",
-                              title = "dwind_stress(x, y, z=0, t=400min)",
+                              title = "dwind_stress(x, y, z=0, t=end)",
                               titlesize = 24))
 
 Colorbar(fig[1, 2], hm, label = "[m/s]")
@@ -577,10 +619,10 @@ T = interior(rmodel.tracers.T)
 T = convert(Array, T)
 
 fig, ax, hm = heatmap(view(T, 1:Nx, 1:Ny, Nz),
-                      colormap = :deep,
+                      colormap = :thermal,
                       axis = (xlabel = "x [degrees]",
                               ylabel = "y [degrees]",
-                              title = "T(x, y, z=0, t=400min)",
+                              title = "T(x, y, z=0, t=end)",
                               titlesize = 24))
 
 Colorbar(fig[1, 2], hm, label = "[degrees C]")
@@ -588,15 +630,34 @@ Colorbar(fig[1, 2], hm, label = "[degrees C]")
 save(graph_directory * "final_T_surface.png", fig)
 
 fig, ax, hm = heatmap(view(T, 1:Nx, 1:Ny, 1),
-                      colormap = :deep,
+                      colormap = :thermal,
                       axis = (xlabel = "x [degrees]",
                               ylabel = "y [degrees]",
-                              title = "T(x, y, z=-4000, t=400min)",
+                              title = "T(x, y, z=-4000, t=end)",
                               titlesize = 24))
 
 Colorbar(fig[1, 2], hm, label = "[degrees C]")
 
 save(graph_directory * "final_T_bottom.png", fig)
+
+# Sea Surface Height:
+x, y, z = nodes(runderlying_grid, (Center(), Center(), Face()))
+interior_η = interior(rmodel.free_surface.η)
+interior_η = convert(Array, interior_η)
+
+max_η = maximum(abs.(interior_η))
+
+fig, ax, hm = heatmap(view(interior_η, 1:Nx, 1:Ny, 1),
+                      colormap = :seismic,
+                      colorrange = (-max_η, max_η),
+                      axis = (xlabel = "x [degrees]",
+                              ylabel = "y [degrees]",
+                              title = "SSH(x, y, t=end)",
+                              titlesize = 24))
+
+Colorbar(fig[1, 2], hm, label = "m")
+
+save(graph_directory * "final_SSH.png", fig)
 
 # Energy:
 x, y, z = nodes(runderlying_grid, (Center(), Center(), Center()))
@@ -607,7 +668,7 @@ fig, ax, hm = heatmap(view(e, 1:Nx, 1:Ny, Nz),
                       colormap = :deep,
                       axis = (xlabel = "x [degrees]",
                               ylabel = "y [degrees]",
-                              title = "e(x, y, z=0, t=400min)",
+                              title = "e(x, y, z=0, end)",
                               titlesize = 24))
 
 Colorbar(fig[1, 2], hm, label = "[energy]")
@@ -618,7 +679,7 @@ fig, ax, hm = heatmap(view(e, 1:Nx, 1:Ny, 1),
                       colormap = :deep,
                       axis = (xlabel = "x [degrees]",
                               ylabel = "y [degrees]",
-                              title = "e(x, y, z=0, t=400min)",
+                              title = "e(x, y, z=-4000, t=end)",
                               titlesize = 24))
 
 Colorbar(fig[1, 2], hm, label = "[energy]")
@@ -631,22 +692,28 @@ x, y, z = nodes(runderlying_grid, (Face(), Center(), Center()))
 u = interior(rmodel.velocities.u)
 u = convert(Array, u)
 
+max_surface_u = maximum(abs.(u[1:Nx, 1:Ny, Nz]))
+
 fig, ax, hm = heatmap(view(u, 1:Nx, 1:Ny, Nz),
-                      colormap = :deep,
+                      colormap = :seismic,
+                      colorrange = (-max_surface_u, max_surface_u),
                       axis = (xlabel = "x [degrees]",
                               ylabel = "y [degrees]",
-                              title = "u(x, y, z=0, t=400min)",
+                              title = "u(x, y, z=0, t=end)",
                               titlesize = 24))
 
 Colorbar(fig[1, 2], hm, label = "[m/s]")
 
 save(graph_directory * "final_surface_u.png", fig)
 
+max_deep_u = maximum(abs.(u[1:Nx, 1:Ny, 1]))
+
 fig, ax, hm = heatmap(view(u, 1:Nx, 1:Ny, 1),
-                      colormap = :deep,
+                      colormap = :seismic,
+                      colorrange = (-max_deep_u, max_deep_u),
                       axis = (xlabel = "x [degrees]",
                               ylabel = "y [degrees]",
-                              title = "u(x, y, z=0, t=400min)",
+                              title = "u(x, y, z=-4000, t=end)",
                               titlesize = 24))
 
 Colorbar(fig[1, 2], hm, label = "[m/s]")
@@ -659,22 +726,28 @@ x, y, z = nodes(rmodel.grid, (Center(), Face(), Center()))
 v = interior(rmodel.velocities.v)
 v = convert(Array, v)
 
+max_surface_v = maximum(abs.(v[1:Nx, 1:Ny, Nz]))
+
 fig, ax, hm = heatmap(view(v, 1:Nx, 1:Ny, Nz),
-                      colormap = :deep,
+                      colormap = :seismic,
+                      colorrange = (-max_surface_v, max_surface_v),
                       axis = (xlabel = "x [degrees]",
                               ylabel = "y [degrees]",
-                              title = "v(x, y, z=0, t=400min)",
+                              title = "v(x, y, z=0, t=end)",
                               titlesize = 24))
 
 Colorbar(fig[1, 2], hm, label = "[m/s]")
 
 save(graph_directory * "final_surface_v.png", fig)
 
+max_deep_v = maximum(abs.(v[1:Nx, 1:Ny, 1]))
+
 fig, ax, hm = heatmap(view(v, 1:Nx, 1:Ny, 1),
-                      colormap = :deep,
+                      colormap = :seismic,
+                      colorrange = (-max_deep_v, max_deep_v),
                       axis = (xlabel = "x [degrees]",
                               ylabel = "y [degrees]",
-                              title = "v(x, y, z=0, t=400min)",
+                              title = "v(x, y, z=-4000, t=end)",
                               titlesize = 24))
 
 Colorbar(fig[1, 2], hm, label = "[m/s]")
@@ -692,7 +765,7 @@ fig, ax, hm = heatmap(view(interior_mld, 1:Nx, 1:Ny),
                       colormap = :deep,
                       axis = (xlabel = "x [degrees]",
                               ylabel = "y [degrees]",
-                              title = "mld(x, y, t=400min)",
+                              title = "mld(x, y, t=end)",
                               titlesize = 24))
 
 Colorbar(fig[1, 2], hm, label = "[m]")
