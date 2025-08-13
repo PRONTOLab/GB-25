@@ -1,9 +1,10 @@
+ENV["JULIA_DEBUG"] = "Reactant_jll,Reactant"
 using Oceananigans
 using Oceananigans.Architectures: ReactantState
 #using ClimaOcean
 using Reactant
 using GordonBell25
-#Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
+Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
 #Reactant.allowscalar(true)
 
 using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity
@@ -294,8 +295,6 @@ dJ  = Field{Face, Center, Nothing}(rmodel.grid)
 
 @info dmodel
 @info dmodel.closure
-
-using GLMakie
 
 mld  = rSᵢ #MixedLayerDepthField(rmodel.buoyancy, rmodel.grid, rmodel.tracers)
 dmld = dSᵢ #MixedLayerDepthField(dmodel.buoyancy, dmodel.grid, dmodel.tracers)
