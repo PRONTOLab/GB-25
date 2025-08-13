@@ -1,9 +1,10 @@
+ENV["JULIA_DEBUG"] = "Reactant_jll,Reactant"
+
 using Oceananigans
 using Oceananigans.Architectures: ReactantState
-using ClimaOcean
 using Reactant
 using GordonBell25
-#Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
+Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
 #Reactant.allowscalar(true)
 
 using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity
@@ -34,6 +35,22 @@ function set_tracers(grid;
     @allowscalar set!(Sᵢ, fₛ)
 
     return Tᵢ, Sᵢ
+end
+
+@inline exponential_profile(z, Lz, h) = (exp(z / h) - exp(-Lz / h)) / (1 - exp(-Lz / h))
+
+function exponential_z_faces(; Nz, depth, h = Nz / 4.5)
+
+    k = collect(1:Nz+1)
+    z_faces = exponential_profile.(k, Nz, h)
+
+    # Normalize
+    z_faces .-= z_faces[1]
+    z_faces .*= - depth / z_faces[end]
+
+    z_faces[1] = 0.0
+
+    return reverse(z_faces)
 end
 
 function simple_latitude_longitude_grid(arch, Nx, Ny, Nz; halo=(8, 8, 8))
