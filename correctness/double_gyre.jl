@@ -131,7 +131,7 @@ end
 function loop!(model)
     Δt = model.clock.last_Δt + 0
     Oceananigans.TimeSteppers.first_time_step!(model, Δt)
-    @trace mincut = true track_numbers = false for i = 1:10
+    @trace mincut = true track_numbers = false for i = 1:9
         Oceananigans.TimeSteppers.time_step!(model, Δt)
     end
     return nothing
@@ -228,8 +228,8 @@ dJ  = Field{Face, Center, Nothing}(rmodel.grid)
 
 using GLMakie
 
-mld  = MixedLayerDepthField(rmodel.buoyancy, rmodel.grid, rmodel.tracers)
-dmld = MixedLayerDepthField(dmodel.buoyancy, dmodel.grid, dmodel.tracers)
+mld  = Field{Center, Center, Center}(rmodel.grid) #MixedLayerDepthField(rmodel.buoyancy, rmodel.grid, rmodel.tracers)
+dmld = Field{Center, Center, Center}(rmodel.grid) #MixedLayerDepthField(dmodel.buoyancy, dmodel.grid, dmodel.tracers)
 
 set!(rmodel.tracers.T, rTᵢ)
 
