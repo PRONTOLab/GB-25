@@ -220,7 +220,7 @@ vmodel, vunderlying_grid = double_gyre_model(varch, Nx, Ny, Nz, 1200)
 vTᵢ, vSᵢ     = set_tracers(vmodel.grid)
 vwind_stress = wind_stress_init(vmodel.grid)
 
-vmld  = MixedLayerDepthField(vmodel.buoyancy, vmodel.grid, vmodel.tracers)
+#vmld  = MixedLayerDepthField(vmodel.buoyancy, vmodel.grid, vmodel.tracers)
 
 set!(vmodel.tracers.T, vTᵢ)
 
