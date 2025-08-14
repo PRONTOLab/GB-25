@@ -63,15 +63,6 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     return model
 end
 
-function loop!(model)
-    Δt = model.clock.last_Δt + 0
-    Oceananigans.TimeSteppers.first_time_step!(model, Δt)
-    @trace mincut = true track_numbers = false for i = 1:2
-        Oceananigans.TimeSteppers.time_step!(model, Δt)
-    end
-    return nothing
-end
-
 Nx = 362
 Ny = 32
 Nz = 30
@@ -82,9 +73,21 @@ Oceananigans.defaults.FloatType = Float64
 rarch  = ReactantState()
 rmodel = double_gyre_model(rarch, Nx, Ny, Nz, 1200)
 
+using InteractiveUtils
+
+using Oceananigans.TimeSteppers: update_state!
+
+using Oceananigans.TurbulenceClosures: compute_diffusivities!
+
+callbacks   = []
+closure     = rmodel.closure
+diffusivity = rmodel.diffusivity_fields
+
+@show @which compute_diffusivities!(diffusivity, closure, rmodel; parameters = :xyz)
+
 @info "Compiling..."
 tic = time()
-restimate_tracer_error = @compile raise_first=true raise=true sync=true loop!(rmodel)
+restimate_tracer_error = @compile raise_first=true raise=true sync=true compute_diffusivities!(diffusivity, closure, rmodel; parameters = :xyz) #update_state!(rmodel, callbacks; compute_tendencies=true)
 compile_toc = time() - tic
 
 @show compile_toc
@@ -92,5 +95,5 @@ compile_toc = time() - tic
 @info "Running..."
 
 tic = time()
-restimate_tracer_error(rmodel)
+restimate_tracer_error(diffusivity, closure, rmodel; parameters = :xyz)
 @show rrun_toc
