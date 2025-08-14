@@ -97,17 +97,14 @@ function compute_diffusivities!(diffusivities, closure, model; parameters = :xyz
     buoyancy = model.buoyancy
 
     launch!(arch, grid, parameters,
-            bad_compute_CATKE_diffusivities!,
-            diffusivities, grid, closure, velocities, tracers, buoyancy)
+            bad_compute_CATKE_diffusivities!, diffusivities, grid, closure)
 
     return nothing
 end
 
-@kernel function bad_compute_CATKE_diffusivities!(diffusivities, grid, closure, velocities, tracers, buoyancy)
+@kernel function bad_compute_CATKE_diffusivities!(diffusivities, grid, closure)
     i, j, k = @index(Global, NTuple)
 
-    # Ensure this works with "ensembles" of closures, in addition to ordinary single closures
-    Jᵇ = diffusivities.Jᵇ
     FT = eltype(grid)
 
     # Note: we also compute the TKE diffusivity here for diagnostic purposes, even though it
@@ -119,8 +116,8 @@ end
 end
 
 @inline function bad_mask_diffusivity(i, j, k, grid, κ★)
-    on_periphery = Oceananigans.Grids.peripheral_node(i, j, k, grid, Center(), Center(), Face())
-    within_inactive = Oceananigans.Grids.inactive_node(i, j, k, grid, Center(), Center(), Face())
+    on_periphery = Oceananigans.Grids.inactive_cell(i, j, k, grid) | Oceananigans.Grids.inactive_cell(i, j, k-1, grid)
+    within_inactive = Oceananigans.Grids.inactive_cell(i, j, k, grid) & Oceananigans.Grids.inactive_cell(i, j, k-1, grid)
     nan = convert(eltype(grid), NaN)
     return ifelse(on_periphery, zero(grid), ifelse(within_inactive, nan, κ★))
 end
