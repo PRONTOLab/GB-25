@@ -75,6 +75,10 @@ rmodel = double_gyre_model(rarch, Nx, Ny, Nz, 1200)
 
 using InteractiveUtils
 
+using KernelAbstractions: @kernel, @index
+
+using Oceananigans.Grids: peripheral_node, inactive_node
+
 using Oceananigans.TimeSteppers: update_state!
 
 using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: compute_CATKE_diffusivities!
@@ -93,10 +97,32 @@ function compute_diffusivities!(diffusivities, closure, model; parameters = :xyz
     buoyancy = model.buoyancy
 
     launch!(arch, grid, parameters,
-            compute_CATKE_diffusivities!,
+            bad_compute_CATKE_diffusivities!,
             diffusivities, grid, closure, velocities, tracers, buoyancy)
 
     return nothing
+end
+
+@kernel function bad_compute_CATKE_diffusivities!(diffusivities, grid, closure, velocities, tracers, buoyancy)
+    i, j, k = @index(Global, NTuple)
+
+    # Ensure this works with "ensembles" of closures, in addition to ordinary single closures
+    Jᵇ = diffusivities.Jᵇ
+    FT = eltype(grid)
+
+    # Note: we also compute the TKE diffusivity here for diagnostic purposes, even though it
+    # is recomputed in time_step_turbulent_kinetic_energy.
+    κu★ = FT(closure.maximum_viscosity)
+    κu★ = bad_mask_diffusivity(i, j, k, grid, κu★)
+
+    @inbounds diffusivities.κu[i, j, k] = κu★
+end
+
+@inline function bad_mask_diffusivity(i, j, k, grid, κ★)
+    on_periphery = Oceananigans.Grids.peripheral_node(i, j, k, grid, Center(), Center(), Face())
+    within_inactive = Oceananigans.Grids.inactive_node(i, j, k, grid, Center(), Center(), Face())
+    nan = convert(eltype(grid), NaN)
+    return ifelse(on_periphery, zero(grid), ifelse(within_inactive, nan, κ★))
 end
 
 @info "Compiling..."
