@@ -77,17 +77,31 @@ using InteractiveUtils
 
 using Oceananigans.TimeSteppers: update_state!
 
-using Oceananigans.TurbulenceClosures: compute_diffusivities!
+using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: compute_CATKE_diffusivities!
+
+using Oceananigans.Utils: launch!
 
 callbacks   = []
 closure     = rmodel.closure
 diffusivity = rmodel.diffusivity_fields
 
-@show @which compute_diffusivities!(diffusivity, closure, rmodel; parameters = :xyz)
+function compute_diffusivities!(diffusivities, closure, model; parameters = :xyz)
+    arch = model.architecture
+    grid = model.grid
+    velocities = model.velocities
+    tracers = model.tracers
+    buoyancy = model.buoyancy
+
+    launch!(arch, grid, parameters,
+            compute_CATKE_diffusivities!,
+            diffusivities, grid, closure, velocities, tracers, buoyancy)
+
+    return nothing
+end
 
 @info "Compiling..."
 tic = time()
-restimate_tracer_error = @compile raise_first=true raise=true sync=true compute_diffusivities!(diffusivity, closure, rmodel; parameters = :xyz) #update_state!(rmodel, callbacks; compute_tendencies=true)
+restimate_tracer_error = @compile raise_first=true raise=true sync=true compute_diffusivities!(diffusivity, closure, rmodel; parameters = :xyz)
 compile_toc = time() - tic
 
 @show compile_toc
