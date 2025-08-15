@@ -1,6 +1,5 @@
 using Oceananigans
 using Oceananigans.Architectures: ReactantState
-using ClimaOcean
 using Reactant
 using GordonBell25
 #Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
@@ -22,14 +21,13 @@ include_halos = false
 rtol = sqrt(eps(Float64))
 atol = sqrt(eps(Float64))
 
-function set_tracers(grid;
-                     Lφ::Real = 30, # Meridional length in degrees
-                     φ₀::Real = -60 # Degrees north of equator for the southern edge)
-                    )
-    fₜ(λ, φ, z) = -2 + 12(φ - φ₀) * exp(z/800) / Lφ # passable, linear in y
-    #fₜ(λ, φ, z) = -2 + 12exp(z/800 + (φ₀ + φ)) experiment if it should be exponential in y
-    fₛ(λ, φ, z) = 30
+const φ₀ = -60
+const Lφ =  30
 
+fₜ(λ, φ, z) = -2 + 12(φ - φ₀) * exp(z/800) / Lφ
+fₛ(λ, φ, z) = 30
+
+function set_tracers(grid)
     Tᵢ = Field{Center, Center, Center}(grid)
     Sᵢ = Field{Center, Center, Center}(grid)
 
@@ -37,6 +35,22 @@ function set_tracers(grid;
     @allowscalar set!(Sᵢ, fₛ)
 
     return Tᵢ, Sᵢ
+end
+
+@inline exponential_profile(z, Lz, h) = (exp(z / h) - exp(-Lz / h)) / (1 - exp(-Lz / h))
+
+function exponential_z_faces(; Nz, depth, h = Nz / 4.5)
+
+    k = collect(1:Nz+1)
+    z_faces = exponential_profile.(k, Nz, h)
+
+    # Normalize
+    z_faces .-= z_faces[1]
+    z_faces .*= - depth / z_faces[end]
+
+    z_faces[1] = 0.0
+
+    return reverse(z_faces)
 end
 
 function simple_latitude_longitude_grid(arch, Nx, Ny, Nz; halo=(8, 8, 8))
@@ -48,7 +62,7 @@ function simple_latitude_longitude_grid(arch, Nx, Ny, Nz; halo=(8, 8, 8))
         topology = (Periodic, Bounded, Bounded)
     )
 
-    return grid
+    return grid, z
 end
 
 function double_gyre_model(arch, Nx, Ny, Nz, Δt)
@@ -80,7 +94,7 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
 
     tracers = (:T, :S, :e)
 
-    underlying_grid = simple_latitude_longitude_grid(arch, Nx, Ny, Nz)
+    underlying_grid, z = simple_latitude_longitude_grid(arch, Nx, Ny, Nz)
 
     ridge(λ, φ) = 4100exp(-0.005(λ - 120)^2) * (1 / (1 + exp(-3*(φ+48))) + 1 / (1 + exp(-3*(-φ-52)))) - 4000 # might be needed
     grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(ridge))
@@ -91,16 +105,20 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     #
     # Temperature Relaxation Enforced as a Flux BC:
     #
-    ρₒ = 1026.0 # kg m⁻³, average density at the surface of the world ocean
-    cₚ = 3994   # specific heat, J / kg * K
-    Lφ =  30
-    φ₀ = -60
-    τ  = 864000 # Relaxation timescale, equal to 10 days
+    ρₒ = 1026.0   # kg m⁻³, average density at the surface of the world ocean
+    cₚ = 3994     # specific heat, J / kg * K
+    h  = -z[Nz-1] # thickness of top layer
+    Dy = 111000.0   # width in y-direction (latitude) of Northernmost layer.
+    τ  = 864000   # Relaxation timescale, equal to 10 days
 
-    # TODO: replace with discrete form
+    @show h
+
+    # TODO: replace with f_t calls:
+    #surface_condition_T(i, j, grid, clock, model_fields) = (ρₒ / τ) * (model_fields.T[i, j, Nz] - fₜ(0, φnode(j, grid, Center()), znode(Nz, grid, Center())))
     surface_condition_T(i, j, grid, clock, model_fields) = (ρₒ / τ) * (model_fields.T[i, j, Nz] - (-2 + 12(φnode(j, grid, Center()) - φ₀) / Lφ))
     T_top_bc = FluxBoundaryCondition(surface_condition_T, discrete_form=true)
     
+    #north_condition_T(i, k, grid, clock, model_fields) = (ρₒ / τ) * (model_fields.T[i, Ny, k] - fₜ(0, φnode(Ny, grid, Center()), znode(k, grid, Center())))
     north_condition_T(i, k, grid, clock, model_fields) = (ρₒ / τ) * (model_fields.T[i, Ny, k] - (-2 + 12(-30 - φ₀) * exp(znode(k, grid, Center())/800) / Lφ))
     T_north_bc = FluxBoundaryCondition(north_condition_T, discrete_form=true)
 
@@ -130,10 +148,10 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     immersed_drag_v_NE = FluxBoundaryCondition(immersed_linear_drag_v_NE, discrete_form=true)
     v_immersed_bc      = ImmersedBoundaryCondition(bottom=immersed_drag_v) #, south=immersed_drag_v, west=immersed_drag_v, north=immersed_drag_v_NE, east=immersed_drag_v_NE)
 
-    u_bcs = FieldBoundaryConditions(north=no_slip_bc, south=no_slip_bc, bottom=drag_u, top=u_top_bc) #, immersed=u_immersed_bc) #, immersed=no_slip_bc)
-    v_bcs = FieldBoundaryConditions(bottom=drag_v) #, immersed=v_immersed_bc)
+    u_bcs = FieldBoundaryConditions(north=no_slip_bc, south=no_slip_bc, top=u_top_bc) #, immersed=u_immersed_bc) #, immersed=no_slip_bc)
+    #v_bcs = FieldBoundaryConditions(bottom=drag_v) #, immersed=v_immersed_bc)
 
-    boundary_conditions = (u=u_bcs, T=T_bcs, v=v_bcs)
+    boundary_conditions = (u=u_bcs, T=T_bcs) #, v=v_bcs)
 
     model = HydrostaticFreeSurfaceModel(; grid,
                                           free_surface = free_surface,
@@ -153,8 +171,6 @@ end
 
 function wind_stress_init(grid;
                             ρₒ::Real = 1026.0, # kg m⁻³, average density at the surface of the world ocean
-                            Lφ::Real = 30, # Meridional length in degrees
-                            φ₀::Real = -60.0 # Degrees north of equator for the southern edge
                             )
     wind_stress = Field{Face, Center, Nothing}(grid)
 
@@ -168,7 +184,7 @@ end
 function loop!(model)
     Δt = model.clock.last_Δt + 0
     Oceananigans.TimeSteppers.first_time_step!(model, Δt)
-    @trace mincut = true track_numbers = false for i = 1:9999
+    @trace mincut = true track_numbers = false for i = 1:99
         Oceananigans.TimeSteppers.time_step!(model, Δt)
     end
     return nothing
@@ -279,7 +295,7 @@ set!(rmodel.tracers.T, rTᵢ)
 #
 # Plotting:
 #
-graph_directory = "run_steps10000_timestep600_salinity30_windstressNeg02_ridgeFull_relaxationP_e0_Nz50_horizontalvisc10000_horizontaldiff100_ridgeWidthX50_ridgeSmoothed_linearBottomDragBottomOnly/"
+graph_directory = "run_steps100_timestep600_salinity30_windstressNeg02_ridgeFull_relaxationP_e0_Nz50_horizontalvisc10000_horizontaldiff100_ridgeWidthX50_ridgeSmoothed_partConst/"
 
 mkdir(graph_directory)
 
