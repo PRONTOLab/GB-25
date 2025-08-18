@@ -97,6 +97,8 @@ diffusivity = rmodel.diffusivity_fields
 
 @show @which compute_diffusivities!(diffusivity, closure, rmodel; parameters = :xyz)
 @show @which ∂z_b(1, 1, 1, rmodel.grid, rmodel.buoyancy, rmodel.tracers)
+@show @which Oceananigans.Grids.inactive_cell(1, 1, 1, rmodel.grid)
+@show @which Oceananigans.Grids.inactive_cell(12, 13, 4, rmodel.grid)
 
 function bad_compute_diffusivities!(diffusivities, model; parameters = :xyz)
     arch = model.architecture
@@ -122,8 +124,8 @@ end
     κu★ = ifelse(isnan(ℓ), d, ℓ)
     κu★ = FT(κu★)
 
-    on_periphery    = Oceananigans.Grids.inactive_cell(i, j, k, grid) | Oceananigans.Grids.inactive_cell(i, j, k-1, grid)
-    within_inactive = Oceananigans.Grids.inactive_cell(i, j, k, grid) & Oceananigans.Grids.inactive_cell(i, j, k-1, grid)
+    on_periphery    = ((j < 1) | (j > grid.Ny) | (k < 1) | (k > grid.Nz)) | ((j < 1) | (j > grid.Ny) | (k-1 < 1) | (k-1 > grid.Nz))
+    within_inactive = ((j < 1) | (j > grid.Ny) | (k < 1) | (k > grid.Nz)) & ((j < 1) | (j > grid.Ny) | (k-1 < 1) | (k-1 > grid.Nz))
     nan             = convert(eltype(grid), NaN)
 
     κu★ = ifelse(on_periphery, zero(grid), ifelse(within_inactive, nan, κu★))
