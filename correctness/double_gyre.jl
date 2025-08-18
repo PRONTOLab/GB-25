@@ -77,11 +77,13 @@ using InteractiveUtils
 
 using KernelAbstractions: @kernel, @index
 
+using Oceananigans.Operators: ℑzᵃᵃᶠ
+
 using Oceananigans.TimeSteppers: update_state!
 
 using Oceananigans.TurbulenceClosures: compute_diffusivities!, getclosure
 
-using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: compute_CATKE_diffusivities!, mask_diffusivity, κuᶜᶜᶠ, κcᶜᶜᶠ, κeᶜᶜᶠ
+using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: compute_CATKE_diffusivities!, mask_diffusivity, κuᶜᶜᶠ, κcᶜᶜᶠ, κeᶜᶜᶠ, momentum_mixing_lengthᶜᶜᶠ, turbulent_velocityᶜᶜᶜ
 
 using Oceananigans.Utils: launch!
 
@@ -114,11 +116,20 @@ end
 
     # Note: we also compute the TKE diffusivity here for diagnostic purposes, even though it
     # is recomputed in time_step_turbulent_kinetic_energy.
-    κu★ = κuᶜᶜᶠ(i, j, k, grid, closure, velocities, tracers, buoyancy, Jᵇ)
-
+    κu★ = bad_κuᶜᶜᶠ(i, j, k, grid, closure, velocities, tracers, buoyancy, Jᵇ)
     κu★ = mask_diffusivity(i, j, k, grid, κu★)
 
     @inbounds diffusivities.κu[i, j, k] = κu★
+end
+
+@inline function bad_κuᶜᶜᶠ(i, j, k, grid, closure, velocities, tracers, buoyancy, surface_buoyancy_flux)
+    w★ = ℑzᵃᵃᶠ(i, j, k, grid, turbulent_velocityᶜᶜᶜ, closure, tracers.e)
+    ℓu = momentum_mixing_lengthᶜᶜᶠ(i, j, k, grid, closure, velocities, tracers, buoyancy, surface_buoyancy_flux)
+    κu = ℓu * w★
+    κu_max = closure.maximum_viscosity
+    κu★ = min(κu, κu_max)
+    FT = eltype(grid)
+    return FT(κu★)
 end
 
 @info "Compiling..."
