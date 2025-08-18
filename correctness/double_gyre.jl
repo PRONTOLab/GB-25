@@ -83,9 +83,9 @@ using Oceananigans.Operators: ℑzᵃᵃᶠ
 
 using Oceananigans.TimeSteppers: update_state!
 
-using Oceananigans.TurbulenceClosures: compute_diffusivities!, getclosure
+using Oceananigans.TurbulenceClosures: compute_diffusivities!, getclosure, depthᶜᶜᶠ, height_above_bottomᶜᶜᶠ
 
-using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: compute_CATKE_diffusivities!, mask_diffusivity, κuᶜᶜᶠ, κcᶜᶜᶠ, κeᶜᶜᶠ, momentum_mixing_lengthᶜᶜᶠ, convective_length_scaleᶜᶜᶠ, turbulent_velocityᶜᶜᶜ, stability_functionᶜᶜᶠ, stable_length_scaleᶜᶜᶠ
+using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: compute_CATKE_diffusivities!, mask_diffusivity, κuᶜᶜᶠ, κcᶜᶜᶠ, κeᶜᶜᶠ, momentum_mixing_lengthᶜᶜᶠ, convective_length_scaleᶜᶜᶠ, turbulent_velocityᶜᶜᶜ, stability_functionᶜᶜᶠ, stable_length_scaleᶜᶜᶠ, stratification_mixing_lengthᶜᶜᶠ
 
 using Oceananigans.Utils: launch!
 
@@ -113,31 +113,28 @@ end
 @kernel function bad_compute_CATKE_diffusivities!(diffusivities, grid, closure, velocities, tracers, buoyancy)
     i, j, k = @index(Global, NTuple)
 
-    # Ensure this works with "ensembles" of closures, in addition to ordinary single closures
-    Jᵇ = diffusivities.Jᵇ
-
-    # Note: we also compute the TKE diffusivity here for diagnostic purposes, even though it
-    # is recomputed in time_step_turbulent_kinetic_energy.
-    κu★ = bad_κuᶜᶜᶠ(i, j, k, grid, closure, velocities, tracers, buoyancy, Jᵇ)
+    κu★ = bad_stable_length_scaleᶜᶜᶠ(i, j, k, grid, closure, tracers.e, velocities, tracers, buoyancy)
+    FT  = eltype(grid)
+    κu★ = FT(κu★)
     κu★ = mask_diffusivity(i, j, k, grid, κu★)
 
     @inbounds diffusivities.κu[i, j, k] = κu★
 end
 
-@inline function bad_κuᶜᶜᶠ(i, j, k, grid, closure, velocities, tracers, buoyancy, surface_buoyancy_flux)
-    κu = bad_momentum_mixing_lengthᶜᶜᶠ(i, j, k, grid, closure, velocities, tracers, buoyancy, surface_buoyancy_flux)
-    κu_max = closure.maximum_viscosity
-    κu★ = min(κu, κu_max)
-    FT = eltype(grid)
-    return FT(κu★)
-end
+@inline function bad_stable_length_scaleᶜᶜᶠ(i, j, k, grid, closure, e, velocities, tracers, buoyancy)
+    Cˢ = closure.mixing_length.Cˢ
+    Cᵇ = closure.mixing_length.Cᵇ
 
-@inline function bad_momentum_mixing_lengthᶜᶜᶠ(i, j, k, grid, closure, velocities, tracers, buoyancy, surface_buoyancy_flux)
-    ℓʰ = 43.1
-    ℓ★ = stable_length_scaleᶜᶜᶠ(i, j, k, grid, closure, tracers.e, velocities, tracers, buoyancy)
-    ℓu = max(ℓ★, ℓʰ)
-    
-    return ℓu
+    d_up   = Cˢ * depthᶜᶜᶠ(i, j, k, grid)
+    d_down = Cᵇ * height_above_bottomᶜᶜᶠ(i, j, k, grid)
+    d = min(d_up, d_down)
+
+    ℓᴺ = stratification_mixing_lengthᶜᶜᶠ(i, j, k, grid, closure, e, tracers, buoyancy)
+
+    ℓ = min(d, ℓᴺ)
+    ℓ = ifelse(isnan(ℓ), d, ℓ)
+
+    return ℓ
 end
 
 @info "Compiling..."
@@ -149,6 +146,4 @@ compile_toc = time() - tic
 
 @info "Running..."
 
-tic = time()
 restimate_tracer_error(diffusivity, closure, rmodel)
-@show rrun_toc
