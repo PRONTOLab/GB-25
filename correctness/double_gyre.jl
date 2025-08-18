@@ -77,13 +77,15 @@ using InteractiveUtils
 
 using KernelAbstractions: @kernel, @index
 
+using Oceananigans.Grids: static_column_depthᶜᶜᵃ
+
 using Oceananigans.Operators: ℑzᵃᵃᶠ
 
 using Oceananigans.TimeSteppers: update_state!
 
 using Oceananigans.TurbulenceClosures: compute_diffusivities!, getclosure
 
-using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: compute_CATKE_diffusivities!, mask_diffusivity, κuᶜᶜᶠ, κcᶜᶜᶠ, κeᶜᶜᶠ, momentum_mixing_lengthᶜᶜᶠ, turbulent_velocityᶜᶜᶜ
+using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: compute_CATKE_diffusivities!, mask_diffusivity, κuᶜᶜᶠ, κcᶜᶜᶠ, κeᶜᶜᶠ, momentum_mixing_lengthᶜᶜᶠ, convective_length_scaleᶜᶜᶠ, turbulent_velocityᶜᶜᶜ, stability_functionᶜᶜᶠ, stable_length_scaleᶜᶜᶠ
 
 using Oceananigans.Utils: launch!
 
@@ -123,13 +125,32 @@ end
 end
 
 @inline function bad_κuᶜᶜᶠ(i, j, k, grid, closure, velocities, tracers, buoyancy, surface_buoyancy_flux)
-    w★ = ℑzᵃᵃᶠ(i, j, k, grid, turbulent_velocityᶜᶜᶜ, closure, tracers.e)
-    ℓu = momentum_mixing_lengthᶜᶜᶠ(i, j, k, grid, closure, velocities, tracers, buoyancy, surface_buoyancy_flux)
-    κu = ℓu * w★
+    κu = bad_momentum_mixing_lengthᶜᶜᶠ(i, j, k, grid, closure, velocities, tracers, buoyancy, surface_buoyancy_flux)
     κu_max = closure.maximum_viscosity
     κu★ = min(κu, κu_max)
     FT = eltype(grid)
     return FT(κu★)
+end
+
+@inline function bad_momentum_mixing_lengthᶜᶜᶠ(i, j, k, grid, closure, velocities, tracers, buoyancy, surface_buoyancy_flux)
+    Cᶜ  = closure.mixing_length.Cᶜu
+    Cᵉ  = closure.mixing_length.Cᵉu
+    Cˢᵖ = closure.mixing_length.Cˢᵖ
+    ℓʰ = convective_length_scaleᶜᶜᶠ(i, j, k, grid, closure, Cᶜ, Cᵉ, Cˢᵖ, velocities, tracers, buoyancy, surface_buoyancy_flux)
+
+    Cᵘⁿ = closure.mixing_length.Cᵘⁿu
+    Cˡᵒ = closure.mixing_length.Cˡᵒu
+    Cʰⁱ = closure.mixing_length.Cʰⁱu
+    σ = stability_functionᶜᶜᶠ(i, j, k, grid, closure, Cᵘⁿ, Cˡᵒ, Cʰⁱ, velocities, tracers, buoyancy)
+
+    ℓ★ = σ * stable_length_scaleᶜᶜᶠ(i, j, k, grid, closure, tracers.e, velocities, tracers, buoyancy)
+
+    ℓʰ = ifelse(isnan(ℓʰ), zero(grid), ℓʰ)
+    ℓ★ = ifelse(isnan(ℓ★), zero(grid), ℓ★)
+    ℓu = max(ℓ★, ℓʰ)
+
+    H = static_column_depthᶜᶜᵃ(i, j, grid)
+    return min(H, ℓu)
 end
 
 @info "Compiling..."
