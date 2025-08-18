@@ -133,24 +133,11 @@ end
 end
 
 @inline function bad_momentum_mixing_lengthᶜᶜᶠ(i, j, k, grid, closure, velocities, tracers, buoyancy, surface_buoyancy_flux)
-    Cᶜ  = closure.mixing_length.Cᶜu
-    Cᵉ  = closure.mixing_length.Cᵉu
-    Cˢᵖ = closure.mixing_length.Cˢᵖ
-    ℓʰ = convective_length_scaleᶜᶜᶠ(i, j, k, grid, closure, Cᶜ, Cᵉ, Cˢᵖ, velocities, tracers, buoyancy, surface_buoyancy_flux)
-
-    Cᵘⁿ = closure.mixing_length.Cᵘⁿu
-    Cˡᵒ = closure.mixing_length.Cˡᵒu
-    Cʰⁱ = closure.mixing_length.Cʰⁱu
-    σ = stability_functionᶜᶜᶠ(i, j, k, grid, closure, Cᵘⁿ, Cˡᵒ, Cʰⁱ, velocities, tracers, buoyancy)
-
-    ℓ★ = σ * stable_length_scaleᶜᶜᶠ(i, j, k, grid, closure, tracers.e, velocities, tracers, buoyancy)
-
-    ℓʰ = ifelse(isnan(ℓʰ), zero(grid), ℓʰ)
-    ℓ★ = ifelse(isnan(ℓ★), zero(grid), ℓ★)
+    ℓʰ = 43.1
+    ℓ★ = stable_length_scaleᶜᶜᶠ(i, j, k, grid, closure, tracers.e, velocities, tracers, buoyancy)
     ℓu = max(ℓ★, ℓʰ)
-
-    H = static_column_depthᶜᶜᵃ(i, j, grid)
-    return min(H, ℓu)
+    
+    return ℓu
 end
 
 @info "Compiling..."
