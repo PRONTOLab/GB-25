@@ -79,7 +79,7 @@ using KernelAbstractions: @kernel, @index
 
 using Oceananigans.BuoyancyFormulations: ∂z_b
 
-using Oceananigans.Grids: static_column_depthᶜᶜᵃ
+using Oceananigans.Grids: static_column_depthᶜᶜᵃ, peripheral_node, inactive_node
 
 using Oceananigans.Operators: ℑzᵃᵃᶠ
 
@@ -121,7 +121,12 @@ end
 
     κu★ = ifelse(isnan(ℓ), d, ℓ)
     κu★ = FT(κu★)
-    κu★ = mask_diffusivity(i, j, k, grid, κu★)
+
+    on_periphery    = Oceananigans.Grids.inactive_cell(i, j, k, grid) | Oceananigans.Grids.inactive_cell(i, j, k-1, grid)
+    within_inactive = Oceananigans.Grids.inactive_cell(i, j, k, grid) & Oceananigans.Grids.inactive_cell(i, j, k-1, grid)
+    nan             = convert(eltype(grid), NaN)
+
+    κu★ = ifelse(on_periphery, zero(grid), ifelse(within_inactive, nan, κu★))
 
     @inbounds diffusivities.κu[i, j, k] = κu★
 end
