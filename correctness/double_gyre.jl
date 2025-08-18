@@ -77,6 +77,8 @@ using InteractiveUtils
 
 using KernelAbstractions: @kernel, @index
 
+using Oceananigans.BuoyancyFormulations: ∂z_b
+
 using Oceananigans.Grids: static_column_depthᶜᶜᵃ
 
 using Oceananigans.Operators: ℑzᵃᵃᶠ
@@ -122,19 +124,21 @@ end
 end
 
 @inline function bad_stable_length_scaleᶜᶜᶠ(i, j, k, grid, closure, e, velocities, tracers, buoyancy)
-    Cˢ = closure.mixing_length.Cˢ
-    Cᵇ = closure.mixing_length.Cᵇ
+    d  = -1.0
+    ℓ = bad_stratification_mixing_lengthᶜᶜᶠ(i, j, k, grid, closure, e, tracers, buoyancy)
 
-    d_up   = Cˢ * depthᶜᶜᶠ(i, j, k, grid)
-    d_down = Cᵇ * height_above_bottomᶜᶜᶠ(i, j, k, grid)
-    d = min(d_up, d_down)
-
-    ℓᴺ = stratification_mixing_lengthᶜᶜᶠ(i, j, k, grid, closure, e, tracers, buoyancy)
-
-    ℓ = min(d, ℓᴺ)
+    ℓ = min(d, ℓ)
     ℓ = ifelse(isnan(ℓ), d, ℓ)
 
     return ℓ
+end
+
+@inline function bad_stratification_mixing_lengthᶜᶜᶠ(i, j, k, grid, closure, e, tracers, buoyancy)
+    FT = eltype(grid)
+    N² = ∂z_b(i, j, k, grid, buoyancy, tracers)
+    N²⁺ = max(zero(N²), N²)
+    w★ = ℑzᵃᵃᶠ(i, j, k, grid, turbulent_velocityᶜᶜᶜ, closure, e)
+    return ifelse(N²⁺ == 0, FT(Inf), w★ / sqrt(N²⁺))
 end
 
 @info "Compiling..."
