@@ -91,27 +91,20 @@ using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: compute_CAT
 
 using Oceananigans.Utils: launch!
 
-callbacks   = []
-closure     = rmodel.closure
-diffusivity = rmodel.diffusivity_fields
+@show @which eltype(rmodel.grid)
+@show zero(rmodel.grid)
+@show typeof(zero(rmodel.grid))
+@show eltype(rmodel.diffusivity_fields.κu)
 
-@show @which compute_diffusivities!(diffusivity, closure, rmodel; parameters = :xyz)
-@show @which ∂z_b(1, 1, 1, rmodel.grid, rmodel.buoyancy, rmodel.tracers)
-@show @which Oceananigans.Grids.inactive_cell(1, 1, 1, rmodel.grid)
-@show @which Oceananigans.Grids.inactive_cell(12, 13, 4, rmodel.grid)
-
-function bad_compute_diffusivities!(diffusivities, model; parameters = :xyz)
-    arch = model.architecture
-    grid = model.grid
-
+function bad_compute_diffusivities!(κu, arch, grid; parameters = :xyz)
     launch!(arch, grid, parameters,
             bad_compute_CATKE_diffusivities!,
-            diffusivities, grid)
+            κu, grid)
 
     return nothing
 end
 
-@kernel function bad_compute_CATKE_diffusivities!(diffusivities, grid)
+@kernel function bad_compute_CATKE_diffusivities!(κu, grid)
     i, j, k = @index(Global, NTuple)
 
     FT  = eltype(grid)
@@ -124,22 +117,22 @@ end
     κu★ = ifelse(isnan(ℓ), d, ℓ)
     κu★ = FT(κu★)
 
-    on_periphery    = ((j < 1) | (j > grid.Ny) | (k < 1) | (k > grid.Nz)) | ((j < 1) | (j > grid.Ny) | (k-1 < 1) | (k-1 > grid.Nz))
-    within_inactive = ((j < 1) | (j > grid.Ny) | (k < 1) | (k > grid.Nz)) & ((j < 1) | (j > grid.Ny) | (k-1 < 1) | (k-1 > grid.Nz))
-    nan             = convert(eltype(grid), NaN)
+    on_periphery    = (j < 1) | (j > grid.Ny) | (k > grid.Nz) | (k < 2)
+    within_inactive = (j < 1) | (j > grid.Ny) | (k < 1) | (k > grid.Nz + 1)
+    nan             = convert(FT, NaN)
 
-    κu★ = ifelse(on_periphery, zero(grid), ifelse(within_inactive, nan, κu★))
+    κu★ = ifelse(on_periphery, 0.0, ifelse(within_inactive, nan, κu★))
 
-    @inbounds diffusivities.κu[i, j, k] = κu★
+    @inbounds κu[i, j, k] = κu★
 end
 
 @info "Compiling..."
 tic = time()
-restimate_tracer_error = @compile raise_first=true raise=true sync=true bad_compute_diffusivities!(diffusivity, rmodel; parameters = :xyz)
+restimate_tracer_error = @compile raise_first=true raise=true sync=true bad_compute_diffusivities!(rmodel.diffusivity_fields.κu, rmodel.architecture, rmodel.grid; parameters = :xyz)
 compile_toc = time() - tic
 
 @show compile_toc
 
 @info "Running..."
 
-restimate_tracer_error(diffusivity, rmodel)
+restimate_tracer_error(rmodel.diffusivity_fields.κu, rmodel.architecture, rmodel.grid; parameters = :xyz)
