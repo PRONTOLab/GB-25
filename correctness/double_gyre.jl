@@ -75,11 +75,13 @@ rmodel = double_gyre_model(rarch, Nx, Ny, Nz, 1200)
 
 using InteractiveUtils
 
+using KernelAbstractions: @kernel, @index
+
 using Oceananigans.TimeSteppers: update_state!
 
-using Oceananigans.TurbulenceClosures: compute_diffusivities!
+using Oceananigans.TurbulenceClosures: compute_diffusivities!, getclosure
 
-using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: compute_CATKE_diffusivities!
+using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: compute_CATKE_diffusivities!, mask_diffusivity, κuᶜᶜᶠ, κcᶜᶜᶠ, κeᶜᶜᶠ
 
 using Oceananigans.Utils: launch!
 
@@ -98,10 +100,25 @@ function bad_compute_diffusivities!(diffusivities, closure, model; parameters = 
     clock = model.clock
 
     launch!(arch, grid, parameters,
-            compute_CATKE_diffusivities!,
+            bad_compute_CATKE_diffusivities!,
             diffusivities, grid, closure, velocities, tracers, buoyancy)
 
     return nothing
+end
+
+@kernel function bad_compute_CATKE_diffusivities!(diffusivities, grid, closure, velocities, tracers, buoyancy)
+    i, j, k = @index(Global, NTuple)
+
+    # Ensure this works with "ensembles" of closures, in addition to ordinary single closures
+    Jᵇ = diffusivities.Jᵇ
+
+    # Note: we also compute the TKE diffusivity here for diagnostic purposes, even though it
+    # is recomputed in time_step_turbulent_kinetic_energy.
+    κu★ = κuᶜᶜᶠ(i, j, k, grid, closure, velocities, tracers, buoyancy, Jᵇ)
+
+    κu★ = mask_diffusivity(i, j, k, grid, κu★)
+
+    @inbounds diffusivities.κu[i, j, k] = κu★
 end
 
 @info "Compiling..."
@@ -114,5 +131,5 @@ compile_toc = time() - tic
 @info "Running..."
 
 tic = time()
-restimate_tracer_error(diffusivity, closure, rmodel; parameters = :xyz)
+restimate_tracer_error(diffusivity, closure, rmodel)
 @show rrun_toc
