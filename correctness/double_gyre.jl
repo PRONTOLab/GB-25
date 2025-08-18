@@ -96,58 +96,43 @@ closure     = rmodel.closure
 diffusivity = rmodel.diffusivity_fields
 
 @show @which compute_diffusivities!(diffusivity, closure, rmodel; parameters = :xyz)
+@show @which ∂z_b(1, 1, 1, rmodel.grid, rmodel.buoyancy, rmodel.tracers)
 
-function bad_compute_diffusivities!(diffusivities, closure, model; parameters = :xyz)
+function bad_compute_diffusivities!(diffusivities, model; parameters = :xyz)
     arch = model.architecture
     grid = model.grid
-    velocities = model.velocities
-    tracers = model.tracers
-    buoyancy = model.buoyancy
-    clock = model.clock
 
     launch!(arch, grid, parameters,
             bad_compute_CATKE_diffusivities!,
-            diffusivities, grid, closure, velocities, tracers, buoyancy)
+            diffusivities, grid)
 
     return nothing
 end
 
-@kernel function bad_compute_CATKE_diffusivities!(diffusivities, grid, closure, velocities, tracers, buoyancy)
+@kernel function bad_compute_CATKE_diffusivities!(diffusivities, grid)
     i, j, k = @index(Global, NTuple)
 
-    κu★ = bad_stable_length_scaleᶜᶜᶠ(i, j, k, grid, closure, tracers.e, velocities, tracers, buoyancy)
     FT  = eltype(grid)
+    d   = -1.0
+    N²  = 3.0
+    N²⁺ = max(zero(N²), N²)
+    ℓ   = ifelse(N²⁺ == 0, FT(Inf), 1 / sqrt(N²⁺))
+    ℓ   = min(d, ℓ)
+
+    κu★ = ifelse(isnan(ℓ), d, ℓ)
     κu★ = FT(κu★)
     κu★ = mask_diffusivity(i, j, k, grid, κu★)
 
     @inbounds diffusivities.κu[i, j, k] = κu★
 end
 
-@inline function bad_stable_length_scaleᶜᶜᶠ(i, j, k, grid, closure, e, velocities, tracers, buoyancy)
-    d  = -1.0
-    ℓ = bad_stratification_mixing_lengthᶜᶜᶠ(i, j, k, grid, closure, e, tracers, buoyancy)
-
-    ℓ = min(d, ℓ)
-    ℓ = ifelse(isnan(ℓ), d, ℓ)
-
-    return ℓ
-end
-
-@inline function bad_stratification_mixing_lengthᶜᶜᶠ(i, j, k, grid, closure, e, tracers, buoyancy)
-    FT = eltype(grid)
-    N² = ∂z_b(i, j, k, grid, buoyancy, tracers)
-    N²⁺ = max(zero(N²), N²)
-    w★ = ℑzᵃᵃᶠ(i, j, k, grid, turbulent_velocityᶜᶜᶜ, closure, e)
-    return ifelse(N²⁺ == 0, FT(Inf), w★ / sqrt(N²⁺))
-end
-
 @info "Compiling..."
 tic = time()
-restimate_tracer_error = @compile raise_first=true raise=true sync=true bad_compute_diffusivities!(diffusivity, closure, rmodel; parameters = :xyz)
+restimate_tracer_error = @compile raise_first=true raise=true sync=true bad_compute_diffusivities!(diffusivity, rmodel; parameters = :xyz)
 compile_toc = time() - tic
 
 @show compile_toc
 
 @info "Running..."
 
-restimate_tracer_error(diffusivity, closure, rmodel)
+restimate_tracer_error(diffusivity, rmodel)
