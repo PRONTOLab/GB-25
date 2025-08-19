@@ -10,13 +10,6 @@ Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
 
 using InteractiveUtils
 using KernelAbstractions: @kernel, @index
-using Oceananigans.BuoyancyFormulations: ∂z_b
-using Oceananigans.Grids: static_column_depthᶜᶜᵃ, peripheral_node, inactive_node
-using Oceananigans.Operators: ℑzᵃᵃᶠ
-using Oceananigans.TimeSteppers: update_state!
-using Oceananigans.TurbulenceClosures: compute_diffusivities!, getclosure, depthᶜᶜᶠ, height_above_bottomᶜᶜᶠ
-using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: compute_CATKE_diffusivities!, mask_diffusivity, κuᶜᶜᶠ, κcᶜᶜᶠ, κeᶜᶜᶠ, momentum_mixing_lengthᶜᶜᶠ, convective_length_scaleᶜᶜᶠ, turbulent_velocityᶜᶜᶜ, stability_functionᶜᶜᶠ, stable_length_scaleᶜᶜᶠ, stratification_mixing_lengthᶜᶜᶠ
-using Oceananigans.Utils: launch!, _launch!, configure_kernel, work_layout, heuristic_workgroup, flatten_reduced_dimensions
 
 @inline exponential_profile(z, Lz, h) = (exp(z / h) - exp(-Lz / h)) / (1 - exp(-Lz / h))
 
@@ -72,19 +65,19 @@ function BadGrid(architecture::Arch, Nx::I, Ny::I, Nz::I, Lx::FT) where {Arch, F
     return BadGrid{FT, Arch, I}(architecture, Nx, Ny, Nz, Lx)
 end
 
-function bad_wrapper!(u, arch, grid)
+function bad_wrapper!(u, arch, grid, Nx, Ny, Nz)
 
     workgroup = (16, 16)
-    worksize  = size(grid)
+    worksize  = (Nx, Ny, Nz)
     dev       = Oceananigans.Architectures.device(arch)
     loop!     = bad_kernel!(dev, workgroup, worksize)
 
-    loop!(u, grid)
+    loop!(u, grid, Ny, Nz)
 
     return nothing
 end
 
-@kernel function bad_kernel!(u, grid)
+@kernel function bad_kernel!(u, grid, Ny, Nz)
     i, j, k = @index(Global, NTuple)
 
     FT  = eltype(grid)
@@ -97,8 +90,8 @@ end
     κu★ = ifelse(isnan(ℓ), d, ℓ)
     κu★ = FT(κu★)
 
-    on_periphery    = (j < 1) | (j > grid.Ny) | (k > grid.Nz) | (k < 2)
-    within_inactive = (j < 1) | (j > grid.Ny) | (k < 1) | (k > grid.Nz + 1)
+    on_periphery    = (j < 1) | (j > Ny) | (k > Nz) | (k < 2)
+    within_inactive = (j < 1) | (j > Ny) | (k < 1) | (k > Nz + 1)
     nan             = convert(FT, NaN)
 
     κu★ = ifelse(on_periphery, 0.0, ifelse(within_inactive, nan, κu★))
@@ -112,7 +105,7 @@ u = zeros(Nx, Ny, Nz+1)
 
 @info "Compiling..."
 tic = time()
-rbad_wrapper! = @compile raise_first=true raise=true sync=true bad_wrapper!(u, ReactantState(), rgrid)
+rbad_wrapper! = @compile raise_first=true raise=true sync=true bad_wrapper!(u, ReactantState(), rgrid, Nx, Ny, Nz)
 compile_toc = time() - tic
 
 @show compile_toc
