@@ -11,6 +11,8 @@ Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
 using InteractiveUtils
 using KernelAbstractions: @kernel, @index
 
+using Oceananigans.Grids: generate_coordinate, with_precomputed_metrics, validate_lat_lon_grid_args
+
 @inline exponential_profile(z, Lz, h) = (exp(z / h) - exp(-Lz / h)) / (1 - exp(-Lz / h))
 
 function exponential_z_faces(; Nz, depth, h = Nz / 4.5)
@@ -30,13 +32,53 @@ end
 function simple_latitude_longitude_grid(arch, Nx, Ny, Nz; halo=(8, 8, 8))
     z = exponential_z_faces(; Nz, depth=4000) # may need changing for very large Nz
 
-    grid = LatitudeLongitudeGrid(arch; size=(Nx, Ny, Nz), halo, z,
+    grid = BadLatitudeLongitudeGrid(arch; size=(Nx, Ny, Nz), halo, z,
         longitude = (0, 360), # Problem is here: when longitude is not periodic we get error
         latitude = (-60, -30), # Tentative southern ocean latitude range
         topology = (Periodic, Bounded, Bounded)
     )
 
     return grid
+end
+
+const R_Earth = 6371.0e3 
+
+function BadLatitudeLongitudeGrid(architecture = CPU(),
+                               FT::DataType = Oceananigans.defaults.FloatType;
+                               size,
+                               longitude = nothing,
+                               latitude = nothing,
+                               z = nothing,
+                               radius = R_Earth,
+                               topology = nothing,
+                               precompute_metrics = true,
+                               halo = nothing)
+
+    topology, size, halo, latitude, longitude, z, precompute_metrics =
+        validate_lat_lon_grid_args(topology, size, halo, FT, latitude, longitude, z, precompute_metrics)
+
+    Nλ, Nφ, Nz = size
+    Hλ, Hφ, Hz = halo
+
+    # Calculate all direction (which might be stretched)
+    # A direction is regular if the domain passed is a Tuple{<:Real, <:Real},
+    # it is stretched if being passed is a function or vector (as for the VerticallyStretchedRectilinearGrid)
+    TX, TY, TZ = topology
+
+    Lλ, λᶠᵃᵃ, λᶜᵃᵃ, Δλᶠᵃᵃ, Δλᶜᵃᵃ = generate_coordinate(FT, topology, size, halo, longitude, :longitude, 1, architecture)
+    Lφ, φᵃᶠᵃ, φᵃᶜᵃ, Δφᵃᶠᵃ, Δφᵃᶜᵃ = generate_coordinate(FT, topology, size, halo, latitude,  :latitude,  2, architecture)
+    Lz, z                        = generate_coordinate(FT, topology, size, halo, z,         :z,         3, architecture)
+
+    preliminary_grid = LatitudeLongitudeGrid{TX, TY, TZ}(architecture,
+                                                         Nλ, Nφ, Nz,
+                                                         Hλ, Hφ, Hz,
+                                                         Lλ, Lφ, Lz,
+                                                         Δλᶠᵃᵃ, Δλᶜᵃᵃ, λᶠᵃᵃ, λᶜᵃᵃ,
+                                                         Δφᵃᶠᵃ, Δφᵃᶜᵃ, φᵃᶠᵃ, φᵃᶜᵃ,
+                                                         z,
+                                                         (nothing for i=1:10)..., FT(radius))
+
+    return with_precomputed_metrics(preliminary_grid)
 end
 
 Nx = 362
