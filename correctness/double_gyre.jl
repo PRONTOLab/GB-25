@@ -7,11 +7,14 @@ using KernelAbstractions
 using GordonBell25
 Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
 #Reactant.allowscalar(true)
+using OffsetArrays
 
 using InteractiveUtils
 using KernelAbstractions: @kernel, @index
 
-using Oceananigans.Grids: generate_coordinate, with_precomputed_metrics, validate_lat_lon_grid_args
+using Oceananigans.Operators: Δyᶠᶜᵃ, Δyᶜᶠᵃ
+
+using Oceananigans.Grids: generate_coordinate, with_precomputed_metrics, validate_lat_lon_grid_args, allocate_metrics, metric_workgroup, metric_worksize, compute_Δx_Az!, compute_Δy!, XRegularLLG, YRegularLLG
 
 @inline exponential_profile(z, Lz, h) = (exp(z / h) - exp(-Lz / h)) / (1 - exp(-Lz / h))
 
@@ -54,9 +57,6 @@ function BadLatitudeLongitudeGrid(architecture = CPU(),
                                precompute_metrics = true,
                                halo = nothing)
 
-    topology, size, halo, latitude, longitude, z, precompute_metrics =
-        validate_lat_lon_grid_args(topology, size, halo, FT, latitude, longitude, z, precompute_metrics)
-
     Nλ, Nφ, Nz = size
     Hλ, Hφ, Hz = halo
 
@@ -69,7 +69,11 @@ function BadLatitudeLongitudeGrid(architecture = CPU(),
     Lφ, φᵃᶠᵃ, φᵃᶜᵃ, Δφᵃᶠᵃ, Δφᵃᶜᵃ = generate_coordinate(FT, topology, size, halo, latitude,  :latitude,  2, architecture)
     Lz, z                        = generate_coordinate(FT, topology, size, halo, z,         :z,         3, architecture)
 
-    preliminary_grid = LatitudeLongitudeGrid{TX, TY, TZ}(architecture,
+    @allowscalar @show Lλ, λᶠᵃᵃ, λᶜᵃᵃ, Δλᶠᵃᵃ, Δλᶜᵃᵃ
+    @allowscalar @show Lφ, φᵃᶠᵃ, φᵃᶜᵃ, Δφᵃᶠᵃ, Δφᵃᶜᵃ
+    @allowscalar @show Lz, z
+
+    grid = LatitudeLongitudeGrid{TX, TY, TZ}(architecture,
                                                          Nλ, Nφ, Nz,
                                                          Hλ, Hφ, Hz,
                                                          Lλ, Lφ, Lz,
@@ -78,7 +82,41 @@ function BadLatitudeLongitudeGrid(architecture = CPU(),
                                                          z,
                                                          (nothing for i=1:10)..., FT(radius))
 
-    return with_precomputed_metrics(preliminary_grid)
+    Δxᶜᶜᵃ, Δxᶠᶜᵃ, Δxᶜᶠᵃ, Δxᶠᶠᵃ, Δyᶠᶜᵃ, Δyᶜᶠᵃ, Azᶜᶜᵃ, Azᶠᶜᵃ, Azᶜᶠᵃ, Azᶠᶠᵃ = bad_allocate_metrics(grid)
+
+    grid = LatitudeLongitudeGrid{TX, TY, TZ}(grid.architecture,
+                                             Nλ, Nφ, Nz,
+                                             Hλ, Hφ, Hz,
+                                             grid.Lx, grid.Ly, grid.Lz,
+                                             grid.Δλᶠᵃᵃ, grid.Δλᶜᵃᵃ, grid.λᶠᵃᵃ, grid.λᶜᵃᵃ,
+                                             grid.Δφᵃᶠᵃ, grid.Δφᵃᶜᵃ, grid.φᵃᶠᵃ, grid.φᵃᶜᵃ,
+                                             grid.z,
+                                             Δxᶜᶜᵃ, Δxᶠᶜᵃ, Δxᶜᶠᵃ, Δxᶠᶠᵃ, Δyᶠᶜᵃ, Δyᶜᶠᵃ,
+                                             Azᶜᶜᵃ, Azᶠᶜᵃ, Azᶜᶠᵃ, Azᶠᶠᵃ, grid.radius)
+
+    return grid
+end
+
+function bad_allocate_metrics(grid)
+    FT = eltype(grid)
+    arch = grid.architecture
+
+    offsets     = grid.φᵃᶜᵃ.offsets[1]
+    metric_size = length(grid.φᵃᶜᵃ)
+
+    Δxᶜᶜ = OffsetArray(zeros(arch, FT, metric_size...), offsets...)
+    Δxᶠᶜ = OffsetArray(zeros(arch, FT, metric_size...), offsets...)
+    Δxᶜᶠ = OffsetArray(zeros(arch, FT, metric_size...), offsets...)
+    Δxᶠᶠ = OffsetArray(zeros(arch, FT, metric_size...), offsets...)
+    Azᶜᶜ = OffsetArray(zeros(arch, FT, metric_size...), offsets...)
+    Azᶠᶜ = OffsetArray(zeros(arch, FT, metric_size...), offsets...)
+    Azᶜᶠ = OffsetArray(zeros(arch, FT, metric_size...), offsets...)
+    Azᶠᶠ = OffsetArray(zeros(arch, FT, metric_size...), offsets...)
+
+    Δyᶠᶜ = Δyᶠᶜᵃ(1, 1, 1, grid)
+    Δyᶜᶠ = Δyᶜᶠᵃ(1, 1, 1, grid)
+
+    return Δxᶜᶜ, Δxᶠᶜ, Δxᶜᶠ, Δxᶠᶠ, Δyᶠᶜ, Δyᶜᶠ, Azᶜᶜ, Azᶠᶜ, Azᶜᶠ, Azᶠᶠ
 end
 
 Nx = 362
@@ -93,7 +131,8 @@ rgrid = simple_latitude_longitude_grid(rarch, Nx, Ny, Nz)
 
 abstract type AbstractBadGrid{FT, Arch} end
 
-struct BadGrid{FT, Arch, I} <: AbstractBadGrid{FT, Arch}
+struct BadGrid{FT, Arch, DXFC, DXCF,
+               DXFF, DXCC, DYFC, DYCF, I} <: AbstractBadGrid{FT, Arch}
     architecture :: Arch
     Nx :: I
     Ny :: I
@@ -101,12 +140,61 @@ struct BadGrid{FT, Arch, I} <: AbstractBadGrid{FT, Arch}
     Lx :: FT
     Ly :: FT
     Lz :: FT
+    Δxᶜᶜ :: DXCC
+    Δxᶠᶜ :: DXFC
+    Δxᶜᶠ :: DXCF
+    Δxᶠᶠ :: DXFF
+    Δyᶠᶜ :: DYFC
+    Δyᶜᶠ :: DYCF
+    Azᶜᶜ :: DXCC
+    Azᶠᶜ :: DXFC
+    Azᶜᶠ :: DXCF
+    Azᶠᶠ :: DXFF
 end
 
 Base.eltype(::AbstractBadGrid{FT}) where FT = FT
 
+function BadGrid(architecture::Arch, Nx::I, Ny::I, Nz::I, Lx::FT, Ly::FT, Lz::FT,
+                 Δxᶜᶜᵃ :: DXCC, Δxᶠᶜᵃ :: DXFC,
+                 Δxᶜᶠᵃ :: DXCF, Δxᶠᶠᵃ :: DXFF,
+                 Δyᶠᶜᵃ :: DYFC, Δyᶜᶠᵃ :: DYCF,
+                 Azᶜᶜᵃ :: DXCC, Azᶠᶜᵃ :: DXFC,
+                 Azᶜᶠᵃ :: DXCF, Azᶠᶠᵃ :: DXFF) where {Arch, FT, DXFC, DXCF,
+                                                        DXFF, DXCC,
+                                                        DYFC, DYCF, I}
+    return BadGrid{FT, Arch, DXFC, DXCF,
+                   DXFF, DXCC, DYFC, DYCF, I}(architecture, Nx, Ny, Nz, Lx, Ly, Lz, Δxᶜᶜᵃ, Δxᶠᶜᵃ, Δxᶜᶠᵃ, Δxᶠᶠᵃ,
+                                              Δyᶠᶜᵃ, Δyᶜᶠᵃ, Azᶜᶜᵃ, Azᶠᶜᵃ, Azᶜᶠᵃ, Azᶠᶠᵃ)
+end
+
 function BadGrid(architecture::Arch, Nx::I, Ny::I, Nz::I, Lx::FT, Ly::FT, Lz::FT) where {Arch, FT, I}
-    return BadGrid{FT, Arch, I}(architecture, Nx, Ny, Nz, Lx, Ly, Lz)
+    grid = BadGrid(architecture, Nx, Ny, Nz, Lx, Ly, Lz, (nothing for i=1:10)...)
+
+    Δxᶜᶜ, Δxᶠᶜ, Δxᶜᶠ, Δxᶠᶠ, Δyᶠᶜ, Δyᶜᶠ, Azᶜᶜ, Azᶠᶜ, Azᶜᶠ, Azᶠᶠ = vbad_allocate_metrics(grid)
+
+    return BadGrid(architecture, Nx, Ny, Nz, Lx, Ly, Lz, Δxᶜᶜ, Δxᶠᶜ, Δxᶜᶠ, Δxᶠᶠ, Δyᶠᶜ, Δyᶜᶠ, Azᶜᶜ, Azᶠᶜ, Azᶜᶠ, Azᶠᶠ)
+end
+
+function vbad_allocate_metrics(grid)
+    FT = eltype(grid)
+    arch = grid.architecture
+
+    offsets     = (2,2)
+    metric_size = (8,8)
+
+    Δxᶜᶜ = OffsetArray(zeros(arch, FT, metric_size...), offsets...)
+    Δxᶠᶜ = OffsetArray(zeros(arch, FT, metric_size...), offsets...)
+    Δxᶜᶠ = OffsetArray(zeros(arch, FT, metric_size...), offsets...)
+    Δxᶠᶠ = OffsetArray(zeros(arch, FT, metric_size...), offsets...)
+    Azᶜᶜ = OffsetArray(zeros(arch, FT, metric_size...), offsets...)
+    Azᶠᶜ = OffsetArray(zeros(arch, FT, metric_size...), offsets...)
+    Azᶜᶠ = OffsetArray(zeros(arch, FT, metric_size...), offsets...)
+    Azᶠᶠ = OffsetArray(zeros(arch, FT, metric_size...), offsets...)
+
+    Δyᶠᶜ = zeros(1, 1, 1) #Δyᶠᶜᵃ(1, 1, 1, grid)
+    Δyᶜᶠ = zeros(1, 1, 1) #Δyᶜᶠᵃ(1, 1, 1, grid)
+
+    return Δxᶜᶜ, Δxᶠᶜ, Δxᶜᶠ, Δxᶠᶠ, Δyᶠᶜ, Δyᶜᶠ, Azᶜᶜ, Azᶠᶜ, Azᶜᶠ, Azᶠᶠ
 end
 
 function bad_wrapper!(u, arch, grid, Nx, Ny, Nz)
