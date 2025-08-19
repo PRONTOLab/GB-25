@@ -57,12 +57,14 @@ struct BadGrid{FT, Arch, I} <: AbstractBadGrid{FT, Arch}
     Ny :: I
     Nz :: I
     Lx :: FT
+    Ly :: FT
+    Lz :: FT
 end
 
 Base.eltype(::AbstractBadGrid{FT}) where FT = FT
 
-function BadGrid(architecture::Arch, Nx::I, Ny::I, Nz::I, Lx::FT) where {Arch, FT, I}
-    return BadGrid{FT, Arch, I}(architecture, Nx, Ny, Nz, Lx)
+function BadGrid(architecture::Arch, Nx::I, Ny::I, Nz::I, Lx::FT, Ly::FT, Lz::FT) where {Arch, FT, I}
+    return BadGrid{FT, Arch, I}(architecture, Nx, Ny, Nz, Lx, Ly, Lz)
 end
 
 function bad_wrapper!(u, arch, grid, Nx, Ny, Nz)
@@ -99,17 +101,22 @@ end
     @inbounds u[i, j, k] = κu★
 end
 
-bad_grid = BadGrid(rarch, Nx, Ny, Nz, 3.0)
+bad_grid = BadGrid(rarch, Nx, Ny, Nz, 3.0, 5.0, 4000.0)
 
 u = zeros(Nx, Ny, Nz+1)
 
+@show @which eltype(rgrid)
+
+z = exponential_z_faces(; Nz, depth=4000)
+@show @which LatitudeLongitudeGrid(rarch; size=(Nx, Ny, Nz), halo=(8, 8, 8), z, longitude = (0, 360), latitude = (-60, -30), topology = (Periodic, Bounded, Bounded))
+
 @info "Compiling..."
 tic = time()
-rbad_wrapper! = @compile raise_first=true raise=true sync=true bad_wrapper!(u, ReactantState(), rgrid, Nx, Ny, Nz)
+rbad_wrapper! = @compile raise_first=true raise=true sync=true bad_wrapper!(u, rarch, rgrid, Nx, Ny, Nz)
 compile_toc = time() - tic
 
 @show compile_toc
 
 @info "Running..."
 
-rbad_wrapper!(u, ReactantState(), rgrid)
+rbad_wrapper!(u, rarch, rgrid, Nx, Ny, Nz)
