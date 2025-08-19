@@ -16,7 +16,7 @@ using Oceananigans.Operators: ℑzᵃᵃᶠ
 using Oceananigans.TimeSteppers: update_state!
 using Oceananigans.TurbulenceClosures: compute_diffusivities!, getclosure, depthᶜᶜᶠ, height_above_bottomᶜᶜᶠ
 using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: compute_CATKE_diffusivities!, mask_diffusivity, κuᶜᶜᶠ, κcᶜᶜᶠ, κeᶜᶜᶠ, momentum_mixing_lengthᶜᶜᶠ, convective_length_scaleᶜᶜᶠ, turbulent_velocityᶜᶜᶜ, stability_functionᶜᶜᶠ, stable_length_scaleᶜᶜᶠ, stratification_mixing_lengthᶜᶜᶠ
-using Oceananigans.Utils: launch!, _launch!, configure_kernel, work_layout
+using Oceananigans.Utils: launch!, _launch!, configure_kernel, work_layout, heuristic_workgroup, flatten_reduced_dimensions
 
 @inline exponential_profile(z, Lz, h) = (exp(z / h) - exp(-Lz / h)) / (1 - exp(-Lz / h))
 
@@ -72,40 +72,16 @@ function BadGrid(architecture::Arch, Nx::I, Ny::I, Nz::I, Lx::FT) where {Arch, F
     return BadGrid{FT, Arch, I}(architecture, Nx, Ny, Nz, Lx)
 end
 
-function bad_wrapper!(u, arch, grid; parameters = :xyz)
-    bad_launch!(arch, grid, parameters,
-            bad_kernel!,
-            u, grid)
+function bad_wrapper!(u, arch, grid)
+
+    workgroup = (16, 16)
+    worksize  = size(grid)
+    dev       = Oceananigans.Architectures.device(arch)
+    loop!     = bad_kernel!(dev, workgroup, worksize)
+
+    loop!(u, grid)
 
     return nothing
-end
-
-# Inner interface
-@inline function bad_launch!(arch, grid, workspec, kernel!, first_kernel_arg, other_kernel_args...;
-                          exclude_periphery = false,
-                          reduced_dimensions = (),
-                          active_cells_map = nothing)
-
-    location = (Nothing, Nothing, Nothing)
-
-    loop!, worksize = bad_configure_kernel(arch, grid, workspec, kernel!, active_cells_map, Val(exclude_periphery);
-                                       location,
-                                       reduced_dimensions)
-
-    loop!(first_kernel_arg, other_kernel_args...)
-
-    return nothing
-end
-
-@inline function bad_configure_kernel(arch, grid, workspec, kernel!, ::Nothing, args...; 
-                                  reduced_dimensions = (),
-                                  location = nothing)
-
-    workgroup, worksize = work_layout(grid, workspec, reduced_dimensions)
-    dev  = Oceananigans.Architectures.device(arch)
-    loop = kernel!(dev, workgroup, worksize)
-
-    return loop, worksize
 end
 
 @kernel function bad_kernel!(u, grid)
@@ -134,15 +110,13 @@ bad_grid = BadGrid(rarch, Nx, Ny, Nz, 3.0)
 
 u = zeros(Nx, Ny, Nz+1)
 
-@show @which configure_kernel(ReactantState(), rgrid, :xyz, bad_kernel!, nothing, Val(false); location=(Nothing, Nothing, Nothing), reduced_dimensions=())
-
 @info "Compiling..."
 tic = time()
-rbad_wrapper! = @compile raise_first=true raise=true sync=true bad_wrapper!(u, ReactantState(), rgrid; parameters = :xyz)
+rbad_wrapper! = @compile raise_first=true raise=true sync=true bad_wrapper!(u, ReactantState(), rgrid)
 compile_toc = time() - tic
 
 @show compile_toc
 
 @info "Running..."
 
-rbad_wrapper!(u, ReactantState(), rgrid; parameters = :xyz)
+rbad_wrapper!(u, ReactantState(), rgrid)
