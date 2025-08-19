@@ -1,6 +1,25 @@
 using Dates
 @info "This is when the fun begins" now(UTC)
 
+using ArgParse
+
+const args_settings = ArgParseSettings()
+@add_arg_table! args_settings begin
+    "--grid-x"
+        help = "Base factor for number of grid points on the x axis."
+        default = 1536
+        arg_type = Int
+    "--grid-y"
+        help = "Base factor for number of grid points on the y axis."
+        default = 768
+        arg_type = Int
+    "--grid-z"
+        help = "Base factor for number of grid points on the z axis."
+        default = 4
+        arg_type = Int
+end
+const parsed_args = parse_args(ARGS, args_settings)
+
 ENV["JULIA_DEBUG"] = "Reactant_jll,Reactant"
 
 using GordonBell25
@@ -51,9 +70,9 @@ end
 
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 H = 8
-Tx = 32 * 48 * Rx
-Ty = 32 * 24 * Ry
-Nz = 4
+Tx = parsed_args["grid-x"] * Rx
+Ty = parsed_args["grid-y"] * Ry
+Nz = parsed_args["grid-z"]
 
 Nx = Tx - 2H
 Ny = Ty - 2H
