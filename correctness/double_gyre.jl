@@ -36,8 +36,6 @@ function simple_latitude_longitude_grid(arch, Nx, Ny, Nz; halo=(8, 8, 8))
     z = exponential_z_faces(; Nz, depth=4000) # may need changing for very large Nz
 
     grid = BadLatitudeLongitudeGrid(arch; size=(Nx, Ny, Nz), halo, z,
-        longitude = (0, 360), # Problem is here: when longitude is not periodic we get error
-        latitude = (-60, -30), # Tentative southern ocean latitude range
         topology = (Periodic, Bounded, Bounded)
     )
 
@@ -47,14 +45,11 @@ end
 const R_Earth = 6371.0e3 
 
 function BadLatitudeLongitudeGrid(architecture = CPU(),
-                               FT::DataType = Oceananigans.defaults.FloatType;
+                               FT::DataType = Float64;
                                size,
-                               longitude = nothing,
-                               latitude = nothing,
                                z = nothing,
                                radius = R_Earth,
                                topology = nothing,
-                               precompute_metrics = true,
                                halo = nothing)
 
     Nλ, Nφ, Nz = size
@@ -65,13 +60,19 @@ function BadLatitudeLongitudeGrid(architecture = CPU(),
     # it is stretched if being passed is a function or vector (as for the VerticallyStretchedRectilinearGrid)
     TX, TY, TZ = topology
 
-    Lλ, λᶠᵃᵃ, λᶜᵃᵃ, Δλᶠᵃᵃ, Δλᶜᵃᵃ = generate_coordinate(FT, topology, size, halo, longitude, :longitude, 1, architecture)
-    Lφ, φᵃᶠᵃ, φᵃᶜᵃ, Δφᵃᶠᵃ, Δφᵃᶜᵃ = generate_coordinate(FT, topology, size, halo, latitude,  :latitude,  2, architecture)
-    Lz, z                        = generate_coordinate(FT, topology, size, halo, z,         :z,         3, architecture)
+    Lλ = 360.0
+    Lφ = 30.0
+    Lz = 4000.0
 
-    @allowscalar @show Lλ, λᶠᵃᵃ, λᶜᵃᵃ, Δλᶠᵃᵃ, Δλᶜᵃᵃ
-    @allowscalar @show Lφ, φᵃᶠᵃ, φᵃᶜᵃ, Δφᵃᶠᵃ, Δφᵃᶜᵃ
-    @allowscalar @show Lz, z
+    λᶠᵃᵃ  = zeros(377)
+    λᶜᵃᵃ  = zeros(377)
+    Δλᶠᵃᵃ = 0.99
+    Δλᶜᵃᵃ = 0.99
+
+    φᵃᶠᵃ  = zeros(48)
+    φᵃᶜᵃ  = zeros(47)
+    Δφᵃᶠᵃ = 0.99
+    Δφᵃᶜᵃ = 0.99
 
     grid = LatitudeLongitudeGrid{TX, TY, TZ}(architecture,
                                                          Nλ, Nφ, Nz,
@@ -98,11 +99,11 @@ function BadLatitudeLongitudeGrid(architecture = CPU(),
 end
 
 function bad_allocate_metrics(grid)
-    FT = eltype(grid)
+    FT = Float64
     arch = grid.architecture
 
-    offsets     = grid.φᵃᶜᵃ.offsets[1]
-    metric_size = length(grid.φᵃᶜᵃ)
+    offsets     = (2,2)
+    metric_size = (8,8)
 
     Δxᶜᶜ = OffsetArray(zeros(arch, FT, metric_size...), offsets...)
     Δxᶠᶜ = OffsetArray(zeros(arch, FT, metric_size...), offsets...)
@@ -113,8 +114,8 @@ function bad_allocate_metrics(grid)
     Azᶜᶠ = OffsetArray(zeros(arch, FT, metric_size...), offsets...)
     Azᶠᶠ = OffsetArray(zeros(arch, FT, metric_size...), offsets...)
 
-    Δyᶠᶜ = Δyᶠᶜᵃ(1, 1, 1, grid)
-    Δyᶜᶠ = Δyᶜᶠᵃ(1, 1, 1, grid)
+    Δyᶠᶜ = zeros(1, 1, 1)
+    Δyᶜᶠ = zeros(1, 1, 1)
 
     return Δxᶜᶜ, Δxᶠᶜ, Δxᶜᶠ, Δxᶠᶠ, Δyᶠᶜ, Δyᶜᶠ, Azᶜᶜ, Azᶠᶜ, Azᶜᶠ, Azᶠᶠ
 end
