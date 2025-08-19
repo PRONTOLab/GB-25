@@ -7,6 +7,16 @@ using GordonBell25
 Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
 #Reactant.allowscalar(true)
 
+using InteractiveUtils
+using KernelAbstractions: @kernel, @index
+using Oceananigans.BuoyancyFormulations: ∂z_b
+using Oceananigans.Grids: static_column_depthᶜᶜᵃ, peripheral_node, inactive_node
+using Oceananigans.Operators: ℑzᵃᵃᶠ
+using Oceananigans.TimeSteppers: update_state!
+using Oceananigans.TurbulenceClosures: compute_diffusivities!, getclosure, depthᶜᶜᶠ, height_above_bottomᶜᶜᶠ
+using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: compute_CATKE_diffusivities!, mask_diffusivity, κuᶜᶜᶠ, κcᶜᶜᶠ, κeᶜᶜᶠ, momentum_mixing_lengthᶜᶜᶠ, convective_length_scaleᶜᶜᶠ, turbulent_velocityᶜᶜᶜ, stability_functionᶜᶜᶠ, stable_length_scaleᶜᶜᶠ, stratification_mixing_lengthᶜᶜᶠ
+using Oceananigans.Utils: launch!, _launch!
+
 @inline exponential_profile(z, Lz, h) = (exp(z / h) - exp(-Lz / h)) / (1 - exp(-Lz / h))
 
 function exponential_z_faces(; Nz, depth, h = Nz / 4.5)
@@ -35,34 +45,6 @@ function simple_latitude_longitude_grid(arch, Nx, Ny, Nz; halo=(8, 8, 8))
     return grid
 end
 
-function double_gyre_model(arch, Nx, Ny, Nz, Δt)
-
-    # Fewer substeps can be used at higher resolutions
-    free_surface = SplitExplicitFreeSurface(substeps=30)
-
-    # TEOS10 is a 54-term polynomial that relates temperature (T) and salinity (S) to buoyancy
-    buoyancy = SeawaterBuoyancy(equation_of_state = LinearEquationOfState())
-
-    # Closures:
-    vertical_closure = Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity()
-
-    tracers = (:T, :S, :e)
-    grid = simple_latitude_longitude_grid(arch, Nx, Ny, Nz)
-
-    model = HydrostaticFreeSurfaceModel(; grid,
-                                          free_surface = free_surface,
-                                          closure = vertical_closure,
-                                          buoyancy = buoyancy,
-                                          tracers = tracers,
-                                          momentum_advection = nothing,
-                                          tracer_advection = nothing)
-
-    set!(model.tracers.e, 1e-6)
-    model.clock.last_Δt = Δt
-
-    return model
-end
-
 Nx = 362
 Ny = 32
 Nz = 30
@@ -71,40 +53,33 @@ Oceananigans.defaults.FloatType = Float64
 
 @info "Generating model..."
 rarch  = ReactantState()
-rmodel = double_gyre_model(rarch, Nx, Ny, Nz, 1200)
+rgrid = simple_latitude_longitude_grid(rarch, Nx, Ny, Nz)
 
-using InteractiveUtils
+abstract type AbstractBadGrid{FT, Arch} end
 
-using KernelAbstractions: @kernel, @index
+struct BadGrid{FT, Arch, I} <: AbstractBadGrid{FT, Arch}
+    architecture :: Arch
+    Nx :: I
+    Ny :: I
+    Nz :: I
+    Lx :: FT
+end
 
-using Oceananigans.BuoyancyFormulations: ∂z_b
+Base.eltype(::AbstractBadGrid{FT}) where FT = FT
 
-using Oceananigans.Grids: static_column_depthᶜᶜᵃ, peripheral_node, inactive_node
+function BadGrid(architecture::Arch, Nx::I, Ny::I, Nz::I, Lx::FT) where {Arch, FT, I}
+    return BadGrid{FT, Arch, I}(architecture, Nx, Ny, Nz, Lx)
+end
 
-using Oceananigans.Operators: ℑzᵃᵃᶠ
-
-using Oceananigans.TimeSteppers: update_state!
-
-using Oceananigans.TurbulenceClosures: compute_diffusivities!, getclosure, depthᶜᶜᶠ, height_above_bottomᶜᶜᶠ
-
-using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: compute_CATKE_diffusivities!, mask_diffusivity, κuᶜᶜᶠ, κcᶜᶜᶠ, κeᶜᶜᶠ, momentum_mixing_lengthᶜᶜᶠ, convective_length_scaleᶜᶜᶠ, turbulent_velocityᶜᶜᶜ, stability_functionᶜᶜᶠ, stable_length_scaleᶜᶜᶠ, stratification_mixing_lengthᶜᶜᶠ
-
-using Oceananigans.Utils: launch!
-
-@show @which eltype(rmodel.grid)
-@show zero(rmodel.grid)
-@show typeof(zero(rmodel.grid))
-@show eltype(rmodel.diffusivity_fields.κu)
-
-function bad_compute_diffusivities!(κu, arch, grid; parameters = :xyz)
+function bad_wrapper!(u, arch, grid; parameters = :xyz)
     launch!(arch, grid, parameters,
-            bad_compute_CATKE_diffusivities!,
-            κu, grid)
+            bad_kernel!,
+            u, grid)
 
     return nothing
 end
 
-@kernel function bad_compute_CATKE_diffusivities!(κu, grid)
+@kernel function bad_kernel!(u, grid)
     i, j, k = @index(Global, NTuple)
 
     FT  = eltype(grid)
@@ -123,16 +98,22 @@ end
 
     κu★ = ifelse(on_periphery, 0.0, ifelse(within_inactive, nan, κu★))
 
-    @inbounds κu[i, j, k] = κu★
+    @inbounds u[i, j, k] = κu★
 end
+
+bad_grid = BadGrid(rarch, Nx, Ny, Nz, 3.0)
+
+u = zeros(Nx, Ny, Nz+1)
+
+@show @which _launch!(ReactantState(), rgrid, :xyz, bad_kernel!, u, rgrid)
 
 @info "Compiling..."
 tic = time()
-restimate_tracer_error = @compile raise_first=true raise=true sync=true bad_compute_diffusivities!(rmodel.diffusivity_fields.κu, rmodel.architecture, rmodel.grid; parameters = :xyz)
+rbad_wrapper! = @compile raise_first=true raise=true sync=true bad_wrapper!(u, ReactantState(), rgrid; parameters = :xyz)
 compile_toc = time() - tic
 
 @show compile_toc
 
 @info "Running..."
 
-restimate_tracer_error(rmodel.diffusivity_fields.κu, rmodel.architecture, rmodel.grid; parameters = :xyz)
+rbad_wrapper!(u, ReactantState(), rgrid; parameters = :xyz)
