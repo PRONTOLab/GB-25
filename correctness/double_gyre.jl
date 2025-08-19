@@ -39,6 +39,22 @@ function set_tracers(grid;
     return Tᵢ, Sᵢ
 end
 
+@inline exponential_profile(z, Lz, h) = (exp(z / h) - exp(-Lz / h)) / (1 - exp(-Lz / h))
+
+function exponential_z_faces(; Nz, depth, h = Nz / 4.5)
+
+    k = collect(1:Nz+1)
+    z_faces = exponential_profile.(k, Nz, h)
+
+    # Normalize
+    z_faces .-= z_faces[1]
+    z_faces .*= - depth / z_faces[end]
+
+    z_faces[1] = 0.0
+
+    return reverse(z_faces)
+end
+
 function simple_latitude_longitude_grid(arch, Nx, Ny, Nz; halo=(8, 8, 8))
     z = exponential_z_faces(; Nz, depth=4000) # may need changing for very large Nz
 
@@ -82,7 +98,7 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
 
     underlying_grid = simple_latitude_longitude_grid(arch, Nx, Ny, Nz)
 
-    ridge(λ, φ) = 4100exp(-0.005(λ - 120)^2) * (1 / (1 + exp(-3*(φ+48))) + 1 / (1 + exp(-3*(-φ-52)))) - 4000 # might be needed
+    ridge(λ, φ) = 4100exp(-0.005(λ - 120)^2) * (1 / (1 + exp(-3(φ+45))) + 1 / (1 + exp(-3(-φ-55)))) - 4000 # might be needed
     grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(ridge))
 
     momentum_advection = VectorInvariant()
@@ -112,26 +128,8 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     no_slip_bc = ValueBoundaryCondition(0.0)
     u_top_bc   = FluxBoundaryCondition(Field{Face, Center, Nothing}(grid))
 
-    @inline linear_drag_u(i, j, grid, clock, model_fields)                = -0.2 * model_fields.u[i, j, 1]
-    @inline immersed_linear_drag_u(i, j, k, grid, clock, model_fields)    = -0.2  * model_fields.u[i, j, k] #- 0.2 * model_fields.u[i, j, k]
-    @inline immersed_linear_drag_u_NE(i, j, k, grid, clock, model_fields) =  0.2 * model_fields.u[i, j, k]  # Inverted for N / E BC
-
-    @inline linear_drag_v(i, j, grid, clock, model_fields)                = -0.2 * model_fields.v[i, j, 1]
-    @inline immersed_linear_drag_v(i, j, k, grid, clock, model_fields)    = -0.2 * model_fields.v[i, j, k] #- 0.2 * model_fields.v[i, j, k]
-    @inline immersed_linear_drag_v_NE(i, j, k, grid, clock, model_fields) =  0.2 * model_fields.v[i, j, k]  # Inverted for N / E BC
-
-    drag_u             = FluxBoundaryCondition(linear_drag_u, discrete_form=true)
-    immersed_drag_u    = FluxBoundaryCondition(immersed_linear_drag_u, discrete_form=true)
-    immersed_drag_u_NE = FluxBoundaryCondition(immersed_linear_drag_u_NE, discrete_form=true)
-    u_immersed_bc      = ImmersedBoundaryCondition(bottom=immersed_drag_u) #, south=immersed_drag_u, west=immersed_drag_u, north=immersed_drag_u_NE, east=immersed_drag_u_NE)
-
-    drag_v             = FluxBoundaryCondition(linear_drag_v, discrete_form=true)
-    immersed_drag_v    = FluxBoundaryCondition(immersed_linear_drag_v, discrete_form=true)
-    immersed_drag_v_NE = FluxBoundaryCondition(immersed_linear_drag_v_NE, discrete_form=true)
-    v_immersed_bc      = ImmersedBoundaryCondition(bottom=immersed_drag_v) #, south=immersed_drag_v, west=immersed_drag_v, north=immersed_drag_v_NE, east=immersed_drag_v_NE)
-
-    u_bcs = FieldBoundaryConditions(north=no_slip_bc, south=no_slip_bc, bottom=drag_u, top=u_top_bc) #, immersed=u_immersed_bc) #, immersed=no_slip_bc)
-    v_bcs = FieldBoundaryConditions(bottom=drag_v) #, immersed=v_immersed_bc)
+    u_bcs = FieldBoundaryConditions(north=no_slip_bc, south=no_slip_bc, top=u_top_bc, immersed=NoFluxBoundaryCondition())
+    v_bcs = FieldBoundaryConditions(immersed=NoFluxBoundaryCondition())
 
     boundary_conditions = (u=u_bcs, T=T_bcs, v=v_bcs)
 
@@ -168,7 +166,7 @@ end
 function loop!(model)
     Δt = model.clock.last_Δt + 0
     Oceananigans.TimeSteppers.first_time_step!(model, Δt)
-    @trace mincut = true track_numbers = false for i = 1:9999
+    @trace mincut = true track_numbers = false for i = 1:39999
         Oceananigans.TimeSteppers.time_step!(model, Δt)
     end
     return nothing
@@ -279,7 +277,7 @@ set!(rmodel.tracers.T, rTᵢ)
 #
 # Plotting:
 #
-graph_directory = "run_steps10000_timestep600_salinity30_windstressNeg02_ridgeFull_relaxationP_e0_Nz50_horizontalvisc10000_horizontaldiff100_ridgeWidthX50_ridgeSmoothed_linearBottomDragBottomOnly/"
+graph_directory = "sample_v97p7_40000steps/" #"run_steps10000_timestep600_salinity30_windstressNeg02_ridgeFull_relaxationP_e0_Nz50_horizontalvisc10000_horizontaldiff100_ridgeWidthX50_ridgeSmoothed_linearBottomDragBottomOnly/"
 
 mkdir(graph_directory)
 
@@ -628,6 +626,28 @@ fig, ax, hm = heatmap(view(T, 1:Nx, 1:Ny, Nz),
 Colorbar(fig[1, 2], hm, label = "[degrees C]")
 
 save(graph_directory * "final_T_surface.png", fig)
+
+fig, ax, hm = heatmap(view(T, 1:Nx, 1:Ny, 32),
+                      colormap = :thermal,
+                      axis = (xlabel = "x [degrees]",
+                              ylabel = "y [degrees]",
+                              title = "T(x, y, z=0, t=end)",
+                              titlesize = 24))
+
+Colorbar(fig[1, 2], hm, label = "[degrees C]")
+
+save(graph_directory * "final_T_200.png", fig)
+
+fig, ax, hm = heatmap(view(T, 1:Nx, 1:Ny, 16),
+                      colormap = :thermal,
+                      axis = (xlabel = "x [degrees]",
+                              ylabel = "y [degrees]",
+                              title = "T(x, y, z=-4000, t=end)",
+                              titlesize = 24))
+
+Colorbar(fig[1, 2], hm, label = "[degrees C]")
+
+save(graph_directory * "final_T_1000.png", fig)
 
 fig, ax, hm = heatmap(view(T, 1:Nx, 1:Ny, 1),
                       colormap = :thermal,
