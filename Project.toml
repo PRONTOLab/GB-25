@@ -4,6 +4,7 @@ authors = ["William Moses and contributors"]
 version = "0.1.0"
 
 [deps]
+Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 CUDA_Runtime_jll = "76a88914-d11a-5bdc-97e0-2f5a05c973a2"
 ClimaOcean = "0376089a-ecfe-4b0e-a64f-9c555d74d754"
@@ -25,6 +26,7 @@ SeawaterPolynomials = "d496a93d-167e-4197-9f49-d3af4ff8fe40"
 Serialization = "9e88b42a-f829-5b0c-bbe9-9e923198166b"
 
 [compat]
+Adapt = "4.3.0"
 CUDA = "5.7.1"
 ClimaOcean = "0.8"
 Dates = "1"
