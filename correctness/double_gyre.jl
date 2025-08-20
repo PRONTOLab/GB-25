@@ -1,7 +1,7 @@
 ENV["JULIA_DEBUG"] = "Reactant_jll,Reactant"
 
-using Oceananigans
-using Oceananigans.Architectures: ReactantState
+using Oceananigans.Grids: LatitudeLongitudeGrid, Periodic, Bounded
+using Oceananigans.Architectures: ReactantState, device
 using Reactant
 using KernelAbstractions
 using GordonBell25
@@ -12,9 +12,81 @@ using OffsetArrays
 using InteractiveUtils
 using KernelAbstractions: @kernel, @index
 
-using Oceananigans.Operators: Δyᶠᶜᵃ, Δyᶜᶠᵃ
+abstract type AbstractBadGrid{FT, Arch} end
 
-using Oceananigans.Grids: generate_coordinate, with_precomputed_metrics, validate_lat_lon_grid_args, allocate_metrics, metric_workgroup, metric_worksize, compute_Δx_Az!, compute_Δy!, XRegularLLG, YRegularLLG
+Base.eltype(::AbstractBadGrid{FT}) where FT = FT
+
+struct BadLatitudeLongitudeGrid{FT, TX, TY, TZ, Z, DXF, DXC, XF, XC, DYF, DYC, YF, YC,
+                             DXCC, DXFC, DXCF, DXFF, DYFC, DYCF, Arch, I} <: AbstractBadGrid{FT, Arch}
+    architecture :: Arch
+    Nx :: I
+    Ny :: I
+    Nz :: I
+    Hx :: I
+    Hy :: I
+    Hz :: I
+    Lx :: FT
+    Ly :: FT
+    Lz :: FT
+    # All directions can be either regular (FX, FY, FZ) <: Number
+    # or stretched (FX, FY, FZ) <: AbstractVector
+    Δλᶠᵃᵃ :: DXF
+    Δλᶜᵃᵃ :: DXC
+    λᶠᵃᵃ  :: XF
+    λᶜᵃᵃ  :: XC
+    Δφᵃᶠᵃ :: DYF
+    Δφᵃᶜᵃ :: DYC
+    φᵃᶠᵃ  :: YF
+    φᵃᶜᵃ  :: YC
+    z     :: Z
+    # Precomputed metrics M <: Nothing means metrics will be computed on the fly
+    Δxᶜᶜᵃ :: DXCC
+    Δxᶠᶜᵃ :: DXFC
+    Δxᶜᶠᵃ :: DXCF
+    Δxᶠᶠᵃ :: DXFF
+    Δyᶠᶜᵃ :: DYFC
+    Δyᶜᶠᵃ :: DYCF
+    Azᶜᶜᵃ :: DXCC
+    Azᶠᶜᵃ :: DXFC
+    Azᶜᶠᵃ :: DXCF
+    Azᶠᶠᵃ :: DXFF
+    # Spherical radius
+    radius :: FT
+end
+
+function BadLatitudeLongitudeGrid{TX, TY, TZ}(architecture::Arch,
+                                           Nλ::I, Nφ::I, Nz::I, Hλ::I, Hφ::I, Hz::I,
+                                           Lλ :: FT, Lφ :: FT, Lz :: FT,
+                                           Δλᶠᵃᵃ :: DXF, Δλᶜᵃᵃ :: DXC,
+                                            λᶠᵃᵃ :: XF,   λᶜᵃᵃ :: XC,
+                                           Δφᵃᶠᵃ :: DYF, Δφᵃᶜᵃ :: DYC,
+                                            φᵃᶠᵃ :: YF,   φᵃᶜᵃ :: YC, z :: Z,
+                                           Δxᶜᶜᵃ :: DXCC, Δxᶠᶜᵃ :: DXFC,
+                                           Δxᶜᶠᵃ :: DXCF, Δxᶠᶠᵃ :: DXFF,
+                                           Δyᶠᶜᵃ :: DYFC, Δyᶜᶠᵃ :: DYCF,
+                                           Azᶜᶜᵃ :: DXCC, Azᶠᶜᵃ :: DXFC,
+                                           Azᶜᶠᵃ :: DXCF, Azᶠᶠᵃ :: DXFF,
+                                           radius :: FT) where {Arch, FT, TX, TY, TZ, Z,
+                                                                DXF, DXC, XF, XC,
+                                                                DYF, DYC, YF, YC,
+                                                                DXFC, DXCF,
+                                                                DXFF, DXCC,
+                                                                DYFC, DYCF, I}
+
+    return LatitudeLongitudeGrid{FT, TX, TY, TZ, Z,
+                                 DXF, DXC, XF, XC,
+                                 DYF, DYC, YF, YC,
+                                 DXCC, DXFC, DXCF, DXFF,
+                                 DYFC, DYCF, Arch, I}(architecture,
+                                                      Nλ, Nφ, Nz,
+                                                      Hλ, Hφ, Hz,
+                                                      Lλ, Lφ, Lz,
+                                                      Δλᶠᵃᵃ, Δλᶜᵃᵃ, λᶠᵃᵃ, λᶜᵃᵃ,
+                                                      Δφᵃᶠᵃ, Δφᵃᶜᵃ, φᵃᶠᵃ, φᵃᶜᵃ, z,
+                                                      Δxᶜᶜᵃ, Δxᶠᶜᵃ, Δxᶜᶠᵃ, Δxᶠᶠᵃ,
+                                                      Δyᶠᶜᵃ, Δyᶜᶠᵃ,
+                                                      Azᶜᶜᵃ, Azᶠᶜᵃ, Azᶜᶠᵃ, Azᶠᶠᵃ, radius)
+end
 
 @inline exponential_profile(z, Lz, h) = (exp(z / h) - exp(-Lz / h)) / (1 - exp(-Lz / h))
 
@@ -42,7 +114,7 @@ function simple_latitude_longitude_grid(arch, Nx, Ny, Nz; halo=(8, 8, 8))
     return grid
 end
 
-const R_Earth = 6371.0e3 
+const R_Earth = 6371.0e3
 
 function BadLatitudeLongitudeGrid(architecture = CPU(),
                                FT::DataType = Float64;
@@ -74,7 +146,7 @@ function BadLatitudeLongitudeGrid(architecture = CPU(),
     Δφᵃᶠᵃ = 0.99
     Δφᵃᶜᵃ = 0.99
 
-    grid = LatitudeLongitudeGrid{TX, TY, TZ}(architecture,
+    grid = BadLatitudeLongitudeGrid{TX, TY, TZ}(architecture,
                                                          Nλ, Nφ, Nz,
                                                          Hλ, Hφ, Hz,
                                                          Lλ, Lφ, Lz,
@@ -85,7 +157,7 @@ function BadLatitudeLongitudeGrid(architecture = CPU(),
 
     Δxᶜᶜᵃ, Δxᶠᶜᵃ, Δxᶜᶠᵃ, Δxᶠᶠᵃ, Δyᶠᶜᵃ, Δyᶜᶠᵃ, Azᶜᶜᵃ, Azᶠᶜᵃ, Azᶜᶠᵃ, Azᶠᶠᵃ = bad_allocate_metrics(grid)
 
-    grid = LatitudeLongitudeGrid{TX, TY, TZ}(grid.architecture,
+    grid = BadLatitudeLongitudeGrid{TX, TY, TZ}(grid.architecture,
                                              Nλ, Nφ, Nz,
                                              Hλ, Hφ, Hz,
                                              grid.Lx, grid.Ly, grid.Lz,
@@ -124,85 +196,15 @@ Nx = 362
 Ny = 32
 Nz = 30
 
-Oceananigans.defaults.FloatType = Float64
-
 @info "Generating model..."
 rarch  = ReactantState()
 rgrid = simple_latitude_longitude_grid(rarch, Nx, Ny, Nz)
-
-abstract type AbstractBadGrid{FT, Arch} end
-
-struct BadGrid{FT, Arch, DXFC, DXCF,
-               DXFF, DXCC, DYFC, DYCF, I} <: AbstractBadGrid{FT, Arch}
-    architecture :: Arch
-    Nx :: I
-    Ny :: I
-    Nz :: I
-    Lx :: FT
-    Ly :: FT
-    Lz :: FT
-    Δxᶜᶜ :: DXCC
-    Δxᶠᶜ :: DXFC
-    Δxᶜᶠ :: DXCF
-    Δxᶠᶠ :: DXFF
-    Δyᶠᶜ :: DYFC
-    Δyᶜᶠ :: DYCF
-    Azᶜᶜ :: DXCC
-    Azᶠᶜ :: DXFC
-    Azᶜᶠ :: DXCF
-    Azᶠᶠ :: DXFF
-end
-
-Base.eltype(::AbstractBadGrid{FT}) where FT = FT
-
-function BadGrid(architecture::Arch, Nx::I, Ny::I, Nz::I, Lx::FT, Ly::FT, Lz::FT,
-                 Δxᶜᶜᵃ :: DXCC, Δxᶠᶜᵃ :: DXFC,
-                 Δxᶜᶠᵃ :: DXCF, Δxᶠᶠᵃ :: DXFF,
-                 Δyᶠᶜᵃ :: DYFC, Δyᶜᶠᵃ :: DYCF,
-                 Azᶜᶜᵃ :: DXCC, Azᶠᶜᵃ :: DXFC,
-                 Azᶜᶠᵃ :: DXCF, Azᶠᶠᵃ :: DXFF) where {Arch, FT, DXFC, DXCF,
-                                                        DXFF, DXCC,
-                                                        DYFC, DYCF, I}
-    return BadGrid{FT, Arch, DXFC, DXCF,
-                   DXFF, DXCC, DYFC, DYCF, I}(architecture, Nx, Ny, Nz, Lx, Ly, Lz, Δxᶜᶜᵃ, Δxᶠᶜᵃ, Δxᶜᶠᵃ, Δxᶠᶠᵃ,
-                                              Δyᶠᶜᵃ, Δyᶜᶠᵃ, Azᶜᶜᵃ, Azᶠᶜᵃ, Azᶜᶠᵃ, Azᶠᶠᵃ)
-end
-
-function BadGrid(architecture::Arch, Nx::I, Ny::I, Nz::I, Lx::FT, Ly::FT, Lz::FT) where {Arch, FT, I}
-    grid = BadGrid(architecture, Nx, Ny, Nz, Lx, Ly, Lz, (nothing for i=1:10)...)
-
-    Δxᶜᶜ, Δxᶠᶜ, Δxᶜᶠ, Δxᶠᶠ, Δyᶠᶜ, Δyᶜᶠ, Azᶜᶜ, Azᶠᶜ, Azᶜᶠ, Azᶠᶠ = vbad_allocate_metrics(grid)
-
-    return BadGrid(architecture, Nx, Ny, Nz, Lx, Ly, Lz, Δxᶜᶜ, Δxᶠᶜ, Δxᶜᶠ, Δxᶠᶠ, Δyᶠᶜ, Δyᶜᶠ, Azᶜᶜ, Azᶠᶜ, Azᶜᶠ, Azᶠᶠ)
-end
-
-function vbad_allocate_metrics(grid)
-    FT = eltype(grid)
-    arch = grid.architecture
-
-    offsets     = (2,2)
-    metric_size = (8,8)
-
-    Δxᶜᶜ = OffsetArray(zeros(arch, FT, metric_size...), offsets...)
-    Δxᶠᶜ = OffsetArray(zeros(arch, FT, metric_size...), offsets...)
-    Δxᶜᶠ = OffsetArray(zeros(arch, FT, metric_size...), offsets...)
-    Δxᶠᶠ = OffsetArray(zeros(arch, FT, metric_size...), offsets...)
-    Azᶜᶜ = OffsetArray(zeros(arch, FT, metric_size...), offsets...)
-    Azᶠᶜ = OffsetArray(zeros(arch, FT, metric_size...), offsets...)
-    Azᶜᶠ = OffsetArray(zeros(arch, FT, metric_size...), offsets...)
-    Azᶠᶠ = OffsetArray(zeros(arch, FT, metric_size...), offsets...)
-
-    Δyᶠᶜ = zeros(1, 1, 1) #Δyᶠᶜᵃ(1, 1, 1, grid)
-    Δyᶜᶠ = zeros(1, 1, 1) #Δyᶜᶠᵃ(1, 1, 1, grid)
-
-    return Δxᶜᶜ, Δxᶠᶜ, Δxᶜᶠ, Δxᶠᶠ, Δyᶠᶜ, Δyᶜᶠ, Azᶜᶜ, Azᶠᶜ, Azᶜᶠ, Azᶠᶠ
-end
 
 function bad_wrapper!(u, arch, grid, Nx, Ny, Nz)
 
     workgroup = (16, 16)
     worksize  = (Nx, Ny, Nz)
-    dev       = Oceananigans.Architectures.device(arch)
+    dev       = device(arch)
     loop!     = bad_kernel!(dev, workgroup, worksize)
 
     loop!(u, grid, Ny, Nz)
@@ -231,8 +233,6 @@ end
 
     @inbounds u[i, j, k] = κu★
 end
-
-bad_grid = BadGrid(rarch, Nx, Ny, Nz, 3.0, 5.0, 4000.0)
 
 u = zeros(Nx, Ny, Nz+1)
 
