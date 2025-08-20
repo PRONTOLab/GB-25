@@ -2,7 +2,7 @@ using FileIO, JLD2
 using GLMakie
 
 
-graph_directory = "sample_io/"
+graph_directory = "run_steps10000_timestep600_salinity30_windstressNeg02_ridgeFull_relaxationS80N111K_e0_Nz50_horizontalvisc10000_horizontaldiff100_ridgeWidthX50_ridgeSmoothed/"
 
 data = jldopen(graph_directory * "data_init.jld2", "r")
 

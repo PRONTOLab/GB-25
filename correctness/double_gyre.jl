@@ -114,10 +114,10 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     τ  = 864000 # Relaxation timescale, equal to 10 days
 
     # TODO: replace with discrete form
-    surface_condition_T(i, j, grid, clock, model_fields) = (ρₒ / τ) * (model_fields.T[i, j, Nz] - (-2 + 12(φnode(j, grid, Center()) - φ₀) / Lφ))
+    surface_condition_T(i, j, grid, clock, model_fields) = (80 / τ) * (model_fields.T[i, j, Nz] - (-2 + 12(φnode(j, grid, Center()) - φ₀) / Lφ))
     T_top_bc = FluxBoundaryCondition(surface_condition_T, discrete_form=true)
     
-    north_condition_T(i, k, grid, clock, model_fields) = (ρₒ / τ) * (model_fields.T[i, Ny, k] - (-2 + 12(-30 - φ₀) * exp(znode(k, grid, Center())/800) / Lφ))
+    north_condition_T(i, k, grid, clock, model_fields) = (110000 / τ) * (model_fields.T[i, Ny, k] - (-2 + 12(-30 - φ₀) * exp(znode(k, grid, Center())/800) / Lφ))
     T_north_bc = FluxBoundaryCondition(north_condition_T, discrete_form=true)
 
     T_bcs = FieldBoundaryConditions(north=T_north_bc, top=T_top_bc)
@@ -166,7 +166,7 @@ end
 function loop!(model)
     Δt = model.clock.last_Δt + 0
     Oceananigans.TimeSteppers.first_time_step!(model, Δt)
-    @trace mincut = true track_numbers = false for i = 1:9
+    @trace mincut = true track_numbers = false for i = 1:9999
         Oceananigans.TimeSteppers.time_step!(model, Δt)
     end
     return nothing
@@ -257,7 +257,7 @@ set!(rmodel.tracers.T, rTᵢ)
 #
 # Plotting:
 #
-graph_directory = "sample_io/" #"run_steps10000_timestep600_salinity30_windstressNeg02_ridgeFull_relaxationP_e0_Nz50_horizontalvisc10000_horizontaldiff100_ridgeWidthX50_ridgeSmoothed_linearBottomDragBottomOnly/"
+graph_directory = "run_steps10000_timestep600_salinity30_windstressNeg02_ridgeFull_relaxationS80N111K_e0_Nz50_horizontalvisc10000_horizontaldiff100_ridgeWidthX50_ridgeSmoothed/"
 
 outputs = (u=rmodel.velocities.u, v=rmodel.velocities.v, T=rmodel.tracers.T, e=rmodel.tracers.e, SSH=rmodel.free_surface.η)
 
