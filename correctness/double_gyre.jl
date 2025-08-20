@@ -9,6 +9,7 @@ Reactant.set_default_backend("cpu")
 
 using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity, SmallSlopeIsopycnalTensor, FluxTapering, CATKEVerticalDiffusivity
 using Oceananigans.BoundaryConditions: NoFluxBoundaryCondition
+using Oceananigans.Operators: ℑxyᶠᶜᵃ, ℑxyᶜᶠᵃ
 using ClimaOcean.Diagnostics: MixedLayerDepthField
 
 using Oceananigans.Grids: λnode, φnode, znode
