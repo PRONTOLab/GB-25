@@ -5,6 +5,7 @@ using Reactant
 using GordonBell25
 #Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
 #Reactant.allowscalar(true)
+Reactant.set_default_backend("cpu")
 
 using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity, SmallSlopeIsopycnalTensor, FluxTapering, CATKEVerticalDiffusivity
 using Oceananigans.BoundaryConditions: NoFluxBoundaryCondition
