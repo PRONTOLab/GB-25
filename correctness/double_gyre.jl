@@ -1,6 +1,6 @@
 ENV["JULIA_DEBUG"] = "Reactant_jll,Reactant"
 
-using Oceananigans.Grids: LatitudeLongitudeGrid, Periodic, Bounded
+using Oceananigans.Grids: LatitudeLongitudeGrid, Periodic, Bounded, AbstractHorizontallyCurvilinearGrid
 using Oceananigans.Architectures: ReactantState, device
 using Reactant
 using KernelAbstractions
@@ -11,14 +11,14 @@ using OffsetArrays
 
 using InteractiveUtils
 using KernelAbstractions: @kernel, @index
-
+#=
 abstract type AbstractGrid{FT, TX, TY, TZ, Arch} end
 abstract type AbstractUnderlyingGrid{FT, TX, TY, TZ, CZ, Arch} <: AbstractGrid{FT, TX, TY, TZ, Arch} end
 abstract type AbstractCurvilinearGrid{FT, TX, TY, TZ, CZ, Arch} <: AbstractUnderlyingGrid{FT, TX, TY, TZ, CZ, Arch} end
 abstract type AbstractHorizontallyCurvilinearGrid{FT, TX, TY, TZ, CZ, Arch} <: AbstractCurvilinearGrid{FT, TX, TY, TZ, CZ, Arch} end
 
 Base.eltype(::AbstractGrid{FT}) where FT = FT
-
+=#
 struct BadLatitudeLongitudeGrid{FT, TX, TY, TZ, Z, DXF, DXC, XF, XC, DYF, DYC, YF, YC,
                              DXCC, DXFC, DXCF, DXFF, DYFC, DYCF, Arch, I} <: AbstractHorizontallyCurvilinearGrid{FT, TX, TY, TZ, Z, Arch}
     architecture :: Arch
@@ -76,7 +76,7 @@ function BadLatitudeLongitudeGrid{TX, TY, TZ}(architecture::Arch,
                                                                 DXFF, DXCC,
                                                                 DYFC, DYCF, I}
 
-    # NEED TO MAKE THIS BAD
+    # NEED TO MAKE THIS CONSTRUCT A BadLatitudeLongitudeGrid struct instead
     return LatitudeLongitudeGrid{FT, TX, TY, TZ, Z,
                                  DXF, DXC, XF, XC,
                                  DYF, DYC, YF, YC,
