@@ -12,12 +12,15 @@ using OffsetArrays
 using InteractiveUtils
 using KernelAbstractions: @kernel, @index
 
-abstract type AbstractBadGrid{FT, Arch} end
+abstract type AbstractGrid{FT, TX, TY, TZ, Arch} end
+abstract type AbstractUnderlyingGrid{FT, TX, TY, TZ, CZ, Arch} <: AbstractGrid{FT, TX, TY, TZ, Arch} end
+abstract type AbstractCurvilinearGrid{FT, TX, TY, TZ, CZ, Arch} <: AbstractUnderlyingGrid{FT, TX, TY, TZ, CZ, Arch} end
+abstract type AbstractHorizontallyCurvilinearGrid{FT, TX, TY, TZ, CZ, Arch} <: AbstractCurvilinearGrid{FT, TX, TY, TZ, CZ, Arch} end
 
-Base.eltype(::AbstractBadGrid{FT}) where FT = FT
+Base.eltype(::AbstractGrid{FT}) where FT = FT
 
 struct BadLatitudeLongitudeGrid{FT, TX, TY, TZ, Z, DXF, DXC, XF, XC, DYF, DYC, YF, YC,
-                             DXCC, DXFC, DXCF, DXFF, DYFC, DYCF, Arch, I} <: AbstractBadGrid{FT, Arch}
+                             DXCC, DXFC, DXCF, DXFF, DYFC, DYCF, Arch, I} <: AbstractHorizontallyCurvilinearGrid{FT, TX, TY, TZ, Z, Arch}
     architecture :: Arch
     Nx :: I
     Ny :: I
@@ -73,6 +76,7 @@ function BadLatitudeLongitudeGrid{TX, TY, TZ}(architecture::Arch,
                                                                 DXFF, DXCC,
                                                                 DYFC, DYCF, I}
 
+    # NEED TO MAKE THIS BAD
     return LatitudeLongitudeGrid{FT, TX, TY, TZ, Z,
                                  DXF, DXC, XF, XC,
                                  DYF, DYC, YF, YC,
@@ -86,32 +90,6 @@ function BadLatitudeLongitudeGrid{TX, TY, TZ}(architecture::Arch,
                                                       Δxᶜᶜᵃ, Δxᶠᶜᵃ, Δxᶜᶠᵃ, Δxᶠᶠᵃ,
                                                       Δyᶠᶜᵃ, Δyᶜᶠᵃ,
                                                       Azᶜᶜᵃ, Azᶠᶜᵃ, Azᶜᶠᵃ, Azᶠᶠᵃ, radius)
-end
-
-@inline exponential_profile(z, Lz, h) = (exp(z / h) - exp(-Lz / h)) / (1 - exp(-Lz / h))
-
-function exponential_z_faces(; Nz, depth, h = Nz / 4.5)
-
-    k = collect(1:Nz+1)
-    z_faces = exponential_profile.(k, Nz, h)
-
-    # Normalize
-    z_faces .-= z_faces[1]
-    z_faces .*= - depth / z_faces[end]
-
-    z_faces[1] = 0.0
-
-    return reverse(z_faces)
-end
-
-function simple_latitude_longitude_grid(arch, Nx, Ny, Nz; halo=(8, 8, 8))
-    z = exponential_z_faces(; Nz, depth=4000) # may need changing for very large Nz
-
-    grid = BadLatitudeLongitudeGrid(arch; size=(Nx, Ny, Nz), halo, z,
-        topology = (Periodic, Bounded, Bounded)
-    )
-
-    return grid
 end
 
 const R_Earth = 6371.0e3
@@ -146,6 +124,8 @@ function BadLatitudeLongitudeGrid(architecture = CPU(),
     Δφᵃᶠᵃ = 0.99
     Δφᵃᶜᵃ = 0.99
 
+    Δxᶜᶜᵃ, Δxᶠᶜᵃ, Δxᶜᶠᵃ, Δxᶠᶠᵃ, Δyᶠᶜᵃ, Δyᶜᶠᵃ, Azᶜᶜᵃ, Azᶠᶜᵃ, Azᶜᶠᵃ, Azᶠᶠᵃ = bad_allocate_metrics(architecture)
+
     grid = BadLatitudeLongitudeGrid{TX, TY, TZ}(architecture,
                                                          Nλ, Nφ, Nz,
                                                          Hλ, Hφ, Hz,
@@ -153,26 +133,14 @@ function BadLatitudeLongitudeGrid(architecture = CPU(),
                                                          Δλᶠᵃᵃ, Δλᶜᵃᵃ, λᶠᵃᵃ, λᶜᵃᵃ,
                                                          Δφᵃᶠᵃ, Δφᵃᶜᵃ, φᵃᶠᵃ, φᵃᶜᵃ,
                                                          z,
-                                                         (nothing for i=1:10)..., FT(radius))
-
-    Δxᶜᶜᵃ, Δxᶠᶜᵃ, Δxᶜᶠᵃ, Δxᶠᶠᵃ, Δyᶠᶜᵃ, Δyᶜᶠᵃ, Azᶜᶜᵃ, Azᶠᶜᵃ, Azᶜᶠᵃ, Azᶠᶠᵃ = bad_allocate_metrics(grid)
-
-    grid = BadLatitudeLongitudeGrid{TX, TY, TZ}(grid.architecture,
-                                             Nλ, Nφ, Nz,
-                                             Hλ, Hφ, Hz,
-                                             grid.Lx, grid.Ly, grid.Lz,
-                                             grid.Δλᶠᵃᵃ, grid.Δλᶜᵃᵃ, grid.λᶠᵃᵃ, grid.λᶜᵃᵃ,
-                                             grid.Δφᵃᶠᵃ, grid.Δφᵃᶜᵃ, grid.φᵃᶠᵃ, grid.φᵃᶜᵃ,
-                                             grid.z,
-                                             Δxᶜᶜᵃ, Δxᶠᶜᵃ, Δxᶜᶠᵃ, Δxᶠᶠᵃ, Δyᶠᶜᵃ, Δyᶜᶠᵃ,
-                                             Azᶜᶜᵃ, Azᶠᶜᵃ, Azᶜᶠᵃ, Azᶠᶠᵃ, grid.radius)
-
+                                                         Δxᶜᶜᵃ, Δxᶠᶜᵃ, Δxᶜᶠᵃ, Δxᶠᶠᵃ, Δyᶠᶜᵃ, Δyᶜᶠᵃ,
+                                                         Azᶜᶜᵃ, Azᶠᶜᵃ, Azᶜᶠᵃ, Azᶠᶠᵃ, radius)
+    
     return grid
 end
 
-function bad_allocate_metrics(grid)
+function bad_allocate_metrics(arch)
     FT = Float64
-    arch = grid.architecture
 
     offsets     = (2,2)
     metric_size = (8,8)
@@ -190,6 +158,16 @@ function bad_allocate_metrics(grid)
     Δyᶜᶠ = zeros(1, 1, 1)
 
     return Δxᶜᶜ, Δxᶠᶜ, Δxᶜᶠ, Δxᶠᶠ, Δyᶠᶜ, Δyᶜᶠ, Azᶜᶜ, Azᶠᶜ, Azᶜᶠ, Azᶠᶠ
+end
+
+function simple_latitude_longitude_grid(arch, Nx, Ny, Nz; halo=(8, 8, 8))
+    z = Array(range(-4000, 0, Nz))
+
+    grid = BadLatitudeLongitudeGrid(arch; size=(Nx, Ny, Nz), halo, z,
+        topology = (Periodic, Bounded, Bounded)
+    )
+
+    return grid
 end
 
 Nx = 362
@@ -237,9 +215,6 @@ end
 u = zeros(Nx, Ny, Nz+1)
 
 @show @which eltype(rgrid)
-
-z = exponential_z_faces(; Nz, depth=4000)
-@show @which LatitudeLongitudeGrid(rarch; size=(Nx, Ny, Nz), halo=(8, 8, 8), z, longitude = (0, 360), latitude = (-60, -30), topology = (Periodic, Bounded, Bounded))
 
 @info "Compiling..."
 tic = time()
