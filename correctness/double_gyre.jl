@@ -118,8 +118,8 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     ridge(λ, φ) = 4100exp(-0.005(λ - 120)^2) * (1 / (1 + exp(-3(φ+45))) + 1 / (1 + exp(-3(-φ-55)))) - 4000 # might be needed
     grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(ridge))
 
-    momentum_advection = VectorInvariant()
-    tracer_advection   = Centered(order=2)
+    momentum_advection = WENOVectorInvariant()
+    tracer_advection   = WENO() #Centered(order=2)
     
     #
     # Temperature Relaxation Enforced as a Flux BC:
@@ -148,7 +148,7 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     #
     # Bottom drag:
     #
-    bottom_drag_coefficient = 0.003
+    bottom_drag_coefficient = 0.003 # was 0.003
 
     u_immersed_drag = FluxBoundaryCondition(u_immersed_bottom_drag, discrete_form=true, parameters=bottom_drag_coefficient)
     v_immersed_drag = FluxBoundaryCondition(v_immersed_bottom_drag, discrete_form=true, parameters=bottom_drag_coefficient)
@@ -303,7 +303,7 @@ set!(rmodel.tracers.T, rTᵢ)
 #
 # Plotting:
 #
-graph_directory = "run_steps10000_timestep600_salinity30_windstressNeg02_ridgeFull_relaxationS80N111K_spongeNT_e0_Nz50_horizontalvisc10000_horizontaldiff100_ridgeWidthX50_ridgeSmoothed_quadraticBottomDrag/"
+graph_directory = "run_steps10000_timestep600_salinity30_windstressNeg02_ridgeFull_relaxationS80N111K_spongeNT_e0_Nz50_horizontalvisc10000_horizontaldiff100_ridgeWidthX50_ridgeSmoothed_quadraticBottomDrag_WENO/"
 
 outputs = (u=rmodel.velocities.u, v=rmodel.velocities.v, T=rmodel.tracers.T, e=rmodel.tracers.e, SSH=rmodel.free_surface.η)
 
