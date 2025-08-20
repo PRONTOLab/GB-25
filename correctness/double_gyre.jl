@@ -67,6 +67,21 @@ function simple_latitude_longitude_grid(arch, Nx, Ny, Nz; halo=(8, 8, 8))
     return grid
 end
 
+#####
+##### Utilities for bottom drag:
+#####
+
+@inline ϕ²(i, j, k, grid, ϕ)    = @inbounds ϕ[i, j, k]^2
+@inline spᶠᶜᶜ(i, j, k, grid, Φ) = @inbounds sqrt(Φ.u[i, j, k]^2 + ℑxyᶠᶜᵃ(i, j, k, grid, ϕ², Φ.v))
+@inline spᶜᶠᶜ(i, j, k, grid, Φ) = @inbounds sqrt(Φ.v[i, j, k]^2 + ℑxyᶜᶠᵃ(i, j, k, grid, ϕ², Φ.u))
+
+@inline u_quadratic_bottom_drag(i, j, grid, c, Φ, μ) = @inbounds - μ * Φ.u[i, j, 1] * spᶠᶜᶜ(i, j, 1, grid, Φ)
+@inline v_quadratic_bottom_drag(i, j, grid, c, Φ, μ) = @inbounds - μ * Φ.v[i, j, 1] * spᶜᶠᶜ(i, j, 1, grid, Φ)
+
+# Keep a constant linear drag parameter independent on vertical level
+@inline u_immersed_bottom_drag(i, j, k, grid, clock, fields, μ) = @inbounds - μ * fields.u[i, j, k] * spᶠᶜᶜ(i, j, k, grid, fields)
+@inline v_immersed_bottom_drag(i, j, k, grid, clock, fields, μ) = @inbounds - μ * fields.v[i, j, k] * spᶜᶠᶜ(i, j, k, grid, fields)
+
 function double_gyre_model(arch, Nx, Ny, Nz, Δt)
 
     # Fewer substeps can be used at higher resolutions
@@ -128,8 +143,23 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     no_slip_bc = ValueBoundaryCondition(0.0)
     u_top_bc   = FluxBoundaryCondition(Field{Face, Center, Nothing}(grid))
 
-    u_bcs = FieldBoundaryConditions(north=no_slip_bc, south=no_slip_bc, top=u_top_bc, immersed=NoFluxBoundaryCondition())
-    v_bcs = FieldBoundaryConditions(immersed=NoFluxBoundaryCondition())
+    #
+    # Bottom drag:
+    #
+    bottom_drag_coefficient = 0.003
+
+    u_immersed_drag = FluxBoundaryCondition(u_immersed_bottom_drag, discrete_form=true, parameters=bottom_drag_coefficient)
+    v_immersed_drag = FluxBoundaryCondition(v_immersed_bottom_drag, discrete_form=true, parameters=bottom_drag_coefficient)
+
+    u_immersed_bc = ImmersedBoundaryCondition(bottom=u_immersed_drag)
+    v_immersed_bc = ImmersedBoundaryCondition(bottom=v_immersed_drag)
+
+    u_bot_bc = FluxBoundaryCondition(u_quadratic_bottom_drag, discrete_form=true, parameters=bottom_drag_coefficient)
+    v_bot_bc = FluxBoundaryCondition(v_quadratic_bottom_drag, discrete_form=true, parameters=bottom_drag_coefficient)
+
+
+    u_bcs = FieldBoundaryConditions(north=no_slip_bc, south=no_slip_bc, top=u_top_bc, bottom=u_bot_bc, immersed=u_immersed_bc)
+    v_bcs = FieldBoundaryConditions(bottom=v_bot_bc, immersed=v_immersed_bc)
 
     boundary_conditions = (u=u_bcs, T=T_bcs, v=v_bcs)
 
@@ -271,7 +301,7 @@ set!(rmodel.tracers.T, rTᵢ)
 #
 # Plotting:
 #
-graph_directory = "run_steps10000_timestep600_salinity30_windstressNeg02_ridgeFull_relaxationS80N111K_spongeNT_e0_Nz50_horizontalvisc10000_horizontaldiff100_ridgeWidthX50_ridgeSmoothed/"
+graph_directory = "run_steps10000_timestep600_salinity30_windstressNeg02_ridgeFull_relaxationS80N111K_spongeNT_e0_Nz50_horizontalvisc10000_horizontaldiff100_ridgeWidthX50_ridgeSmoothed_quadraticBottomDrag/"
 
 outputs = (u=rmodel.velocities.u, v=rmodel.velocities.v, T=rmodel.tracers.T, e=rmodel.tracers.e, SSH=rmodel.free_surface.η)
 
