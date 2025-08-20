@@ -120,7 +120,7 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     north_condition_T(i, k, grid, clock, model_fields) = (110000 / τ) * (model_fields.T[i, Ny, k] - (-2 + 12(-30 - φ₀) * exp(znode(k, grid, Center())/800) / Lφ))
     T_north_bc = FluxBoundaryCondition(north_condition_T, discrete_form=true)
 
-    T_bcs = FieldBoundaryConditions(north=T_north_bc, top=T_top_bc)
+    T_bcs = FieldBoundaryConditions(top=T_top_bc) # north=T_north_bc
     
     #
     # Momentum BCs:
@@ -133,6 +133,19 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
 
     boundary_conditions = (u=u_bcs, T=T_bcs, v=v_bcs)
 
+    #
+    # Forcings, to get Relaxation in Northern sponge layer
+    #
+    #northern_sponge_u(i, j, k, grid, clock, model_fields) = -(1 / τ) * model_fields.u[i, j, k] * ((j==Ny) + 0.25(j==(Ny-1)))
+    #northern_sponge_v(i, j, k, grid, clock, model_fields) = -(1 / τ) * model_fields.v[i, j, k] * ((j==Ny) + 0.25(j==(Ny-1)))
+    northern_sponge_T(i, j, k, grid, clock, model_fields) = -(1 / τ) * (model_fields.T[i, Ny, k] - (-2 + 12(-30 - φ₀) * exp(znode(k, grid, Center())/800) / Lφ)) * ((j==Ny) + 0.25(j==(Ny-1)))
+
+    #u_forcing = Forcing(northern_sponge_u, discrete_form=true)
+    #v_forcing = Forcing(northern_sponge_v, discrete_form=true)
+    T_forcing = Forcing(northern_sponge_T, discrete_form=true)
+
+    forcings = (T=T_forcing,)
+
     model = HydrostaticFreeSurfaceModel(; grid,
                                           free_surface = free_surface,
                                           closure = closure,
@@ -141,7 +154,8 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
                                           coriolis = coriolis,
                                           momentum_advection = momentum_advection,
                                           tracer_advection = tracer_advection,
-                                          boundary_conditions = boundary_conditions)
+                                          boundary_conditions = boundary_conditions,
+                                          forcing = forcings)
 
     #set!(model.tracers.e, 1e-6)
     model.clock.last_Δt = Δt
@@ -257,7 +271,7 @@ set!(rmodel.tracers.T, rTᵢ)
 #
 # Plotting:
 #
-graph_directory = "run_steps10000_timestep600_salinity30_windstressNeg02_ridgeFull_relaxationS80N111K_e0_Nz50_horizontalvisc10000_horizontaldiff100_ridgeWidthX50_ridgeSmoothed/"
+graph_directory = "run_steps10000_timestep600_salinity30_windstressNeg02_ridgeFull_relaxationS80N111K_spongeNT_e0_Nz50_horizontalvisc10000_horizontaldiff100_ridgeWidthX50_ridgeSmoothed/"
 
 outputs = (u=rmodel.velocities.u, v=rmodel.velocities.v, T=rmodel.tracers.T, e=rmodel.tracers.e, SSH=rmodel.free_surface.η)
 
