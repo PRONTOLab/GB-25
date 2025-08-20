@@ -246,8 +246,6 @@ dJ  = Field{Face, Center, Nothing}(rmodel.grid)
 @info rmodel
 @info rmodel.closure
 
-using GLMakie
-
 mld  = MixedLayerDepthField(rmodel.buoyancy, rmodel.grid, rmodel.tracers)
 dmld = MixedLayerDepthField(dmodel.buoyancy, dmodel.grid, dmodel.tracers)
 
