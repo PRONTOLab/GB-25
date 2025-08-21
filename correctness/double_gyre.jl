@@ -11,6 +11,11 @@ using OffsetArrays
 
 using InteractiveUtils
 using KernelAbstractions: @kernel, @index
+
+using Oceananigans: Distributed, DistributedComputations, CPU,
+                    OrthogonalSphericalShellGrids
+using Oceananigans.Architectures: on_architecture
+using Oceananigans.Grids: RightConnected
 #=
 abstract type AbstractGrid{FT, TX, TY, TZ, Arch} end
 abstract type AbstractUnderlyingGrid{FT, TX, TY, TZ, CZ, Arch} <: AbstractGrid{FT, TX, TY, TZ, Arch} end
@@ -19,6 +24,7 @@ abstract type AbstractHorizontallyCurvilinearGrid{FT, TX, TY, TZ, CZ, Arch} <: A
 
 Base.eltype(::AbstractGrid{FT}) where FT = FT
 =#
+
 struct BadLatitudeLongitudeGrid{FT, TX, TY, TZ, Z, DXF, DXC, XF, XC, DYF, DYC, YF, YC,
                              DXCC, DXFC, DXCF, DXFF, DYFC, DYCF, Arch, I} <: AbstractHorizontallyCurvilinearGrid{FT, TX, TY, TZ, Z, Arch}
     architecture :: Arch
@@ -56,6 +62,58 @@ struct BadLatitudeLongitudeGrid{FT, TX, TY, TZ, Z, DXF, DXC, XF, XC, DYF, DYC, Y
     # Spherical radius
     radius :: FT
 end
+
+
+Base.@nospecializeinfer function Reactant.traced_type_inner(
+    @nospecialize(OA::Type{BadLatitudeLongitudeGrid{FT, TX, TY, TZ, Z, DXF, DXC, XF, XC, DYF, DYC, YF, YC, 
+                                                 DXCC, DXFC, DXCF, DXFF, DYFC, DYCF, Arch, I}}),
+    seen,
+    mode::Reactant.TraceMode,
+    @nospecialize(track_numbers::Type),
+    @nospecialize(sharding),
+    @nospecialize(runtime)
+) where {FT, TX, TY, TZ, Z, DXF, DXC, XF, XC, DYF, DYC, YF, YC, DXCC, DXFC, DXCF, DXFF, DYFC, DYCF, Arch, I} 
+    TX2 = Reactant.traced_type_inner(TX, seen, mode, track_numbers, sharding, runtime)
+    TY2 = Reactant.traced_type_inner(TY, seen, mode, track_numbers, sharding, runtime)
+    TZ2 = Reactant.traced_type_inner(TZ, seen, mode, track_numbers, sharding, runtime)
+    Z2 = Reactant.traced_type_inner(Z, seen, mode, track_numbers, sharding, runtime)
+    DXF2 = Reactant.traced_type_inner(DXF, seen, mode, track_numbers, sharding, runtime)
+    DXC2 = Reactant.traced_type_inner(DXC, seen, mode, track_numbers, sharding, runtime)
+    XF2 = Reactant.traced_type_inner(XF, seen, mode, track_numbers, sharding, runtime)
+    XC2 = Reactant.traced_type_inner(XC, seen, mode, track_numbers, sharding, runtime)
+    DYF2 = Reactant.traced_type_inner(DYF, seen, mode, track_numbers, sharding, runtime)
+    DYC2 = Reactant.traced_type_inner(DYC, seen, mode, track_numbers, sharding, runtime)
+    YF2 = Reactant.traced_type_inner(YF, seen, mode, track_numbers, sharding, runtime)
+    YC2 = Reactant.traced_type_inner(YC, seen, mode, track_numbers, sharding, runtime)
+    DXCC2 = Reactant.traced_type_inner(DXCC, seen, mode, track_numbers, sharding, runtime)
+    DXFC2 = Reactant.traced_type_inner(DXFC, seen, mode, track_numbers, sharding, runtime)
+    DXCF2 = Reactant.traced_type_inner(DXCF, seen, mode, track_numbers, sharding, runtime)
+    DXFF2 = Reactant.traced_type_inner(DXFF, seen, mode, track_numbers, sharding, runtime)
+    DYFC2 = Reactant.traced_type_inner(DYFC, seen, mode, track_numbers, sharding, runtime)
+    DYCF2 = Reactant.traced_type_inner(DYCF, seen, mode, track_numbers, sharding, runtime)
+    I2 = Reactant.traced_type_inner(I, seen, mode, track_numbers, sharding, runtime)
+
+    FT2 = Reactant.traced_type_inner(FT, seen, mode, track_numbers, sharding, runtime)
+
+    for NF in (XF2, XC2, YF2, YC2, DXCC2, DXFC2, DYCF2, DYCF2, DXFF2)
+	if NF === Nothing
+	   continue
+	end
+	FT2 = Reactant.promote_traced_type(FT2, eltype(NF))
+    end
+
+    res = BadLatitudeLongitudeGrid{FT2, TX2, TY2, TZ2, Z2, DXF2, DXC2, XF2, XC2, DYF2, DYC2, YF2, YC2, 
+                                                 DXCC2, DXFC2, DXCF2, DXFF2, DYFC2, DYCF2, Arch, I2}
+    return res
+end
+
+
+@inline Reactant.make_tracer(
+    seen,
+    @nospecialize(prev::BadLatitudeLongitudeGrid),
+    args...;
+    kwargs...
+    ) = Reactant.make_tracer_via_immutable_constructor(seen, prev, args...; kwargs...)
 
 function BadLatitudeLongitudeGrid{TX, TY, TZ}(architecture::Arch,
                                            Nλ::I, Nφ::I, Nz::I, Hλ::I, Hφ::I, Hz::I,
@@ -213,6 +271,7 @@ end
 end
 
 u = zeros(Nx, Ny, Nz+1)
+u = Reactant.ConcreteRArray(u)
 
 @show @which eltype(rgrid)
 
