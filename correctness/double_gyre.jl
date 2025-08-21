@@ -105,11 +105,27 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
                                                            slope_limiter = FluxTapering(1e-2))
 
     horizontal_closure = HorizontalScalarDiffusivity(ν = 10000, κ = 100)
-    vertical_closure   = Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity()
-    closure            = (redi_diffusivity, horizontal_closure, vertical_closure)
+    vertical_closure   = Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity(minimum_tke=1e-7,
+                                                                                  maximum_tracer_diffusivity=0.3,
+                                                                                  maximum_viscosity=0.5)
+
+    # Adding a minimal vertical viscosity near the surface:
+    ν0 = 1e-3         # surface min (m^2/s)
+    ν_bg = 1e-5       # deep background (m^2/s)
+    H = 150.0         # e-folding depth (m)
+
+    @inline function ν_min(i, j, k, grid, clock, fields, p)
+        z = znode(i, j, k, grid, Center(), Center(), Center())
+        return ν_bg + (p.ν0 - p.ν_bg) * exp(z / p.H)
+    end
+
+
+
+    vertical_min_closure = VerticalScalarDiffusivity(ν=ν_min, discrete_form=true, loc=(Center, Center, Center), parameters=(; ν0=ν0, ν_bg=ν_bg, H=H))
+    closure              = (redi_diffusivity, horizontal_closure, vertical_closure, vertical_min_closure)
 
     # Coriolis forces for a rotating Earth
-    coriolis = HydrostaticSphericalCoriolis()
+    coriolis = HydrostaticSphericalCoriolis() #FPlane(latitude=-45) #FPlane(latitude=-45)
 
     tracers = (:T, :S, :e)
 
@@ -118,8 +134,8 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     ridge(λ, φ) = 4100exp(-0.005(λ - 120)^2) * (1 / (1 + exp(-3(φ+45))) + 1 / (1 + exp(-3(-φ-55)))) - 4000 # might be needed
     grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(ridge))
 
-    momentum_advection = WENOVectorInvariant()
-    tracer_advection   = WENO() #Centered(order=2)
+    momentum_advection = VectorInvariant()
+    tracer_advection   = Centered(order=2)
     
     #
     # Temperature Relaxation Enforced as a Flux BC:
@@ -168,12 +184,27 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     #
     # Forcings, to get Relaxation in Northern sponge layer
     #
-    #northern_sponge_u(i, j, k, grid, clock, model_fields) = -(1 / τ) * model_fields.u[i, j, k] * ((j==Ny) + 0.25(j==(Ny-1)))
-    #northern_sponge_v(i, j, k, grid, clock, model_fields) = -(1 / τ) * model_fields.v[i, j, k] * ((j==Ny) + 0.25(j==(Ny-1)))
-    northern_sponge_T(i, j, k, grid, clock, model_fields) = -(1 / τ) * (model_fields.T[i, Ny, k] - (-2 + 12(-30 - φ₀) * exp(znode(k, grid, Center())/800) / Lφ)) * ((j==Ny) + 0.25(j==(Ny-1)))
+    # First the mask:
+    A        = 1.0
+    φ_target = -31.0   # degrees
+    σ_φ      = 2.5     # degrees  (≈ 3σ => ~7.5° width)
+    σ_z      = 40.0    # meters
 
-    #u_forcing = Forcing(northern_sponge_u, discrete_form=true)
-    #v_forcing = Forcing(northern_sponge_v, discrete_form=true)
+    # mask returns [0,1]
+    @inline function sponge_mask(φ, z)
+        Mφ = exp(-0.5 * ((φ - φ_target) / σ_φ)^2)
+        Mz = exp(-0.5 * (z / σ_z)^2)
+        return A * Mφ * Mz
+    end
+    
+    @inline function northern_sponge_T(i, j, k, grid, clock, model_fields)
+        φ = φnode(j, grid, Center())
+        z = znode(k, grid, Center())
+
+        return -(1 / τ) * (model_fields.T[i, Ny, k] - (-2 + 12(-30 - φ₀) * exp(znode(k, grid, Center())/800) / Lφ)) * sponge_mask(φ, z)
+
+    end
+    
     T_forcing = Forcing(northern_sponge_T, discrete_form=true)
 
     forcings = (T=T_forcing,)
@@ -212,7 +243,7 @@ end
 function loop!(model)
     Δt = model.clock.last_Δt + 0
     Oceananigans.TimeSteppers.first_time_step!(model, Δt)
-    @trace mincut = true track_numbers = false for i = 1:9999
+    @trace mincut = true track_numbers = false for i = 1:1439
         Oceananigans.TimeSteppers.time_step!(model, Δt)
     end
     return nothing
@@ -303,7 +334,7 @@ set!(rmodel.tracers.T, rTᵢ)
 #
 # Plotting:
 #
-graph_directory = "run_steps10000_timestep600_salinity30_windstressNeg02_ridgeFull_relaxationS80N111K_spongeNT_e0_Nz50_horizontalvisc10000_horizontaldiff100_ridgeWidthX50_ridgeSmoothed_quadraticBottomDrag_WENO/"
+graph_directory = "sample_experiment_realCoriolis_10ktimesteps/" #"run_steps10000_timestep600_salinity30_windstressNeg02_ridgeFull_relaxationS80N111K_spongeNT_e0_Nz50_horizontalvisc10000_horizontaldiff100_ridgeWidthX50_ridgeSmoothed_quadraticBottomDrag/"
 
 outputs = (u=rmodel.velocities.u, v=rmodel.velocities.v, T=rmodel.tracers.T, e=rmodel.tracers.e, SSH=rmodel.free_surface.η)
 
