@@ -88,9 +88,6 @@ Ninner = ConcreteRNumber(256; sharding=Sharding.NamedSharding(arch.connectivity,
 @info "[$rank] Compiling first_time_step!..." now(UTC)
 rfirst! = @compile sync=true raise=true first_time_step!(model)
 @info "[$rank] allocations" GordonBell25.allocatorstats()
-@info "[$rank] Compiling loop..." now(UTC)
-compiled_loop! = @compile sync=true raise=true loop!(model, Ninner)
-@info "[$rank] allocations" GordonBell25.allocatorstats()
 
 profile_dir = joinpath(@__DIR__, "profiling", jobid_procid)
 mkpath(joinpath(profile_dir, "first_time_step"))
@@ -98,21 +95,6 @@ mkpath(joinpath(profile_dir, "first_time_step"))
 @info "[$rank] Running first_time_step!..." now(UTC)
 Reactant.with_profiler(joinpath(profile_dir, "first_time_step")) do
     @time "[$rank] first time step" rfirst!(model)
-end
-@info "[$rank] allocations" GordonBell25.allocatorstats()
-
-mkpath(joinpath(profile_dir, "loop"))
-@info "[$rank] allocations" GordonBell25.allocatorstats()
-@info "[$rank] running loop" now(UTC)
-Reactant.with_profiler(joinpath(profile_dir, "loop")) do
-    @time "[$rank] loop" compiled_loop!(model, Ninner)
-end
-
-mkpath(joinpath(profile_dir, "loop 2"))
-@info "[$rank] allocations" GordonBell25.allocatorstats()
-@info "[$rank] running second loop" now(UTC)
-Reactant.with_profiler(joinpath(profile_dir, "loop")) do
-    @time "[$rank] second loop" compiled_loop!(model, Ninner)
 end
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 
