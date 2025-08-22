@@ -1,8 +1,12 @@
 using FileIO, JLD2
 using GLMakie
 
+#
+# For plotting and postprocessing.
+#
 
-graph_directory = "run_steps10000_timestep600_salinity30_windstressNeg02_ridgeFull_relaxationS80N111K_spongeNT_e0_Nz50_horizontalvisc10000_horizontaldiff100_ridgeWidthX50_ridgeSmoothed_quadraticBottomDrag/"
+
+graph_directory = "run_steps10000_hiRes/" #"run_steps10000_timestep600_salinity30_windstressNeg02_ridgeFull_relaxationS80N111K_spongeNT_e0_Nz50_horizontalvisc10000_horizontaldiff100_ridgeWidthX50_ridgeSmoothed_quadraticBottomDrag/"
 
 data = jldopen(graph_directory * "data_init.jld2", "r")
 
@@ -46,6 +50,36 @@ Colorbar(fig[1, 2], hm, label = "[degrees C]")
 
 resize_to_layout!(fig)
 save(graph_directory * "init_T_bottom.png", fig)
+
+max_T_cross = maximum(abs.(T_init[1:Nx,20,1:Nz]))
+
+fig, ax, hm = heatmap(view(T_init, 1:Nx, 20, 1:Nz),
+                                        colormap = :thermal,
+                                        #colorrange = (-max_T_deep, max_T_deep),
+                                        axis = (xlabel = "x [degrees]",
+                                        ylabel = "z [indices - not evenly spaced]",
+                                        title = "T(x, y=-50, z, t=0)",
+                                        titlesize = 24))
+
+Colorbar(fig[1, 2], hm, label = "[degrees C]")
+
+resize_to_layout!(fig)
+save(graph_directory * "init_T_zonal.png", fig)
+
+max_T_cross = maximum(abs.(T_init[140,1:Ny,1:Nz]))
+
+fig, ax, hm = heatmap(view(T_init, 140, 1:Ny, 1:Nz),
+                                        colormap = :thermal,
+                                        #colorrange = (-max_T_deep, max_T_deep),
+                                        axis = (xlabel = "y [degrees]",
+                                        ylabel = "z [indices - not evenly spaced]",
+                                        title = "T(x=140, y, z, t=0)",
+                                        titlesize = 24))
+
+Colorbar(fig[1, 2], hm, label = "[degrees C]")
+
+resize_to_layout!(fig)
+save(graph_directory * "init_T_meridional.png", fig)
 
 @info "Plotted initial T"
 
@@ -164,6 +198,39 @@ Colorbar(fig[1, 2], hm, label = "[degrees C]")
 
 save(graph_directory * "final_T_bottom.png", fig)
 
+max_T_cross = maximum(abs.(T_final[1:Nx,20,1:Nz]))
+
+fig, ax, hm = heatmap(view(T_final, 1:Nx, 20, 1:Nz),
+                                        colormap = :thermal,
+                                        #colorrange = (-max_T_deep, max_T_deep),
+                                        axis = (xlabel = "x [degrees]",
+                                        ylabel = "z [indices - not evenly spaced]",
+                                        title = "T(x, y=-50, z, t=0)",
+                                        titlesize = 24))
+
+Colorbar(fig[1, 2], hm, label = "[degrees C]")
+
+resize_to_layout!(fig)
+save(graph_directory * "final_T_zonal.png", fig)
+
+max_T_cross = maximum(abs.(T_final[140,1:Ny,1:Nz]))
+
+fig, ax, hm = heatmap(view(T_final, 140, 1:Ny, 1:Nz),
+                                        colormap = :thermal,
+                                        #colorrange = (-max_T_deep, max_T_deep),
+                                        axis = (xlabel = "y [degrees]",
+                                        ylabel = "z [indices - not evenly spaced]",
+                                        title = "T(x=140, y, z, t=0)",
+                                        titlesize = 24))
+
+Colorbar(fig[1, 2], hm, label = "[degrees C]")
+
+resize_to_layout!(fig)
+save(graph_directory * "final_T_meridional.png", fig)
+
+#
+# Energy
+#
 fig, ax, hm = heatmap(view(e_final, 1:Nx, 1:Ny, Nz),
                       colormap = :deep,
                       axis = (xlabel = "x [degrees]",
@@ -200,6 +267,20 @@ fig, ax, hm = heatmap(view(u, 1:Nx, 1:Ny, Nz),
 Colorbar(fig[1, 2], hm, label = "[m/s]")
 
 save(graph_directory * "final_surface_u.png", fig)
+
+max_200_u = maximum(abs.(u[1:Nx, 1:Ny, 16]))
+
+fig, ax, hm = heatmap(view(u, 1:Nx, 1:Ny, 16),
+                      colormap = :seismic,
+                      colorrange = (-max_surface_u, max_surface_u),
+                      axis = (xlabel = "x [degrees]",
+                              ylabel = "y [degrees]",
+                              title = "u(x, y, z=200m, t=end)",
+                              titlesize = 24))
+
+Colorbar(fig[1, 2], hm, label = "[m/s]")
+
+save(graph_directory * "final_200_u.png", fig)
 
 max_deep_u = maximum(abs.(u[1:Nx, 1:Ny, 1]))
 

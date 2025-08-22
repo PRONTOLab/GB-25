@@ -104,7 +104,7 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
                                                            isopycnal_tensor = SmallSlopeIsopycnalTensor(),
                                                            slope_limiter = FluxTapering(1e-2))
 
-    horizontal_closure = HorizontalScalarDiffusivity(ν = 10000, κ = 100)
+    horizontal_closure = HorizontalScalarDiffusivity(ν = 5000, κ = 100)
     vertical_closure   = Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity(minimum_tke=1e-7,
                                                                                   maximum_tracer_diffusivity=0.3,
                                                                                   maximum_viscosity=0.5)
@@ -121,8 +121,9 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
 
 
 
-    vertical_min_closure = VerticalScalarDiffusivity(ν=ν_min, discrete_form=true, loc=(Center, Center, Center), parameters=(; ν0=ν0, ν_bg=ν_bg, H=H))
-    closure              = (redi_diffusivity, horizontal_closure, vertical_closure, vertical_min_closure)
+    vertical_min_closure = VerticalScalarDiffusivity(ν=ν_min, discrete_form=true, loc=(Center, Center, Center), parameters=(; ν0=ν0, ν_bg=ν_bg, H=H), κ=1e-5) # Diff added for no CATKE
+    closure              = (redi_diffusivity, horizontal_closure, vertical_closure) #, vertical_min_closure)
+    #closure              = (redi_diffusivity, horizontal_closure, vertical_min_closure) # NO CATKE
 
     # Coriolis forces for a rotating Earth
     coriolis = HydrostaticSphericalCoriolis() #FPlane(latitude=-45) #FPlane(latitude=-45)
@@ -131,7 +132,7 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
 
     underlying_grid = simple_latitude_longitude_grid(arch, Nx, Ny, Nz)
 
-    ridge(λ, φ) = 4100exp(-0.005(λ - 120)^2) * (1 / (1 + exp(-3(φ+45))) + 1 / (1 + exp(-3(-φ-55)))) - 4000 # might be needed
+    ridge(λ, φ) = 4100exp(-0.005(λ - 120)^2) * (1 / (1 + exp(-3(φ+45))) + 1 / (1 + exp(-3(-φ-55)))) - 4000 # might be needed, normally 4100 coeff
     grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(ridge))
 
     momentum_advection = VectorInvariant()
@@ -179,7 +180,7 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     u_bcs = FieldBoundaryConditions(north=no_slip_bc, south=no_slip_bc, top=u_top_bc, bottom=u_bot_bc, immersed=u_immersed_bc)
     v_bcs = FieldBoundaryConditions(bottom=v_bot_bc, immersed=v_immersed_bc)
 
-    boundary_conditions = (u=u_bcs, T=T_bcs, v=v_bcs)
+    boundary_conditions = (u=u_bcs, v=v_bcs, T=T_bcs)
 
     #
     # Forcings, to get Relaxation in Northern sponge layer
@@ -218,7 +219,7 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
                                           momentum_advection = momentum_advection,
                                           tracer_advection = tracer_advection,
                                           boundary_conditions = boundary_conditions,
-                                          forcing = forcings)
+                                          forcing=forcings)
 
     #set!(model.tracers.e, 1e-6)
     model.clock.last_Δt = Δt
@@ -243,7 +244,7 @@ end
 function loop!(model)
     Δt = model.clock.last_Δt + 0
     Oceananigans.TimeSteppers.first_time_step!(model, Δt)
-    @trace mincut = true track_numbers = false for i = 1:1439
+    @trace mincut = true track_numbers = false for i = 1:9999
         Oceananigans.TimeSteppers.time_step!(model, Δt)
     end
     return nothing
@@ -297,8 +298,8 @@ function differentiate_tracer_error(model, Tᵢ, Sᵢ, J, mld, dmodel, dTᵢ, dS
     return dedν, dJ
 end
 
-Nx = 362 #128
-Ny = 32
+Nx = 722 #128
+Ny = 64
 Nz = 50
 time_step = 600
 
@@ -328,17 +329,15 @@ dmld = MixedLayerDepthField(dmodel.buoyancy, dmodel.grid, dmodel.tracers)
 
 set!(rmodel.tracers.T, rTᵢ)
 
-#@show argmax(T)
-#@show T[1,32,30]
-
 #
 # Plotting:
 #
-graph_directory = "sample_experiment_realCoriolis_10ktimesteps/" #"run_steps10000_timestep600_salinity30_windstressNeg02_ridgeFull_relaxationS80N111K_spongeNT_e0_Nz50_horizontalvisc10000_horizontaldiff100_ridgeWidthX50_ridgeSmoothed_quadraticBottomDrag/"
+graph_directory = "run_steps10000_hiRes/" #"run_steps10000_timestep600_salinity30_windstressNeg02_ridgeFull_relaxationS80N111K_spongeNT_e0_Nz50_horizontalvisc10000_horizontaldiff100_ridgeWidthX50_ridgeSmoothed_quadraticBottomDrag/"
 
 outputs = (u=rmodel.velocities.u, v=rmodel.velocities.v, T=rmodel.tracers.T, e=rmodel.tracers.e, SSH=rmodel.free_surface.η)
 
 using FileIO, JLD2
+
 
 Base.Filesystem.mkdir(graph_directory)
 
@@ -381,6 +380,8 @@ i = 10
 j = 10
 
 #@allowscalar @show dJ[i, j]
+
+
 
 #=
 # Produce finite-difference gradients for comparison:
