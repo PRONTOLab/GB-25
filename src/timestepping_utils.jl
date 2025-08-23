@@ -20,10 +20,12 @@ end
 
 function first_time_step!(model)
     Δt = model.clock.last_Δt
+    @show which(Oceananigans.TimeSteppers.initialize!, (typeof(model),))
+    @show which(Oceananigans.TimeSteppers.update_state!, (typeof(model),))
     @show which(Oceananigans.TimeSteppers.time_step!, (typeof(model), typeof(Δt)))
     Oceananigans.TimeSteppers.initialize!(model)
     Oceananigans.TimeSteppers.update_state!(model)
-    Oceananigans.TimeSteppers.time_step!(model, Δt, euler=true)
+    # Oceananigans.TimeSteppers.time_step!(model, Δt, euler=true)
     return nothing
 end
 
