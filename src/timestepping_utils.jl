@@ -34,14 +34,14 @@ function first_time_step!(model)
 
     Oceananigans.Fields.tupled_fill_halo_regions!(Oceananigans.Models.HydrostaticFreeSurfaceModels.prognostic_fields(model), model.grid, model.clock, Oceananigans.Models.HydrostaticFreeSurfaceModels.fields(model), async=true)
 
-    @apply_regionally Oceananigans.BoundaryConditions.replace_horizontal_vector_halos!(model.velocities, model.grid)
-    @apply_regionally Oceananigans.Models.NonhydrostaticModels.compute_auxiliaries!(model)
+    # @apply_regionally Oceananigans.BoundaryConditions.replace_horizontal_vector_halos!(model.velocities, model.grid)
+    # @apply_regionally Oceananigans.Models.NonhydrostaticModels.compute_auxiliaries!(model)
 
-    Oceananigans.Models.HydrostaticFreeSurfaceModels.fill_halo_regions!(model.diffusivity_fields; only_local_halos = true)
+    # Oceananigans.Models.HydrostaticFreeSurfaceModels.fill_halo_regions!(model.diffusivity_fields; only_local_halos = true)
 
-    Oceananigans.Biogeochemistry.update_biogeochemical_state!(model.biogeochemistry, model)
+    # Oceananigans.Biogeochemistry.update_biogeochemical_state!(model.biogeochemistry, model)
 
-    @apply_regionally Oceananigans.Models.HydrostaticFreeSurfaceModels.compute_tendencies!(model, [])
+    # @apply_regionally Oceananigans.Models.HydrostaticFreeSurfaceModels.compute_tendencies!(model, [])
 
     return nothing
 end
