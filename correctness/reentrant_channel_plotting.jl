@@ -6,7 +6,7 @@ using GLMakie
 #
 
 
-graph_directory = "run_steps10000_hiRes/" #"run_steps10000_timestep600_salinity30_windstressNeg02_ridgeFull_relaxationS80N111K_spongeNT_e0_Nz50_horizontalvisc10000_horizontaldiff100_ridgeWidthX50_ridgeSmoothed_quadraticBottomDrag/"
+graph_directory = "run_steps_20000_reduced_zonal_5min_128x128_WENO_verticalScalarDiff/" #"run_steps10000_timestep600_salinity30_windstressNeg02_ridgeFull_relaxationS80N111K_spongeNT_e0_Nz50_horizontalvisc10000_horizontaldiff100_ridgeWidthX50_ridgeSmoothed_quadraticBottomDrag/"
 
 data = jldopen(graph_directory * "data_init.jld2", "r")
 
@@ -50,7 +50,7 @@ Colorbar(fig[1, 2], hm, label = "[degrees C]")
 
 resize_to_layout!(fig)
 save(graph_directory * "init_T_bottom.png", fig)
-
+#=
 max_T_cross = maximum(abs.(T_init[1:Nx,20,1:Nz]))
 
 fig, ax, hm = heatmap(view(T_init, 1:Nx, 20, 1:Nz),
@@ -80,7 +80,7 @@ Colorbar(fig[1, 2], hm, label = "[degrees C]")
 
 resize_to_layout!(fig)
 save(graph_directory * "init_T_meridional.png", fig)
-
+=#
 @info "Plotted initial T"
 
 
@@ -197,7 +197,7 @@ fig, ax, hm = heatmap(view(T_final, 1:Nx, 1:Ny, 1),
 Colorbar(fig[1, 2], hm, label = "[degrees C]")
 
 save(graph_directory * "final_T_bottom.png", fig)
-
+#=
 max_T_cross = maximum(abs.(T_final[1:Nx,20,1:Nz]))
 
 fig, ax, hm = heatmap(view(T_final, 1:Nx, 20, 1:Nz),
@@ -227,7 +227,7 @@ Colorbar(fig[1, 2], hm, label = "[degrees C]")
 
 resize_to_layout!(fig)
 save(graph_directory * "final_T_meridional.png", fig)
-
+=#
 #
 # Energy
 #
@@ -310,6 +310,18 @@ fig, ax, hm = heatmap(view(v, 1:Nx, 1:Ny, Nz),
 Colorbar(fig[1, 2], hm, label = "[m/s]")
 
 save(graph_directory * "final_surface_v.png", fig)
+
+fig, ax, hm = heatmap(view(v, 1:Nx, 1:Ny, 16),
+                      colormap = :seismic,
+                      colorrange = (-max_surface_u, max_surface_u),
+                      axis = (xlabel = "x [degrees]",
+                              ylabel = "y [degrees]",
+                              title = "v(x, y, z=200m, t=end)",
+                              titlesize = 24))
+
+Colorbar(fig[1, 2], hm, label = "[m/s]")
+
+save(graph_directory * "final_200_v.png", fig)
 
 max_deep_v = maximum(abs.(v[1:Nx, 1:Ny, 1]))
 

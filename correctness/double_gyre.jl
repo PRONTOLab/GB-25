@@ -11,6 +11,7 @@ using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity, SmallS
 using Oceananigans.BoundaryConditions: NoFluxBoundaryCondition
 using Oceananigans.Operators: ℑxyᶠᶜᵃ, ℑxyᶜᶠᵃ
 using ClimaOcean.Diagnostics: MixedLayerDepthField
+using Oceananigans.Units
 
 using Oceananigans.Grids: λnode, φnode, znode
 
@@ -61,7 +62,7 @@ function simple_latitude_longitude_grid(arch, Nx, Ny, Nz; halo=(8, 8, 8))
     z = exponential_z_faces(; Nz, depth=4000) # may need changing for very large Nz
 
     grid = LatitudeLongitudeGrid(arch; size=(Nx, Ny, Nz), halo, z,
-        longitude = (0, 360), # Problem is here: when longitude is not periodic we get error
+        longitude = (0, 30), # Problem is here: when longitude is not periodic we get error
         latitude = (-60, -30), # Tentative southern ocean latitude range
         topology = (Periodic, Bounded, Bounded)
     )
@@ -119,10 +120,9 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
         return ν_bg + (p.ν0 - p.ν_bg) * exp(z / p.H)
     end
 
-
-
-    vertical_min_closure = VerticalScalarDiffusivity(ν=ν_min, discrete_form=true, loc=(Center, Center, Center), parameters=(; ν0=ν0, ν_bg=ν_bg, H=H), κ=1e-5) # Diff added for no CATKE
-    closure              = (redi_diffusivity, horizontal_closure, vertical_closure) #, vertical_min_closure)
+    #vertical_min_closure = VerticalScalarDiffusivity(ν=ν_min, discrete_form=true, loc=(Center, Center, Center), parameters=(; ν0=ν0, ν_bg=ν_bg, H=H), κ=1e-5) # Diff added for no CATKE
+    vertical_min_closure = VerticalScalarDiffusivity(ν = 3e-4, κ = 0.5e-5)
+    closure              = (redi_diffusivity, horizontal_closure, vertical_closure, vertical_min_closure)
     #closure              = (redi_diffusivity, horizontal_closure, vertical_min_closure) # NO CATKE
 
     # Coriolis forces for a rotating Earth
@@ -132,11 +132,11 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
 
     underlying_grid = simple_latitude_longitude_grid(arch, Nx, Ny, Nz)
 
-    ridge(λ, φ) = 4100exp(-0.005(λ - 120)^2) * (1 / (1 + exp(-3(φ+45))) + 1 / (1 + exp(-3(-φ-55)))) - 4000 # might be needed, normally 4100 coeff
+    ridge(λ, φ) = 4100exp(-0.1(λ - 15)^2) * (1 / (1 + exp(-3(φ+45))) + 1 / (1 + exp(-3(-φ-55)))) - 4000 # might be needed, normally 4100 coeff
     grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(ridge))
 
-    momentum_advection = VectorInvariant()
-    tracer_advection   = Centered(order=2)
+    momentum_advection = WENOVectorInvariant()
+    tracer_advection   = WENO() #Centered(order=2)
     
     #
     # Temperature Relaxation Enforced as a Flux BC:
@@ -145,7 +145,7 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     cₚ = 3994   # specific heat, J / kg * K
     Lφ =  30
     φ₀ = -60
-    τ  = 864000 # Relaxation timescale, equal to 10 days
+    τ  = 10days # Relaxation timescale, equal to 10 days
 
     # TODO: replace with discrete form
     surface_condition_T(i, j, grid, clock, model_fields) = (80 / τ) * (model_fields.T[i, j, Nz] - (-2 + 12(φnode(j, grid, Center()) - φ₀) / Lφ))
@@ -244,7 +244,7 @@ end
 function loop!(model)
     Δt = model.clock.last_Δt + 0
     Oceananigans.TimeSteppers.first_time_step!(model, Δt)
-    @trace mincut = true track_numbers = false for i = 1:9999
+    @trace mincut = true track_numbers = false for i = 1:19999
         Oceananigans.TimeSteppers.time_step!(model, Δt)
     end
     return nothing
@@ -298,10 +298,10 @@ function differentiate_tracer_error(model, Tᵢ, Sᵢ, J, mld, dmodel, dTᵢ, dS
     return dedν, dJ
 end
 
-Nx = 722 #128
-Ny = 64
+Nx = 128 #128
+Ny = 128
 Nz = 50
-time_step = 600
+time_step = 5minutes
 
 Oceananigans.defaults.FloatType = Float64
 
@@ -332,7 +332,7 @@ set!(rmodel.tracers.T, rTᵢ)
 #
 # Plotting:
 #
-graph_directory = "run_steps10000_hiRes/" #"run_steps10000_timestep600_salinity30_windstressNeg02_ridgeFull_relaxationS80N111K_spongeNT_e0_Nz50_horizontalvisc10000_horizontaldiff100_ridgeWidthX50_ridgeSmoothed_quadraticBottomDrag/"
+graph_directory = "run_steps_20000_reduced_zonal_5min_128x128_WENO_verticalScalarDiff/" #"run_steps10000_timestep600_salinity30_windstressNeg02_ridgeFull_relaxationS80N111K_spongeNT_e0_Nz50_horizontalvisc10000_horizontaldiff100_ridgeWidthX50_ridgeSmoothed_quadraticBottomDrag/"
 
 outputs = (u=rmodel.velocities.u, v=rmodel.velocities.v, T=rmodel.tracers.T, e=rmodel.tracers.e, SSH=rmodel.free_surface.η)
 
@@ -349,8 +349,15 @@ jldsave(filename; Nx, Ny, Nz,
                   e_init=convert(Array, interior(rmodel.tracers.e)),
                   wind_stress=convert(Array, interior(rwind_stress)))
 
+#@info "Trying run!(simulation)"
+
+#rsimulation = Simulation(rmodel; Δt = time_step, stop_iteration = 10)
+
+
+
 @info "Compiling..."
 tic = time()
+#rrun! = @compile raise_first=true raise=true sync=true run!(rsimulation)
 restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld)
 #rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true differentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld,
 #                                                                                                        dmodel, dTᵢ, dSᵢ, dJ, dmld)
@@ -361,6 +368,7 @@ compile_toc = time() - tic
 @info "Running..."
 
 tic = time()
+#rrun!(rsimulation)
 restimate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld)
 #dedν, dJ = rdifferentiate_tracer_error(rmodel, rTᵢ, rSᵢ, rwind_stress, mld, dmodel, dTᵢ, dSᵢ, dJ, dmld)
 rrun_toc = time() - tic
