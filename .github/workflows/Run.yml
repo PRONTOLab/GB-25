@@ -57,7 +57,7 @@ jobs:
       os: ${{ matrix.os }}
       xla_runtime: 'IFRT'
       compile_or_run: 'run'
-      earlyoom_threshold: 4
+      earlyoom_threshold: 2
       julia_optlevel: 0
 
   run_sharded:
