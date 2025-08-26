@@ -133,7 +133,7 @@ function gaussian_islands_tripolar_grid(arch::Architectures.AbstractArchitecture
     z = ExponentialCoordinate(Nz, -4000, 0) # may need changing for very large Nz
     underlying_grid = TripolarGrid(arch; size=(Nx, Ny, Nz), halo, z)
 
-    zb = z[1]
+    zb = z(1)
     h = -zb + 100
     gaussian_islands(λ, φ) = zb + h * (mtn₁(λ, φ) + mtn₂(λ, φ))
 
