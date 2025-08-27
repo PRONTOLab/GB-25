@@ -122,8 +122,8 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
 
     #vertical_min_closure = VerticalScalarDiffusivity(ν=ν_min, discrete_form=true, loc=(Center, Center, Center), parameters=(; ν0=ν0, ν_bg=ν_bg, H=H), κ=1e-5) # Diff added for no CATKE
     vertical_min_closure = VerticalScalarDiffusivity(ν = 3e-4, κ = 0.5e-5)
-    #closure              = (redi_diffusivity, horizontal_closure, vertical_closure, vertical_min_closure)
-    closure              = (horizontal_closure, vertical_min_closure) # NO CATKE or GM/REDI
+    closure              = (redi_diffusivity, horizontal_closure, vertical_closure, vertical_min_closure)
+    #closure              = (horizontal_closure, vertical_min_closure) # NO CATKE or GM/REDI
 
     # Coriolis forces for a rotating Earth
     coriolis = HydrostaticSphericalCoriolis() #FPlane(latitude=-45) #FPlane(latitude=-45)
@@ -133,15 +133,15 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     underlying_grid = simple_latitude_longitude_grid(arch, Nx, Ny, Nz)
 
     δ = 1.5
-    #=
+    
     # full ridge function:
     function ridge_function(λ, φ)
         zonal = 4100exp(-0.1(λ - 15)^2)
         gap   = 1 - 0.5(tanh((φ - (-55))/3.0) - tanh((φ - (-45))/3.0))
         return zonal * gap - 4000
     end
-    =#
-
+    
+    #=
     # full ridge function:
     function ridge_function(λ, φ)
         zonal = 4100max(cos(pi*(λ - 15)/10), 0)
@@ -157,7 +157,7 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
         gap   = 1 - 0.5(tanh((φ - (-55))/3.0) - tanh((φ - (-45))/3.0))
         return -4000 #zonal * gap - 4000
     end
-
+    =#
     # Make into a ridge array:
     ridge = Field{Center, Center, Nothing}(underlying_grid)
     set!(ridge, ridge_function)
@@ -370,7 +370,7 @@ set!(rmodel.tracers.T, rTᵢ)
 #
 # Plotting:
 #
-graph_directory = "run_steps2880_reduced_zonal_5min_128x128_WENO_verticalScalarDiff_smoothSponge_noRidge_noCATKEGM/"
+graph_directory = "run_steps2880_reduced_zonal_5min_128x128_WENO_verticalScalarDiff_smoothSponge_heatflux/"
 
 outputs = (u=rmodel.velocities.u, v=rmodel.velocities.v, T=rmodel.tracers.T, e=rmodel.tracers.e, SSH=rmodel.free_surface.η)
 
