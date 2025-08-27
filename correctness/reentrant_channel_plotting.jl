@@ -6,7 +6,7 @@ using GLMakie
 #
 
 
-graph_directory = "run_steps2880_reduced_zonal_5min_128x128_WENO_verticalScalarDiff_smoothSponge7day_noRidge_noCATKEGM/"
+graph_directory = "run_steps10000_reduced_zonal_5min_128x128_WENO_verticalScalarDiff_smoothSponge_heatflux_depthDrag/"
 
 data = jldopen(graph_directory * "data_init.jld2", "r")
 

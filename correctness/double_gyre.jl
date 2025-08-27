@@ -81,6 +81,9 @@ end
 @inline u_quadratic_bottom_drag(i, j, grid, c, Φ, μ) = @inbounds - μ * Φ.u[i, j, 1] * spᶠᶜᶜ(i, j, 1, grid, Φ)
 @inline v_quadratic_bottom_drag(i, j, grid, c, Φ, μ) = @inbounds - μ * Φ.v[i, j, 1] * spᶜᶠᶜ(i, j, 1, grid, Φ)
 
+@inline u_linear_depth_drag(i, j, grid, clock, model_fields, μ) = @inbounds -μ * 4000 * model_fields.u[i, j, 1]
+@inline v_linear_depth_drag(i, j, grid, clock, model_fields, μ) = @inbounds -μ * 4000 * model_fields.v[i, j, 1]
+
 # Keep a constant linear drag parameter independent on vertical level
 @inline u_immersed_bottom_drag(i, j, k, grid, clock, fields, μ) = @inbounds - μ * fields.u[i, j, k] * spᶠᶜᶜ(i, j, k, grid, fields)
 @inline v_immersed_bottom_drag(i, j, k, grid, clock, fields, μ) = @inbounds - μ * fields.v[i, j, k] * spᶜᶠᶜ(i, j, k, grid, fields)
@@ -181,8 +184,8 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     
         parameters = (
         Ly = 30,
-        Lz = Lz,
-        Qᵇ = 10 / (ρ * cᵖ),            # temperature flux magnitude [m² s⁻³]
+        Lz = 4000,
+        Qᵇ = 10 / (ρₒ * cₚ),            # temperature flux magnitude [m² s⁻³]
         φ_shutoff = -35,               # shutoff location for temperature flux [m]
     )
 
@@ -204,7 +207,7 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     #
     # Bottom drag:
     #
-    bottom_drag_coefficient = 0.003 # was 0.003
+    bottom_drag_coefficient = 1 / 30days # was 0.003 for quadratic
 
     u_immersed_drag = FluxBoundaryCondition(u_immersed_bottom_drag, discrete_form=true, parameters=bottom_drag_coefficient)
     v_immersed_drag = FluxBoundaryCondition(v_immersed_bottom_drag, discrete_form=true, parameters=bottom_drag_coefficient)
@@ -212,12 +215,14 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     u_immersed_bc = ImmersedBoundaryCondition(bottom=u_immersed_drag)
     v_immersed_bc = ImmersedBoundaryCondition(bottom=v_immersed_drag)
 
-    u_bot_bc = FluxBoundaryCondition(u_quadratic_bottom_drag, discrete_form=true, parameters=bottom_drag_coefficient)
-    v_bot_bc = FluxBoundaryCondition(v_quadratic_bottom_drag, discrete_form=true, parameters=bottom_drag_coefficient)
+    #u_bot_bc = FluxBoundaryCondition(u_quadratic_bottom_drag, discrete_form=true, parameters=bottom_drag_coefficient)
+    #v_bot_bc = FluxBoundaryCondition(v_quadratic_bottom_drag, discrete_form=true, parameters=bottom_drag_coefficient)
 
+    u_bot_bc = FluxBoundaryCondition(u_linear_depth_drag, discrete_form=true, parameters=bottom_drag_coefficient)
+    v_bot_bc = FluxBoundaryCondition(v_linear_depth_drag, discrete_form=true, parameters=bottom_drag_coefficient)
 
-    u_bcs = FieldBoundaryConditions(north=no_slip_bc, south=no_slip_bc, top=u_top_bc, bottom=u_bot_bc, immersed=u_immersed_bc)
-    v_bcs = FieldBoundaryConditions(bottom=v_bot_bc, immersed=v_immersed_bc)
+    u_bcs = FieldBoundaryConditions(north=no_slip_bc, south=no_slip_bc, top=u_top_bc, bottom=u_bot_bc) #, immersed=u_immersed_bc)
+    v_bcs = FieldBoundaryConditions(bottom=v_bot_bc) #, immersed=v_immersed_bc)
 
     boundary_conditions = (u=u_bcs, v=v_bcs, T=T_bcs)
 
@@ -282,7 +287,7 @@ end
 function loop!(model)
     Δt = model.clock.last_Δt + 0
     Oceananigans.TimeSteppers.first_time_step!(model, Δt)
-    @trace mincut = true track_numbers = false for i = 1:2879
+    @trace mincut = true track_numbers = false for i = 1:9999
         Oceananigans.TimeSteppers.time_step!(model, Δt)
     end
     return nothing
@@ -370,7 +375,7 @@ set!(rmodel.tracers.T, rTᵢ)
 #
 # Plotting:
 #
-graph_directory = "run_steps2880_reduced_zonal_5min_128x128_WENO_verticalScalarDiff_smoothSponge_heatflux/"
+graph_directory = "run_steps10000_reduced_zonal_5min_128x128_WENO_verticalScalarDiff_smoothSponge_heatflux_depthDrag/"
 
 outputs = (u=rmodel.velocities.u, v=rmodel.velocities.v, T=rmodel.tracers.T, e=rmodel.tracers.e, SSH=rmodel.free_surface.η)
 
