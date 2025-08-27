@@ -88,7 +88,7 @@ end
 function double_gyre_model(arch, Nx, Ny, Nz, Δt)
 
     # Fewer substeps can be used at higher resolutions
-    free_surface = SplitExplicitFreeSurface(substeps=30)
+    free_surface = SplitExplicitFreeSurface(substeps=300)
 
     # TEOS10 is a 54-term polynomial that relates temperature (T) and salinity (S) to buoyancy
     buoyancy = SeawaterBuoyancy(equation_of_state = SeawaterPolynomials.TEOS10EquationOfState(Oceananigans.defaults.FloatType))
@@ -122,8 +122,8 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
 
     #vertical_min_closure = VerticalScalarDiffusivity(ν=ν_min, discrete_form=true, loc=(Center, Center, Center), parameters=(; ν0=ν0, ν_bg=ν_bg, H=H), κ=1e-5) # Diff added for no CATKE
     vertical_min_closure = VerticalScalarDiffusivity(ν = 3e-4, κ = 0.5e-5)
-    closure              = (redi_diffusivity, horizontal_closure, vertical_closure, vertical_min_closure)
-    #closure              = (redi_diffusivity, horizontal_closure, vertical_min_closure) # NO CATKE
+    #closure              = (redi_diffusivity, horizontal_closure, vertical_closure, vertical_min_closure)
+    closure              = (horizontal_closure, vertical_min_closure) # NO CATKE or GM/REDI
 
     # Coriolis forces for a rotating Earth
     coriolis = HydrostaticSphericalCoriolis() #FPlane(latitude=-45) #FPlane(latitude=-45)
@@ -132,7 +132,38 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
 
     underlying_grid = simple_latitude_longitude_grid(arch, Nx, Ny, Nz)
 
-    ridge(λ, φ) = 4100exp(-0.1(λ - 15)^2) * (1 / (1 + exp(-3(φ+45))) + 1 / (1 + exp(-3(-φ-55)))) - 4000 # might be needed, normally 4100 coeff
+    δ = 1.5
+    #=
+    # full ridge function:
+    function ridge_function(λ, φ)
+        zonal = 4100exp(-0.1(λ - 15)^2)
+        gap   = 1 - 0.5(tanh((φ - (-55))/3.0) - tanh((φ - (-45))/3.0))
+        return zonal * gap - 4000
+    end
+    =#
+
+    # full ridge function:
+    function ridge_function(λ, φ)
+        zonal = 4100max(cos(pi*(λ - 15)/10), 0)
+        if (φ < -55) || (φ > -45)
+            gap = 1
+        elseif ((φ >= -55) && (φ <= -51))
+            gap = -0.25(φ - (-51))
+        elseif ((φ >= -49) && (φ <= -45))
+            gap = 0.25(φ - (-49))
+        else
+            gap = 0
+        end
+        gap   = 1 - 0.5(tanh((φ - (-55))/3.0) - tanh((φ - (-45))/3.0))
+        return -4000 #zonal * gap - 4000
+    end
+
+    # Make into a ridge array:
+    ridge = Field{Center, Center, Nothing}(underlying_grid)
+    set!(ridge, ridge_function)
+
+    #ridge(λ, φ) = 4100exp(-0.1(λ - 15)^2) * (1 / (1 + exp(-3(φ+45))) + 1 / (1 + exp(-3(-φ-55)))) - 4000
+    #ridge(λ, φ) = 4100exp(-0.1(λ - 15)^2) * (1 / (1 + exp(-1(φ+45))) + 1 / (1 + exp(-1(-φ-55)))) - 4000 #.1 too smooth - no gap
     grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(ridge))
 
     momentum_advection = WENOVectorInvariant()
@@ -180,14 +211,14 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     u_bcs = FieldBoundaryConditions(north=no_slip_bc, south=no_slip_bc, top=u_top_bc, bottom=u_bot_bc, immersed=u_immersed_bc)
     v_bcs = FieldBoundaryConditions(bottom=v_bot_bc, immersed=v_immersed_bc)
 
-    boundary_conditions = (u=u_bcs, v=v_bcs, T=T_bcs)
+    boundary_conditions = (u=u_bcs, v=v_bcs) #, T=T_bcs)
 
     #
     # Forcings, to get Relaxation in Northern sponge layer
     #
     # First the mask:
     A        = 1.0
-    φ_target = -31.0   # degrees
+    φ_target = -30.0   # degrees
     σ_φ      = 2.5     # degrees  (≈ 3σ => ~7.5° width)
     σ_z      = 40.0    # meters
 
@@ -195,18 +226,17 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     @inline function sponge_mask(φ, z)
         Mφ = exp(-0.5 * ((φ - φ_target) / σ_φ)^2)
         Mz = exp(-0.5 * (z / σ_z)^2)
-        return A * Mφ * Mz
+        return A * max(Mφ, Mz)
     end
     
-    @inline function northern_sponge_T(i, j, k, grid, clock, model_fields)
+    @inline function sponge_T(i, j, k, grid, clock, model_fields)
         φ = φnode(j, grid, Center())
         z = znode(k, grid, Center())
 
-        return -(1 / τ) * (model_fields.T[i, Ny, k] - (-2 + 12(-30 - φ₀) * exp(znode(k, grid, Center())/800) / Lφ)) * sponge_mask(φ, z)
-
+        return -(1 / τ) * (model_fields.T[i, j, k] - (-2 + 12(φ - φ₀) * exp(z/800) / Lφ)) * sponge_mask(φ, z)
     end
     
-    T_forcing = Forcing(northern_sponge_T, discrete_form=true)
+    T_forcing = Forcing(sponge_T, discrete_form=true)
 
     forcings = (T=T_forcing,)
 
@@ -244,7 +274,7 @@ end
 function loop!(model)
     Δt = model.clock.last_Δt + 0
     Oceananigans.TimeSteppers.first_time_step!(model, Δt)
-    @trace mincut = true track_numbers = false for i = 1:19999
+    @trace mincut = true track_numbers = false for i = 1:2879
         Oceananigans.TimeSteppers.time_step!(model, Δt)
     end
     return nothing
@@ -332,7 +362,7 @@ set!(rmodel.tracers.T, rTᵢ)
 #
 # Plotting:
 #
-graph_directory = "run_steps_20000_reduced_zonal_5min_128x128_WENO_verticalScalarDiff/" #"run_steps10000_timestep600_salinity30_windstressNeg02_ridgeFull_relaxationS80N111K_spongeNT_e0_Nz50_horizontalvisc10000_horizontaldiff100_ridgeWidthX50_ridgeSmoothed_quadraticBottomDrag/"
+graph_directory = "run_steps2880_reduced_zonal_5min_128x128_WENO_verticalScalarDiff_smoothSponge_noRidge_noCATKEGM/"
 
 outputs = (u=rmodel.velocities.u, v=rmodel.velocities.v, T=rmodel.tracers.T, e=rmodel.tracers.e, SSH=rmodel.free_surface.η)
 
@@ -381,13 +411,14 @@ jldsave(filename; Nx, Ny, Nz,
                   e_final=convert(Array, interior(rmodel.tracers.e)),
                   ssh=convert(Array, interior(rmodel.free_surface.η)),
                   u=convert(Array, interior(rmodel.velocities.u)),
-                  v=convert(Array, interior(rmodel.velocities.v)))
+                  v=convert(Array, interior(rmodel.velocities.v)),
+                  w=convert(Array, interior(rmodel.velocities.w)))
 
 
 i = 10
 j = 10
 
-#@allowscalar @show dJ[i, j]
+@allowscalar @show dJ[i, j]
 
 
 

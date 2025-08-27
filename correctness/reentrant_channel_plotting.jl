@@ -6,7 +6,7 @@ using GLMakie
 #
 
 
-graph_directory = "run_steps_20000_reduced_zonal_5min_128x128_WENO_verticalScalarDiff/" #"run_steps10000_timestep600_salinity30_windstressNeg02_ridgeFull_relaxationS80N111K_spongeNT_e0_Nz50_horizontalvisc10000_horizontaldiff100_ridgeWidthX50_ridgeSmoothed_quadraticBottomDrag/"
+graph_directory = "run_steps2880_reduced_zonal_5min_128x128_WENO_verticalScalarDiff_smoothSponge7day_noRidge_noCATKEGM/"
 
 data = jldopen(graph_directory * "data_init.jld2", "r")
 
@@ -150,8 +150,10 @@ Nz = data["Nz"]
 T_final = data["T_final"]
 e_final = data["e_final"]
 ssh     = data["ssh"]
-u       = data["u"]
-v       = data["v"]
+
+u = data["u"]
+v = data["v"]
+w = data["w"]
 
 # Build final temperature fields:
 fig, ax, hm = heatmap(view(T_final, 1:Nx, 1:Ny, Nz),
@@ -252,6 +254,22 @@ fig, ax, hm = heatmap(view(e_final, 1:Nx, 1:Ny, 1),
 Colorbar(fig[1, 2], hm, label = "[energy]")
 
 save(graph_directory * "final_e_bottom.png", fig)
+
+
+# Vertical velocity:
+max_surface_w = maximum(abs.(w[1:Nx, 1:Ny, Nz]))
+
+fig, ax, hm = heatmap(view(w, 1:Nx, 1:Ny, Nz),
+                      colormap = :seismic,
+                      colorrange = (-max_surface_w, max_surface_w),
+                      axis = (xlabel = "x [degrees]",
+                              ylabel = "y [degrees]",
+                              title = "w(x, y, z=0, t=end)",
+                              titlesize = 24))
+
+Colorbar(fig[1, 2], hm, label = "[m/s]")
+
+save(graph_directory * "final_surface_w.png", fig)
 
 # Zonal velocity:
 max_surface_u = maximum(abs.(u[1:Nx, 1:Ny, Nz]))
