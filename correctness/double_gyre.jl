@@ -178,12 +178,20 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     φ₀ = -60
     τ  = 10days # Relaxation timescale, equal to 10 days
 
-    # TODO: replace with discrete form
-    surface_condition_T(i, j, grid, clock, model_fields) = (80 / τ) * (model_fields.T[i, j, Nz] - (-2 + 12(φnode(j, grid, Center()) - φ₀) / Lφ))
-    T_top_bc = FluxBoundaryCondition(surface_condition_T, discrete_form=true)
     
-    north_condition_T(i, k, grid, clock, model_fields) = (110000 / τ) * (model_fields.T[i, Ny, k] - (-2 + 12(-30 - φ₀) * exp(znode(k, grid, Center())/800) / Lφ))
-    T_north_bc = FluxBoundaryCondition(north_condition_T, discrete_form=true)
+        parameters = (
+        Ly = 30,
+        Lz = Lz,
+        Qᵇ = 10 / (ρ * cᵖ),            # temperature flux magnitude [m² s⁻³]
+        φ_shutoff = -35,               # shutoff location for temperature flux [m]
+    )
+
+    @inline function temp_flux(i, j, grid, clock, model_fields, p)
+        φ = φnode(j, grid, Center())
+        return ifelse(φ < p.φ_shutoff, p.Qᵇ * cos(3π * φ / p.Ly), 0.0)
+    end
+    
+    T_top_bc = FluxBoundaryCondition(temp_flux, discrete_form = true, parameters = parameters)
 
     T_bcs = FieldBoundaryConditions(top=T_top_bc) # north=T_north_bc
     
@@ -211,7 +219,7 @@ function double_gyre_model(arch, Nx, Ny, Nz, Δt)
     u_bcs = FieldBoundaryConditions(north=no_slip_bc, south=no_slip_bc, top=u_top_bc, bottom=u_bot_bc, immersed=u_immersed_bc)
     v_bcs = FieldBoundaryConditions(bottom=v_bot_bc, immersed=v_immersed_bc)
 
-    boundary_conditions = (u=u_bcs, v=v_bcs) #, T=T_bcs)
+    boundary_conditions = (u=u_bcs, v=v_bcs, T=T_bcs)
 
     #
     # Forcings, to get Relaxation in Northern sponge layer
