@@ -352,6 +352,12 @@ Oceananigans.defaults.FloatType = Float64
 rarch = ReactantState()
 rmodel, runderlying_grid = double_gyre_model(rarch, Nx, Ny, Nz, time_step)
 
+@show typeof(rmodel)
+@show typeof(rmodel.grid)
+@show typeof(rmodel.grid.Nx)
+
+
+#=
 @info rmodel.buoyancy
 
 rTᵢ, rSᵢ     = set_tracers(rmodel.grid)
@@ -433,7 +439,7 @@ j = 10
 
 @allowscalar @show dJ[i, j]
 
-
+=#
 
 #=
 # Produce finite-difference gradients for comparison:
