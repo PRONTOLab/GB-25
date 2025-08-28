@@ -71,151 +71,6 @@ grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(ridge))
 
 @info "Built a grid."
 
-#@allowscalar @show grid
-
-#####
-##### Boundary conditions
-#####
-
-α = 2e-4     # [K⁻¹] thermal expansion coefficient
-g = 9.8061   # [m/s²] gravitational constant
-cᵖ = 3994.0   # [J/K]  heat capacity
-ρ = 999.8    # [kg/m³] reference density
-
-parameters = (
-    Ly = Ly,
-    Lz = Lz,
-    Qᵇ = 10 / (ρ * cᵖ) * α * g,            # buoyancy flux magnitude [m² s⁻³]
-    y_shutoff = 5 / 6 * Ly,                # shutoff location for buoyancy flux [m]
-    τ = 0.2 / ρ,                           # surface kinematic wind stress [m² s⁻²]
-    μ = 1 / 30days,                      # bottom drag damping time-scale [s⁻¹]
-    ΔB = 8 * α * g,                      # surface vertical buoyancy gradient [s⁻²]
-    H = Lz,                              # domain depth [m]
-    h = 1000.0,                          # exponential decay scale of stable stratification [m]
-    y_sponge = 19 / 20 * Ly,               # southern boundary of sponge layer [m]
-    λt = 7.0days                         # relaxation time scale [s]
-)
-
-@inline function buoyancy_flux(i, j, grid, clock, model_fields, p)
-    y = ynode(j, grid, Center())
-    return ifelse(y < p.y_shutoff, p.Qᵇ * cos(3π * y / p.Ly), 0.0)
-end
-
-buoyancy_flux_bc = FluxBoundaryCondition(buoyancy_flux, discrete_form = true, parameters = parameters)
-
-
-@inline function u_stress(i, j, grid, clock, model_fields, p)
-    y = ynode(j, grid, Center())
-    return -p.τ * sin(π * y / p.Ly)
-end
-
-u_stress_bc = FluxBoundaryCondition(u_stress, discrete_form = true, parameters = parameters)
-
-@inline u_drag(i, j, grid, clock, model_fields, p) = @inbounds -p.μ * p.Lz * model_fields.u[i, j, 1]
-@inline v_drag(i, j, grid, clock, model_fields, p) = @inbounds -p.μ * p.Lz * model_fields.v[i, j, 1]
-
-u_drag_bc = FluxBoundaryCondition(u_drag, discrete_form = true, parameters = parameters)
-v_drag_bc = FluxBoundaryCondition(v_drag, discrete_form = true, parameters = parameters)
-
-b_bcs = FieldBoundaryConditions(top = buoyancy_flux_bc)
-
-u_bcs = FieldBoundaryConditions(top = u_stress_bc, bottom = u_drag_bc)
-v_bcs = FieldBoundaryConditions(bottom = v_drag_bc)
-
-#####
-##### Coriolis
-#####
-
-const f = -1e-4
-const β = 1e-11
-coriolis = BetaPlane(f₀ = f, β = β)
-
-#####
-##### Forcing and initial condition
-#####
-
-@inline initial_buoyancy(z, p) = p.ΔB * (exp(z / p.h) - exp(-p.Lz / p.h)) / (1 - exp(-p.Lz / p.h))
-@inline mask(y, p) = max(0.0, y - p.y_sponge) / (Ly - p.y_sponge)
-
-
-@inline function buoyancy_relaxation(i, j, k, grid, clock, model_fields, p)
-    timescale = p.λt
-    y = ynode(j, grid, Center())
-    z = znode(k, grid, Center())
-    target_b = initial_buoyancy(z, p)
-    b = @inbounds model_fields.b[i, j, k]
-
-    return -1 / timescale * mask(y, p) * (b - target_b)
-end
-
-Fb = Forcing(buoyancy_relaxation, discrete_form = true, parameters = parameters)
-
-# closure
-
-κh = 0.5e-5 # [m²/s] horizontal diffusivity
-νh = 30.0   # [m²/s] horizontal viscocity
-κz = 0.5e-5 # [m²/s] vertical diffusivity
-νz = 3e-4   # [m²/s] vertical viscocity
-
-horizontal_closure = HorizontalScalarDiffusivity(ν = νh, κ = κh)
-vertical_closure = VerticalScalarDiffusivity(ν = νz, κ = κz)
-
-#convective_adjustment = ConvectiveAdjustmentVerticalDiffusivity(convective_κz = 1.0,
-#    convective_νz = 0.0)
-
-vertical_closure_CATKE = CATKEVerticalDiffusivity(minimum_tke=1e-7,
-                                                  maximum_tracer_diffusivity=0.3,
-                                                  maximum_viscosity=0.5)
-
-
-#####
-##### Model building
-#####
-
-@info "Building a model..."
-
-model = HydrostaticFreeSurfaceModel(
-    grid = grid,
-    free_surface = SplitExplicitFreeSurface(substeps=500),
-    momentum_advection = WENO(),
-    tracer_advection = WENO(),
-    buoyancy = BuoyancyTracer(),
-    coriolis = coriolis,
-    closure = (horizontal_closure, vertical_closure, vertical_closure_CATKE),
-    tracers = (:b, :e),
-    boundary_conditions = (b = b_bcs, u = u_bcs, v = v_bcs),
-    forcing = (; b = Fb)
-)
-
-@info "Built $model."
-
-#####
-##### Initial conditions
-#####
-
-# resting initial condition
-ε(σ) = σ * randn()
-bᵢ(x, y, z) = parameters.ΔB * (exp(z / parameters.h) - exp(-Lz / parameters.h)) / (1 - exp(-Lz / parameters.h)) + ε(1e-8)
-
-set!(model, b = bᵢ)
-
-#####
-##### Simulation building
-#####
-Δt₀ = 5minutes
-
-@info "Compiling the simulation..."
-
-model.clock.last_Δt = Δt₀
-
-function loop!(model)
-    Δt = model.clock.last_Δt
-    @trace mincut = true track_numbers = false for i = 1:10
-        time_step!(model, Δt)
-    end
-    return nothing
-end
-
 using InteractiveUtils
 
 using KernelAbstractions: @kernel, @index
@@ -231,13 +86,12 @@ using Oceananigans.Grids: XFlatGrid, YFlatGrid
 using Oceananigans.Operators: flux_div_xyᶜᶜᶜ, div_xyᶜᶜᶜ, Δzᶜᶜᶜ
 using Oceananigans.ImmersedBoundaries: immersed_cell
 
-bad_compute_w_from_continuity!(velocities, arch, grid; parameters = w_kernel_parameters(grid)) =
-    launch!(arch, grid, parameters, _bad_compute_w_from_continuity!, velocities, grid)
+bad_compute_w_from_continuity!(w, arch, grid; parameters = w_kernel_parameters(grid)) =
+    launch!(arch, grid, parameters, _bad_compute_w_from_continuity!, w, grid)
 
-@kernel function _bad_compute_w_from_continuity!(U, grid)
+@kernel function _bad_compute_w_from_continuity!(w, grid)
     i, j = @index(Global, NTuple)
 
-    u, v, w = U
     wᵏ = zero(eltype(w))
     @inbounds w[i, j, 1] = wᵏ
 
@@ -250,8 +104,10 @@ bad_compute_w_from_continuity!(velocities, arch, grid; parameters = w_kernel_par
     end
 end
 
+w = Field{Center, Center, Face}(grid)
+
 tic = time()
-rcompute_w_from_continuity! = @compile raise_first=true raise=true sync=true bad_compute_w_from_continuity!(model.velocities, model.architecture, model.grid; parameters=w_kernel_parameters(model.grid))
+rcompute_w_from_continuity! = @compile raise_first=true raise=true sync=true bad_compute_w_from_continuity!(w, architecture, grid; parameters=w_kernel_parameters(grid))
 compile_toc = time() - tic
 
 @show compile_toc
@@ -259,7 +115,7 @@ compile_toc = time() - tic
 @info "Running the simulation..."
 
 tic = time()
-rcompute_w_from_continuity!(model.velocities, model.architecture, model.grid; parameters=w_kernel_parameters(model.grid))
+rcompute_w_from_continuity!(w, architecture, grid; parameters=w_kernel_parameters(grid))
 run_toc = time() - tic
 
 @show run_toc
