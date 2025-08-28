@@ -55,8 +55,6 @@ underlying_grid = RectilinearGrid(architecture,
     y = (0, Ly),
     z = (-Lz, 0))
 
-@show typeof(underlying_grid)
-
 
 # full ridge function:
 function ridge_function(x, y)
@@ -69,7 +67,7 @@ end
 ridge = Field{Center, Center, Nothing}(underlying_grid)
 set!(ridge, ridge_function)
 
-grid = underlying_grid #ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(ridge))
+grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(ridge))
 
 @info "Built a grid."
 
@@ -290,14 +288,6 @@ simulation.output_writers[:averages] = JLD2Writer(model, averaged_outputs,
 
 @info "Compiling the simulation..."
 
-
-function time_step_for!(sim, Nsteps)
-    @trace for _ = 1:Nsteps
-        time_step!(sim)
-    end
-    return nothing
-end
-
 model.clock.last_Δt = Δt₀
 
 function loop!(model)
@@ -308,9 +298,51 @@ function loop!(model)
     return nothing
 end
 
+using InteractiveUtils
+
+using KernelAbstractions: @kernel, @index
+
+using Oceananigans.TimeSteppers: update_state!
+using Oceananigans.Models.NonhydrostaticModels: compute_auxiliaries!
+using Oceananigans.Models.HydrostaticFreeSurfaceModels: compute_w_from_continuity!, w_kernel_parameters, _compute_w_from_continuity!
+using Oceananigans.Utils: launch!
+
+using Oceananigans.Architectures: device
+using Oceananigans.Grids: halo_size, topology
+using Oceananigans.Grids: XFlatGrid, YFlatGrid
+using Oceananigans.Operators: flux_div_xyᶜᶜᶜ, div_xyᶜᶜᶜ, Δzᶜᶜᶜ
+using Oceananigans.ImmersedBoundaries: immersed_cell
+
+@show @which time_step!(model, Δt₀)
+@show @which update_state!(model, [])
+@show @which compute_auxiliaries!(model)
+@show @which compute_w_from_continuity!(model; parameters=w_kernel_parameters(model.grid))
+
+bad_compute_w_from_continuity!(velocities, arch, grid; parameters = w_kernel_parameters(grid)) =
+    launch!(arch, grid, parameters, _bad_compute_w_from_continuity!, velocities, grid)
+
+@kernel function _bad_compute_w_from_continuity!(U, grid)
+    i, j = @index(Global, NTuple)
+
+    u, v, w = U
+    wᵏ = zero(eltype(w))
+    @inbounds w[i, j, 1] = wᵏ
+
+    Nz = size(grid, 3)
+    for k in 2:Nz+1
+        δ = flux_div_xyᶜᶜᶜ(i, j, k-1, grid, u, v) * Az⁻¹ᶜᶜᶜ(i, j, k-1, grid)
+
+        # We do not account for grid changes in immersed cells
+        not_immersed = !immersed_cell(i, j, k-1, grid)
+        w̃ = Δrᶜᶜᶜ(i, j, k-1, grid) * ∂t_σ(i, j, k-1, grid) * not_immersed
+
+        wᵏ -= (δ + w̃)
+        @inbounds w[i, j, k] = wᵏ
+    end
+end
+
 tic = time()
-rtime_step! = @compile raise_first=true raise=true sync=true time_step!(model, Δt₀)
-#rloop! = @compile raise_first=true raise=true sync=true loop!(model)
+rcompute_w_from_continuity! = @compile raise_first=true raise=true sync=true compute_w_from_continuity!(model.velocities, model.architecture, model.grid; parameters=w_kernel_parameters(model.grid))
 compile_toc = time() - tic
 
 @show compile_toc
@@ -318,8 +350,7 @@ compile_toc = time() - tic
 @info "Running the simulation..."
 
 tic = time()
-rtime_step!(model, Δt₀)
-#rloop!(model)
+rcompute_w_from_continuity!(model.velocities, model.architecture, model.grid; parameters=w_kernel_parameters(model.grid))
 run_toc = time() - tic
 
 @show run_toc
