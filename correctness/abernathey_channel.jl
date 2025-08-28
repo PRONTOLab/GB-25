@@ -65,7 +65,11 @@ function ridge_function(x, y)
     return zonal * gap - Lz
 end
 
-grid = underlying_grid #ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(ridge_function))
+# Make into a ridge array:
+ridge = Field{Center, Center, Nothing}(underlying_grid)
+set!(ridge, ridge_function)
+
+grid = underlying_grid #ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(ridge))
 
 @info "Built a grid."
 
@@ -286,6 +290,7 @@ simulation.output_writers[:averages] = JLD2Writer(model, averaged_outputs,
 
 @info "Compiling the simulation..."
 
+
 function time_step_for!(sim, Nsteps)
     @trace for _ = 1:Nsteps
         time_step!(sim)
@@ -293,15 +298,31 @@ function time_step_for!(sim, Nsteps)
     return nothing
 end
 
-rtime_step_for! = @compile raise_first=true raise=true sync=true time_step_for!(simulation, stop_iteration)
+model.clock.last_Δt = Δt₀
+
+function loop!(model)
+    Δt = model.clock.last_Δt
+    @trace mincut = true track_numbers = false for i = 1:10
+        time_step!(model, Δt)
+    end
+    return nothing
+end
+
+tic = time()
+rtime_step! = @compile raise_first=true raise=true sync=true time_step!(model, Δt₀)
+#rloop! = @compile raise_first=true raise=true sync=true loop!(model)
+compile_toc = time() - tic
+
+@show compile_toc
 
 @info "Running the simulation..."
 
-rtime_step_for!(simulation, stop_iteration)
+tic = time()
+rtime_step!(model, Δt₀)
+#rloop!(model)
+run_toc = time() - tic
 
-#Cannot convert type RectilinearGrid{Float64,                         Periodic, Bounded, Bounded, Oceananigans.Grids.StaticVerticalDiscretization{OffsetArrays.OffsetVector{Float64,                         StepRangeLen{Float64, Base.TwicePrecision{Float64},                                 Base.TwicePrecision{Float64}, Int64}},                OffsetArrays.OffsetVector{Float64, StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}, Int64}}, Float64, Float64}, Float64, Float64, OffsetArrays.OffsetVector{Float64, StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}, Int64}}, OffsetArrays.OffsetVector{Float64, StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}, Int64}}, ReactantState},
-#best attempt        RectilinearGrid{Reactant.TracedRNumber{Float64}, Periodic, Bounded, Bounded, Oceananigans.Grids.StaticVerticalDiscretization{OffsetArrays.OffsetVector{Reactant.TracedRNumber{Float64}, Reactant.TracedRNumberOverrides.TracedStepRangeLen{Reactant.TracedRNumber{Float64}, Base.TwicePrecision{Reactant.TracedRNumber{Float64}}, Base.TwicePrecision{Reactant.TracedRNumber{Float64}}, Reactant.TracedRNumber{Int64}}}, OffsetArrays.OffsetVector{Reactant.TracedRNumber{Float64}, Reactant.TracedRNumberOverrides.TracedStepRangeLen{Reactant.TracedRNumber{Float64}, Base.TwicePrecision{Reactant.TracedRNumber{Float64}}, Base.TwicePrecision{Reactant.TracedRNumber{Float64}}, Reactant.TracedRNumber{Int64}}}, Reactant.TracedRNumber{Float64}, Reactant.TracedRNumber{Float64}}, Reactant.TracedRNumber{Float64}, Reactant.TracedRNumber{Float64}, OffsetArrays.OffsetVector{Reactant.TracedRNumber{Float64}, Reactant.TracedRNumberOverrides.TracedStepRangeLen{Reactant.TracedRNumber{Float64}, Base.TwicePrecision{Reactant.TracedRNumber{Float64}}, Base.TwicePrecision{Reactant.TracedRNumber{Float64}}, Reactant.TracedRNumber{Int64}}}, OffsetArrays.OffsetVector{Reactant.TracedRNumber{Float64}, Reactant.TracedRNumberOverrides.TracedStepRangeLen{Reactant.TracedRNumber{Float64}, Base.TwicePrecision{Reactant.TracedRNumber{Float64}}, Base.TwicePrecision{Reactant.TracedRNumber{Float64}}, Reactant.TracedRNumber{Int64}}}, ReactantState} failed.
-
+@show run_toc
 
 # #####
 # ##### Visualization
