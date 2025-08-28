@@ -226,7 +226,7 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels: compute_w_from_continuit
 using Oceananigans.Utils: launch!
 
 using Oceananigans.Architectures: device
-using Oceananigans.Grids: halo_size, topology
+using Oceananigans.Grids: topology
 using Oceananigans.Grids: XFlatGrid, YFlatGrid
 using Oceananigans.Operators: flux_div_xyᶜᶜᶜ, div_xyᶜᶜᶜ, Δzᶜᶜᶜ
 using Oceananigans.ImmersedBoundaries: immersed_cell
@@ -243,19 +243,15 @@ bad_compute_w_from_continuity!(velocities, arch, grid; parameters = w_kernel_par
 
     Nz = size(grid, 3)
     for k in 2:Nz+1
-        δ = flux_div_xyᶜᶜᶜ(i, j, k-1, grid, u, v) * Az⁻¹ᶜᶜᶜ(i, j, k-1, grid)
-
-        # We do not account for grid changes in immersed cells
         not_immersed = !immersed_cell(i, j, k-1, grid)
-        w̃ = Δrᶜᶜᶜ(i, j, k-1, grid) * ∂t_σ(i, j, k-1, grid) * not_immersed
 
-        wᵏ -= (δ + w̃)
+        wᵏ -= 0.01 * not_immersed
         @inbounds w[i, j, k] = wᵏ
     end
 end
 
 tic = time()
-rcompute_w_from_continuity! = @compile raise_first=true raise=true sync=true compute_w_from_continuity!(model.velocities, model.architecture, model.grid; parameters=w_kernel_parameters(model.grid))
+rcompute_w_from_continuity! = @compile raise_first=true raise=true sync=true bad_compute_w_from_continuity!(model.velocities, model.architecture, model.grid; parameters=w_kernel_parameters(model.grid))
 compile_toc = time() - tic
 
 @show compile_toc
