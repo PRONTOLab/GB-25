@@ -19,6 +19,9 @@ using Oceananigans.TurbulenceClosures: CATKEVerticalDiffusivity
 #CUDA.device!(0)
 
 using Reactant
+
+ENV["JULIA_DEBUG"] = "Reactant_jll,Reactant"
+Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
 using GordonBell25
 using Oceananigans.Architectures: ReactantState
 Reactant.set_default_backend("cpu")
@@ -84,7 +87,9 @@ using Oceananigans.Architectures: device
 using Oceananigans.Grids: topology
 using Oceananigans.Grids: XFlatGrid, YFlatGrid
 using Oceananigans.Operators: flux_div_xyᶜᶜᶜ, div_xyᶜᶜᶜ, Δzᶜᶜᶜ
-using Oceananigans.ImmersedBoundaries: immersed_cell
+using Oceananigans.ImmersedBoundaries: immersed_cell, _immersed_cell
+
+@show @which immersed_cell(10, 10, 9, grid.underlying_grid, grid.immersed_boundary)
 
 bad_compute_w_from_continuity!(w, arch, grid; parameters = w_kernel_parameters(grid)) =
     launch!(arch, grid, parameters, _bad_compute_w_from_continuity!, w, grid)
@@ -97,7 +102,7 @@ bad_compute_w_from_continuity!(w, arch, grid; parameters = w_kernel_parameters(g
 
     Nz = size(grid, 3)
     for k in 2:Nz+1
-        not_immersed = !immersed_cell(i, j, k-1, grid)
+        not_immersed = !_immersed_cell(i, j, k-1, grid.underlying_grid, grid.immersed_boundary)
 
         wᵏ -= 0.01 * not_immersed
         @inbounds w[i, j, k] = wᵏ
