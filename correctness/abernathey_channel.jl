@@ -22,7 +22,32 @@ using Reactant
 using GordonBell25
 using Oceananigans.Architectures: ReactantState
 Reactant.set_default_backend("cpu")
+#=
+# https://github.com/CliMA/Oceananigans.jl/blob/c29939097a8d2f42966e930f2f2605803bf5d44c/src/AbstractOperations/binary_operations.jl#L5
+Base.@nospecializeinfer function Reactant.traced_type_inner(
+    @nospecialize(OA::Type{Oceananigans.AbstractOperations.BinaryOperation{LX, LY, LZ, O, A, B, IA, IB, G, T}}),
+    seen,
+    mode::Reactant.TraceMode,
+    @nospecialize(track_numbers::Type),
+    @nospecialize(sharding),
+    @nospecialize(runtime)
+) where {LX, LY, LZ, O, A, B, IA, IB, G, T}
+    LX2 = Reactant.traced_type_inner(LX, seen, mode, track_numbers, sharding, runtime)
+    LY2 = Reactant.traced_type_inner(LY, seen, mode, track_numbers, sharding, runtime)
+    LZ2 = Reactant.traced_type_inner(LZ, seen, mode, track_numbers, sharding, runtime)
 
+    O2 = Reactant.traced_type_inner(O, seen, mode, track_numbers, sharding, runtime)
+
+    A2 = Reactant.traced_type_inner(A, seen, mode, track_numbers, sharding, runtime)
+    B2 = Reactant.traced_type_inner(B, seen, mode, track_numbers, sharding, runtime)
+    IA2 = Reactant.traced_type_inner(IA, seen, mode, track_numbers, sharding, runtime)
+    IB2 = Reactant.traced_type_inner(IB, seen, mode, track_numbers, sharding, runtime)
+    G2 = Reactant.traced_type_inner(G, seen, mode, track_numbers, sharding, runtime)
+
+    T2 = eltype(G2)
+    return Oceananigans.AbstractOperations.BinaryOperation{LX2, LY2, LZ2, O2, A2, B2, IA2, IB2, G2, T2}
+end
+=#
 Oceananigans.defaults.FloatType = Float64
 
 const Lx = 1000kilometers # zonal domain length [m]
@@ -69,7 +94,7 @@ end
 ridge = Field{Center, Center, Nothing}(underlying_grid)
 set!(ridge, ridge_function)
 
-grid = underlying_grid #ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(ridge))
+grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(ridge))
 
 @info "Built a grid."
 
@@ -307,6 +332,9 @@ function loop!(model)
     end
     return nothing
 end
+
+# Trying zonal transport:
+#@allowscalar zonal_transport = Field(Integral(model.velocities.u, dims=(2,3)))
 
 tic = time()
 rtime_step! = @compile raise_first=true raise=true sync=true time_step!(model, Δt₀)
