@@ -226,11 +226,9 @@ wind_stress = wind_stress_init(model.grid, parameters)
 
 # resting initial condition
 ε(σ) = σ * randn()
-bᵢ(x, y, z) = parameters.ΔB * (exp(z / parameters.h) - exp(-Lz / parameters.h)) / (1 - exp(-Lz / parameters.h)) + ε(1e-8)
-
-# setting IC's and BC's:
-set!(model.velocities.u.boundary_conditions.top.condition, wind_stress)
-set!(model, b = bᵢ)
+bᵢ_function(x, y, z) = parameters.ΔB * (exp(z / parameters.h) - exp(-Lz / parameters.h)) / (1 - exp(-Lz / parameters.h)) + ε(1e-8)
+bᵢ = Field{Center, Center, Center}(grid)
+set!(bᵢ, bᵢ_function)
 
 #####
 ##### Simulation building
@@ -331,12 +329,46 @@ function loop!(model)
     return nothing
 end
 
+function run_reentrant_channel_model!(model, bᵢ, wind_stress)
+    # setting IC's and BC's:
+    set!(model.velocities.u.boundary_conditions.top.condition, wind_stress)
+    set!(model.tracers.b, bᵢ)
+
+    # Initialize the model
+    model.clock.iteration = 0
+    model.clock.time = 0
+
+    # Step it forward
+    loop!(model)
+
+    return nothing
+end
+
+function estimate_tracer_error(model, initial_buoyancy, wind_stress)
+    run_reentrant_channel_model!(model, initial_buoyancy, wind_stress)
+    # Compute the mean mixed layer depth:
+    #compute!(mld)
+    Nλ, Nφ, Nz = size(model.grid)
+    #=
+    avg_mld = 0.0
+    
+    for j0 = 1:Nφ, i0 = 1:Nλ
+        @allowscalar avg_mld += @inbounds model.velocities.u[i0, j0, 1]^2
+    end
+    avg_mld = avg_mld / (Nλ * Nφ)
+    =#
+    # Hard way
+    c² = parent(model.tracers.b).^2
+    avg_mld = sum(c²) / (Nλ * Nφ * Nz)
+    return avg_mld
+end
+
 # Trying zonal transport:
 #@allowscalar zonal_transport = Field(Integral(model.velocities.u, dims=(2,3)))
 
 tic = time()
 #rtime_step! = @compile raise_first=true raise=true sync=true loop!(model, Δt₀)
-rloop! = @compile raise_first=true raise=true sync=true loop!(model)
+restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(model, bᵢ, wind_stress)
 compile_toc = time() - tic
 
 @show compile_toc
@@ -345,7 +377,7 @@ compile_toc = time() - tic
 
 using FileIO, JLD2
 
-graph_directory = "run_abernathy_model/"
+graph_directory = "run_abernathy_model_10000days/"
 filename        = graph_directory * "data_init.jld2"
 
 if !isdir(graph_directory) Base.Filesystem.mkdir(graph_directory) end
@@ -358,10 +390,11 @@ jldsave(filename; Nx, Ny, Nz,
 
 tic = time()
 #rtime_step!(model, Δt₀)
-rloop!(model)
+avg_temp = restimate_tracer_error(model, bᵢ, wind_stress)
 run_toc = time() - tic
 
 @show run_toc
+@show avg_temp
 
 filename = graph_directory * "data_final.jld2"
 
