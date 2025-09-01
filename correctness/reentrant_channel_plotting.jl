@@ -6,7 +6,7 @@ using GLMakie
 #
 
 
-graph_directory = "run_steps10000_reduced_zonal_5min_128x128_WENO_verticalScalarDiff_smoothSponge_heatflux_depthDrag/"
+graph_directory = "run_abernathy_model/"
 
 data = jldopen(graph_directory * "data_init.jld2", "r")
 
@@ -15,7 +15,7 @@ Ny = data["Ny"]
 Nz = data["Nz"]
 
 bottom_height = data["bottom_height"]
-T_init        = data["T_init"]
+T_init        = data["b_init"]
 e_init        = data["e_init"]
 wind_stress   = data["wind_stress"]
 
@@ -147,7 +147,7 @@ Nx = data["Nx"]
 Ny = data["Ny"]
 Nz = data["Nz"]
 
-T_final = data["T_final"]
+T_final = data["b_final"]
 e_final = data["e_final"]
 ssh     = data["ssh"]
 

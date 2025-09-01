@@ -21,7 +21,7 @@ using Oceananigans.TurbulenceClosures: CATKEVerticalDiffusivity
 using Reactant
 using GordonBell25
 using Oceananigans.Architectures: ReactantState
-Reactant.set_default_backend("cpu")
+#Reactant.set_default_backend("cpu")
 #=
 # https://github.com/CliMA/Oceananigans.jl/blob/c29939097a8d2f42966e930f2f2605803bf5d44c/src/AbstractOperations/binary_operations.jl#L5
 Base.@nospecializeinfer function Reactant.traced_type_inner(
@@ -80,8 +80,6 @@ underlying_grid = RectilinearGrid(architecture,
     y = (0, Ly),
     z = (-Lz, 0))
 
-@show typeof(underlying_grid)
-
 
 # full ridge function:
 function ridge_function(x, y)
@@ -130,13 +128,7 @@ end
 
 buoyancy_flux_bc = FluxBoundaryCondition(buoyancy_flux, discrete_form = true, parameters = parameters)
 
-
-@inline function u_stress(i, j, grid, clock, model_fields, p)
-    y = ynode(j, grid, Center())
-    return -p.τ * sin(π * y / p.Ly)
-end
-
-u_stress_bc = FluxBoundaryCondition(u_stress, discrete_form = true, parameters = parameters)
+u_stress_bc = FluxBoundaryCondition(Field{Face, Center, Nothing}(grid))
 
 @inline u_drag(i, j, grid, clock, model_fields, p) = @inbounds -p.μ * p.Lz * model_fields.u[i, j, 1]
 @inline v_drag(i, j, grid, clock, model_fields, p) = @inbounds -p.μ * p.Lz * model_fields.v[i, j, 1]
@@ -220,10 +212,24 @@ model = HydrostaticFreeSurfaceModel(
 ##### Initial conditions
 #####
 
+# wind stress:
+function wind_stress_init(grid, p)
+    wind_stress = Field{Face, Center, Nothing}(grid)
+
+    @inline u_stress(x, y) = -p.τ * sin(π * y / p.Ly)
+
+    set!(wind_stress, u_stress)
+    return wind_stress
+end
+
+wind_stress = wind_stress_init(model.grid, parameters)
+
 # resting initial condition
 ε(σ) = σ * randn()
 bᵢ(x, y, z) = parameters.ΔB * (exp(z / parameters.h) - exp(-Lz / parameters.h)) / (1 - exp(-Lz / parameters.h)) + ε(1e-8)
 
+# setting IC's and BC's:
+set!(model.velocities.u.boundary_conditions.top.condition, wind_stress)
 set!(model, b = bᵢ)
 
 #####
@@ -231,6 +237,8 @@ set!(model, b = bᵢ)
 #####
 Δt₀ = 5minutes
 stop_iteration = 10
+
+model.clock.last_Δt = Δt₀
 
 simulation = Simulation(model, Δt = Δt₀, stop_iteration = stop_iteration)
 
@@ -313,21 +321,11 @@ simulation.output_writers[:averages] = JLD2Writer(model, averaged_outputs,
     overwrite_existing = true)
 =#
 
-@info "Compiling the simulation..."
-
-
-function time_step_for!(sim, Nsteps)
-    @trace for _ = 1:Nsteps
-        time_step!(sim)
-    end
-    return nothing
-end
-
-model.clock.last_Δt = Δt₀
+@info "Compiling the model run..."
 
 function loop!(model)
     Δt = model.clock.last_Δt
-    @trace mincut = true track_numbers = false for i = 1:10
+    @trace mincut = true track_numbers = false for i = 1:288000
         time_step!(model, Δt)
     end
     return nothing
@@ -337,20 +335,43 @@ end
 #@allowscalar zonal_transport = Field(Integral(model.velocities.u, dims=(2,3)))
 
 tic = time()
-rtime_step! = @compile raise_first=true raise=true sync=true time_step!(model, Δt₀)
-#rloop! = @compile raise_first=true raise=true sync=true loop!(model)
+#rtime_step! = @compile raise_first=true raise=true sync=true loop!(model, Δt₀)
+rloop! = @compile raise_first=true raise=true sync=true loop!(model)
 compile_toc = time() - tic
 
 @show compile_toc
 
 @info "Running the simulation..."
 
+using FileIO, JLD2
+
+graph_directory = "run_abernathy_model/"
+filename        = graph_directory * "data_init.jld2"
+
+if !isdir(graph_directory) Base.Filesystem.mkdir(graph_directory) end
+
+jldsave(filename; Nx, Ny, Nz,
+                  bottom_height=convert(Array, interior(model.grid.immersed_boundary.bottom_height)),
+                  b_init=convert(Array, interior(model.tracers.b)),
+                  e_init=convert(Array, interior(model.tracers.e)),
+                  wind_stress=convert(Array, interior(wind_stress)))
+
 tic = time()
-rtime_step!(model, Δt₀)
-#rloop!(model)
+#rtime_step!(model, Δt₀)
+rloop!(model)
 run_toc = time() - tic
 
 @show run_toc
+
+filename = graph_directory * "data_final.jld2"
+
+jldsave(filename; Nx, Ny, Nz,
+                  b_final=convert(Array, interior(model.tracers.b)),
+                  e_final=convert(Array, interior(model.tracers.e)),
+                  ssh=convert(Array, interior(model.free_surface.η)),
+                  u=convert(Array, interior(model.velocities.u)),
+                  v=convert(Array, interior(model.velocities.v)),
+                  w=convert(Array, interior(model.velocities.w)))
 
 # #####
 # ##### Visualization
