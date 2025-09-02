@@ -182,9 +182,6 @@ Fb = Forcing(buoyancy_relaxation, discrete_form = true, parameters = parameters)
 horizontal_closure = HorizontalScalarDiffusivity(ν = νh, κ = κh)
 vertical_closure = VerticalScalarDiffusivity(ν = νz, κ = κz)
 
-#convective_adjustment = ConvectiveAdjustmentVerticalDiffusivity(convective_κz = 1.0,
-#    convective_νz = 0.0)
-
 vertical_closure_CATKE = CATKEVerticalDiffusivity(minimum_tke=1e-7,
                                                   maximum_tracer_diffusivity=0.3,
                                                   maximum_viscosity=0.5)
@@ -241,92 +238,9 @@ stop_iteration = 10
 
 model.clock.last_Δt = Δt₀
 
-simulation = Simulation(model, Δt = Δt₀, stop_iteration = stop_iteration)
-
-# Callbacks not supported with Reactant:
-#=
-# add timestep wizard callback
-# wizard = TimeStepWizard(cfl=0.1, max_change=1.1, max_Δt=20minutes)
-# simulation.callbacks[:wizard] = Callback(wizard, IterationInterval(20))
-
-# add progress callback
-wall_clock = [time_ns()]
-
-function print_progress(sim)
-    @printf("[%05.2f%%] i: %d, t: %s, wall time: %s, max(u): (%6.3e, %6.3e, %6.3e) m/s, next Δt: %s\n",
-        100 * (sim.model.clock.time / sim.stop_time),
-        sim.model.clock.iteration,
-        prettytime(sim.model.clock.time),
-        prettytime(1e-9 * (time_ns() - wall_clock[1])),
-        maximum(abs, sim.model.velocities.u),
-        maximum(abs, sim.model.velocities.v),
-        maximum(abs, sim.model.velocities.w),
-        prettytime(sim.Δt))
-
-    wall_clock[1] = time_ns()
-
-    return nothing
-end
-
-simulation.callbacks[:print_progress] = Callback(print_progress, IterationInterval(20))
-=#
-
-# Test without Diagnostics for now:
-#=
-#####
-##### Diagnostics
-#####
-
-u, v, w = model.velocities
-b = model.tracers.b
-e = model.tracers.e
-η = model.free_surface.η
-
-ζ = Field(∂x(v) - ∂y(u))
-
-B = Field(Average(b, dims = 1))
-U = Field(Average(u, dims = 1))
-V = Field(Average(v, dims = 1))
-W = Field(Average(w, dims = 1))
-
-b′ = b - B
-v′ = v - V
-w′ = w - W
-
-v′b′ = Field(Average(v′ * b′, dims = 1))
-w′b′ = Field(Average(w′ * b′, dims = 1))
-
-outputs = (; b, ζ, u, v, w, η, e)
-
-averaged_outputs = (; v′b′, w′b′, B)
-
-#####
-##### Build checkpointer and output writer
-#####
-
-simulation.output_writers[:checkpointer] = Checkpointer(model,
-    schedule = TimeInterval(100days),
-    prefix = "abernathey_channel",
-    overwrite_existing = true)
-
-simulation.output_writers[:fields] = JLD2Writer(model, outputs,
-    schedule = TimeInterval(5days),
-    filename = "abernathey_channel",
-    verbose = true,
-    overwrite_existing = true)
-
-simulation.output_writers[:averages] = JLD2Writer(model, averaged_outputs,
-    schedule = AveragedTimeInterval(1days, window = 1days, stride = 1),
-    filename = "abernathey_channel_averages",
-    verbose = true,
-    overwrite_existing = true)
-=#
-
-@info "Compiling the model run..."
-
 function loop!(model)
     Δt = model.clock.last_Δt
-    @trace mincut = true track_numbers = false for i = 1:1000
+    @trace mincut = true track_numbers = false for i = 1:10
         time_step!(model, Δt)
     end
     return nothing
@@ -384,6 +298,7 @@ dJ  = Field{Face, Center, Nothing}(model.grid)
 # Trying zonal transport:
 #@allowscalar zonal_transport = Field(Integral(model.velocities.u, dims=(2,3)))
 
+@info "Compiling the model run..."
 tic = time()
 restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(model, bᵢ, wind_stress)
 #rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true  differentiate_tracer_error(model, bᵢ, wind_stress, dmodel, dbᵢ, dJ)
@@ -395,13 +310,20 @@ compile_toc = time() - tic
 
 using FileIO, JLD2
 
-graph_directory = "run_abernathy_model_1000steps/"
+graph_directory = "run_abernathy_model_10steps/"
 filename        = graph_directory * "data_init.jld2"
 
 if !isdir(graph_directory) Base.Filesystem.mkdir(graph_directory) end
 
+if grid == underlying_grid
+    bottom_height = Field{Center, Center, Nothing}(underlying_grid)
+    set!(bottom_height, -Lz)
+else
+    bottom_height = interior(model.grid.immersed_boundary.bottom_height)
+end
+
 jldsave(filename; Nx, Ny, Nz,
-                  bottom_height=convert(Array, interior(model.grid.immersed_boundary.bottom_height)),
+                  bottom_height=convert(Array, bottom_height),
                   b_init=convert(Array, interior(model.tracers.b)),
                   e_init=convert(Array, interior(model.tracers.e)),
                   wind_stress=convert(Array, interior(wind_stress)))
@@ -423,257 +345,3 @@ jldsave(filename; Nx, Ny, Nz,
                   u=convert(Array, interior(model.velocities.u)),
                   v=convert(Array, interior(model.velocities.v)),
                   w=convert(Array, interior(model.velocities.w)))
-
-# #####
-# ##### Visualization
-# #####
-
-#=
-using Plots
-
-grid = RectilinearGrid(CPU(),
-    topology = (Periodic, Bounded, Bounded),
-    size = (grid.Nx, grid.Ny, grid.Nz),
-    halo = (halo_size, halo_size, halo_size),
-    x = (0, grid.Lx),
-    y = (0, grid.Ly),
-    z = z_faces)
-
-xζ, yζ, zζ = nodes(grid, Face(), Face(), Center())
-xc, yc, zc = nodes(grid, Center(), Center(), Center())
-xw, yw, zw = nodes(grid, Center(), Center(), Face())
-
-
-xu, yu, zu = nodes(grid, Face(), Center(), Center())
-xv, yv, zv = nodes(grid, Center(), Face(), Center())
-
-j′ = round(Int, grid.Ny / 2)
-y′ = yζ[j′]
-
-b_timeseries = FieldTimeSeries("abernathey_channel.jld2", "b", grid = grid)
-ζ_timeseries = FieldTimeSeries("abernathey_channel.jld2", "ζ", grid = grid)
-w_timeseries = FieldTimeSeries("abernathey_channel.jld2", "w", grid = grid)
-η_timeseries = FieldTimeSeries("abernathey_channel.jld2", "η", grid = grid)
-
-u_timeseries = FieldTimeSeries("abernathey_channel.jld2", "u", grid = grid)
-v_timeseries = FieldTimeSeries("abernathey_channel.jld2", "v", grid = grid)
-
-@show b_timeseries
-
-anim = @animate for i in 1:length(b_timeseries.times)
-    b = b_timeseries[i]
-    ζ = ζ_timeseries[i]
-    w = w_timeseries[i]
-
-    b′ = interior(b) .- mean(b)
-    b_xy = b′[:, :, grid.Nz]
-    ζ_xy = interior(ζ)[:, :, grid.Nz]
-    ζ_xz = interior(ζ)[:, j′, :]
-    w_xz = interior(w)[:, j′, :]
-
-    @show bmax = max(1e-9, maximum(abs, b_xy))
-    @show ζmax = max(1e-9, maximum(abs, ζ_xy))
-    @show wmax = max(1e-9, maximum(abs, w_xz))
-
-    blims = (-bmax, bmax) .* 0.8
-    ζlims = (-ζmax, ζmax) .* 0.8
-    wlims = (-wmax, wmax) .* 0.8
-
-    blevels = vcat([-bmax], range(blims[1], blims[2], length = 31), [bmax])
-    ζlevels = vcat([-ζmax], range(ζlims[1], ζlims[2], length = 31), [ζmax])
-    wlevels = vcat([-wmax], range(wlims[1], wlims[2], length = 31), [wmax])
-
-    xlims = (0, grid.Lx) .* 1e-3
-    ylims = (0, grid.Ly) .* 1e-3
-    zlims = (-grid.Lz, 0)
-
-    w_xz_plot = contourf(xw * 1e-3, zw, w_xz',
-        xlabel = "x (km)",
-        ylabel = "z (m)",
-        aspectratio = 0.05,
-        linewidth = 0,
-        levels = wlevels,
-        clims = wlims,
-        xlims = xlims,
-        ylims = zlims,
-        color = :balance)
-
-    ζ_xy_plot = contourf(xζ * 1e-3, yζ * 1e-3, ζ_xy',
-        xlabel = "x (km)",
-        ylabel = "y (km)",
-        aspectratio = :equal,
-        linewidth = 0,
-        levels = ζlevels,
-        clims = ζlims,
-        xlims = xlims,
-        ylims = ylims,
-        color = :balance)
-
-    b_xy_plot = contourf(xc * 1e-3, yc * 1e-3, b_xy',
-        xlabel = "x (km)",
-        ylabel = "y (km)",
-        aspectratio = :equal,
-        linewidth = 0,
-        levels = blevels,
-        clims = blims,
-        xlims = xlims,
-        ylims = ylims,
-        color = :balance)
-
-    w_xz_title = @sprintf("w(x, z) at t = %s", prettytime(ζ_timeseries.times[i]))
-    ζ_xz_title = @sprintf("ζ(x, z) at t = %s", prettytime(ζ_timeseries.times[i]))
-    ζ_xy_title = "ζ(x, y)"
-    b_xy_title = "b(x, y)"
-
-    layout = @layout [upper_slice_plot{0.2h}
-        Plots.grid(1, 2)]
-
-    plot(w_xz_plot, ζ_xy_plot, b_xy_plot, layout = layout, size = (1200, 1200), title = [w_xz_title ζ_xy_title b_xy_title])
-end
-
-mp4(anim, "abernathey_channel.mp4", fps = 8) #hide
-
-
-anim2 = @animate for i in 1:length(u_timeseries.times)
-    u = u_timeseries[i]
-    v = v_timeseries[i]
-    w = w_timeseries[i]
-
-    u_xy = interior(u)[:, :, grid.Nz]
-    v_xy = interior(v)[:, :, grid.Nz]
-    ζ_xz = interior(ζ)[:, j′, :]
-    w_xz = interior(w)[:, j′, :]
-
-    @show umax = max(1e-9, maximum(abs, u_xy))
-    @show vmax = max(1e-9, maximum(abs, v_xy))
-    @show wmax = max(1e-9, maximum(abs, w_xz))
-
-    ulims = (-umax, umax) .* 0.8
-    vlims = (-vmax, vmax) .* 0.8
-    wlims = (-wmax, wmax) .* 0.8
-
-    ulevels = vcat([-umax], range(ulims[1], ulims[2], length = 31), [umax])
-    vlevels = vcat([-vmax], range(vlims[1], vlims[2], length = 31), [vmax])
-    wlevels = vcat([-wmax], range(wlims[1], wlims[2], length = 31), [wmax])
-
-    xlims = (0, grid.Lx) .* 1e-3
-    ylims = (0, grid.Ly) .* 1e-3
-    zlims = (-grid.Lz, 0)
-
-    w_xz_plot = contourf(xw * 1e-3, zw, w_xz',
-        xlabel = "x (km)",
-        ylabel = "z (m)",
-        aspectratio = 0.05,
-        linewidth = 0,
-        levels = wlevels,
-        clims = wlims,
-        xlims = xlims,
-        ylims = zlims,
-        color = :balance)
-
-    u_xy_plot = contourf(xu * 1e-3, yu * 1e-3, u_xy',
-        xlabel = "x (km)",
-        ylabel = "y (km)",
-        aspectratio = :equal,
-        linewidth = 0,
-        levels = ulevels,
-        clims = ulims,
-        xlims = xlims,
-        ylims = ylims,
-        color = :balance)
-
-    v_xy_plot = contourf(xv * 1e-3, yv * 1e-3, v_xy',
-        xlabel = "x (km)",
-        ylabel = "y (km)",
-        aspectratio = :equal,
-        linewidth = 0,
-        levels = vlevels,
-        clims = vlims,
-        xlims = xlims,
-        ylims = ylims,
-        color = :balance)
-
-    w_xz_title = @sprintf("w(x, z) at t = %s", prettytime(ζ_timeseries.times[i]))
-    u_xz_title = @sprintf("u(x, z) at t = %s", prettytime(u_timeseries.times[i]))
-    u_xy_title = "u(x, y)"
-    v_xy_title = "v(x, y)"
-
-    layout = @layout [upper_slice_plot{0.2h}
-        Plots.grid(1, 2)]
-
-    plot(w_xz_plot, u_xy_plot, v_xy_plot, layout = layout, size = (1200, 1200), title = [w_xz_title u_xy_title v_xy_title])
-end
-
-mp4(anim2, "abernathey_channel_horizontal_velocities.mp4", fps = 8) #hide
-
-
-anim = @animate for i in 1:length(b_timeseries.times)
-    e = e_timeseries[i]
-    w = w_timeseries[i]
-    η = η_timeseries[i]
-
-    e_xy = e[:, :, grid.Nz]
-    w_xz = interior(w)[:, j′, :]
-    η_xy = η[:, :, 1]
-
-    @show emax = max(1e-9, maximum(abs, e_xy))
-    @show wmax = max(1e-9, maximum(abs, w_xz))
-    @show ηmax = max(1e-9, maximum(abs, η_xy))
-
-    elims = (-emax, emax) .* 0.8
-    wlims = (-wmax, wmax) .* 0.8
-    ηlims = (-ηmax, ηmax) .* 0.8
-
-    elevels = vcat([-emax], range(elims[1], elims[2], length = 31), [emax])
-    wlevels = vcat([-wmax], range(wlims[1], wlims[2], length = 31), [wmax])
-    ηlevels = vcat([-ηmax], range(ηlims[1], ηlims[2], length = 31), [ηmax])
-
-    xlims = (0, grid.Lx) .* 1e-3
-    ylims = (0, grid.Ly) .* 1e-3
-    zlims = (-grid.Lz, 0)
-
-    w_xz_plot = contourf(xw * 1e-3, zw, w_xz',
-        xlabel = "x (km)",
-        ylabel = "z (m)",
-        aspectratio = 0.05,
-        linewidth = 0,
-        levels = wlevels,
-        clims = wlims,
-        xlims = xlims,
-        ylims = zlims,
-        color = :balance)
-
-    η_xy_plot = contourf(xc * 1e-3, yc * 1e-3, η_xy,
-        xlabel = "x (km)",
-        ylabel = "y (km)",
-        aspectratio = :equal,
-        linewidth = 0,
-        levels = ηlevels,
-        clims = ηlims,
-        xlims = xlims,
-        ylims = ylims,
-        color = :balance)
-
-    e_xy_plot = contourf(xc * 1e-3, yc * 1e-3, e_xy,
-        xlabel = "x (km)",
-        ylabel = "y (km)",
-        aspectratio = :equal,
-        linewidth = 0,
-        levels = elevels,
-        clims = elims,
-        xlims = xlims,
-        ylims = ylims,
-        color = :balance)
-
-    w_xz_title = @sprintf("w(x, z) at t = %s", prettytime(ζ_timeseries.times[i]))
-    η_xy_title = "η(x, y)"
-    e_xy_title = "e(x, y)"
-
-    layout = @layout [upper_slice_plot{0.2h}
-        Plots.grid(1, 2)]
-
-    plot(w_xz_plot, η_xy_plot, e_xy_plot, layout = layout, size = (1200, 1200), title = [w_xz_title η_xy_title e_xy_title])
-end
-
-mp4(anim, "abernathey_channel_sshe.mp4", fps = 8) #hide
-=#
