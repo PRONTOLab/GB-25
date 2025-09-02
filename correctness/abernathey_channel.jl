@@ -382,7 +382,7 @@ dbᵢ = Field{Center, Center, Center}(model.grid)
 dJ  = Field{Face, Center, Nothing}(model.grid)
 
 # Trying zonal transport:
-#@allowscalar zonal_transport = Field(Integral(model.velocities.u, dims=(2,3)))
+@allowscalar zonal_transport = Field(Integral(model.velocities.u, dims=(2,3)))
 
 tic = time()
 restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(model, bᵢ, wind_stress)
