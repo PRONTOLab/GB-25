@@ -385,8 +385,8 @@ dJ  = Field{Face, Center, Nothing}(model.grid)
 #@allowscalar zonal_transport = Field(Integral(model.velocities.u, dims=(2,3)))
 
 tic = time()
-#restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(model, bᵢ, wind_stress)
-rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true  differentiate_tracer_error(model, bᵢ, wind_stress, dmodel, dbᵢ, dJ)
+restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(model, bᵢ, wind_stress)
+#rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true  differentiate_tracer_error(model, bᵢ, wind_stress, dmodel, dbᵢ, dJ)
 compile_toc = time() - tic
 
 @show compile_toc
@@ -407,8 +407,8 @@ jldsave(filename; Nx, Ny, Nz,
                   wind_stress=convert(Array, interior(wind_stress)))
 
 tic = time()
-#avg_temp = restimate_tracer_error(model, bᵢ, wind_stress)
-rdifferentiate_tracer_error(model, bᵢ, wind_stress, dmodel, dbᵢ, dJ)
+avg_temp = restimate_tracer_error(model, bᵢ, wind_stress)
+#rdifferentiate_tracer_error(model, bᵢ, wind_stress, dmodel, dbᵢ, dJ)
 run_toc = time() - tic
 
 @show run_toc
