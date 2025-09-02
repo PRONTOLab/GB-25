@@ -22,6 +22,9 @@ using Reactant
 using GordonBell25
 using Oceananigans.Architectures: ReactantState
 #Reactant.set_default_backend("cpu")
+
+using Enzyme
+
 #=
 # https://github.com/CliMA/Oceananigans.jl/blob/c29939097a8d2f42966e930f2f2605803bf5d44c/src/AbstractOperations/binary_operations.jl#L5
 Base.@nospecializeinfer function Reactant.traced_type_inner(
@@ -323,7 +326,7 @@ simulation.output_writers[:averages] = JLD2Writer(model, averaged_outputs,
 
 function loop!(model)
     Δt = model.clock.last_Δt
-    @trace mincut = true track_numbers = false for i = 1:288000
+    @trace mincut = true track_numbers = false for i = 1:10
         time_step!(model, Δt)
     end
     return nothing
@@ -363,12 +366,27 @@ function estimate_tracer_error(model, initial_buoyancy, wind_stress)
     return avg_mld
 end
 
+function differentiate_tracer_error(model, bᵢ, J, dmodel, dbᵢ, dJ)
+
+    dedν = autodiff(set_strong_zero(Enzyme.Reverse),
+                    estimate_tracer_error, Active,
+                    Duplicated(model, dmodel),
+                    Duplicated(bᵢ, dbᵢ),
+                    Duplicated(J, dJ))
+
+    return dedν, dJ
+end
+
+dmodel = Enzyme.make_zero(model)
+dbᵢ = Field{Center, Center, Center}(model.grid)
+dJ  = Field{Face, Center, Nothing}(model.grid)
+
 # Trying zonal transport:
 #@allowscalar zonal_transport = Field(Integral(model.velocities.u, dims=(2,3)))
 
 tic = time()
-#rtime_step! = @compile raise_first=true raise=true sync=true loop!(model, Δt₀)
-restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(model, bᵢ, wind_stress)
+#restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(model, bᵢ, wind_stress)
+rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true  differentiate_tracer_error(model, bᵢ, wind_stress, dmodel, dbᵢ, dJ)
 compile_toc = time() - tic
 
 @show compile_toc
@@ -389,8 +407,8 @@ jldsave(filename; Nx, Ny, Nz,
                   wind_stress=convert(Array, interior(wind_stress)))
 
 tic = time()
-#rtime_step!(model, Δt₀)
-avg_temp = restimate_tracer_error(model, bᵢ, wind_stress)
+#avg_temp = restimate_tracer_error(model, bᵢ, wind_stress)
+rdifferentiate_tracer_error(model, bᵢ, wind_stress, dmodel, dbᵢ, dJ)
 run_toc = time() - tic
 
 @show run_toc
