@@ -60,8 +60,8 @@ const Ly = 2000kilometers # meridional domain length [m]
 architecture = ReactantState() #GPU()
 
 # number of grid points
-Nx = 96  # LowRes: 48
-Ny = 192 # LowRes: 96
+Nx = 48 #96  # LowRes: 48
+Ny = 96 #192 # LowRes: 96
 Nz = 32
 
 halo_size = 4 #3 for non-immersed grid
@@ -326,7 +326,7 @@ simulation.output_writers[:averages] = JLD2Writer(model, averaged_outputs,
 
 function loop!(model)
     Δt = model.clock.last_Δt
-    @trace mincut = true track_numbers = false for i = 1:10
+    @trace mincut = true track_numbers = false for i = 1:1000
         time_step!(model, Δt)
     end
     return nothing
@@ -395,7 +395,7 @@ compile_toc = time() - tic
 
 using FileIO, JLD2
 
-graph_directory = "run_abernathy_model_10000days/"
+graph_directory = "run_abernathy_model_1000steps/"
 filename        = graph_directory * "data_init.jld2"
 
 if !isdir(graph_directory) Base.Filesystem.mkdir(graph_directory) end
