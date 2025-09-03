@@ -14,16 +14,10 @@ using Oceananigans.OutputReaders: FieldTimeSeries
 using Oceananigans.Grids: xnode, ynode, znode
 using Oceananigans.TurbulenceClosures: CATKEVerticalDiffusivity
 
-#using Oceananigans.Architectures: GPU
-#using CUDA
-#CUDA.device!(0)
-
 using Reactant
 using GordonBell25
 using Oceananigans.Architectures: ReactantState
 #Reactant.set_default_backend("cpu")
-
-using Enzyme
 
 #=
 # https://github.com/CliMA/Oceananigans.jl/blob/c29939097a8d2f42966e930f2f2605803bf5d44c/src/AbstractOperations/binary_operations.jl#L5
@@ -235,7 +229,7 @@ end
 
 function loop!(model)
     Δt = model.clock.last_Δt
-    @trace mincut = true track_numbers = false for i = 1:1000
+    @trace mincut = true track_numbers = false for i = 1:5
         time_step!(model, Δt)
     end
     return nothing
@@ -275,16 +269,6 @@ function estimate_tracer_error(model, initial_buoyancy, wind_stress)
     return avg_mld
 end
 
-function differentiate_tracer_error(model, bᵢ, J, dmodel, dbᵢ, dJ)
-
-    dedν = autodiff(set_strong_zero(Enzyme.Reverse),
-                    estimate_tracer_error, Active,
-                    Duplicated(model, dmodel),
-                    Duplicated(bᵢ, dbᵢ),
-                    Duplicated(J, dJ))
-
-    return dedν, dJ
-end
 
 #####
 ##### Actually creating our model and using these functions to run it:
@@ -305,58 +289,49 @@ bᵢ          = buoyancy_init(model.grid, parameters)
 
 @info "Built $model."
 
-dmodel = Enzyme.make_zero(model)
-dbᵢ = Field{Center, Center, Center}(model.grid)
-dJ  = Field{Face, Center, Nothing}(model.grid)
-
-# Trying zonal transport:
-#@allowscalar zonal_transport = Field(Integral(model.velocities.u, dims=(2,3)))
-
 @info "Compiling the model run..."
 tic = time()
 restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(model, bᵢ, wind_stress)
-#rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true  differentiate_tracer_error(model, bᵢ, wind_stress, dmodel, dbᵢ, dJ)
 compile_toc = time() - tic
 
 @show compile_toc
 
-@info "Running the simulation..."
 
-using FileIO, JLD2
+@info "Vanilla model as a comparison..."
 
-graph_directory = "run_abernathy_model_1000steps_noRidge_v976_01_commit11e08a6/"
-filename        = graph_directory * "data_init.jld2"
+# Architecture
+varchitecture = CPU()
 
-if !isdir(graph_directory) Base.Filesystem.mkdir(graph_directory) end
+# Timestep size:
+Δt₀ = 5minutes 
 
-if isa(model.grid, ImmersedBoundaryGrid)
-    bottom_height = model.grid.immersed_boundary.bottom_height
-else
-    bottom_height = Field{Center, Center, Nothing}(model.grid)
-    set!(bottom_height, -Lz)
-end
+# Make the grid:
+vgrid        = make_grid(varchitecture, Nx, Ny, Nz, Δz_center)
+vmodel       = build_model(vgrid, Δt₀, parameters)
+vwind_stress = wind_stress_init(vmodel.grid, parameters)
+vbᵢ          = buoyancy_init(vmodel.grid, parameters)
 
-jldsave(filename; Nx, Ny, Nz,
-                  bottom_height=convert(Array, interior(bottom_height)),
-                  b_init=convert(Array, interior(model.tracers.b)),
-                  e_init=convert(Array, interior(model.tracers.e)),
-                  wind_stress=convert(Array, interior(wind_stress)))
+@info "Comparing the pre-run model states..."
 
-tic = time()
+throw_error = false
+include_halos = false
+rtol = sqrt(eps(Float64))
+atol = sqrt(eps(Float64))
+
+GordonBell25.compare_states(model, vmodel; include_halos, throw_error, rtol, atol)
+
+@info "Running the simulations..."
+
+tic      = time()
 avg_temp = restimate_tracer_error(model, bᵢ, wind_stress)
-#rdifferentiate_tracer_error(model, bᵢ, wind_stress, dmodel, dbᵢ, dJ)
-run_toc = time() - tic
+rrun_toc = time() - tic
+@show rrun_toc
 
-@show run_toc
-@show avg_temp
+tic       = time()
+vavg_temp = estimate_tracer_error(vmodel, vbᵢ, vwind_stress)
+vrun_toc  = time() - tic
+@show vrun_toc
 
-filename = graph_directory * "data_final.jld2"
+@info "Comparing the model states after running..."
 
-jldsave(filename; Nx, Ny, Nz,
-                  b_final=convert(Array, interior(model.tracers.b)),
-                  e_final=convert(Array, interior(model.tracers.e)),
-                  ssh=convert(Array, interior(model.free_surface.η)),
-                  u=convert(Array, interior(model.velocities.u)),
-                  v=convert(Array, interior(model.velocities.v)),
-                  w=convert(Array, interior(model.velocities.w)))
-
+GordonBell25.compare_states(model, vmodel; include_halos, throw_error, rtol, atol)
