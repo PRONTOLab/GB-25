@@ -197,7 +197,8 @@ function build_model(grid, Δt₀, parameters)
         forcing = (; b = Fb)
     )
 
-    model.clock.last_Δt = Δt₀
+    model.clock.last_Δt   = Δt₀
+    model.clock.iteration = 1
 
     return model
 end
@@ -229,6 +230,8 @@ end
 
 function loop!(model)
     Δt = model.clock.last_Δt
+    Oceananigans.initialize!(model)
+    Oceananigans.TimeSteppers.update_state!(model)
     @trace mincut = true track_numbers = false for i = 1:5
         time_step!(model, Δt)
     end
@@ -239,10 +242,6 @@ function run_reentrant_channel_model!(model, bᵢ, wind_stress)
     # setting IC's and BC's:
     set!(model.velocities.u.boundary_conditions.top.condition, wind_stress)
     set!(model.tracers.b, bᵢ)
-
-    # Initialize the model
-    model.clock.iteration = 0
-    model.clock.time = 0
 
     # Step it forward
     loop!(model)
