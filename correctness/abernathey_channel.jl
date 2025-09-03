@@ -64,13 +64,6 @@ parameters = (
     λt = 7.0days                         # relaxation time scale [s]
 )
 
-# full ridge function:
-function ridge_function(x, y)
-    zonal = (Lz+100)exp(-(x - Lx/2)^2/(1e6kilometers))
-    gap   = 1 - 0.5(tanh((y - (Ly/6))/1e5) - tanh((y - (Ly/2))/1e5))
-    return zonal * gap - Lz
-end
-
 function make_grid(architecture, Nx, Ny, Nz, Δz_center)
     z_faces = vcat([-Lz], -Lz .+ cumsum(Δz_center))
     z_faces[Nz+1] = 0
@@ -83,12 +76,7 @@ function make_grid(architecture, Nx, Ny, Nz, Δz_center)
         y = (0, Ly),
         z = (-Lz, 0))
 
-    # Make into a ridge array:
-    ridge = Field{Center, Center, Nothing}(underlying_grid)
-    set!(ridge, ridge_function)
-
-    grid = underlying_grid #ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(ridge))
-    return grid
+    return underlying_grid
 end
 
 #####
@@ -177,51 +165,13 @@ function build_model(grid, Δt₀, parameters)
 end
 
 #####
-##### Special initial and boundary conditions
-#####
-
-# wind stress:
-function wind_stress_init(grid, p)
-    @inline u_stress(x, y) = -p.τ * sin(π * y / p.Ly)
-    wind_stress = Field{Face, Center, Nothing}(grid)
-    set!(wind_stress, u_stress)
-    return wind_stress
-end
-
-# resting initial condition
-function buoyancy_init(grid, parameters)
-    ε(σ) = σ * randn()
-    bᵢ_function(x, y, z) = parameters.ΔB * (exp(z / parameters.h) - exp(-Lz / parameters.h)) / (1 - exp(-Lz / parameters.h)) + ε(1e-8)
-    bᵢ = Field{Center, Center, Center}(grid)
-    set!(bᵢ, bᵢ_function)
-    return bᵢ
-end
-
-#####
 ##### Forward simulation (not actually using the Simulation struct)
 #####
 
 function loop!(model)
     Δt = model.clock.last_Δt
     Oceananigans.TimeSteppers.first_time_step!(model, Δt)
-    @trace mincut = true track_numbers = false for i = 1:5
-        time_step!(model, Δt)
-    end
-    return nothing
-end
-
-function run_reentrant_channel_model!(model, bᵢ, wind_stress)
-    # setting IC's and BC's:
-    set!(model.velocities.u.boundary_conditions.top.condition, wind_stress)
-    set!(model.tracers.b, bᵢ)
-
-    # Initialize the model
-    model.clock.iteration = 0
-    model.clock.time = 0
-
-    # Step it forward
-    loop!(model)
-
+    time_step!(model, Δt)
     return nothing
 end
 
@@ -237,60 +187,14 @@ architecture = ReactantState() #GPU()
 Δt₀ = 5minutes 
 
 # Make the grid:
-grid        = make_grid(architecture, Nx, Ny, Nz, Δz_center)
-model       = build_model(grid, Δt₀, parameters)
-wind_stress = wind_stress_init(model.grid, parameters)
-bᵢ          = buoyancy_init(model.grid, parameters)
-
-@info "Vanilla model as a comparison..."
-
-# Architecture
-varchitecture = CPU()
-
-# Timestep size:
-Δt₀ = 5minutes 
-
-# Make the grid:
-vgrid        = make_grid(varchitecture, Nx, Ny, Nz, Δz_center)
-vmodel       = build_model(vgrid, Δt₀, parameters)
-vwind_stress = wind_stress_init(vmodel.grid, parameters)
-vbᵢ          = buoyancy_init(vmodel.grid, parameters)
-
-@info "Built both vanilla and reactant $model."
-
-using InteractiveUtils
-
-@show @which time_step!(model, Δt₀)
-@show @which time_step!(vmodel, Δt₀)
+grid  = make_grid(architecture, Nx, Ny, Nz, Δz_center)
+model = build_model(grid, Δt₀, parameters)
 
 @info "Compiling the model run..."
 tic = time()
-rrun_reentrant_channel_model! = @compile raise_first=true raise=true sync=true run_reentrant_channel_model!(model, bᵢ, wind_stress)
+rloop! = @compile raise_first=true raise=true sync=true loop!(model)
 compile_toc = time() - tic
 
 @show compile_toc
 
-@info "Comparing the pre-run model states..."
-
-throw_error = false
-include_halos = false
-rtol = sqrt(eps(Float64))
-atol = sqrt(eps(Float64))
-
-GordonBell25.compare_states(model, vmodel; include_halos, throw_error, rtol, atol)
-
-@info "Running the simulations..."
-
-tic      = time()
-rrun_reentrant_channel_model!(model, bᵢ, wind_stress)
-rrun_toc = time() - tic
-@show rrun_toc
-
-tic       = time()
-run_reentrant_channel_model!(vmodel, vbᵢ, vwind_stress)
-vrun_toc  = time() - tic
-@show vrun_toc
-
-@info "Comparing the model states after running..."
-
-GordonBell25.compare_states(model, vmodel; include_halos, throw_error, rtol, atol)
+rloop!(model)
