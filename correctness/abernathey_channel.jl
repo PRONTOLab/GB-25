@@ -119,7 +119,7 @@ function make_grid(architecture, Nx, Ny, Nz, Δz_center)
     ridge = Field{Center, Center, Nothing}(underlying_grid)
     set!(ridge, ridge_function)
 
-    grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(ridge))
+    grid = underlying_grid #ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(ridge))
     return grid
 end
 
@@ -229,28 +229,13 @@ function buoyancy_init(grid, parameters)
     return bᵢ
 end
 
-# Architecture
-architecture = ReactantState() #GPU()
-
-# Timestep size:
-Δt₀ = 5minutes 
-
-# Make the grid:
-grid        = make_grid(architecture, Nx, Ny, Nz, Δz_center)
-model       = build_model(grid, Δt₀, parameters)
-wind_stress = wind_stress_init(model.grid, parameters)
-bᵢ          = buoyancy_init(model.grid, parameters)
-
-
-@info "Built $model."
-
 #####
 ##### Forward simulation (not actually using the Simulation struct)
 #####
 
 function loop!(model)
     Δt = model.clock.last_Δt
-    @trace mincut = true track_numbers = false for i = 1:10
+    @trace mincut = true track_numbers = false for i = 1:1000
         time_step!(model, Δt)
     end
     return nothing
@@ -301,6 +286,25 @@ function differentiate_tracer_error(model, bᵢ, J, dmodel, dbᵢ, dJ)
     return dedν, dJ
 end
 
+#####
+##### Actually creating our model and using these functions to run it:
+#####
+
+# Architecture
+architecture = ReactantState() #GPU()
+
+# Timestep size:
+Δt₀ = 5minutes 
+
+# Make the grid:
+grid        = make_grid(architecture, Nx, Ny, Nz, Δz_center)
+model       = build_model(grid, Δt₀, parameters)
+wind_stress = wind_stress_init(model.grid, parameters)
+bᵢ          = buoyancy_init(model.grid, parameters)
+
+
+@info "Built $model."
+
 dmodel = Enzyme.make_zero(model)
 dbᵢ = Field{Center, Center, Center}(model.grid)
 dJ  = Field{Face, Center, Nothing}(model.grid)
@@ -320,21 +324,20 @@ compile_toc = time() - tic
 
 using FileIO, JLD2
 
-graph_directory = "run_abernathy_model_10steps/"
+graph_directory = "run_abernathy_model_1000steps_noRidge_v976_01_commit11e08a6/"
 filename        = graph_directory * "data_init.jld2"
 
 if !isdir(graph_directory) Base.Filesystem.mkdir(graph_directory) end
 
-if grid == model.grid.underlying_grid
-    bottom_height = Field{Center, Center, Nothing}(model.grid.underlying_grid)
-    set!(bottom_height, -Lz)
+if isa(model.grid, ImmersedBoundaryGrid)
+    bottom_height = model.grid.immersed_boundary.bottom_height
 else
-    bottom_height = interior(model.grid.immersed_boundary.bottom_height)
+    bottom_height = Field{Center, Center, Nothing}(model.grid)
+    set!(bottom_height, -Lz)
 end
 
-
 jldsave(filename; Nx, Ny, Nz,
-                  bottom_height=convert(Array, bottom_height),
+                  bottom_height=convert(Array, interior(bottom_height)),
                   b_init=convert(Array, interior(model.tracers.b)),
                   e_init=convert(Array, interior(model.tracers.e)),
                   wind_stress=convert(Array, interior(wind_stress)))
