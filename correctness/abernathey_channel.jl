@@ -19,32 +19,6 @@ using GordonBell25
 using Oceananigans.Architectures: ReactantState
 #Reactant.set_default_backend("cpu")
 
-#=
-# https://github.com/CliMA/Oceananigans.jl/blob/c29939097a8d2f42966e930f2f2605803bf5d44c/src/AbstractOperations/binary_operations.jl#L5
-Base.@nospecializeinfer function Reactant.traced_type_inner(
-    @nospecialize(OA::Type{Oceananigans.AbstractOperations.BinaryOperation{LX, LY, LZ, O, A, B, IA, IB, G, T}}),
-    seen,
-    mode::Reactant.TraceMode,
-    @nospecialize(track_numbers::Type),
-    @nospecialize(sharding),
-    @nospecialize(runtime)
-) where {LX, LY, LZ, O, A, B, IA, IB, G, T}
-    LX2 = Reactant.traced_type_inner(LX, seen, mode, track_numbers, sharding, runtime)
-    LY2 = Reactant.traced_type_inner(LY, seen, mode, track_numbers, sharding, runtime)
-    LZ2 = Reactant.traced_type_inner(LZ, seen, mode, track_numbers, sharding, runtime)
-
-    O2 = Reactant.traced_type_inner(O, seen, mode, track_numbers, sharding, runtime)
-
-    A2 = Reactant.traced_type_inner(A, seen, mode, track_numbers, sharding, runtime)
-    B2 = Reactant.traced_type_inner(B, seen, mode, track_numbers, sharding, runtime)
-    IA2 = Reactant.traced_type_inner(IA, seen, mode, track_numbers, sharding, runtime)
-    IB2 = Reactant.traced_type_inner(IB, seen, mode, track_numbers, sharding, runtime)
-    G2 = Reactant.traced_type_inner(G, seen, mode, track_numbers, sharding, runtime)
-
-    T2 = eltype(G2)
-    return Oceananigans.AbstractOperations.BinaryOperation{LX2, LY2, LZ2, O2, A2, B2, IA2, IB2, G2, T2}
-end
-=#
 Oceananigans.defaults.FloatType = Float64
 
 #
@@ -229,6 +203,7 @@ end
 
 function loop!(model)
     Δt = model.clock.last_Δt
+    Oceananigans.TimeSteppers.first_time_step!(model, Δt)
     @trace mincut = true track_numbers = false for i = 1:5
         time_step!(model, Δt)
     end
@@ -250,25 +225,6 @@ function run_reentrant_channel_model!(model, bᵢ, wind_stress)
     return nothing
 end
 
-function estimate_tracer_error(model, initial_buoyancy, wind_stress)
-    run_reentrant_channel_model!(model, initial_buoyancy, wind_stress)
-    # Compute the mean mixed layer depth:
-    #compute!(mld)
-    Nx, Ny, Nz = size(model.grid)
-    #=
-    avg_mld = 0.0
-    
-    for j0 = 1:Nx, i0 = 1:Ny
-        @allowscalar avg_mld += @inbounds model.velocities.u[i0, j0, 1]^2
-    end
-    avg_mld = avg_mld / (Nx * Ny)
-    =#
-    # Hard way
-    c² = parent(model.tracers.b).^2
-    avg_mld = sum(c²) / (Nx * Ny * Nz)
-    return avg_mld
-end
-
 
 #####
 ##### Actually creating our model and using these functions to run it:
@@ -286,17 +242,6 @@ model       = build_model(grid, Δt₀, parameters)
 wind_stress = wind_stress_init(model.grid, parameters)
 bᵢ          = buoyancy_init(model.grid, parameters)
 
-
-@info "Built $model."
-
-@info "Compiling the model run..."
-tic = time()
-restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(model, bᵢ, wind_stress)
-compile_toc = time() - tic
-
-@show compile_toc
-
-
 @info "Vanilla model as a comparison..."
 
 # Architecture
@@ -311,6 +256,20 @@ vmodel       = build_model(vgrid, Δt₀, parameters)
 vwind_stress = wind_stress_init(vmodel.grid, parameters)
 vbᵢ          = buoyancy_init(vmodel.grid, parameters)
 
+@info "Built both vanilla and reactant $model."
+
+using InteractiveUtils
+
+@show @which time_step!(model, Δt₀)
+@show @which time_step!(vmodel, Δt₀)
+
+@info "Compiling the model run..."
+tic = time()
+rrun_reentrant_channel_model! = @compile raise_first=true raise=true sync=true run_reentrant_channel_model!(model, bᵢ, wind_stress)
+compile_toc = time() - tic
+
+@show compile_toc
+
 @info "Comparing the pre-run model states..."
 
 throw_error = false
@@ -323,12 +282,12 @@ GordonBell25.compare_states(model, vmodel; include_halos, throw_error, rtol, ato
 @info "Running the simulations..."
 
 tic      = time()
-avg_temp = restimate_tracer_error(model, bᵢ, wind_stress)
+rrun_reentrant_channel_model!(model, bᵢ, wind_stress)
 rrun_toc = time() - tic
 @show rrun_toc
 
 tic       = time()
-vavg_temp = estimate_tracer_error(vmodel, vbᵢ, vwind_stress)
+run_reentrant_channel_model!(vmodel, vbᵢ, vwind_stress)
 vrun_toc  = time() - tic
 @show vrun_toc
 
