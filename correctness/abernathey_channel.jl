@@ -110,26 +110,6 @@ function build_model(grid, Δt₀, parameters)
     #####
     coriolis = BetaPlane(f₀ = f, β = β)
 
-    #####
-    ##### Forcing and initial condition
-    #####
-
-    @inline initial_buoyancy(z, p) = p.ΔB * (exp(z / p.h) - exp(-p.Lz / p.h)) / (1 - exp(-p.Lz / p.h))
-    @inline mask(y, p) = max(0.0, y - p.y_sponge) / (Ly - p.y_sponge)
-
-
-    @inline function buoyancy_relaxation(i, j, k, grid, clock, model_fields, p)
-        timescale = p.λt
-        y = ynode(j, grid, Center())
-        z = znode(k, grid, Center())
-        target_b = initial_buoyancy(z, p)
-        b = @inbounds model_fields.b[i, j, k]
-
-        return -1 / timescale * mask(y, p) * (b - target_b)
-    end
-
-    Fb = Forcing(buoyancy_relaxation, discrete_form = true, parameters = parameters)
-
     # closure
 
     κh = 0.5e-5 # [m²/s] horizontal diffusivity
@@ -155,8 +135,7 @@ function build_model(grid, Δt₀, parameters)
         coriolis = coriolis,
         closure = (horizontal_closure, vertical_closure, vertical_closure_CATKE),
         tracers = (:b, :e),
-        boundary_conditions = (b = b_bcs, u = u_bcs, v = v_bcs),
-        forcing = (; b = Fb)
+        boundary_conditions = (b = b_bcs, u = u_bcs, v = v_bcs)
     )
 
     model.clock.last_Δt = Δt₀
@@ -168,10 +147,14 @@ end
 ##### Forward simulation (not actually using the Simulation struct)
 #####
 
+using Oceananigans: initialize!
+using Oceananigans.TimeSteppers: update_state!
+
 function loop!(model)
     Δt = model.clock.last_Δt
-    Oceananigans.TimeSteppers.first_time_step!(model, Δt)
-    time_step!(model, Δt)
+    initialize!(model)
+    update_state!(model)
+    time_step!(model, Δt, euler=true)
     return nothing
 end
 
@@ -189,6 +172,10 @@ architecture = ReactantState() #GPU()
 # Make the grid:
 grid  = make_grid(architecture, Nx, Ny, Nz, Δz_center)
 model = build_model(grid, Δt₀, parameters)
+
+using InteractiveUtils
+
+@show @which Oceananigans.TimeSteppers.first_time_step!(model, Δt₀)
 
 @info "Compiling the model run..."
 tic = time()
