@@ -201,7 +201,8 @@ end
 #####
 ##### Forward simulation (not actually using the Simulation struct)
 #####
-using Oceananigans: AbstractModel
+using Oceananigans: AbstractModel, fields, prognostic_fields
+using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.TimeSteppers: update_state!,
                                 tick!,
                                 compute_pressure_correction!,
@@ -209,7 +210,19 @@ using Oceananigans.TimeSteppers: update_state!,
                                 step_lagrangian_particles!,
                                 ab2_step!,
                                 QuasiAdamsBashforth2TimeStepper,
-                                compute_flux_bc_tendencies!
+                                compute_flux_bc_tendencies!,
+                                compute_tendencies!
+
+using Oceananigans.Biogeochemistry: update_biogeochemical_state!
+using Oceananigans.BoundaryConditions: update_boundary_conditions!
+using Oceananigans.TurbulenceClosures: compute_diffusivities!
+using Oceananigans.ImmersedBoundaries: mask_immersed_field!, mask_immersed_field_xy!, inactive_node
+using Oceananigans.Models: update_model_field_time_series!
+using Oceananigans.Models.NonhydrostaticModels: update_hydrostatic_pressure!, p_kernel_parameters
+using Oceananigans.Fields: tupled_fill_halo_regions!
+
+using Oceananigans.Models.NonhydrostaticModels: compute_auxiliaries!
+using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fields!
 
 function loop!(model)
     Δt = model.clock.last_Δt
@@ -261,8 +274,34 @@ function bad_time_step!(model, Δt;
     #compute_pressure_correction!(model, Δt)
     #correct_velocities_and_cache_previous_tendencies!(model, Δt)
 
-    update_state!(model, callbacks; compute_tendencies=true)
+    bad_update_state!(model, model.grid, callbacks; compute_tendencies=true)
     #step_lagrangian_particles!(model, Δt)
+
+    return nothing
+end
+
+function bad_update_state!(model, grid, callbacks; compute_tendencies = true)
+
+    @apply_regionally mask_immersed_model_fields!(model, grid)
+
+    # Update possible FieldTimeSeries used in the model
+    @apply_regionally update_model_field_time_series!(model, model.clock)
+
+    # Update the boundary conditions
+    @apply_regionally update_boundary_conditions!(fields(model), model)
+
+    tupled_fill_halo_regions!(prognostic_fields(model), grid, model.clock, fields(model); async=true)
+
+    @apply_regionally compute_auxiliaries!(model)
+
+    fill_halo_regions!(model.diffusivity_fields; only_local_halos = true)
+
+    [callback(model) for callback in callbacks if callback.callsite isa UpdateStateCallsite]
+
+    update_biogeochemical_state!(model.biogeochemistry, model)
+
+    compute_tendencies &&
+        @apply_regionally compute_tendencies!(model, callbacks)
 
     return nothing
 end
@@ -305,6 +344,12 @@ using InteractiveUtils
 
 @show @which time_step!(model, Δt₀)
 @show @which time_step!(vmodel, Δt₀)
+
+@show @which ab2_step!(model, Δt₀)
+@show @which ab2_step!(vmodel, Δt₀)
+
+@show @which update_state!(model, []; compute_tendencies=true)
+@show @which update_state!(vmodel, []; compute_tendencies=true)
 
 @info "Comparing the pre-run model states..."
 
