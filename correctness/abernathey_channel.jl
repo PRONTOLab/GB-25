@@ -253,13 +253,13 @@ function bad_time_step!(model, Δt;
                     callbacks=[], euler=false)
 
     # Full step for tracers, fractional step for velocities.
-    compute_flux_bc_tendencies!(model)
+    #compute_flux_bc_tendencies!(model)
     ab2_step!(model, Δt)
 
-    tick!(model.clock, Δt)
+    #tick!(model.clock, Δt)
 
-    compute_pressure_correction!(model, Δt)
-    correct_velocities_and_cache_previous_tendencies!(model, Δt)
+    #compute_pressure_correction!(model, Δt)
+    #correct_velocities_and_cache_previous_tendencies!(model, Δt)
 
     update_state!(model, callbacks; compute_tendencies=true)
     #step_lagrangian_particles!(model, Δt)
