@@ -286,11 +286,6 @@ function bad_update_state!(model, grid, callbacks; compute_tendencies = true)
 
     fill_halo_regions!(model.diffusivity_fields; only_local_halos = true)
 
-    [callback(model) for callback in callbacks if callback.callsite isa UpdateStateCallsite]
-
-    compute_tendencies &&
-        @apply_regionally compute_tendencies!(model, callbacks)
-
     return nothing
 end
 
