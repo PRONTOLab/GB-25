@@ -267,34 +267,7 @@ function bad_time_step!(model, Δt;
 
     ab2_step!(model, Δt)
 
-    compute_auxiliaries!(model)
-
-    return nothing
-end
-
-
-function bad_compute_auxiliaries!(model; w_parameters = w_kernel_parameters(model.grid),
-                                         p_parameters = p_kernel_parameters(model.grid),
-                                         κ_parameters = :xyz)
-
-    grid        = model.grid
-    closure     = model.closure
-    tracers     = model.tracers
-    diffusivity = model.diffusivity_fields
-    buoyancy    = model.buoyancy
-
-    P    = model.pressure.pHY′
-    arch = grid.architecture
-
-    # Update the vertical velocity to comply with the barotropic correction step
-    update_grid_vertical_velocity!(model, grid, model.vertical_coordinate)
-
-    # Advance diagnostic quantities
-    compute_w_from_continuity!(model; parameters = w_parameters)
-    update_hydrostatic_pressure!(P, arch, grid, buoyancy, tracers; parameters = p_parameters)
-
-    # Update closure diffusivities
-    compute_diffusivities!(diffusivity, closure, model; parameters = κ_parameters)
+    compute_w_from_continuity!(model; parameters = w_kernel_parameters(model.grid))
 
     return nothing
 end
