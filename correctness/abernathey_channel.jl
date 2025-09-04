@@ -201,6 +201,7 @@ end
 #####
 ##### Forward simulation (not actually using the Simulation struct)
 #####
+using Oceananigans.Utils: launch!
 using Oceananigans: AbstractModel, fields, prognostic_fields
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.TimeSteppers: update_state!,
@@ -222,12 +223,22 @@ using Oceananigans.Models.NonhydrostaticModels: update_hydrostatic_pressure!, p_
 using Oceananigans.Fields: tupled_fill_halo_regions!
 
 using Oceananigans.Models.NonhydrostaticModels: compute_auxiliaries!, p_kernel_parameters
-using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fields!, compute_w_from_continuity!, w_kernel_parameters, update_grid_vertical_velocity!
+using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fields!,
+                                                        compute_w_from_continuity!,
+                                                        w_kernel_parameters,
+                                                        update_grid_vertical_velocity!,
+                                                        _compute_w_from_continuity!,
+                                                        compute_free_surface_tendency!,
+                                                        scale_by_stretching_factor!,
+                                                        ab2_step_grid!,
+                                                        ab2_step_velocities!,
+                                                        ab2_step_tracers!,
+                                                        step_free_surface!
 
 function loop!(model)
     Δt = model.clock.last_Δt
     @trace mincut = true track_numbers = false for i = 1:2
-        bad_time_step!(model, Δt)
+        ab2_step_tracers!(model.tracers, model, Δt, model.timestepper.χ)
     end
     return nothing
 end
@@ -261,17 +272,6 @@ function estimate_tracer_error(model, initial_buoyancy, wind_stress)
     avg_mld = sum(c²) / (Nx * Ny * Nz)
     return avg_mld
 end
-
-function bad_time_step!(model, Δt;
-                    callbacks=[], euler=false)
-
-    ab2_step!(model, Δt)
-
-    compute_w_from_continuity!(model; parameters = w_kernel_parameters(model.grid))
-
-    return nothing
-end
-
 
 #####
 ##### Actually creating our model and using these functions to run it:
@@ -320,6 +320,12 @@ using InteractiveUtils
 
 @show @which compute_auxiliaries!(model)
 @show @which compute_auxiliaries!(vmodel)
+
+@show @which compute_w_from_continuity!(model; parameters = w_kernel_parameters(model.grid))
+@show @which compute_w_from_continuity!(vmodel; parameters = w_kernel_parameters(model.grid))
+
+@show @which ab2_step!(model, Δt₀)
+@show @which ab2_step!(vmodel, Δt₀)
 
 @info "Comparing the pre-run model states..."
 
