@@ -19,32 +19,6 @@ using GordonBell25
 using Oceananigans.Architectures: ReactantState
 #Reactant.set_default_backend("cpu")
 
-#=
-# https://github.com/CliMA/Oceananigans.jl/blob/c29939097a8d2f42966e930f2f2605803bf5d44c/src/AbstractOperations/binary_operations.jl#L5
-Base.@nospecializeinfer function Reactant.traced_type_inner(
-    @nospecialize(OA::Type{Oceananigans.AbstractOperations.BinaryOperation{LX, LY, LZ, O, A, B, IA, IB, G, T}}),
-    seen,
-    mode::Reactant.TraceMode,
-    @nospecialize(track_numbers::Type),
-    @nospecialize(sharding),
-    @nospecialize(runtime)
-) where {LX, LY, LZ, O, A, B, IA, IB, G, T}
-    LX2 = Reactant.traced_type_inner(LX, seen, mode, track_numbers, sharding, runtime)
-    LY2 = Reactant.traced_type_inner(LY, seen, mode, track_numbers, sharding, runtime)
-    LZ2 = Reactant.traced_type_inner(LZ, seen, mode, track_numbers, sharding, runtime)
-
-    O2 = Reactant.traced_type_inner(O, seen, mode, track_numbers, sharding, runtime)
-
-    A2 = Reactant.traced_type_inner(A, seen, mode, track_numbers, sharding, runtime)
-    B2 = Reactant.traced_type_inner(B, seen, mode, track_numbers, sharding, runtime)
-    IA2 = Reactant.traced_type_inner(IA, seen, mode, track_numbers, sharding, runtime)
-    IB2 = Reactant.traced_type_inner(IB, seen, mode, track_numbers, sharding, runtime)
-    G2 = Reactant.traced_type_inner(G, seen, mode, track_numbers, sharding, runtime)
-
-    T2 = eltype(G2)
-    return Oceananigans.AbstractOperations.BinaryOperation{LX2, LY2, LZ2, O2, A2, B2, IA2, IB2, G2, T2}
-end
-=#
 Oceananigans.defaults.FloatType = Float64
 
 #
@@ -94,7 +68,7 @@ parameters = (
 function ridge_function(x, y)
     zonal = (Lz+100)exp(-(x - Lx/2)^2/(1e6kilometers))
     gap   = 1 - 0.5(tanh((y - (Ly/6))/1e5) - tanh((y - (Ly/2))/1e5))
-    return zonal * gap - Lz
+    return - Lz
 end
 
 function make_grid(architecture, Nx, Ny, Nz, Δz_center)
@@ -113,7 +87,7 @@ function make_grid(architecture, Nx, Ny, Nz, Δz_center)
     ridge = Field{Center, Center, Nothing}(underlying_grid)
     set!(ridge, ridge_function)
 
-    grid = underlying_grid #ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(ridge))
+    grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(ridge))
     return grid
 end
 
@@ -227,13 +201,20 @@ end
 #####
 ##### Forward simulation (not actually using the Simulation struct)
 #####
+using Oceananigans: AbstractModel
+using Oceananigans.TimeSteppers: update_state!,
+                                tick!,
+                                compute_pressure_correction!,
+                                correct_velocities_and_cache_previous_tendencies!,
+                                step_lagrangian_particles!,
+                                ab2_step!,
+                                QuasiAdamsBashforth2TimeStepper,
+                                compute_flux_bc_tendencies!
 
 function loop!(model)
     Δt = model.clock.last_Δt
-    Oceananigans.initialize!(model)
-    Oceananigans.TimeSteppers.update_state!(model)
-    @trace mincut = true track_numbers = false for i = 1:5
-        time_step!(model, Δt)
+    @trace mincut = true track_numbers = false for i = 1:10
+        bad_time_step!(model, Δt)
     end
     return nothing
 end
@@ -268,6 +249,95 @@ function estimate_tracer_error(model, initial_buoyancy, wind_stress)
     return avg_mld
 end
 
+function bad_time_step!(model::AbstractModel{<:QuasiAdamsBashforth2TimeStepper, <:ReactantState}, Δt;
+                    callbacks=[], euler=false)
+
+    # Note: Δt cannot change
+    if model.clock.last_Δt isa Reactant.TracedRNumber
+        model.clock.last_Δt.mlir_data = Δt.mlir_data
+    else
+        model.clock.last_Δt = Δt
+    end
+    
+    # If euler, then set χ = -0.5
+    minus_point_five = convert(Float64, -0.5)
+    ab2_timestepper = model.timestepper
+    χ = ifelse(euler, minus_point_five, ab2_timestepper.χ)
+    χ₀ = ab2_timestepper.χ # Save initial value
+    ab2_timestepper.χ = χ
+
+    # Full step for tracers, fractional step for velocities.
+    ab2_step!(model, Δt)
+
+    tick!(model.clock, Δt)
+
+    if model.clock.last_Δt isa Reactant.TracedRNumber
+        model.clock.last_Δt.mlir_data = Δt.mlir_data
+    else
+        model.clock.last_Δt = Δt
+    end
+
+    # just one stage
+    if model.clock.last_stage_Δt isa Reactant.TracedRNumber
+        model.clock.last_stage_Δt.mlir_data = Δt.mlir_data
+    else
+        model.clock.last_stage_Δt = Δt
+    end
+
+    compute_pressure_correction!(model, Δt)
+    correct_velocities_and_cache_previous_tendencies!(model, Δt)
+
+    update_state!(model, callbacks; compute_tendencies=true)
+    step_lagrangian_particles!(model, Δt)
+
+    # Return χ to initial value
+    ab2_timestepper.χ = χ₀
+
+    return nothing
+end
+
+function bad_time_step!(model::AbstractModel{<:QuasiAdamsBashforth2TimeStepper}, Δt;
+                    callbacks=[], euler=false)
+
+    Δt == 0 && @warn "Δt == 0 may cause model blowup!"
+
+    # Be paranoid and update state at iteration 0
+    model.clock.iteration == 0 && update_state!(model, callbacks; compute_tendencies=true)
+
+    # Take an euler step if:
+    #   * We detect that the time-step size has changed.
+    #   * We detect that this is the "first" time-step, which means we
+    #     need to take an euler step. Note that model.clock.last_Δt is
+    #     initialized as Inf
+    #   * The user has passed euler=true to time_step!
+    euler = euler || (Δt != model.clock.last_Δt)
+    euler && @debug "Taking a forward Euler step."
+
+    # If euler, then set χ = -0.5
+    minus_point_five = convert(eltype(model.grid), -0.5)
+    ab2_timestepper = model.timestepper
+    χ = ifelse(euler, minus_point_five, ab2_timestepper.χ)
+    χ₀ = ab2_timestepper.χ # Save initial value
+    ab2_timestepper.χ = χ
+
+    # Full step for tracers, fractional step for velocities.
+    compute_flux_bc_tendencies!(model)
+    ab2_step!(model, Δt)
+
+    tick!(model.clock, Δt)
+
+    compute_pressure_correction!(model, Δt)
+    @apply_regionally correct_velocities_and_cache_previous_tendencies!(model, Δt)
+
+    update_state!(model, callbacks; compute_tendencies=true)
+    step_lagrangian_particles!(model, Δt)
+
+    # Return χ to initial value
+    ab2_timestepper.χ = χ₀
+
+    return nothing
+end
+
 
 #####
 ##### Actually creating our model and using these functions to run it:
@@ -288,13 +358,6 @@ bᵢ          = buoyancy_init(model.grid, parameters)
 
 @info "Built $model."
 
-@info "Compiling the model run..."
-tic = time()
-restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(model, bᵢ, wind_stress)
-compile_toc = time() - tic
-
-@show compile_toc
-
 
 @info "Vanilla model as a comparison..."
 
@@ -310,6 +373,11 @@ vmodel       = build_model(vgrid, Δt₀, parameters)
 vwind_stress = wind_stress_init(vmodel.grid, parameters)
 vbᵢ          = buoyancy_init(vmodel.grid, parameters)
 
+using InteractiveUtils
+
+@show @which time_step!(model, Δt₀)
+@show @which time_step!(vmodel, Δt₀)
+
 @info "Comparing the pre-run model states..."
 
 throw_error = false
@@ -318,6 +386,13 @@ rtol = sqrt(eps(Float64))
 atol = sqrt(eps(Float64))
 
 GordonBell25.compare_states(model, vmodel; include_halos, throw_error, rtol, atol)
+
+@info "Compiling the model run..."
+tic = time()
+restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(model, bᵢ, wind_stress)
+compile_toc = time() - tic
+
+@show compile_toc
 
 @info "Running the simulations..."
 
