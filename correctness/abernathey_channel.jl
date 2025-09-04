@@ -235,13 +235,6 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fiel
                                                         ab2_step_tracers!,
                                                         step_free_surface!
 
-function loop!(model)
-    Δt = model.clock.last_Δt
-    @trace mincut = true track_numbers = false for i = 1:2
-        ab2_step_tracers!(model.tracers, model, Δt, model.timestepper.χ)
-    end
-    return nothing
-end
 
 function run_reentrant_channel_model!(model, bᵢ, wind_stress)
     # setting IC's and BC's:
@@ -249,28 +242,10 @@ function run_reentrant_channel_model!(model, bᵢ, wind_stress)
     set!(model.tracers.b, bᵢ)
 
     # Step it forward
-    loop!(model)
+    Δt = model.clock.last_Δt
+    ab2_step_tracers!(model.tracers, model, Δt, model.timestepper.χ)
 
     return nothing
-end
-
-function estimate_tracer_error(model, initial_buoyancy, wind_stress)
-    run_reentrant_channel_model!(model, initial_buoyancy, wind_stress)
-    # Compute the mean mixed layer depth:
-    #compute!(mld)
-    Nx, Ny, Nz = size(model.grid)
-    #=
-    avg_mld = 0.0
-    
-    for j0 = 1:Nx, i0 = 1:Ny
-        @allowscalar avg_mld += @inbounds model.velocities.u[i0, j0, 1]^2
-    end
-    avg_mld = avg_mld / (Nx * Ny)
-    =#
-    # Hard way
-    c² = parent(model.tracers.b).^2
-    avg_mld = sum(c²) / (Nx * Ny * Nz)
-    return avg_mld
 end
 
 #####
@@ -309,24 +284,6 @@ vbᵢ          = buoyancy_init(vmodel.grid, parameters)
 
 using InteractiveUtils
 
-@show @which time_step!(model, Δt₀)
-@show @which time_step!(vmodel, Δt₀)
-
-@show @which ab2_step!(model, Δt₀)
-@show @which ab2_step!(vmodel, Δt₀)
-
-@show @which update_state!(model, []; compute_tendencies=true)
-@show @which update_state!(vmodel, []; compute_tendencies=true)
-
-@show @which compute_auxiliaries!(model)
-@show @which compute_auxiliaries!(vmodel)
-
-@show @which compute_w_from_continuity!(model; parameters = w_kernel_parameters(model.grid))
-@show @which compute_w_from_continuity!(vmodel; parameters = w_kernel_parameters(model.grid))
-
-@show @which ab2_step!(model, Δt₀)
-@show @which ab2_step!(vmodel, Δt₀)
-
 @info "Comparing the pre-run model states..."
 
 throw_error = false
@@ -338,7 +295,7 @@ GordonBell25.compare_states(model, vmodel; include_halos, throw_error, rtol, ato
 
 @info "Compiling the model run..."
 tic = time()
-restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(model, bᵢ, wind_stress)
+rrun_reentrant_channel_model! = @compile raise_first=true raise=true sync=true run_reentrant_channel_model!(model, bᵢ, wind_stress)
 compile_toc = time() - tic
 
 @show compile_toc
@@ -346,12 +303,12 @@ compile_toc = time() - tic
 @info "Running the simulations..."
 
 tic      = time()
-avg_temp = restimate_tracer_error(model, bᵢ, wind_stress)
+rrun_reentrant_channel_model!(model, bᵢ, wind_stress)
 rrun_toc = time() - tic
 @show rrun_toc
 
 tic       = time()
-vavg_temp = estimate_tracer_error(vmodel, vbᵢ, vwind_stress)
+run_reentrant_channel_model!(vmodel, vbᵢ, vwind_stress)
 vrun_toc  = time() - tic
 @show vrun_toc
 
