@@ -221,8 +221,8 @@ using Oceananigans.Models: update_model_field_time_series!
 using Oceananigans.Models.NonhydrostaticModels: update_hydrostatic_pressure!, p_kernel_parameters
 using Oceananigans.Fields: tupled_fill_halo_regions!
 
-using Oceananigans.Models.NonhydrostaticModels: compute_auxiliaries!
-using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fields!
+using Oceananigans.Models.NonhydrostaticModels: compute_auxiliaries!, p_kernel_parameters
+using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fields!, compute_w_from_continuity!, w_kernel_parameters, update_grid_vertical_velocity!
 
 function loop!(model)
     Δt = model.clock.last_Δt
@@ -267,27 +267,38 @@ function bad_time_step!(model, Δt;
 
     ab2_step!(model, Δt)
 
-    bad_update_state!(model, model.grid, callbacks; compute_tendencies=true)
+    compute_auxiliaries!(model)
 
     return nothing
 end
 
-function bad_update_state!(model, grid, callbacks; compute_tendencies = true)
 
-    # Update possible FieldTimeSeries used in the model
-    @apply_regionally update_model_field_time_series!(model, model.clock)
+function bad_compute_auxiliaries!(model; w_parameters = w_kernel_parameters(model.grid),
+                                         p_parameters = p_kernel_parameters(model.grid),
+                                         κ_parameters = :xyz)
 
-    # Update the boundary conditions
-    @apply_regionally update_boundary_conditions!(fields(model), model)
+    grid        = model.grid
+    closure     = model.closure
+    tracers     = model.tracers
+    diffusivity = model.diffusivity_fields
+    buoyancy    = model.buoyancy
 
-    tupled_fill_halo_regions!(prognostic_fields(model), grid, model.clock, fields(model); async=true)
+    P    = model.pressure.pHY′
+    arch = grid.architecture
 
-    @apply_regionally compute_auxiliaries!(model)
+    # Update the vertical velocity to comply with the barotropic correction step
+    update_grid_vertical_velocity!(model, grid, model.vertical_coordinate)
 
-    fill_halo_regions!(model.diffusivity_fields; only_local_halos = true)
+    # Advance diagnostic quantities
+    compute_w_from_continuity!(model; parameters = w_parameters)
+    update_hydrostatic_pressure!(P, arch, grid, buoyancy, tracers; parameters = p_parameters)
+
+    # Update closure diffusivities
+    compute_diffusivities!(diffusivity, closure, model; parameters = κ_parameters)
 
     return nothing
 end
+
 
 #####
 ##### Actually creating our model and using these functions to run it:
@@ -333,6 +344,9 @@ using InteractiveUtils
 
 @show @which update_state!(model, []; compute_tendencies=true)
 @show @which update_state!(vmodel, []; compute_tendencies=true)
+
+@show @which compute_auxiliaries!(model)
+@show @which compute_auxiliaries!(vmodel)
 
 @info "Comparing the pre-run model states..."
 
