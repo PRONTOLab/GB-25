@@ -262,7 +262,7 @@ function bad_time_step!(model, Δt;
     correct_velocities_and_cache_previous_tendencies!(model, Δt)
 
     update_state!(model, callbacks; compute_tendencies=true)
-    step_lagrangian_particles!(model, Δt)
+    #step_lagrangian_particles!(model, Δt)
 
     return nothing
 end
