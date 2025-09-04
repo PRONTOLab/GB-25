@@ -249,41 +249,14 @@ function estimate_tracer_error(model, initial_buoyancy, wind_stress)
     return avg_mld
 end
 
-function bad_time_step!(model::AbstractModel{<:QuasiAdamsBashforth2TimeStepper, <:ReactantState}, Δt;
+function bad_time_step!(model, Δt;
                     callbacks=[], euler=false)
-
-    # Note: Δt cannot change
-    if model.clock.last_Δt isa Reactant.TracedRNumber
-        model.clock.last_Δt.mlir_data = Δt.mlir_data
-    else
-        model.clock.last_Δt = Δt
-    end
-    
-    # If euler, then set χ = -0.5
-    minus_point_five = convert(Float64, -0.5)
-    ab2_timestepper = model.timestepper
-    χ = ifelse(euler, minus_point_five, ab2_timestepper.χ)
-    χ₀ = ab2_timestepper.χ # Save initial value
-    ab2_timestepper.χ = χ
 
     # Full step for tracers, fractional step for velocities.
     compute_flux_bc_tendencies!(model)
     ab2_step!(model, Δt)
 
     tick!(model.clock, Δt)
-
-    if model.clock.last_Δt isa Reactant.TracedRNumber
-        model.clock.last_Δt.mlir_data = Δt.mlir_data
-    else
-        model.clock.last_Δt = Δt
-    end
-
-    # just one stage
-    if model.clock.last_stage_Δt isa Reactant.TracedRNumber
-        model.clock.last_stage_Δt.mlir_data = Δt.mlir_data
-    else
-        model.clock.last_stage_Δt = Δt
-    end
 
     compute_pressure_correction!(model, Δt)
     correct_velocities_and_cache_previous_tendencies!(model, Δt)
@@ -291,54 +264,8 @@ function bad_time_step!(model::AbstractModel{<:QuasiAdamsBashforth2TimeStepper, 
     update_state!(model, callbacks; compute_tendencies=true)
     step_lagrangian_particles!(model, Δt)
 
-    # Return χ to initial value
-    ab2_timestepper.χ = χ₀
-
     return nothing
 end
-
-function bad_time_step!(model::AbstractModel{<:QuasiAdamsBashforth2TimeStepper}, Δt;
-                    callbacks=[], euler=false)
-
-    Δt == 0 && @warn "Δt == 0 may cause model blowup!"
-
-    # Be paranoid and update state at iteration 0
-    model.clock.iteration == 0 && update_state!(model, callbacks; compute_tendencies=true)
-
-    # Take an euler step if:
-    #   * We detect that the time-step size has changed.
-    #   * We detect that this is the "first" time-step, which means we
-    #     need to take an euler step. Note that model.clock.last_Δt is
-    #     initialized as Inf
-    #   * The user has passed euler=true to time_step!
-    euler = euler || (Δt != model.clock.last_Δt)
-    euler && @debug "Taking a forward Euler step."
-
-    # If euler, then set χ = -0.5
-    minus_point_five = convert(eltype(model.grid), -0.5)
-    ab2_timestepper = model.timestepper
-    χ = ifelse(euler, minus_point_five, ab2_timestepper.χ)
-    χ₀ = ab2_timestepper.χ # Save initial value
-    ab2_timestepper.χ = χ
-
-    # Full step for tracers, fractional step for velocities.
-    compute_flux_bc_tendencies!(model)
-    ab2_step!(model, Δt)
-
-    tick!(model.clock, Δt)
-
-    compute_pressure_correction!(model, Δt)
-    @apply_regionally correct_velocities_and_cache_previous_tendencies!(model, Δt)
-
-    update_state!(model, callbacks; compute_tendencies=true)
-    step_lagrangian_particles!(model, Δt)
-
-    # Return χ to initial value
-    ab2_timestepper.χ = χ₀
-
-    return nothing
-end
-
 
 #####
 ##### Actually creating our model and using these functions to run it:
