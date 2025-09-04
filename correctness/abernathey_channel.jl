@@ -226,7 +226,7 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fiel
 
 function loop!(model)
     Δt = model.clock.last_Δt
-    @trace mincut = true track_numbers = false for i = 1:10
+    @trace mincut = true track_numbers = false for i = 1:2
         bad_time_step!(model, Δt)
     end
     return nothing
@@ -265,24 +265,14 @@ end
 function bad_time_step!(model, Δt;
                     callbacks=[], euler=false)
 
-    # Full step for tracers, fractional step for velocities.
-    #compute_flux_bc_tendencies!(model)
     ab2_step!(model, Δt)
 
-    #tick!(model.clock, Δt)
-
-    #compute_pressure_correction!(model, Δt)
-    #correct_velocities_and_cache_previous_tendencies!(model, Δt)
-
     bad_update_state!(model, model.grid, callbacks; compute_tendencies=true)
-    #step_lagrangian_particles!(model, Δt)
 
     return nothing
 end
 
 function bad_update_state!(model, grid, callbacks; compute_tendencies = true)
-
-    @apply_regionally mask_immersed_model_fields!(model, grid)
 
     # Update possible FieldTimeSeries used in the model
     @apply_regionally update_model_field_time_series!(model, model.clock)
@@ -297,8 +287,6 @@ function bad_update_state!(model, grid, callbacks; compute_tendencies = true)
     fill_halo_regions!(model.diffusivity_fields; only_local_halos = true)
 
     [callback(model) for callback in callbacks if callback.callsite isa UpdateStateCallsite]
-
-    update_biogeochemical_state!(model.biogeochemistry, model)
 
     compute_tendencies &&
         @apply_regionally compute_tendencies!(model, callbacks)
