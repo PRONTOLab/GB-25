@@ -216,7 +216,7 @@ using Oceananigans.TimeSteppers: update_state!,
 
 using Oceananigans.Biogeochemistry: update_biogeochemical_state!
 using Oceananigans.BoundaryConditions: update_boundary_conditions!
-using Oceananigans.TurbulenceClosures: compute_diffusivities!
+using Oceananigans.TurbulenceClosures: compute_diffusivities!, implicit_step!
 using Oceananigans.ImmersedBoundaries: mask_immersed_field!, mask_immersed_field_xy!, inactive_node
 using Oceananigans.Models: update_model_field_time_series!
 using Oceananigans.Models.NonhydrostaticModels: update_hydrostatic_pressure!, p_kernel_parameters
@@ -233,7 +233,8 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fiel
                                                         ab2_step_grid!,
                                                         ab2_step_velocities!,
                                                         ab2_step_tracers!,
-                                                        step_free_surface!
+                                                        step_free_surface!,
+                                                        _ab2_step_tracer_field!
 
 
 function run_reentrant_channel_model!(model, bᵢ, wind_stress)
@@ -243,7 +244,39 @@ function run_reentrant_channel_model!(model, bᵢ, wind_stress)
 
     # Step it forward
     Δt = model.clock.last_Δt
-    ab2_step_tracers!(model.tracers, model, Δt, model.timestepper.χ)
+    bad_ab2_step_tracers!(model.tracers, model, Δt, model.timestepper.χ)
+
+    return nothing
+end
+
+function bad_ab2_step_tracers!(tracers, model, Δt, χ)
+
+    # Tracer update kernels
+    for (tracer_index, tracer_name) in enumerate(propertynames(tracers))
+
+        @show tracer_index, tracer_name
+
+        if tracer_name == :e
+            @debug "Skipping AB2 step for e"
+        else
+            Gⁿ = model.timestepper.Gⁿ[tracer_name]
+            G⁻ = model.timestepper.G⁻[tracer_name]
+            tracer_field = tracers[tracer_name]
+            closure = model.closure
+            grid = model.grid
+
+            FT = eltype(grid)
+            launch!(grid.architecture, grid, :xyz, _ab2_step_tracer_field!, tracer_field, grid, convert(FT, Δt), χ, Gⁿ, G⁻)
+
+            implicit_step!(tracer_field,
+                           model.timestepper.implicit_solver,
+                           closure,
+                           model.diffusivity_fields,
+                           Val(tracer_index),
+                           model.clock,
+                           Δt)
+        end
+    end
 
     return nothing
 end
@@ -283,6 +316,9 @@ vwind_stress = wind_stress_init(vmodel.grid, parameters)
 vbᵢ          = buoyancy_init(vmodel.grid, parameters)
 
 using InteractiveUtils
+
+@show @which ab2_step_tracers!(model.tracers, model, Δt₀, model.timestepper.χ)
+@show @which ab2_step_tracers!(vmodel.tracers, vmodel, Δt₀, vmodel.timestepper.χ)
 
 @info "Comparing the pre-run model states..."
 
