@@ -201,8 +201,8 @@ end
 #####
 ##### Forward simulation (not actually using the Simulation struct)
 #####
+using Oceananigans: AbstractModel, fields, prognostic_fields, location
 using Oceananigans.Utils: launch!
-using Oceananigans: AbstractModel, fields, prognostic_fields
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.TimeSteppers: update_state!,
                                 tick!,
@@ -221,6 +221,7 @@ using Oceananigans.ImmersedBoundaries: mask_immersed_field!, mask_immersed_field
 using Oceananigans.Models: update_model_field_time_series!
 using Oceananigans.Models.NonhydrostaticModels: update_hydrostatic_pressure!, p_kernel_parameters
 using Oceananigans.Fields: tupled_fill_halo_regions!
+using Oceananigans.Solvers: solve!
 
 using Oceananigans.Models.NonhydrostaticModels: compute_auxiliaries!, p_kernel_parameters
 using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fields!,
@@ -251,32 +252,17 @@ end
 
 function bad_ab2_step_tracers!(tracers, model, Δt, χ)
 
-    # Tracer update kernels
-    for (tracer_index, tracer_name) in enumerate(propertynames(tracers))
+    Gⁿ = model.timestepper.Gⁿ.b
+    G⁻ = model.timestepper.G⁻.b
+    tracer_field = tracers.b
+    closure = model.closure
+    grid = model.grid
 
-        @show tracer_index, tracer_name
+    FT = eltype(grid)
+    launch!(grid.architecture, grid, :xyz, _ab2_step_tracer_field!, tracer_field, grid, convert(FT, Δt), χ, Gⁿ, G⁻)
 
-        if tracer_name == :e
-            @debug "Skipping AB2 step for e"
-        else
-            Gⁿ = model.timestepper.Gⁿ[tracer_name]
-            G⁻ = model.timestepper.G⁻[tracer_name]
-            tracer_field = tracers[tracer_name]
-            closure = model.closure
-            grid = model.grid
-
-            FT = eltype(grid)
-            launch!(grid.architecture, grid, :xyz, _ab2_step_tracer_field!, tracer_field, grid, convert(FT, Δt), χ, Gⁿ, G⁻)
-
-            implicit_step!(tracer_field,
-                           model.timestepper.implicit_solver,
-                           closure,
-                           model.diffusivity_fields,
-                           Val(tracer_index),
-                           model.clock,
-                           Δt)
-        end
-    end
+    solve!(tracer_field, model.timestepper.implicit_solver, tracer_field,
+           closure, model.diffusivity_fields, Val(1), Center(), Center(), Center(), Δt, model.clock)
 
     return nothing
 end
@@ -319,6 +305,9 @@ using InteractiveUtils
 
 @show @which ab2_step_tracers!(model.tracers, model, Δt₀, model.timestepper.χ)
 @show @which ab2_step_tracers!(vmodel.tracers, vmodel, Δt₀, vmodel.timestepper.χ)
+
+@show @which implicit_step!(model.tracers.b, model.timestepper.implicit_solver, model.closure, model.diffusivity_fields, Val(1), model.clock, Δt₀)
+@show @which implicit_step!(vmodel.tracers.b, vmodel.timestepper.implicit_solver, vmodel.closure, vmodel.diffusivity_fields, Val(1), vmodel.clock, Δt₀)
 
 @info "Comparing the pre-run model states..."
 
