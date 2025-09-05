@@ -15,7 +15,7 @@ Ny = data["Ny"]
 Nz = data["Nz"]
 
 bottom_height = data["bottom_height"]
-T_init        = data["b_init"]
+T_init        = data["T_init"]
 e_init        = data["e_init"]
 wind_stress   = data["wind_stress"]
 
@@ -147,7 +147,7 @@ Nx = data["Nx"]
 Ny = data["Ny"]
 Nz = data["Nz"]
 
-T_final = data["b_final"]
+T_final = data["T_final"]
 e_final = data["e_final"]
 ssh     = data["ssh"]
 

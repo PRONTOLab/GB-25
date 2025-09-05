@@ -86,10 +86,12 @@ parameters = (
     Ly = Ly,
     Lz = Lz,
     Qᵇ = 10 / (ρ * cᵖ) * α * g,            # buoyancy flux magnitude [m² s⁻³]
+    Qᵀ = 10 / (ρ * cᵖ),                    # temperature flux magnitude
     y_shutoff = 5 / 6 * Ly,                # shutoff location for buoyancy flux [m]
     τ = 0.2 / ρ,                           # surface kinematic wind stress [m² s⁻²]
     μ = 1 / 30days,                      # bottom drag damping time-scale [s⁻¹]
     ΔB = 8 * α * g,                      # surface vertical buoyancy gradient [s⁻²]
+    ΔT = 8,                              # surface vertical temperature gradient
     H = Lz,                              # domain depth [m]
     h = 1000.0,                          # exponential decay scale of stable stratification [m]
     y_sponge = 19 / 20 * Ly,               # southern boundary of sponge layer [m]
@@ -134,7 +136,13 @@ function build_model(grid, Δt₀, parameters)
         return ifelse(y < p.y_shutoff, p.Qᵇ * cos(3π * y / p.Ly), 0.0)
     end
 
-    buoyancy_flux_bc = FluxBoundaryCondition(buoyancy_flux, discrete_form = true, parameters = parameters)
+    @inline function temperature_flux(i, j, grid, clock, model_fields, p)
+        y = ynode(j, grid, Center())
+        return ifelse(y < p.y_shutoff, p.Qᵀ * cos(3π * y / p.Ly), 0.0)
+    end
+
+    buoyancy_flux_bc    = FluxBoundaryCondition(buoyancy_flux, discrete_form = true, parameters = parameters)
+    temperature_flux_bc = FluxBoundaryCondition(temperature_flux, discrete_form = true, parameters = parameters)
 
     u_stress_bc = FluxBoundaryCondition(Field{Face, Center, Nothing}(grid))
 
@@ -145,6 +153,7 @@ function build_model(grid, Δt₀, parameters)
     v_drag_bc = FluxBoundaryCondition(v_drag, discrete_form = true, parameters = parameters)
 
     b_bcs = FieldBoundaryConditions(top = buoyancy_flux_bc)
+    T_bcs = FieldBoundaryConditions(top = temperature_flux_bc)
 
     u_bcs = FieldBoundaryConditions(top = u_stress_bc, bottom = u_drag_bc)
     v_bcs = FieldBoundaryConditions(bottom = v_drag_bc)
@@ -158,8 +167,9 @@ function build_model(grid, Δt₀, parameters)
     ##### Forcing and initial condition
     #####
 
-    @inline initial_buoyancy(z, p) = p.ΔB * (exp(z / p.h) - exp(-p.Lz / p.h)) / (1 - exp(-p.Lz / p.h))
-    @inline mask(y, p) = max(0.0, y - p.y_sponge) / (Ly - p.y_sponge)
+    @inline initial_buoyancy(z, p)    = p.ΔB * (exp(z / p.h) - exp(-p.Lz / p.h)) / (1 - exp(-p.Lz / p.h))
+    @inline initial_temperature(z, p) = p.ΔT * (exp(z / p.h) - exp(-p.Lz / p.h)) / (1 - exp(-p.Lz / p.h))
+    @inline mask(y, p)                = max(0.0, y - p.y_sponge) / (Ly - p.y_sponge)
 
 
     @inline function buoyancy_relaxation(i, j, k, grid, clock, model_fields, p)
@@ -172,7 +182,18 @@ function build_model(grid, Δt₀, parameters)
         return -1 / timescale * mask(y, p) * (b - target_b)
     end
 
+    @inline function temperature_relaxation(i, j, k, grid, clock, model_fields, p)
+        timescale = p.λt
+        y = ynode(j, grid, Center())
+        z = znode(k, grid, Center())
+        target_T = initial_temperature(z, p)
+        T = @inbounds model_fields.T[i, j, k]
+    
+        return -1 / timescale * mask(y, p) * (T - target_T)
+    end
+
     Fb = Forcing(buoyancy_relaxation, discrete_form = true, parameters = parameters)
+    FT = Forcing(temperature_relaxation, discrete_form = true, parameters = parameters)
 
     # closure
 
@@ -195,12 +216,12 @@ function build_model(grid, Δt₀, parameters)
         free_surface = SplitExplicitFreeSurface(substeps=500),
         momentum_advection = WENO(),
         tracer_advection = WENO(),
-        buoyancy = BuoyancyTracer(),
+        buoyancy = SeawaterBuoyancy(equation_of_state=LinearEquationOfState(Oceananigans.defaults.FloatType),constant_salinity=35),
         coriolis = coriolis,
         closure = (horizontal_closure, vertical_closure, vertical_closure_CATKE),
-        tracers = (:b, :e),
-        boundary_conditions = (b = b_bcs, u = u_bcs, v = v_bcs),
-        forcing = (; b = Fb)
+        tracers = (:T, :e),
+        boundary_conditions = (T = T_bcs, u = u_bcs, v = v_bcs),
+        forcing = (; T = FT)
     )
 
     model.clock.last_Δt = Δt₀
@@ -229,6 +250,15 @@ function buoyancy_init(grid, parameters)
     return bᵢ
 end
 
+# resting initial condition
+function temperature_init(grid, parameters)
+    ε(σ) = σ * randn()
+    Tᵢ_function(x, y, z) = parameters.ΔT * (exp(z / parameters.h) - exp(-Lz / parameters.h)) / (1 - exp(-Lz / parameters.h)) + ε(1e-8)
+    Tᵢ = Field{Center, Center, Center}(grid)
+    set!(Tᵢ, Tᵢ_function)
+    return Tᵢ
+end
+
 #####
 ##### Forward simulation (not actually using the Simulation struct)
 #####
@@ -241,10 +271,10 @@ function loop!(model)
     return nothing
 end
 
-function run_reentrant_channel_model!(model, bᵢ, wind_stress)
+function run_reentrant_channel_model!(model, Tᵢ, wind_stress)
     # setting IC's and BC's:
     set!(model.velocities.u.boundary_conditions.top.condition, wind_stress)
-    set!(model.tracers.b, bᵢ)
+    set!(model.tracers.T, Tᵢ)
 
     # Initialize the model
     model.clock.iteration = 0
@@ -256,8 +286,8 @@ function run_reentrant_channel_model!(model, bᵢ, wind_stress)
     return nothing
 end
 
-function estimate_tracer_error(model, initial_buoyancy, wind_stress)
-    run_reentrant_channel_model!(model, initial_buoyancy, wind_stress)
+function estimate_tracer_error(model, initial_temperature, wind_stress)
+    run_reentrant_channel_model!(model, initial_temperature, wind_stress)
     # Compute the mean mixed layer depth:
     #compute!(mld)
     Nx, Ny, Nz = size(model.grid)
@@ -270,17 +300,17 @@ function estimate_tracer_error(model, initial_buoyancy, wind_stress)
     avg_mld = avg_mld / (Nx * Ny)
     =#
     # Hard way
-    c² = parent(model.tracers.b).^2
+    c² = parent(model.tracers.T).^2
     avg_mld = sum(c²) / (Nx * Ny * Nz)
     return avg_mld
 end
 
-function differentiate_tracer_error(model, bᵢ, J, dmodel, dbᵢ, dJ)
+function differentiate_tracer_error(model, Tᵢ, J, dmodel, dTᵢ, dJ)
 
     dedν = autodiff(set_strong_zero(Enzyme.Reverse),
                     estimate_tracer_error, Active,
                     Duplicated(model, dmodel),
-                    Duplicated(bᵢ, dbᵢ),
+                    Duplicated(Tᵢ, dTᵢ),
                     Duplicated(J, dJ))
 
     return dedν, dJ
@@ -300,13 +330,13 @@ architecture = ReactantState() #GPU()
 grid        = make_grid(architecture, Nx, Ny, Nz, Δz_center)
 model       = build_model(grid, Δt₀, parameters)
 wind_stress = wind_stress_init(model.grid, parameters)
-bᵢ          = buoyancy_init(model.grid, parameters)
+Tᵢ          = temperature_init(model.grid, parameters)
 
 
 @info "Built $model."
 
 dmodel = Enzyme.make_zero(model)
-dbᵢ = Field{Center, Center, Center}(model.grid)
+dTᵢ = Field{Center, Center, Center}(model.grid)
 dJ  = Field{Face, Center, Nothing}(model.grid)
 
 # Trying zonal transport:
@@ -314,8 +344,8 @@ dJ  = Field{Face, Center, Nothing}(model.grid)
 
 @info "Compiling the model run..."
 tic = time()
-restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(model, bᵢ, wind_stress)
-#rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true  differentiate_tracer_error(model, bᵢ, wind_stress, dmodel, dbᵢ, dJ)
+restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(model, Tᵢ, wind_stress)
+#rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true  differentiate_tracer_error(model, Tᵢ, wind_stress, dmodel, dTᵢ, dJ)
 compile_toc = time() - tic
 
 @show compile_toc
@@ -338,12 +368,12 @@ end
 
 jldsave(filename; Nx, Ny, Nz,
                   bottom_height=convert(Array, interior(bottom_height)),
-                  b_init=convert(Array, interior(model.tracers.b)),
+                  T_init=convert(Array, interior(model.tracers.T)),
                   e_init=convert(Array, interior(model.tracers.e)),
                   wind_stress=convert(Array, interior(wind_stress)))
 
 tic = time()
-avg_temp = restimate_tracer_error(model, bᵢ, wind_stress)
+avg_temp = restimate_tracer_error(model, Tᵢ, wind_stress)
 #rdifferentiate_tracer_error(model, bᵢ, wind_stress, dmodel, dbᵢ, dJ)
 run_toc = time() - tic
 
@@ -353,7 +383,7 @@ run_toc = time() - tic
 filename = graph_directory * "data_final.jld2"
 
 jldsave(filename; Nx, Ny, Nz,
-                  b_final=convert(Array, interior(model.tracers.b)),
+                  T_final=convert(Array, interior(model.tracers.T)),
                   e_final=convert(Array, interior(model.tracers.e)),
                   ssh=convert(Array, interior(model.free_surface.η)),
                   u=convert(Array, interior(model.velocities.u)),
