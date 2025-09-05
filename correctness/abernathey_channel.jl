@@ -222,6 +222,7 @@ using Oceananigans.Models: update_model_field_time_series!
 using Oceananigans.Models.NonhydrostaticModels: update_hydrostatic_pressure!, p_kernel_parameters
 using Oceananigans.Fields: tupled_fill_halo_regions!
 using Oceananigans.Solvers: solve!
+import Oceananigans.Operators: σⁿ, σ⁻
 
 using Oceananigans.Models.NonhydrostaticModels: compute_auxiliaries!, p_kernel_parameters
 using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fields!,
@@ -237,6 +238,7 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fiel
                                                         step_free_surface!,
                                                         _ab2_step_tracer_field!
 
+using KernelAbstractions: @kernel, @index
 
 function run_reentrant_channel_model!(model, bᵢ, wind_stress)
     # setting IC's and BC's:
@@ -259,12 +261,26 @@ function bad_ab2_step_tracers!(tracers, model, Δt, χ)
     grid = model.grid
 
     FT = eltype(grid)
-    launch!(grid.architecture, grid, :xyz, _ab2_step_tracer_field!, tracer_field, grid, convert(FT, Δt), χ, Gⁿ, G⁻)
-
-    solve!(tracer_field, model.timestepper.implicit_solver, tracer_field,
-           closure, model.diffusivity_fields, Val(1), Center(), Center(), Center(), Δt, model.clock)
+    launch!(grid.architecture, grid, :xyz, _bad_ab2_step_tracer_field!, tracer_field, grid, convert(FT, Δt), χ, Gⁿ, G⁻)
 
     return nothing
+end
+
+# σθ is the evolved quantity. Once σⁿ⁺¹ is known we can retrieve θⁿ⁺¹
+@kernel function _bad_ab2_step_tracer_field!(θ, grid, Δt, χ, Gⁿ, G⁻)
+    i, j, k = @index(Global, NTuple)
+
+    FT = eltype(χ)
+    α = convert(FT, 1.5) + χ
+    β = convert(FT, 0.5) + χ
+
+    σᶜᶜⁿ = σⁿ(i, j, k, grid, Center(), Center(), Center())
+    σᶜᶜ⁻ = σ⁻(i, j, k, grid, Center(), Center(), Center())
+
+    @inbounds begin
+        ∂t_σθ = α * Gⁿ[i, j, k] - β * G⁻[i, j, k]
+        θ[i, j, k] = (σᶜᶜ⁻ * θ[i, j, k] + Δt * ∂t_σθ) / σᶜᶜⁿ
+    end
 end
 
 #####
