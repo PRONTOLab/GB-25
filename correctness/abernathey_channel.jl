@@ -242,45 +242,30 @@ using KernelAbstractions: @kernel, @index
 
 function run_reentrant_channel_model!(model, bᵢ, wind_stress)
     # setting IC's and BC's:
-    set!(model.velocities.u.boundary_conditions.top.condition, wind_stress)
     set!(model.tracers.b, bᵢ)
 
     # Step it forward
-    Δt = model.clock.last_Δt
-    bad_ab2_step_tracers!(model.tracers, model, Δt, model.timestepper.χ)
+    bad_ab2_step_tracers!(model.tracers, model)
 
     return nothing
 end
 
-function bad_ab2_step_tracers!(tracers, model, Δt, χ)
+function bad_ab2_step_tracers!(tracers, model)
 
     Gⁿ = model.timestepper.Gⁿ.b
-    G⁻ = model.timestepper.G⁻.b
     tracer_field = tracers.b
-    closure = model.closure
     grid = model.grid
 
-    FT = eltype(grid)
-    launch!(grid.architecture, grid, :xyz, _bad_ab2_step_tracer_field!, tracer_field, grid, convert(FT, Δt), χ, Gⁿ, G⁻)
+    launch!(grid.architecture, grid, :xyz, _bad_ab2_step_tracer_field!, tracer_field, Gⁿ)
 
     return nothing
 end
 
 # σθ is the evolved quantity. Once σⁿ⁺¹ is known we can retrieve θⁿ⁺¹
-@kernel function _bad_ab2_step_tracer_field!(θ, grid, Δt, χ, Gⁿ, G⁻)
+@kernel function _bad_ab2_step_tracer_field!(θ, Gⁿ)
     i, j, k = @index(Global, NTuple)
 
-    FT = eltype(χ)
-    α = convert(FT, 1.5) + χ
-    β = convert(FT, 0.5) + χ
-
-    σᶜᶜⁿ = σⁿ(i, j, k, grid, Center(), Center(), Center())
-    σᶜᶜ⁻ = σ⁻(i, j, k, grid, Center(), Center(), Center())
-
-    @inbounds begin
-        ∂t_σθ = α * Gⁿ[i, j, k] - β * G⁻[i, j, k]
-        θ[i, j, k] = (σᶜᶜ⁻ * θ[i, j, k] + Δt * ∂t_σθ) / σᶜᶜⁿ
-    end
+    @inbounds θ[i, j, k] = θ[i, j, k] + 100.0 * Gⁿ[i, j, k]
 end
 
 #####
