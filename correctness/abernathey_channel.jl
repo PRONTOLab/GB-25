@@ -115,13 +115,13 @@ function make_grid(architecture, Nx, Ny, Nz, Δz_center)
         halo = (halo_size, halo_size, halo_size),
         x = (0, Lx),
         y = (0, Ly),
-        z = (-Lz, 0))
+        z = z_faces)
 
     # Make into a ridge array:
     ridge = Field{Center, Center, Nothing}(underlying_grid)
     set!(ridge, ridge_function)
 
-    grid = underlying_grid #ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(ridge))
+    grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(ridge))
     return grid
 end
 
@@ -354,7 +354,7 @@ compile_toc = time() - tic
 
 using FileIO, JLD2
 
-graph_directory = "run_abernathy_model_1000steps_noRidge_linearEOS/"
+graph_directory = "run_abernathy_model_1000steps_linearEOS_v0973/"
 filename        = graph_directory * "data_init.jld2"
 
 if !isdir(graph_directory) Base.Filesystem.mkdir(graph_directory) end

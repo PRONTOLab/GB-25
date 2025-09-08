@@ -6,18 +6,18 @@ using GLMakie
 #
 
 
-graph_directory = "run_abernathy_model_1000steps_noRidge_linearEOS/"
+graph_directory = "run_abernathy_model_1000steps_linearEOS_v0973/"
 
-data = jldopen(graph_directory * "data_init.jld2", "r")
+data1 = jldopen(graph_directory * "data_init.jld2", "r")
 
-Nx = data["Nx"]
-Ny = data["Ny"]
-Nz = data["Nz"]
+Nx = data1["Nx"]
+Ny = data1["Ny"]
+Nz = data1["Nz"]
 
-bottom_height = data["bottom_height"]
-T_init        = data["T_init"]
-e_init        = data["e_init"]
-wind_stress   = data["wind_stress"]
+bottom_height = data1["bottom_height"]
+T_init        = data1["T_init"]
+e_init        = data1["e_init"]
+wind_stress   = data1["wind_stress"]
 
 # Build init temperature fields:
 max_T_surface = maximum(abs.(T_init[1:Nx,1:Ny,Nz]))
