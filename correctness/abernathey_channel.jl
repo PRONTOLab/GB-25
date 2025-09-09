@@ -218,7 +218,7 @@ function loop!(model)
     Δt = model.clock.last_Δt
     Oceananigans.initialize!(model)
     Oceananigans.TimeSteppers.update_state!(model)
-    @trace mincut = true track_numbers = false for i = 1:2
+    @trace mincut = true track_numbers = false for i = 1:10
         bad_time_step!(model, Δt)
     end
     return nothing
