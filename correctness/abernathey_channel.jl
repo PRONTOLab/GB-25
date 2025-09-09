@@ -248,7 +248,7 @@ using Oceananigans.TimeSteppers: update_state!,
 function loop!(model)
     Δt = model.clock.last_Δt
     @trace mincut = true track_numbers = false for i = 1:2
-        bad_time_step!(model, Δt)
+        ab2_step!(model, Δt)
     end
     return nothing
 end
@@ -264,20 +264,6 @@ function run_reentrant_channel_model!(model, Tᵢ, wind_stress)
 
     # Step it forward
     loop!(model)
-
-    return nothing
-end
-
-function bad_time_step!(model, Δt;
-                    callbacks=[], euler=false)
-
-    # Full step for tracers, fractional step for velocities.
-    compute_flux_bc_tendencies!(model)
-    ab2_step!(model, Δt)
-
-    tick!(model.clock, Δt)
-
-    compute_pressure_correction!(model, Δt)
 
     return nothing
 end
