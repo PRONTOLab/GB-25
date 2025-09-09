@@ -133,17 +133,11 @@ end
 
 function build_model(grid, Δt₀, parameters)
 
-    @inline function buoyancy_flux(i, j, grid, clock, model_fields, p)
-        y = ynode(j, grid, Center())
-        return ifelse(y < p.y_shutoff, p.Qᵇ * cos(3π * y / p.Ly), 0.0)
-    end
-
     @inline function temperature_flux(i, j, grid, clock, model_fields, p)
         y = ynode(j, grid, Center())
         return ifelse(y < p.y_shutoff, p.Qᵀ * cos(3π * y / p.Ly), 0.0)
     end
 
-    buoyancy_flux_bc    = FluxBoundaryCondition(buoyancy_flux, discrete_form = true, parameters = parameters)
     temperature_flux_bc = FluxBoundaryCondition(temperature_flux, discrete_form = true, parameters = parameters)
 
     u_stress_bc = FluxBoundaryCondition(Field{Face, Center, Nothing}(grid))
@@ -154,7 +148,6 @@ function build_model(grid, Δt₀, parameters)
     u_drag_bc = FluxBoundaryCondition(u_drag, discrete_form = true, parameters = parameters)
     v_drag_bc = FluxBoundaryCondition(v_drag, discrete_form = true, parameters = parameters)
 
-    b_bcs = FieldBoundaryConditions(top = buoyancy_flux_bc)
     T_bcs = FieldBoundaryConditions(top = temperature_flux_bc)
 
     u_bcs = FieldBoundaryConditions(top = u_stress_bc, bottom = u_drag_bc)
@@ -169,20 +162,8 @@ function build_model(grid, Δt₀, parameters)
     ##### Forcing and initial condition
     #####
 
-    @inline initial_buoyancy(z, p)    = p.ΔB * (exp(z / p.h) - exp(-p.Lz / p.h)) / (1 - exp(-p.Lz / p.h))
     @inline initial_temperature(z, p) = p.ΔT * (exp(z / p.h) - exp(-p.Lz / p.h)) / (1 - exp(-p.Lz / p.h))
     @inline mask(y, p)                = max(0.0, y - p.y_sponge) / (Ly - p.y_sponge)
-
-
-    @inline function buoyancy_relaxation(i, j, k, grid, clock, model_fields, p)
-        timescale = p.λt
-        y = ynode(j, grid, Center())
-        z = znode(k, grid, Center())
-        target_b = initial_buoyancy(z, p)
-        b = @inbounds model_fields.b[i, j, k]
-
-        return -1 / timescale * mask(y, p) * (b - target_b)
-    end
 
     @inline function temperature_relaxation(i, j, k, grid, clock, model_fields, p)
         timescale = p.λt
@@ -194,7 +175,6 @@ function build_model(grid, Δt₀, parameters)
         return -1 / timescale * mask(y, p) * (T - target_T)
     end
 
-    Fb = Forcing(buoyancy_relaxation, discrete_form = true, parameters = parameters)
     FT = Forcing(temperature_relaxation, discrete_form = true, parameters = parameters)
 
     # closure
@@ -244,18 +224,8 @@ function wind_stress_init(grid, p)
 end
 
 # resting initial condition
-function buoyancy_init(grid, parameters)
-    ε(σ) = σ * randn()
-    bᵢ_function(x, y, z) = parameters.ΔB * (exp(z / parameters.h) - exp(-Lz / parameters.h)) / (1 - exp(-Lz / parameters.h)) + ε(1e-8)
-    bᵢ = Field{Center, Center, Center}(grid)
-    set!(bᵢ, bᵢ_function)
-    return bᵢ
-end
-
-# resting initial condition
 function temperature_init(grid, parameters)
-    #ε(σ) = σ * randn()
-    Tᵢ_function(x, y, z) = parameters.ΔT * (exp(z / parameters.h) - exp(-Lz / parameters.h)) / (1 - exp(-Lz / parameters.h))# + ε(1e-8)
+    Tᵢ_function(x, y, z) = parameters.ΔT * (exp(z / parameters.h) - exp(-Lz / parameters.h)) / (1 - exp(-Lz / parameters.h))
     Tᵢ = Field{Center, Center, Center}(grid)
     set!(Tᵢ, Tᵢ_function)
     return Tᵢ
@@ -308,9 +278,6 @@ function bad_time_step!(model, Δt;
     tick!(model.clock, Δt)
 
     compute_pressure_correction!(model, Δt)
-    correct_velocities_and_cache_previous_tendencies!(model, Δt)
-
-    update_state!(model, callbacks; compute_tendencies=true)
 
     return nothing
 end
