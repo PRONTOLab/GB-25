@@ -127,17 +127,11 @@ end
 
 function build_model(grid, Δt₀, parameters)
 
-    @inline function buoyancy_flux(i, j, grid, clock, model_fields, p)
-        y = ynode(j, grid, Center())
-        return ifelse(y < p.y_shutoff, p.Qᵇ * cos(3π * y / p.Ly), 0.0)
-    end
-
     @inline function temperature_flux(i, j, grid, clock, model_fields, p)
         y = ynode(j, grid, Center())
         return ifelse(y < p.y_shutoff, p.Qᵀ * cos(3π * y / p.Ly), 0.0)
     end
 
-    buoyancy_flux_bc    = FluxBoundaryCondition(buoyancy_flux, discrete_form = true, parameters = parameters)
     temperature_flux_bc = FluxBoundaryCondition(temperature_flux, discrete_form = true, parameters = parameters)
 
     u_stress_bc = FluxBoundaryCondition(Field{Face, Center, Nothing}(grid))
@@ -148,7 +142,6 @@ function build_model(grid, Δt₀, parameters)
     u_drag_bc = FluxBoundaryCondition(u_drag, discrete_form = true, parameters = parameters)
     v_drag_bc = FluxBoundaryCondition(v_drag, discrete_form = true, parameters = parameters)
 
-    b_bcs = FieldBoundaryConditions(top = buoyancy_flux_bc)
     T_bcs = FieldBoundaryConditions(top = temperature_flux_bc)
 
     u_bcs = FieldBoundaryConditions(top = u_stress_bc, bottom = u_drag_bc)
@@ -163,20 +156,9 @@ function build_model(grid, Δt₀, parameters)
     ##### Forcing and initial condition
     #####
 
-    @inline initial_buoyancy(z, p)    = p.ΔB * (exp(z / p.h) - exp(-p.Lz / p.h)) / (1 - exp(-p.Lz / p.h))
     @inline initial_temperature(z, p) = p.ΔT * (exp(z / p.h) - exp(-p.Lz / p.h)) / (1 - exp(-p.Lz / p.h))
     @inline mask(y, p)                = max(0.0, y - p.y_sponge) / (Ly - p.y_sponge)
 
-
-    @inline function buoyancy_relaxation(i, j, k, grid, clock, model_fields, p)
-        timescale = p.λt
-        y = ynode(j, grid, Center())
-        z = znode(k, grid, Center())
-        target_b = initial_buoyancy(z, p)
-        b = @inbounds model_fields.b[i, j, k]
-
-        return -1 / timescale * mask(y, p) * (b - target_b)
-    end
 
     @inline function temperature_relaxation(i, j, k, grid, clock, model_fields, p)
         timescale = p.λt
@@ -188,7 +170,6 @@ function build_model(grid, Δt₀, parameters)
         return -1 / timescale * mask(y, p) * (T - target_T)
     end
 
-    Fb = Forcing(buoyancy_relaxation, discrete_form = true, parameters = parameters)
     FT = Forcing(temperature_relaxation, discrete_form = true, parameters = parameters)
 
     # closure
@@ -238,15 +219,6 @@ function wind_stress_init(grid, p)
 end
 
 # resting initial condition
-function buoyancy_init(grid, parameters)
-    ε(σ) = σ * randn()
-    bᵢ_function(x, y, z) = parameters.ΔB * (exp(z / parameters.h) - exp(-Lz / parameters.h)) / (1 - exp(-Lz / parameters.h)) + ε(1e-8)
-    bᵢ = Field{Center, Center, Center}(grid)
-    set!(bᵢ, bᵢ_function)
-    return bᵢ
-end
-
-# resting initial condition
 function temperature_init(grid, parameters)
     ε(σ) = σ * randn()
     Tᵢ_function(x, y, z) = parameters.ΔT * (exp(z / parameters.h) - exp(-Lz / parameters.h)) / (1 - exp(-Lz / parameters.h)) + ε(1e-8)
@@ -261,7 +233,9 @@ end
 
 function loop!(model)
     Δt = model.clock.last_Δt
-    @trace mincut = true track_numbers = false for i = 1:10
+    Oceananigans.initialize!(model)
+    Oceananigans.TimeSteppers.update_state!(model)
+    @trace mincut = true track_numbers = false for i = 1:2
         time_step!(model, Δt)
     end
     return nothing
@@ -273,32 +247,12 @@ function run_reentrant_channel_model!(model, Tᵢ, wind_stress)
     set!(model.tracers.T, Tᵢ)
 
     # Initialize the model
-    model.clock.iteration = 0
-    model.clock.time = 0
+    model.clock.iteration = 1
 
     # Step it forward
     loop!(model)
 
     return nothing
-end
-
-function estimate_tracer_error(model, initial_temperature, wind_stress)
-    run_reentrant_channel_model!(model, initial_temperature, wind_stress)
-    # Compute the mean mixed layer depth:
-    #compute!(mld)
-    Nx, Ny, Nz = size(model.grid)
-    #=
-    avg_mld = 0.0
-    
-    for j0 = 1:Nx, i0 = 1:Ny
-        @allowscalar avg_mld += @inbounds model.velocities.u[i0, j0, 1]^2
-    end
-    avg_mld = avg_mld / (Nx * Ny)
-    =#
-    # Hard way
-    c² = parent(model.tracers.T).^2
-    avg_mld = sum(c²) / (Nx * Ny * Nz)
-    return avg_mld
 end
 
 
@@ -307,7 +261,7 @@ end
 #####
 
 # Architecture
-architecture = ReactantState() #GPU()
+architecture = ReactantState()
 
 # Timestep size:
 Δt₀ = 5minutes 
@@ -323,7 +277,7 @@ Tᵢ          = temperature_init(model.grid, parameters)
 
 @info "Compiling the model run..."
 tic = time()
-restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(model, Tᵢ, wind_stress)
+rrun_reentrant_channel_model! = @compile raise_first=true raise=true sync=true run_reentrant_channel_model!(model, Tᵢ, wind_stress)
 compile_toc = time() - tic
 
 @show compile_toc
@@ -341,7 +295,7 @@ varchitecture = CPU()
 vgrid        = make_grid(varchitecture, Nx, Ny, Nz, Δz_center)
 vmodel       = build_model(vgrid, Δt₀, parameters)
 vwind_stress = wind_stress_init(vmodel.grid, parameters)
-vTᵢ          = buoyancy_init(vmodel.grid, parameters)
+vTᵢ          = temperature_init(vmodel.grid, parameters)
 
 @info "Comparing the pre-run model states..."
 
@@ -355,12 +309,12 @@ GordonBell25.compare_states(model, vmodel; include_halos, throw_error, rtol, ato
 @info "Running the simulations..."
 
 tic      = time()
-avg_temp = restimate_tracer_error(model, Tᵢ, wind_stress)
+rrun_reentrant_channel_model!(model, Tᵢ, wind_stress)
 rrun_toc = time() - tic
 @show rrun_toc
 
 tic       = time()
-vavg_temp = estimate_tracer_error(vmodel, vTᵢ, vwind_stress)
+run_reentrant_channel_model!(vmodel, vTᵢ, vwind_stress)
 vrun_toc  = time() - tic
 @show vrun_toc
 
