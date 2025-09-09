@@ -265,10 +265,20 @@ end
 ##### Forward simulation (not actually using the Simulation struct)
 #####
 
+using Oceananigans: AbstractModel
+using Oceananigans.TimeSteppers: update_state!,
+                                tick!,
+                                compute_pressure_correction!,
+                                correct_velocities_and_cache_previous_tendencies!,
+                                step_lagrangian_particles!,
+                                ab2_step!,
+                                QuasiAdamsBashforth2TimeStepper,
+                                compute_flux_bc_tendencies!
+
 function loop!(model)
     Δt = model.clock.last_Δt
-    @trace mincut = true track_numbers = false for i = 1:10
-        time_step!(model, Δt)
+    @trace mincut = true track_numbers = false for i = 1:2
+        bad_time_step!(model, Δt)
     end
     return nothing
 end
@@ -288,34 +298,21 @@ function run_reentrant_channel_model!(model, Tᵢ, wind_stress)
     return nothing
 end
 
-function estimate_tracer_error(model, initial_temperature, wind_stress)
-    run_reentrant_channel_model!(model, initial_temperature, wind_stress)
-    # Compute the mean mixed layer depth:
-    #compute!(mld)
-    Nx, Ny, Nz = size(model.grid)
-    #=
-    avg_mld = 0.0
-    
-    for j0 = 1:Nx, i0 = 1:Ny
-        @allowscalar avg_mld += @inbounds model.velocities.u[i0, j0, 1]^2
-    end
-    avg_mld = avg_mld / (Nx * Ny)
-    =#
-    # Hard way
-    c² = parent(model.tracers.T).^2
-    avg_mld = sum(c²) / (Nx * Ny * Nz)
-    return avg_mld
-end
+function bad_time_step!(model, Δt;
+                    callbacks=[], euler=false)
 
-function differentiate_tracer_error(model, Tᵢ, J, dmodel, dTᵢ, dJ)
+    # Full step for tracers, fractional step for velocities.
+    compute_flux_bc_tendencies!(model)
+    ab2_step!(model, Δt)
 
-    dedν = autodiff(set_strong_zero(Enzyme.Reverse),
-                    estimate_tracer_error, Active,
-                    Duplicated(model, dmodel),
-                    Duplicated(Tᵢ, dTᵢ),
-                    Duplicated(J, dJ))
+    tick!(model.clock, Δt)
 
-    return dedν, dJ
+    compute_pressure_correction!(model, Δt)
+    correct_velocities_and_cache_previous_tendencies!(model, Δt)
+
+    update_state!(model, callbacks; compute_tendencies=true)
+
+    return nothing
 end
 
 #####
