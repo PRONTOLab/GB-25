@@ -235,7 +235,9 @@ end
 ##### Forward simulation (not actually using the Simulation struct)
 #####
 
-using Oceananigans: AbstractModel
+using Oceananigans: AbstractModel, fields, prognostic_fields, location
+using Oceananigans.Utils: launch!
+using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.TimeSteppers: update_state!,
                                 tick!,
                                 compute_pressure_correction!,
@@ -243,12 +245,37 @@ using Oceananigans.TimeSteppers: update_state!,
                                 step_lagrangian_particles!,
                                 ab2_step!,
                                 QuasiAdamsBashforth2TimeStepper,
-                                compute_flux_bc_tendencies!
+                                compute_flux_bc_tendencies!,
+                                compute_tendencies!
+
+using Oceananigans.Biogeochemistry: update_biogeochemical_state!
+using Oceananigans.BoundaryConditions: update_boundary_conditions!
+using Oceananigans.TurbulenceClosures: compute_diffusivities!, implicit_step!
+using Oceananigans.ImmersedBoundaries: mask_immersed_field!, mask_immersed_field_xy!, inactive_node
+using Oceananigans.Models: update_model_field_time_series!
+using Oceananigans.Models.NonhydrostaticModels: update_hydrostatic_pressure!, p_kernel_parameters
+using Oceananigans.Fields: tupled_fill_halo_regions!
+using Oceananigans.Solvers: solve!
+using Oceananigans.Operators: σⁿ, σ⁻
+
+using Oceananigans.Models.NonhydrostaticModels: compute_auxiliaries!, p_kernel_parameters
+using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fields!,
+                                                        compute_w_from_continuity!,
+                                                        w_kernel_parameters,
+                                                        update_grid_vertical_velocity!,
+                                                        _compute_w_from_continuity!,
+                                                        compute_free_surface_tendency!,
+                                                        scale_by_stretching_factor!,
+                                                        ab2_step_grid!,
+                                                        ab2_step_velocities!,
+                                                        ab2_step_tracers!,
+                                                        step_free_surface!,
+                                                        _ab2_step_tracer_field!
 
 function loop!(model)
     Δt = model.clock.last_Δt
     @trace mincut = true track_numbers = false for i = 1:2
-        ab2_step!(model, Δt)
+        bad_ab2_step!(model, Δt)
     end
     return nothing
 end
@@ -264,6 +291,28 @@ function run_reentrant_channel_model!(model, Tᵢ, wind_stress)
 
     # Step it forward
     loop!(model)
+
+    return nothing
+end
+
+function bad_ab2_step!(model, Δt)
+
+    grid = model.grid
+    compute_free_surface_tendency!(grid, model, model.free_surface)
+
+    FT = eltype(grid)
+    χ  = convert(FT, model.timestepper.χ)
+    Δt = convert(FT, Δt)
+
+    # Step locally velocity and tracers
+    @apply_regionally begin
+        scale_by_stretching_factor!(model.timestepper.Gⁿ, model.tracers, model.grid)
+        ab2_step_grid!(model.grid, model, model.vertical_coordinate, Δt, χ)
+        ab2_step_velocities!(model.velocities, model, Δt, χ)
+        ab2_step_tracers!(model.tracers, model, Δt, χ)
+    end
+
+    step_free_surface!(model.free_surface, model, model.timestepper, Δt)
 
     return nothing
 end
@@ -303,8 +352,8 @@ vTᵢ          = temperature_init(vmodel.grid, parameters)
 
 using InteractiveUtils
 
-@show @which time_step!(model, Δt₀)
-@show @which time_step!(vmodel, Δt₀)
+@show @which ab2_step!(model, Δt₀)
+@show @which ab2_step!(vmodel, Δt₀)
 
 @info "Comparing the pre-run model states..."
 
