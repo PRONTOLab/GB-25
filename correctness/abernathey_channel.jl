@@ -14,6 +14,8 @@ using Oceananigans.OutputReaders: FieldTimeSeries
 using Oceananigans.Grids: xnode, ynode, znode
 using Oceananigans.TurbulenceClosures: CATKEVerticalDiffusivity
 
+using SeawaterPolynomials
+
 #using Oceananigans.Architectures: GPU
 #using CUDA
 #CUDA.device!(0)
@@ -121,7 +123,7 @@ function make_grid(architecture, Nx, Ny, Nz, Δz_center)
     ridge = Field{Center, Center, Nothing}(underlying_grid)
     set!(ridge, ridge_function)
 
-    grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(ridge))
+    grid = underlying_grid #ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(ridge))
     return grid
 end
 
@@ -216,7 +218,7 @@ function build_model(grid, Δt₀, parameters)
         free_surface = SplitExplicitFreeSurface(substeps=500),
         momentum_advection = WENO(),
         tracer_advection = WENO(),
-        buoyancy = SeawaterBuoyancy(equation_of_state=LinearEquationOfState(Oceananigans.defaults.FloatType),constant_salinity=35),
+        buoyancy = SeawaterBuoyancy(equation_of_state=SeawaterPolynomials.TEOS10EquationOfState(Oceananigans.defaults.FloatType),constant_salinity=35),
         coriolis = coriolis,
         closure = (horizontal_closure, vertical_closure, vertical_closure_CATKE),
         tracers = (:T, :e),
@@ -354,7 +356,7 @@ compile_toc = time() - tic
 
 using FileIO, JLD2
 
-graph_directory = "run_abernathy_model_1000steps_linearEOS_v0973/"
+graph_directory = "run_abernathy_model_1000steps_noRidge_TEOS10/"
 filename        = graph_directory * "data_init.jld2"
 
 if !isdir(graph_directory) Base.Filesystem.mkdir(graph_directory) end

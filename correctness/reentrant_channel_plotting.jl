@@ -6,7 +6,7 @@ using GLMakie
 #
 
 
-graph_directory = "run_abernathy_model_1000steps_linearEOS_v0973/"
+graph_directory = "run_abernathy_model_1000steps_noRidge_TEOS10/"
 
 data1 = jldopen(graph_directory * "data_init.jld2", "r")
 
@@ -135,7 +135,7 @@ Colorbar(fig[1, 2], hm, label = "[m/s]")
 resize_to_layout!(fig)
 save(graph_directory * "init_wind_stress.png", fig)
 
-close(data)
+close(data1)
 
 #
 # Data from end of run:
