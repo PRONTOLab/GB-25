@@ -256,6 +256,7 @@ function bad_time_step!(model::AbstractModel{<:QuasiAdamsBashforth2TimeStepper, 
     ab2_timestepper.χ = χ
 
     # Full step for tracers, fractional step for velocities.
+    compute_flux_bc_tendencies!(model)
     ab2_step!(model, Δt)
 
     tick!(model.clock, Δt)
