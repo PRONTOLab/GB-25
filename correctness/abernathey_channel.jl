@@ -123,7 +123,7 @@ function make_grid(architecture, Nx, Ny, Nz, Δz_center)
     ridge = Field{Center, Center, Nothing}(underlying_grid)
     set!(ridge, ridge_function)
 
-    grid = underlying_grid #ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(ridge))
+    grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(ridge))
     return grid
 end
 
@@ -254,8 +254,8 @@ end
 
 # resting initial condition
 function temperature_init(grid, parameters)
-    ε(σ) = σ * randn()
-    Tᵢ_function(x, y, z) = parameters.ΔT * (exp(z / parameters.h) - exp(-Lz / parameters.h)) / (1 - exp(-Lz / parameters.h)) + ε(1e-8)
+    #ε(σ) = σ * randn()
+    Tᵢ_function(x, y, z) = parameters.ΔT * (exp(z / parameters.h) - exp(-Lz / parameters.h)) / (1 - exp(-Lz / parameters.h))# + ε(1e-8)
     Tᵢ = Field{Center, Center, Center}(grid)
     set!(Tᵢ, Tᵢ_function)
     return Tᵢ
@@ -267,7 +267,7 @@ end
 
 function loop!(model)
     Δt = model.clock.last_Δt
-    @trace mincut = true track_numbers = false for i = 1:1000
+    @trace mincut = true track_numbers = false for i = 1:10
         time_step!(model, Δt)
     end
     return nothing
@@ -279,7 +279,7 @@ function run_reentrant_channel_model!(model, Tᵢ, wind_stress)
     set!(model.tracers.T, Tᵢ)
 
     # Initialize the model
-    model.clock.iteration = 0
+    model.clock.iteration = 1
     model.clock.time = 0
 
     # Step it forward
@@ -323,7 +323,7 @@ end
 #####
 
 # Architecture
-architecture = ReactantState() #GPU()
+architecture = ReactantState()
 
 # Timestep size:
 Δt₀ = 5minutes 
@@ -337,58 +337,53 @@ Tᵢ          = temperature_init(model.grid, parameters)
 
 @info "Built $model."
 
-dmodel = Enzyme.make_zero(model)
-dTᵢ = Field{Center, Center, Center}(model.grid)
-dJ  = Field{Face, Center, Nothing}(model.grid)
+@info "Vanilla model as a comparison..."
 
-# Trying zonal transport:
-#@allowscalar zonal_transport = Field(Integral(model.velocities.u, dims=(2,3)))
+# Architecture
+varchitecture = CPU()
+
+# Timestep size:
+Δt₀ = 5minutes 
+
+# Make the grid:
+vgrid        = make_grid(varchitecture, Nx, Ny, Nz, Δz_center)
+vmodel       = build_model(vgrid, Δt₀, parameters)
+vwind_stress = wind_stress_init(vmodel.grid, parameters)
+vTᵢ          = temperature_init(vmodel.grid, parameters)
+
+using InteractiveUtils
+
+@show @which time_step!(model, Δt₀)
+@show @which time_step!(vmodel, Δt₀)
+
+@info "Comparing the pre-run model states..."
+
+throw_error = false
+include_halos = false
+rtol = sqrt(eps(Float64))
+atol = sqrt(eps(Float64))
+
+GordonBell25.compare_states(model, vmodel; include_halos, throw_error, rtol, atol)
 
 @info "Compiling the model run..."
 tic = time()
-restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(model, Tᵢ, wind_stress)
-#rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true  differentiate_tracer_error(model, Tᵢ, wind_stress, dmodel, dTᵢ, dJ)
+rrun_reentrant_channel_model! = @compile raise_first=true raise=true sync=true run_reentrant_channel_model!(model, Tᵢ, wind_stress)
 compile_toc = time() - tic
 
 @show compile_toc
 
-@info "Running the simulation..."
+@info "Running the simulations..."
 
-using FileIO, JLD2
+tic      = time()
+rrun_reentrant_channel_model!(model, Tᵢ, wind_stress)
+rrun_toc = time() - tic
+@show rrun_toc
 
-graph_directory = "run_abernathy_model_1000steps_noRidge_TEOS10/"
-filename        = graph_directory * "data_init.jld2"
+tic       = time()
+run_reentrant_channel_model!(vmodel, vTᵢ, vwind_stress)
+vrun_toc  = time() - tic
+@show vrun_toc
 
-if !isdir(graph_directory) Base.Filesystem.mkdir(graph_directory) end
+@info "Comparing the model states after running..."
 
-if isa(model.grid, ImmersedBoundaryGrid)
-    bottom_height = model.grid.immersed_boundary.bottom_height
-else
-    bottom_height = Field{Center, Center, Nothing}(model.grid)
-    set!(bottom_height, -Lz)
-end
-
-jldsave(filename; Nx, Ny, Nz,
-                  bottom_height=convert(Array, interior(bottom_height)),
-                  T_init=convert(Array, interior(model.tracers.T)),
-                  e_init=convert(Array, interior(model.tracers.e)),
-                  wind_stress=convert(Array, interior(wind_stress)))
-
-tic = time()
-avg_temp = restimate_tracer_error(model, Tᵢ, wind_stress)
-#rdifferentiate_tracer_error(model, bᵢ, wind_stress, dmodel, dbᵢ, dJ)
-run_toc = time() - tic
-
-@show run_toc
-@show avg_temp
-
-filename = graph_directory * "data_final.jld2"
-
-jldsave(filename; Nx, Ny, Nz,
-                  T_final=convert(Array, interior(model.tracers.T)),
-                  e_final=convert(Array, interior(model.tracers.e)),
-                  ssh=convert(Array, interior(model.free_surface.η)),
-                  u=convert(Array, interior(model.velocities.u)),
-                  v=convert(Array, interior(model.velocities.v)),
-                  w=convert(Array, interior(model.velocities.w)))
-
+GordonBell25.compare_states(model, vmodel; include_halos, throw_error, rtol, atol)
