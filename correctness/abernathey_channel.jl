@@ -216,7 +216,7 @@ using Oceananigans.TimeSteppers: update_state!,
 
 using Oceananigans.Biogeochemistry: update_biogeochemical_state!
 using Oceananigans.BoundaryConditions: update_boundary_conditions!
-using Oceananigans.TurbulenceClosures: compute_diffusivities!, implicit_step!
+using Oceananigans.TurbulenceClosures: compute_diffusivities!, implicit_step!, is_vertically_implicit
 using Oceananigans.ImmersedBoundaries: mask_immersed_field!, mask_immersed_field_xy!, inactive_node
 using Oceananigans.Models: update_model_field_time_series!
 using Oceananigans.Models.NonhydrostaticModels: update_hydrostatic_pressure!, p_kernel_parameters
@@ -249,7 +249,7 @@ function run_reentrant_channel_model!(model, Tᵢ)
 
     # Step it forward
     Δt = model.clock.last_Δt
-    implicit_step!(model.tracers.T,
+    bad_implicit_step!(model.tracers.T,
                 model.timestepper.implicit_solver,
                 model.closure,
                 model.diffusivity_fields,
@@ -258,6 +258,34 @@ function run_reentrant_channel_model!(model, Tᵢ)
                 Δt)
 
     return nothing
+end
+
+function bad_implicit_step!(field,
+                        implicit_solver,
+                        closure,
+                        diffusivity_fields,
+                        tracer_index,
+                        clock,
+                        Δt;
+                        kwargs...)
+
+    # Filter explicit closures for closure tuples
+    if closure isa Tuple
+        closure_tuple = closure
+        N = length(closure_tuple)
+        vi_closure            = Tuple(closure[n]            for n = 1:N if is_vertically_implicit(closure[n]))
+        vi_diffusivity_fields = Tuple(diffusivity_fields[n] for n = 1:N if is_vertically_implicit(closure[n]))
+    else
+        vi_closure = closure
+        vi_diffusivity_fields = diffusivity_fields
+    end
+
+    LX, LY, LZ = location(field)
+    # Nullify tracer_index if `field` is not a tracer
+    (LX, LY, LZ) == (Center, Center, Center) || (tracer_index = nothing)
+    return solve!(field, implicit_solver, field,
+                  # ivd_*_diagonal gets called with these args after (i, j, k, grid):
+                  vi_closure, vi_diffusivity_fields, tracer_index, LX(), LY(), LZ(), Δt, clock; kwargs...)
 end
 
 #####
@@ -308,6 +336,17 @@ using InteractiveUtils
                 Val(1),
                 vmodel.clock,
                 Δt₀)
+
+@show model.closure isa Tuple
+@show vmodel.closure isa Tuple
+
+#N  = length(model.closure)
+#vN = length(vmodel.closure)
+#@show Tuple(model.closure[n]            for n = 1:N if is_vertically_implicit(model.closure[n]))
+#@show Tuple(vmodel.closure[n]            for n = 1:vN if is_vertically_implicit(vmodel.closure[n]))
+
+#@show Tuple(model.diffusivity_fields[n]            for n = 1:N if is_vertically_implicit(model.closure[n]))
+#@show Tuple(vmodel.diffusivity_fields[n]            for n = 1:vN if is_vertically_implicit(vmodel.closure[n]))
 
 @info "Comparing the pre-run model states..."
 
