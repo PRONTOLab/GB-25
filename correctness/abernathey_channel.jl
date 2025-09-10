@@ -275,14 +275,13 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fiel
 function loop!(model)
     Δt = model.clock.last_Δt
     @trace mincut = true track_numbers = false for i = 1:2
-        bad_ab2_step!(model, Δt)
+        bad_ab2_step_tracers!(model.tracers, model, Δt, model.timestepper.χ)
     end
     return nothing
 end
 
-function run_reentrant_channel_model!(model, Tᵢ, wind_stress)
+function run_reentrant_channel_model!(model, Tᵢ)
     # setting IC's and BC's:
-    set!(model.velocities.u.boundary_conditions.top.condition, wind_stress)
     set!(model.tracers.T, Tᵢ)
 
     # Initialize the model
@@ -295,24 +294,34 @@ function run_reentrant_channel_model!(model, Tᵢ, wind_stress)
     return nothing
 end
 
-function bad_ab2_step!(model, Δt)
+function bad_ab2_step_tracers!(tracers, model, Δt, χ)
 
-    grid = model.grid
-    compute_free_surface_tendency!(grid, model, model.free_surface)
+    closure = model.closure
 
-    FT = eltype(grid)
-    χ  = convert(FT, model.timestepper.χ)
-    Δt = convert(FT, Δt)
+    # Tracer update kernels
+    for (tracer_index, tracer_name) in enumerate(propertynames(tracers))
 
-    # Step locally velocity and tracers
-    @apply_regionally begin
-        scale_by_stretching_factor!(model.timestepper.Gⁿ, model.tracers, model.grid)
-        ab2_step_grid!(model.grid, model, model.vertical_coordinate, Δt, χ)
-        ab2_step_velocities!(model.velocities, model, Δt, χ)
-        ab2_step_tracers!(model.tracers, model, Δt, χ)
+        if tracer_name == :e
+            @debug "Skipping AB2 step for e"
+        else
+            Gⁿ = model.timestepper.Gⁿ[tracer_name]
+            G⁻ = model.timestepper.G⁻[tracer_name]
+            tracer_field = tracers[tracer_name]
+            closure = model.closure
+            grid = model.grid
+
+            FT = eltype(grid)
+            launch!(grid.architecture, grid, :xyz, _ab2_step_tracer_field!, tracer_field, grid, convert(FT, Δt), χ, Gⁿ, G⁻)
+
+            implicit_step!(tracer_field,
+                           model.timestepper.implicit_solver,
+                           closure,
+                           model.diffusivity_fields,
+                           Val(tracer_index),
+                           model.clock,
+                           Δt)
+        end
     end
-
-    step_free_surface!(model.free_surface, model, model.timestepper, Δt)
 
     return nothing
 end
@@ -330,7 +339,6 @@ architecture = ReactantState()
 # Make the grid:
 grid        = make_grid(architecture, Nx, Ny, Nz, Δz_center)
 model       = build_model(grid, Δt₀, parameters)
-wind_stress = wind_stress_init(model.grid, parameters)
 Tᵢ          = temperature_init(model.grid, parameters)
 
 
@@ -347,13 +355,12 @@ varchitecture = CPU()
 # Make the grid:
 vgrid        = make_grid(varchitecture, Nx, Ny, Nz, Δz_center)
 vmodel       = build_model(vgrid, Δt₀, parameters)
-vwind_stress = wind_stress_init(vmodel.grid, parameters)
 vTᵢ          = temperature_init(vmodel.grid, parameters)
 
 using InteractiveUtils
 
-@show @which ab2_step!(model, Δt₀)
-@show @which ab2_step!(vmodel, Δt₀)
+@show @which ab2_step_tracers!(model.tracers, model, Δt₀, model.timestepper.χ)
+@show @which ab2_step_tracers!(vmodel.tracers, vmodel, Δt₀, vmodel.timestepper.χ)
 
 @info "Comparing the pre-run model states..."
 
@@ -366,7 +373,7 @@ GordonBell25.compare_states(model, vmodel; include_halos, throw_error, rtol, ato
 
 @info "Compiling the model run..."
 tic = time()
-rrun_reentrant_channel_model! = @compile raise_first=true raise=true sync=true run_reentrant_channel_model!(model, Tᵢ, wind_stress)
+rrun_reentrant_channel_model! = @compile raise_first=true raise=true sync=true run_reentrant_channel_model!(model, Tᵢ)
 compile_toc = time() - tic
 
 @show compile_toc
@@ -374,12 +381,12 @@ compile_toc = time() - tic
 @info "Running the simulations..."
 
 tic      = time()
-rrun_reentrant_channel_model!(model, Tᵢ, wind_stress)
+rrun_reentrant_channel_model!(model, Tᵢ)
 rrun_toc = time() - tic
 @show rrun_toc
 
 tic       = time()
-run_reentrant_channel_model!(vmodel, vTᵢ, vwind_stress)
+run_reentrant_channel_model!(vmodel, vTᵢ)
 vrun_toc  = time() - tic
 @show vrun_toc
 
