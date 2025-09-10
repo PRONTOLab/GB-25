@@ -36,7 +36,7 @@ Oceananigans.defaults.FloatType = Float64
 # number of grid points
 Nx = 16 #48 #96  # LowRes: 48
 Ny = 16 #96 #192 # LowRes: 96
-Nz = 32
+Nz = 16
 
 # stretched grid
 k_center = collect(1:Nz)
@@ -107,50 +107,6 @@ end
 
 function build_model(grid, Δt₀, parameters)
 
-    @inline function temperature_flux(i, j, grid, clock, model_fields, p)
-        y = ynode(j, grid, Center())
-        return ifelse(y < p.y_shutoff, p.Qᵀ * cos(3π * y / p.Ly), 0.0)
-    end
-
-    temperature_flux_bc = FluxBoundaryCondition(temperature_flux, discrete_form = true, parameters = parameters)
-
-    u_stress_bc = FluxBoundaryCondition(Field{Face, Center, Nothing}(grid))
-
-    @inline u_drag(i, j, grid, clock, model_fields, p) = @inbounds -p.μ * p.Lz * model_fields.u[i, j, 1]
-    @inline v_drag(i, j, grid, clock, model_fields, p) = @inbounds -p.μ * p.Lz * model_fields.v[i, j, 1]
-
-    u_drag_bc = FluxBoundaryCondition(u_drag, discrete_form = true, parameters = parameters)
-    v_drag_bc = FluxBoundaryCondition(v_drag, discrete_form = true, parameters = parameters)
-
-    T_bcs = FieldBoundaryConditions(top = temperature_flux_bc)
-
-    u_bcs = FieldBoundaryConditions(top = u_stress_bc, bottom = u_drag_bc)
-    v_bcs = FieldBoundaryConditions(bottom = v_drag_bc)
-
-    #####
-    ##### Coriolis
-    #####
-    coriolis = BetaPlane(f₀ = f, β = β)
-
-    #####
-    ##### Forcing and initial condition
-    #####
-
-    @inline initial_temperature(z, p) = p.ΔT * (exp(z / p.h) - exp(-p.Lz / p.h)) / (1 - exp(-p.Lz / p.h))
-    @inline mask(y, p)                = max(0.0, y - p.y_sponge) / (Ly - p.y_sponge)
-
-    @inline function temperature_relaxation(i, j, k, grid, clock, model_fields, p)
-        timescale = p.λt
-        y = ynode(j, grid, Center())
-        z = znode(k, grid, Center())
-        target_T = initial_temperature(z, p)
-        T = @inbounds model_fields.T[i, j, k]
-    
-        return -1 / timescale * mask(y, p) * (T - target_T)
-    end
-
-    FT = Forcing(temperature_relaxation, discrete_form = true, parameters = parameters)
-
     # closure
 
     κh = 0.5e-5 # [m²/s] horizontal diffusivity
@@ -169,15 +125,13 @@ function build_model(grid, Δt₀, parameters)
 
     model = HydrostaticFreeSurfaceModel(
         grid = grid,
-        free_surface = SplitExplicitFreeSurface(substeps=500),
-        momentum_advection = WENO(),
+        free_surface = SplitExplicitFreeSurface(substeps=50),
+        momentum_advection = nothing,
         tracer_advection = WENO(),
         buoyancy = SeawaterBuoyancy(equation_of_state=SeawaterPolynomials.TEOS10EquationOfState(Oceananigans.defaults.FloatType),constant_salinity=35),
-        coriolis = coriolis,
+        coriolis = nothing,
         closure = (horizontal_closure, vertical_closure, vertical_closure_CATKE),
-        tracers = (:T, :e),
-        boundary_conditions = (T = T_bcs, u = u_bcs, v = v_bcs),
-        forcing = (; T = FT)
+        tracers = (:T, :e)
     )
 
     model.clock.last_Δt = Δt₀
