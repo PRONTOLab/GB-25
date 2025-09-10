@@ -214,9 +214,7 @@ function run_reentrant_channel_model!(model, Tᵢ)
                 model.timestepper.implicit_solver,
                 model.closure,
                 model.diffusivity_fields,
-                1,
-                model.clock,
-                Δt)
+                1)
 
     return nothing
 end
@@ -225,9 +223,7 @@ function bad_implicit_step!(field,
                         solver,
                         closure,
                         diffusivity_fields,
-                        tracer_index,
-                        clock,
-                        Δt)
+                        tracer_index)
 
     # Filter explicit closures for closure tuples
     closure_tuple = closure
@@ -238,31 +234,22 @@ function bad_implicit_step!(field,
     launch!(solver.grid.architecture, solver.grid, :xy,
             bad_solve_batched_tridiagonal_system_kernel!,
             field,
-            solver.grid,
+            size(solver.grid, 3),
             vi_diffusivity_fields,
             tracer_index)
 end
 
-@kernel function bad_solve_batched_tridiagonal_system_kernel!(f, grid, K, id)
-    Nz = size(grid, 3)
+@kernel function bad_solve_batched_tridiagonal_system_kernel!(f, Nz, K, id)
     i, j = @index(Global, NTuple)
     
     @inbounds begin
-        β  = one(grid) - bad_ivd_lower_diagonal(i, j, 1, grid, K, id)
+        β  = 1 + K._tupled_tracer_diffusivities[id][i, j, 0] 
         f[i, j, 1] = f[i, j, 1] / β
 
         for k = 2:Nz
-            aᵏ⁻¹ = bad_ivd_lower_diagonal(i, j, k, grid, K, id)
-            β    = 1 - aᵏ⁻¹ / β
-
-            f[i, j, k] = (f[i, j, k] - aᵏ⁻¹ * f[i, j, k-1]) / β
+            f[i, j, k] = f[i, j, k] + K._tupled_tracer_diffusivities[id][i, j, k-1] * f[i, j, k-1]
         end
     end
-end
-
-@inline function bad_ivd_lower_diagonal(i, j, k, grid, K, id)
-    
-    return - ℑzᵃᵃᶠ(i, j, k, grid, K._tupled_tracer_diffusivities[id])
 end
 
 #####
