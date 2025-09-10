@@ -280,6 +280,9 @@ function bad_implicit_step!(field,
     vi_closure            = Tuple(closure[n]            for n = 1:N if is_vertically_implicit(closure[n]))
     vi_diffusivity_fields = Tuple(diffusivity_fields[n] for n = 1:N if is_vertically_implicit(closure[n]))
 
+    vi_closure            = vi_closure[1]
+    vi_diffusivity_fields = vi_diffusivity_fields[1]
+
     args = (vi_closure, vi_diffusivity_fields, tracer_index, Center(), Center(), Center(), Δt, clock)
 
     launch!(solver.grid.architecture, solver.grid, :xy,
@@ -294,22 +297,22 @@ end
     i, j = @index(Global, NTuple)
     
     @inbounds begin
-        β  = one(grid) - _ivd_lower_diagonal(i, j, 0, grid, args...)
+        β  = one(grid) - bad_ivd_lower_diagonal(i, j, 0, grid, args...)
         f[i, j, 1] = f[i, j, 1] / β
 
         for k = 2:Nz
-            aᵏ⁻¹ = _ivd_lower_diagonal(i, j, k-1, grid, args...)
+            aᵏ⁻¹ = bad_ivd_lower_diagonal(i, j, k-1, grid, args...)
             β    = 1 - aᵏ⁻¹ / β
 
             f[i, j, k] = (f[i, j, k] - aᵏ⁻¹ * f[i, j, k-1]) / β
         end
     end
 end
-#=
+
 @inline function bad_ivd_lower_diagonal(i, j, k′, grid, closure, K, id, ℓx, ℓy, ℓz, Δt, clock)
     k = k′ + 1 # Shift index to match LinearAlgebra.Tridiagonal indexing convenction
     closure_ij = getclosure(i, j, closure)
-    κᵏ     = ivd_diffusivity(i, j, k, grid, ℓx, ℓy, f, closure_ij, K, id, clock)
+    κᵏ     = ivd_diffusivity(i, j, k, grid, ℓx, ℓy, Face(), closure_ij, K, id, clock)
     Δz⁻¹ᶜₖ = Δz⁻¹(i, j, k, grid, ℓx, ℓy, Center())
     Δz⁻¹ᶠₖ = Δz⁻¹(i, j, k, grid, ℓx, ℓy, Face())
     dl     = - Δt * κᵏ * (Δz⁻¹ᶜₖ * Δz⁻¹ᶠₖ)
@@ -318,7 +321,7 @@ end
     # indexing convention, so that lower_diagonal should be defined for k′ = 1 ⋯ N-1.)
     return dl * !peripheral_node(i, j, k′, grid, ℓx, ℓy, Center())
 end
-=#
+
 
 #####
 ##### Actually creating our model and using these functions to run it:
