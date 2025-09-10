@@ -172,7 +172,8 @@ using Oceananigans.Biogeochemistry: update_biogeochemical_state!
 using Oceananigans.BoundaryConditions: update_boundary_conditions!
 using Oceananigans.TurbulenceClosures: compute_diffusivities!, implicit_step!,
                                        is_vertically_implicit, ivd_diagonal, _ivd_lower_diagonal,
-                                       _ivd_upper_diagonal, _implicit_linear_coefficient, ivd_diffusivity, getclosure
+                                       _ivd_upper_diagonal, _implicit_linear_coefficient, ivd_diffusivity, getclosure,
+                                       κzᶜᶜᶠ
 
 using Oceananigans.ImmersedBoundaries: mask_immersed_field!, mask_immersed_field_xy!, inactive_node
 using Oceananigans.Models: update_model_field_time_series!
@@ -251,11 +252,11 @@ end
     i, j = @index(Global, NTuple)
     
     @inbounds begin
-        β  = one(grid) - bad_ivd_lower_diagonal(i, j, 0, grid, args...)
+        β  = one(grid) - bad_ivd_lower_diagonal(i, j, 1, grid, args...)
         f[i, j, 1] = f[i, j, 1] / β
 
         for k = 2:Nz
-            aᵏ⁻¹ = bad_ivd_lower_diagonal(i, j, k-1, grid, args...)
+            aᵏ⁻¹ = bad_ivd_lower_diagonal(i, j, k, grid, args...)
             β    = 1 - aᵏ⁻¹ / β
 
             f[i, j, k] = (f[i, j, k] - aᵏ⁻¹ * f[i, j, k-1]) / β
@@ -263,17 +264,15 @@ end
     end
 end
 
-@inline function bad_ivd_lower_diagonal(i, j, k′, grid, closure, K, id, ℓx, ℓy, ℓz, Δt, clock)
-    k = k′ + 1 # Shift index to match LinearAlgebra.Tridiagonal indexing convenction
+@inline function bad_ivd_lower_diagonal(i, j, k, grid, closure, K, id, ℓx, ℓy, ℓz, Δt, clock)
     closure_ij = getclosure(i, j, closure)
-    κᵏ     = ivd_diffusivity(i, j, k, grid, ℓx, ℓy, Face(), closure_ij, K, id, clock)
-    Δz⁻¹ᶜₖ = Δz⁻¹(i, j, k, grid, ℓx, ℓy, Center())
-    Δz⁻¹ᶠₖ = Δz⁻¹(i, j, k, grid, ℓx, ℓy, Face())
-    dl     = - Δt * κᵏ * (Δz⁻¹ᶜₖ * Δz⁻¹ᶠₖ)
+    κᵏ     = bad_ivd_diffusivity(i, j, k, grid, ℓx, ℓy, Face(), closure_ij, K, id, clock)
+    
+    return - 0.3675κᵏ
+end
 
-    # This conditional ensures the diagonal is correct. (Note we use LinearAlgebra.Tridiagonal
-    # indexing convention, so that lower_diagonal should be defined for k′ = 1 ⋯ N-1.)
-    return dl * !peripheral_node(i, j, k′, grid, ℓx, ℓy, Center())
+@inline function bad_ivd_diffusivity(i, j, k, grid, ::Center, ::Center, ::Face, args...)
+    return κzᶜᶜᶠ(i, j, k, grid, args...) * !inactive_node(i, j, k, grid, Center(), Center(), Face())
 end
 
 
