@@ -262,13 +262,12 @@ function run_reentrant_channel_model!(model, Tᵢ)
 end
 
 function bad_implicit_step!(field,
-                        implicit_solver,
+                        solver,
                         closure,
                         diffusivity_fields,
                         tracer_index,
                         clock,
-                        Δt;
-                        kwargs...)
+                        Δt)
 
     # Filter explicit closures for closure tuples
     closure_tuple = closure
@@ -276,21 +275,24 @@ function bad_implicit_step!(field,
     vi_closure            = Tuple(closure[n]            for n = 1:N if is_vertically_implicit(closure[n]))
     vi_diffusivity_fields = Tuple(diffusivity_fields[n] for n = 1:N if is_vertically_implicit(closure[n]))
 
-    return bad_solve!(field, implicit_solver, field,
-                  vi_closure, vi_diffusivity_fields, tracer_index, Center(), Center(), Center(), Δt, clock; kwargs...)
+    args = (vi_closure, vi_diffusivity_fields, tracer_index, Center(), Center(), Center(), Δt, clock)
+
+    launch!(solver.grid.architecture, solver.grid, :xy,
+            solve_batched_tridiagonal_system_kernel!, field,
+            solver.a,
+            solver.b,
+            solver.c,
+            field,
+            solver.t,
+            solver.grid,
+            solver.parameters,
+            args,
+            solver.tridiagonal_direction)
 end
 
 function bad_solve!(ϕ, solver, rhs, args...)
 
-    launch_config = if solver.tridiagonal_direction isa XDirection
-                        :yz
-                    elseif solver.tridiagonal_direction isa YDirection
-                        :xz
-                    elseif solver.tridiagonal_direction isa ZDirection
-                        :xy
-                    end
-
-    launch!(solver.grid.architecture, solver.grid, launch_config,
+    launch!(solver.grid.architecture, solver.grid, :xy,
             solve_batched_tridiagonal_system_kernel!, ϕ,
             solver.a,
             solver.b,
