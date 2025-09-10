@@ -11,7 +11,7 @@ using Statistics
 using Oceananigans
 using Oceananigans.Units
 using Oceananigans.OutputReaders: FieldTimeSeries
-using Oceananigans.Grids: xnode, ynode, znode, XDirection, YDirection, ZDirection
+using Oceananigans.Grids: xnode, ynode, znode, XDirection, YDirection, ZDirection, peripheral_node
 using Oceananigans.TurbulenceClosures: CATKEVerticalDiffusivity
 
 using SeawaterPolynomials
@@ -34,8 +34,8 @@ Oceananigans.defaults.FloatType = Float64
 #
 
 # number of grid points
-Nx = 48 #96  # LowRes: 48
-Ny = 96 #192 # LowRes: 96
+Nx = 16 #48 #96  # LowRes: 48
+Ny = 16 #96 #192 # LowRes: 96
 Nz = 32
 
 # stretched grid
@@ -216,13 +216,16 @@ using Oceananigans.TimeSteppers: update_state!,
 
 using Oceananigans.Biogeochemistry: update_biogeochemical_state!
 using Oceananigans.BoundaryConditions: update_boundary_conditions!
-using Oceananigans.TurbulenceClosures: compute_diffusivities!, implicit_step!, is_vertically_implicit, ivd_diagonal, _ivd_lower_diagonal, _ivd_upper_diagonal, _implicit_linear_coefficient
+using Oceananigans.TurbulenceClosures: compute_diffusivities!, implicit_step!,
+                                       is_vertically_implicit, ivd_diagonal, _ivd_lower_diagonal,
+                                       _ivd_upper_diagonal, _implicit_linear_coefficient, ivd_diffusivity, getclosure
+
 using Oceananigans.ImmersedBoundaries: mask_immersed_field!, mask_immersed_field_xy!, inactive_node
 using Oceananigans.Models: update_model_field_time_series!
 using Oceananigans.Models.NonhydrostaticModels: update_hydrostatic_pressure!, p_kernel_parameters
 using Oceananigans.Fields: tupled_fill_halo_regions!
 using Oceananigans.Solvers: solve!, solve_batched_tridiagonal_system_kernel!, solve_batched_tridiagonal_system_z!, get_coefficient
-using Oceananigans.Operators: σⁿ, σ⁻
+using Oceananigans.Operators: σⁿ, σ⁻, Δz⁻¹
 
 using Oceananigans.Models.NonhydrostaticModels: compute_auxiliaries!, p_kernel_parameters
 using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fields!,
@@ -282,12 +285,11 @@ function bad_implicit_step!(field,
     launch!(solver.grid.architecture, solver.grid, :xy,
             bad_solve_batched_tridiagonal_system_kernel!,
             field,
-            solver.t,
             solver.grid,
             args)
 end
 
-@kernel function bad_solve_batched_tridiagonal_system_kernel!(f, t, grid, args)
+@kernel function bad_solve_batched_tridiagonal_system_kernel!(f, grid, args)
     Nz = size(grid, 3)
     i, j = @index(Global, NTuple)
     
@@ -297,14 +299,26 @@ end
 
         for k = 2:Nz
             aᵏ⁻¹ = _ivd_lower_diagonal(i, j, k-1, grid, args...)
-
-            t[i, j, k] = 1.0 / β
-            β = 1 - aᵏ⁻¹ * t[i, j, k]
+            β    = 1 - aᵏ⁻¹ / β
 
             f[i, j, k] = (f[i, j, k] - aᵏ⁻¹ * f[i, j, k-1]) / β
         end
     end
 end
+#=
+@inline function bad_ivd_lower_diagonal(i, j, k′, grid, closure, K, id, ℓx, ℓy, ℓz, Δt, clock)
+    k = k′ + 1 # Shift index to match LinearAlgebra.Tridiagonal indexing convenction
+    closure_ij = getclosure(i, j, closure)
+    κᵏ     = ivd_diffusivity(i, j, k, grid, ℓx, ℓy, f, closure_ij, K, id, clock)
+    Δz⁻¹ᶜₖ = Δz⁻¹(i, j, k, grid, ℓx, ℓy, Center())
+    Δz⁻¹ᶠₖ = Δz⁻¹(i, j, k, grid, ℓx, ℓy, Face())
+    dl     = - Δt * κᵏ * (Δz⁻¹ᶜₖ * Δz⁻¹ᶠₖ)
+
+    # This conditional ensures the diagonal is correct. (Note we use LinearAlgebra.Tridiagonal
+    # indexing convention, so that lower_diagonal should be defined for k′ = 1 ⋯ N-1.)
+    return dl * !peripheral_node(i, j, k′, grid, ℓx, ℓy, Center())
+end
+=#
 
 #####
 ##### Actually creating our model and using these functions to run it:
@@ -337,14 +351,15 @@ vgrid        = make_grid(varchitecture, Nx, Ny, Nz, Δz_center)
 vmodel       = build_model(vgrid, Δt₀, parameters)
 vTᵢ          = temperature_init(vmodel.grid, parameters)
 
-@show @which get_coefficient(2, 2, 1, model.grid, model.timestepper.implicit_solver.a, model.timestepper.implicit_solver.parameters, model.timestepper.implicit_solver.tridiagonal_direction, 3, 2)
-@show @which get_coefficient(2, 2, 1, vmodel.grid, vmodel.timestepper.implicit_solver.a, vmodel.timestepper.implicit_solver.parameters, vmodel.timestepper.implicit_solver.tridiagonal_direction, 3, 2)
+#=
+N = length(model.closure)
+vi_closure = Tuple(model.closure[n] for n = 1:N if is_vertically_implicit(model.closure[n]))
+@show @which getclosure(1, 1, vi_closure)
 
-@show @which get_coefficient(2, 2, 2, model.grid, model.timestepper.implicit_solver.b, model.timestepper.implicit_solver.parameters, model.timestepper.implicit_solver.tridiagonal_direction, 3, 2)
-@show @which get_coefficient(2, 2, 2, vmodel.grid, vmodel.timestepper.implicit_solver.b, vmodel.timestepper.implicit_solver.parameters, vmodel.timestepper.implicit_solver.tridiagonal_direction, 3, 2)
-
-@show @which get_coefficient(2, 2, 2, model.grid, model.timestepper.implicit_solver.c, model.timestepper.implicit_solver.parameters, model.timestepper.implicit_solver.tridiagonal_direction, 3, 2)
-@show @which get_coefficient(2, 2, 2, vmodel.grid, vmodel.timestepper.implicit_solver.c, vmodel.timestepper.implicit_solver.parameters, vmodel.timestepper.implicit_solver.tridiagonal_direction, 3, 2)
+vN = length(vmodel.closure)
+vvi_closure = Tuple(vmodel.closure[n] for n = 1:vN if is_vertically_implicit(vmodel.closure[n]))
+@show @which getclosure(1, 1, vvi_closure)
+=#
 
 @info "Comparing the pre-run model states..."
 
