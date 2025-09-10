@@ -216,7 +216,7 @@ using Oceananigans.TimeSteppers: update_state!,
 
 using Oceananigans.Biogeochemistry: update_biogeochemical_state!
 using Oceananigans.BoundaryConditions: update_boundary_conditions!
-using Oceananigans.TurbulenceClosures: compute_diffusivities!, implicit_step!, is_vertically_implicit
+using Oceananigans.TurbulenceClosures: compute_diffusivities!, implicit_step!, is_vertically_implicit, ivd_diagonal, _ivd_lower_diagonal, _ivd_upper_diagonal, _implicit_linear_coefficient
 using Oceananigans.ImmersedBoundaries: mask_immersed_field!, mask_immersed_field_xy!, inactive_node
 using Oceananigans.Models: update_model_field_time_series!
 using Oceananigans.Models.NonhydrostaticModels: update_hydrostatic_pressure!, p_kernel_parameters
@@ -280,56 +280,40 @@ function bad_implicit_step!(field,
     args = (vi_closure, vi_diffusivity_fields, tracer_index, Center(), Center(), Center(), Δt, clock)
 
     launch!(solver.grid.architecture, solver.grid, :xy,
-            bad_solve_batched_tridiagonal_system_kernel!, field,
-            solver.a,
-            solver.b,
-            solver.c,
+            bad_solve_batched_tridiagonal_system_kernel!,
             field,
             solver.t,
             solver.grid,
-            solver.parameters,
-            args,
-            solver.tridiagonal_direction)
+            args)
 end
 
-@kernel function bad_solve_batched_tridiagonal_system_kernel!(ϕ, a, b, c, f, t, grid, p, args, tridiagonal_direction)
+@kernel function bad_solve_batched_tridiagonal_system_kernel!(f, t, grid, args)
     Nz = size(grid, 3)
     i, j = @index(Global, NTuple)
-    bad_solve_batched_tridiagonal_system_z!(i, j, Nz, ϕ, a, b, c, f, t, grid, p, args, tridiagonal_direction)
-end
-#=
-@inline get_coefficient(i, j, k, grid, a::AbstractArray{<:Any, 1}, p, ::XDirection,          args...) = @inbounds a[i]
-@inline get_coefficient(i, j, k, grid, a::AbstractArray{<:Any, 1}, p, ::YDirection,          args...) = @inbounds a[j]
-@inline get_coefficient(i, j, k, grid, a::AbstractArray{<:Any, 1}, p, ::ZDirection,          args...) = @inbounds a[k]
-@inline get_coefficient(i, j, k, grid, a::AbstractArray{<:Any, 3}, p, tridiagonal_direction, args...) = @inbounds a[i, j, k]
-=#
-@inline function bad_solve_batched_tridiagonal_system_z!(i, j, Nz, ϕ, a, b, c, f, t, grid, p, args, tridiagonal_direction)
+    
     @inbounds begin
-        β  = get_coefficient(i, j, 1, grid, b, p, tridiagonal_direction, args...)
-        f₁ = f[i, j, 1] #get_coefficient(i, j, 1, grid, f, p, tridiagonal_direction, args...)
-        ϕ[i, j, 1] = f₁ / β
+        β  = bad_ivd_diagonal(i, j, 1, grid, args...)
+        f[i, j, 1] = f[i, j, 1] / β
 
         for k = 2:Nz
-            cᵏ⁻¹ = get_coefficient(i, j, k-1, grid, c, p, tridiagonal_direction, args...)
-            bᵏ   = get_coefficient(i, j, k,   grid, b, p, tridiagonal_direction, args...)
-            aᵏ⁻¹ = get_coefficient(i, j, k-1, grid, a, p, tridiagonal_direction, args...)
+            aᵏ⁻¹ = _ivd_lower_diagonal(i, j, k-1, grid, args...)
 
-            t[i, j, k] = cᵏ⁻¹ / β
-            β = bᵏ - aᵏ⁻¹ * t[i, j, k]
-            fᵏ = f[i, j, k] #get_coefficient(i, j, k, grid, f, p, tridiagonal_direction, args...)
+            t[i, j, k] = 1.0 / β
+            β = 1 - aᵏ⁻¹ * t[i, j, k]
 
             # If the problem is not diagonally-dominant such that `β ≈ 0`,
             # the algorithm is unstable and we elide the forward pass update of `ϕ`.
-            definitely_diagonally_dominant = abs(β) > 10 * eps(eltype(ϕ))
-            ϕ★ = (fᵏ - aᵏ⁻¹ * ϕ[i, j, k-1]) / β
-            ϕ[i, j, k] = ifelse(definitely_diagonally_dominant, ϕ★, ϕ[i, j, k])
-        end
-
-        for k = Nz-1:-1:1
-            ϕ[i, j, k] -= t[i, j, k+1] * ϕ[i, j, k+1]
+            definitely_diagonally_dominant = abs(β) > 10 * eps(eltype(f))
+            f★ = (f[i, j, k] - aᵏ⁻¹ * f[i, j, k-1]) / β
+            f[i, j, k] = ifelse(definitely_diagonally_dominant, f★, f[i, j, k])
         end
     end
 end
+
+@inline bad_ivd_diagonal(i, j, k, grid, closure, K, id, ℓx, ℓy, ℓz, Δt, clock) =
+    one(grid) - Δt * _implicit_linear_coefficient(i, j, k,   grid, closure, K, id, ℓx, ℓy, ℓz, Δt, clock) -
+                              _ivd_upper_diagonal(i, j, k,   grid, closure, K, id, ℓx, ℓy, ℓz, Δt, clock) -
+                              _ivd_lower_diagonal(i, j, k-1, grid, closure, K, id, ℓx, ℓy, ℓz, Δt, clock)
 
 #####
 ##### Actually creating our model and using these functions to run it:
@@ -362,23 +346,14 @@ vgrid        = make_grid(varchitecture, Nx, Ny, Nz, Δz_center)
 vmodel       = build_model(vgrid, Δt₀, parameters)
 vTᵢ          = temperature_init(vmodel.grid, parameters)
 
-launch_config = if model.timestepper.implicit_solver.tridiagonal_direction isa XDirection
-                        :yz
-                    elseif model.timestepper.implicit_solver.tridiagonal_direction isa YDirection
-                        :xz
-                    elseif model.timestepper.implicit_solver.tridiagonal_direction isa ZDirection
-                        :xy
-                    end
+@show @which get_coefficient(2, 2, 1, model.grid, model.timestepper.implicit_solver.a, model.timestepper.implicit_solver.parameters, model.timestepper.implicit_solver.tridiagonal_direction, 3, 2)
+@show @which get_coefficient(2, 2, 1, vmodel.grid, vmodel.timestepper.implicit_solver.a, vmodel.timestepper.implicit_solver.parameters, vmodel.timestepper.implicit_solver.tridiagonal_direction, 3, 2)
 
-vlaunch_config = if vmodel.timestepper.implicit_solver.tridiagonal_direction isa XDirection
-                        :yz
-                    elseif vmodel.timestepper.implicit_solver.tridiagonal_direction isa YDirection
-                        :xz
-                    elseif vmodel.timestepper.implicit_solver.tridiagonal_direction isa ZDirection
-                        :xy
-                    end
+@show @which get_coefficient(2, 2, 2, model.grid, model.timestepper.implicit_solver.b, model.timestepper.implicit_solver.parameters, model.timestepper.implicit_solver.tridiagonal_direction, 3, 2)
+@show @which get_coefficient(2, 2, 2, vmodel.grid, vmodel.timestepper.implicit_solver.b, vmodel.timestepper.implicit_solver.parameters, vmodel.timestepper.implicit_solver.tridiagonal_direction, 3, 2)
 
-@show launch_config, vlaunch_config
+@show @which get_coefficient(2, 2, 2, model.grid, model.timestepper.implicit_solver.c, model.timestepper.implicit_solver.parameters, model.timestepper.implicit_solver.tridiagonal_direction, 3, 2)
+@show @which get_coefficient(2, 2, 2, vmodel.grid, vmodel.timestepper.implicit_solver.c, vmodel.timestepper.implicit_solver.parameters, vmodel.timestepper.implicit_solver.tridiagonal_direction, 3, 2)
 
 @info "Comparing the pre-run model states..."
 
