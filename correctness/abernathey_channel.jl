@@ -27,32 +27,6 @@ using Oceananigans.Architectures: ReactantState
 
 using Enzyme
 
-#=
-# https://github.com/CliMA/Oceananigans.jl/blob/c29939097a8d2f42966e930f2f2605803bf5d44c/src/AbstractOperations/binary_operations.jl#L5
-Base.@nospecializeinfer function Reactant.traced_type_inner(
-    @nospecialize(OA::Type{Oceananigans.AbstractOperations.BinaryOperation{LX, LY, LZ, O, A, B, IA, IB, G, T}}),
-    seen,
-    mode::Reactant.TraceMode,
-    @nospecialize(track_numbers::Type),
-    @nospecialize(sharding),
-    @nospecialize(runtime)
-) where {LX, LY, LZ, O, A, B, IA, IB, G, T}
-    LX2 = Reactant.traced_type_inner(LX, seen, mode, track_numbers, sharding, runtime)
-    LY2 = Reactant.traced_type_inner(LY, seen, mode, track_numbers, sharding, runtime)
-    LZ2 = Reactant.traced_type_inner(LZ, seen, mode, track_numbers, sharding, runtime)
-
-    O2 = Reactant.traced_type_inner(O, seen, mode, track_numbers, sharding, runtime)
-
-    A2 = Reactant.traced_type_inner(A, seen, mode, track_numbers, sharding, runtime)
-    B2 = Reactant.traced_type_inner(B, seen, mode, track_numbers, sharding, runtime)
-    IA2 = Reactant.traced_type_inner(IA, seen, mode, track_numbers, sharding, runtime)
-    IB2 = Reactant.traced_type_inner(IB, seen, mode, track_numbers, sharding, runtime)
-    G2 = Reactant.traced_type_inner(G, seen, mode, track_numbers, sharding, runtime)
-
-    T2 = eltype(G2)
-    return Oceananigans.AbstractOperations.BinaryOperation{LX2, LY2, LZ2, O2, A2, B2, IA2, IB2, G2, T2}
-end
-=#
 Oceananigans.defaults.FloatType = Float64
 
 #
@@ -215,14 +189,6 @@ end
 ##### Special initial and boundary conditions
 #####
 
-# wind stress:
-function wind_stress_init(grid, p)
-    @inline u_stress(x, y) = -p.τ * sin(π * y / p.Ly)
-    wind_stress = Field{Face, Center, Nothing}(grid)
-    set!(wind_stress, u_stress)
-    return wind_stress
-end
-
 # resting initial condition
 function temperature_init(grid, parameters)
     Tᵢ_function(x, y, z) = parameters.ΔT * (exp(z / parameters.h) - exp(-Lz / parameters.h)) / (1 - exp(-Lz / parameters.h))
@@ -272,13 +238,6 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fiel
                                                         step_free_surface!,
                                                         _ab2_step_tracer_field!
 
-function loop!(model)
-    Δt = model.clock.last_Δt
-    @trace mincut = true track_numbers = false for i = 1:2
-        bad_ab2_step_tracers!(model.tracers, model, Δt, model.timestepper.χ)
-    end
-    return nothing
-end
 
 function run_reentrant_channel_model!(model, Tᵢ)
     # setting IC's and BC's:
@@ -289,39 +248,14 @@ function run_reentrant_channel_model!(model, Tᵢ)
     model.clock.time = 0
 
     # Step it forward
-    loop!(model)
-
-    return nothing
-end
-
-function bad_ab2_step_tracers!(tracers, model, Δt, χ)
-
-    closure = model.closure
-
-    # Tracer update kernels
-    for (tracer_index, tracer_name) in enumerate(propertynames(tracers))
-
-        if tracer_name == :e
-            @debug "Skipping AB2 step for e"
-        else
-            Gⁿ = model.timestepper.Gⁿ[tracer_name]
-            G⁻ = model.timestepper.G⁻[tracer_name]
-            tracer_field = tracers[tracer_name]
-            closure = model.closure
-            grid = model.grid
-
-            FT = eltype(grid)
-            launch!(grid.architecture, grid, :xyz, _ab2_step_tracer_field!, tracer_field, grid, convert(FT, Δt), χ, Gⁿ, G⁻)
-
-            implicit_step!(tracer_field,
-                           model.timestepper.implicit_solver,
-                           closure,
-                           model.diffusivity_fields,
-                           Val(tracer_index),
-                           model.clock,
-                           Δt)
-        end
-    end
+    Δt = model.clock.last_Δt
+    implicit_step!(model.tracers.T,
+                model.timestepper.implicit_solver,
+                model.closure,
+                model.diffusivity_fields,
+                Val(1),
+                model.clock,
+                Δt)
 
     return nothing
 end
@@ -359,8 +293,21 @@ vTᵢ          = temperature_init(vmodel.grid, parameters)
 
 using InteractiveUtils
 
-@show @which ab2_step_tracers!(model.tracers, model, Δt₀, model.timestepper.χ)
-@show @which ab2_step_tracers!(vmodel.tracers, vmodel, Δt₀, vmodel.timestepper.χ)
+@show @which implicit_step!(model.tracers.T,
+                model.timestepper.implicit_solver,
+                model.closure,
+                model.diffusivity_fields,
+                Val(1),
+                model.clock,
+                Δt₀)
+
+@show @which implicit_step!(vmodel.tracers.T,
+                vmodel.timestepper.implicit_solver,
+                vmodel.closure,
+                vmodel.diffusivity_fields,
+                Val(1),
+                vmodel.clock,
+                Δt₀)
 
 @info "Comparing the pre-run model states..."
 
