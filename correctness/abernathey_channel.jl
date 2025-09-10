@@ -221,7 +221,7 @@ using Oceananigans.ImmersedBoundaries: mask_immersed_field!, mask_immersed_field
 using Oceananigans.Models: update_model_field_time_series!
 using Oceananigans.Models.NonhydrostaticModels: update_hydrostatic_pressure!, p_kernel_parameters
 using Oceananigans.Fields: tupled_fill_halo_regions!
-using Oceananigans.Solvers: solve!, solve_batched_tridiagonal_system_kernel!, solve_batched_tridiagonal_system_z!
+using Oceananigans.Solvers: solve!, solve_batched_tridiagonal_system_kernel!, solve_batched_tridiagonal_system_z!, get_coefficient
 using Oceananigans.Operators: σⁿ, σ⁻
 
 using Oceananigans.Models.NonhydrostaticModels: compute_auxiliaries!, p_kernel_parameters
@@ -295,18 +295,18 @@ end
 @kernel function bad_solve_batched_tridiagonal_system_kernel!(ϕ, a, b, c, f, t, grid, p, args, tridiagonal_direction)
     Nz = size(grid, 3)
     i, j = @index(Global, NTuple)
-    solve_batched_tridiagonal_system_z!(i, j, Nz, ϕ, a, b, c, f, t, grid, p, args, tridiagonal_direction)
+    bad_solve_batched_tridiagonal_system_z!(i, j, Nz, ϕ, a, b, c, f, t, grid, p, args, tridiagonal_direction)
 end
 #=
 @inline get_coefficient(i, j, k, grid, a::AbstractArray{<:Any, 1}, p, ::XDirection,          args...) = @inbounds a[i]
 @inline get_coefficient(i, j, k, grid, a::AbstractArray{<:Any, 1}, p, ::YDirection,          args...) = @inbounds a[j]
 @inline get_coefficient(i, j, k, grid, a::AbstractArray{<:Any, 1}, p, ::ZDirection,          args...) = @inbounds a[k]
 @inline get_coefficient(i, j, k, grid, a::AbstractArray{<:Any, 3}, p, tridiagonal_direction, args...) = @inbounds a[i, j, k]
-
+=#
 @inline function bad_solve_batched_tridiagonal_system_z!(i, j, Nz, ϕ, a, b, c, f, t, grid, p, args, tridiagonal_direction)
     @inbounds begin
         β  = get_coefficient(i, j, 1, grid, b, p, tridiagonal_direction, args...)
-        f₁ = get_coefficient(i, j, 1, grid, f, p, tridiagonal_direction, args...)
+        f₁ = f[i, j, 1] #get_coefficient(i, j, 1, grid, f, p, tridiagonal_direction, args...)
         ϕ[i, j, 1] = f₁ / β
 
         for k = 2:Nz
@@ -316,11 +316,11 @@ end
 
             t[i, j, k] = cᵏ⁻¹ / β
             β = bᵏ - aᵏ⁻¹ * t[i, j, k]
-            fᵏ = get_coefficient(i, j, k, grid, f, p, tridiagonal_direction, args...)
+            fᵏ = f[i, j, k] #get_coefficient(i, j, k, grid, f, p, tridiagonal_direction, args...)
 
             # If the problem is not diagonally-dominant such that `β ≈ 0`,
             # the algorithm is unstable and we elide the forward pass update of `ϕ`.
-            definitely_diagonally_dominant = abs(β) > 10 * eps(float_eltype(ϕ))
+            definitely_diagonally_dominant = abs(β) > 10 * eps(eltype(ϕ))
             ϕ★ = (fᵏ - aᵏ⁻¹ * ϕ[i, j, k-1]) / β
             ϕ[i, j, k] = ifelse(definitely_diagonally_dominant, ϕ★, ϕ[i, j, k])
         end
@@ -330,7 +330,7 @@ end
         end
     end
 end
-=#
+
 #####
 ##### Actually creating our model and using these functions to run it:
 #####
