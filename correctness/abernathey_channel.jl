@@ -34,8 +34,8 @@ Oceananigans.defaults.FloatType = Float64
 #
 
 # number of grid points
-Nx = 16 #48 #96  # LowRes: 48
-Ny = 16 #96 #192 # LowRes: 96
+Nx = 16
+Ny = 16
 Nz = 16
 
 # stretched grid
@@ -173,14 +173,14 @@ using Oceananigans.BoundaryConditions: update_boundary_conditions!
 using Oceananigans.TurbulenceClosures: compute_diffusivities!, implicit_step!,
                                        is_vertically_implicit, ivd_diagonal, _ivd_lower_diagonal,
                                        _ivd_upper_diagonal, _implicit_linear_coefficient, ivd_diffusivity, getclosure,
-                                       κzᶜᶜᶠ
+                                       κzᶜᶜᶠ, κᶜᶜᶠ, diffusivity
 
 using Oceananigans.ImmersedBoundaries: mask_immersed_field!, mask_immersed_field_xy!, inactive_node
 using Oceananigans.Models: update_model_field_time_series!
 using Oceananigans.Models.NonhydrostaticModels: update_hydrostatic_pressure!, p_kernel_parameters
 using Oceananigans.Fields: tupled_fill_halo_regions!
 using Oceananigans.Solvers: solve!, solve_batched_tridiagonal_system_kernel!, solve_batched_tridiagonal_system_z!, get_coefficient
-using Oceananigans.Operators: σⁿ, σ⁻, Δz⁻¹
+using Oceananigans.Operators: σⁿ, σ⁻, Δz⁻¹, ℑzᵃᵃᶠ
 
 using Oceananigans.Models.NonhydrostaticModels: compute_auxiliaries!, p_kernel_parameters
 using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fields!,
@@ -214,7 +214,7 @@ function run_reentrant_channel_model!(model, Tᵢ)
                 model.timestepper.implicit_solver,
                 model.closure,
                 model.diffusivity_fields,
-                Val(1),
+                1,
                 model.clock,
                 Δt)
 
@@ -232,31 +232,27 @@ function bad_implicit_step!(field,
     # Filter explicit closures for closure tuples
     closure_tuple = closure
     N = length(closure_tuple)
-    vi_closure            = Tuple(closure[n]            for n = 1:N if is_vertically_implicit(closure[n]))
     vi_diffusivity_fields = Tuple(diffusivity_fields[n] for n = 1:N if is_vertically_implicit(closure[n]))
-
-    vi_closure            = vi_closure[1]
     vi_diffusivity_fields = vi_diffusivity_fields[1]
-
-    args = (vi_closure, vi_diffusivity_fields, tracer_index, Center(), Center(), Center(), Δt, clock)
 
     launch!(solver.grid.architecture, solver.grid, :xy,
             bad_solve_batched_tridiagonal_system_kernel!,
             field,
             solver.grid,
-            args)
+            vi_diffusivity_fields,
+            tracer_index)
 end
 
-@kernel function bad_solve_batched_tridiagonal_system_kernel!(f, grid, args)
+@kernel function bad_solve_batched_tridiagonal_system_kernel!(f, grid, K, id)
     Nz = size(grid, 3)
     i, j = @index(Global, NTuple)
     
     @inbounds begin
-        β  = one(grid) - bad_ivd_lower_diagonal(i, j, 1, grid, args...)
+        β  = one(grid) - bad_ivd_lower_diagonal(i, j, 1, grid, K, id)
         f[i, j, 1] = f[i, j, 1] / β
 
         for k = 2:Nz
-            aᵏ⁻¹ = bad_ivd_lower_diagonal(i, j, k, grid, args...)
+            aᵏ⁻¹ = bad_ivd_lower_diagonal(i, j, k, grid, K, id)
             β    = 1 - aᵏ⁻¹ / β
 
             f[i, j, k] = (f[i, j, k] - aᵏ⁻¹ * f[i, j, k-1]) / β
@@ -264,17 +260,10 @@ end
     end
 end
 
-@inline function bad_ivd_lower_diagonal(i, j, k, grid, closure, K, id, ℓx, ℓy, ℓz, Δt, clock)
-    closure_ij = getclosure(i, j, closure)
-    κᵏ     = bad_ivd_diffusivity(i, j, k, grid, ℓx, ℓy, Face(), closure_ij, K, id, clock)
+@inline function bad_ivd_lower_diagonal(i, j, k, grid, K, id)
     
-    return - 0.3675κᵏ
+    return - ℑzᵃᵃᶠ(i, j, k, grid, K._tupled_tracer_diffusivities[id])
 end
-
-@inline function bad_ivd_diffusivity(i, j, k, grid, ::Center, ::Center, ::Face, args...)
-    return κzᶜᶜᶠ(i, j, k, grid, args...) * !inactive_node(i, j, k, grid, Center(), Center(), Face())
-end
-
 
 #####
 ##### Actually creating our model and using these functions to run it:
@@ -307,15 +296,25 @@ vgrid        = make_grid(varchitecture, Nx, Ny, Nz, Δz_center)
 vmodel       = build_model(vgrid, Δt₀, parameters)
 vTᵢ          = temperature_init(vmodel.grid, parameters)
 
-#=
+
 N = length(model.closure)
-vi_closure = Tuple(model.closure[n] for n = 1:N if is_vertically_implicit(model.closure[n]))
-@show @which getclosure(1, 1, vi_closure)
+vi_closure            = Tuple(model.closure[n]            for n = 1:N if is_vertically_implicit(model.closure[n]))
+vi_diffusivity_fields = Tuple(model.diffusivity_fields[n] for n = 1:N if is_vertically_implicit(model.closure[n]))
+@show @which getclosure(1, 1, vi_closure[1])
 
 vN = length(vmodel.closure)
-vvi_closure = Tuple(vmodel.closure[n] for n = 1:vN if is_vertically_implicit(vmodel.closure[n]))
-@show @which getclosure(1, 1, vvi_closure)
-=#
+vvi_closure            = Tuple(vmodel.closure[n]            for n = 1:vN if is_vertically_implicit(vmodel.closure[n]))
+vvi_diffusivity_fields = Tuple(vmodel.diffusivity_fields[n] for n = 1:vN if is_vertically_implicit(vmodel.closure[n]))
+@show @which getclosure(1, 1, vvi_closure[1])
+
+@show @which diffusivity(vi_closure[1], vi_diffusivity_fields[1], Val(1))
+@show @which diffusivity(vvi_closure[1], vvi_diffusivity_fields[1], Val(1))
+
+@show @which κᶜᶜᶠ(1, 1, 1, model.timestepper.implicit_solver.grid, (Center(), Center(), Center()), diffusivity(vi_closure[1], vi_diffusivity_fields[1], Val(1)), Val(1), model.clock)
+@show @which κᶜᶜᶠ(1, 1, 1, vmodel.timestepper.implicit_solver.grid, (Center(), Center(), Center()), diffusivity(vvi_closure[1], vvi_diffusivity_fields[1], Val(1)), Val(1), vmodel.clock)
+
+@show @which ℑzᵃᵃᶠ(1, 1, 1, model.timestepper.implicit_solver.grid, vi_diffusivity_fields[1]._tupled_tracer_diffusivities[1])
+@show @which ℑzᵃᵃᶠ(1, 1, 1, vmodel.timestepper.implicit_solver.grid, vvi_diffusivity_fields[1]._tupled_tracer_diffusivities[1])
 
 @info "Comparing the pre-run model states..."
 
