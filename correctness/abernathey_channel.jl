@@ -11,7 +11,7 @@ using Statistics
 using Oceananigans
 using Oceananigans.Units
 using Oceananigans.OutputReaders: FieldTimeSeries
-using Oceananigans.Grids: xnode, ynode, znode
+using Oceananigans.Grids: xnode, ynode, znode, XDirection, YDirection, ZDirection
 using Oceananigans.TurbulenceClosures: CATKEVerticalDiffusivity
 
 using SeawaterPolynomials
@@ -221,7 +221,7 @@ using Oceananigans.ImmersedBoundaries: mask_immersed_field!, mask_immersed_field
 using Oceananigans.Models: update_model_field_time_series!
 using Oceananigans.Models.NonhydrostaticModels: update_hydrostatic_pressure!, p_kernel_parameters
 using Oceananigans.Fields: tupled_fill_halo_regions!
-using Oceananigans.Solvers: solve!
+using Oceananigans.Solvers: solve!, solve_batched_tridiagonal_system_kernel!
 using Oceananigans.Operators: σⁿ, σ⁻
 
 using Oceananigans.Models.NonhydrostaticModels: compute_auxiliaries!, p_kernel_parameters
@@ -238,6 +238,7 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fiel
                                                         step_free_surface!,
                                                         _ab2_step_tracer_field!
 
+using InteractiveUtils
 
 function run_reentrant_channel_model!(model, Tᵢ)
     # setting IC's and BC's:
@@ -275,8 +276,33 @@ function bad_implicit_step!(field,
     vi_closure            = Tuple(closure[n]            for n = 1:N if is_vertically_implicit(closure[n]))
     vi_diffusivity_fields = Tuple(diffusivity_fields[n] for n = 1:N if is_vertically_implicit(closure[n]))
 
-    return solve!(field, implicit_solver, field,
+    return bad_solve!(field, implicit_solver, field,
                   vi_closure, vi_diffusivity_fields, tracer_index, Center(), Center(), Center(), Δt, clock; kwargs...)
+end
+
+function bad_solve!(ϕ, solver, rhs, args...)
+
+    launch_config = if solver.tridiagonal_direction isa XDirection
+                        :yz
+                    elseif solver.tridiagonal_direction isa YDirection
+                        :xz
+                    elseif solver.tridiagonal_direction isa ZDirection
+                        :xy
+                    end
+
+    launch!(solver.grid.architecture, solver.grid, launch_config,
+            solve_batched_tridiagonal_system_kernel!, ϕ,
+            solver.a,
+            solver.b,
+            solver.c,
+            rhs,
+            solver.t,
+            solver.grid,
+            solver.parameters,
+            Tuple(args),
+            solver.tridiagonal_direction)
+
+    return nothing
 end
 
 #####
@@ -310,37 +336,23 @@ vgrid        = make_grid(varchitecture, Nx, Ny, Nz, Δz_center)
 vmodel       = build_model(vgrid, Δt₀, parameters)
 vTᵢ          = temperature_init(vmodel.grid, parameters)
 
-using InteractiveUtils
+launch_config = if model.timestepper.implicit_solver.tridiagonal_direction isa XDirection
+                        :yz
+                    elseif model.timestepper.implicit_solver.tridiagonal_direction isa YDirection
+                        :xz
+                    elseif model.timestepper.implicit_solver.tridiagonal_direction isa ZDirection
+                        :xy
+                    end
 
-@show @which implicit_step!(model.tracers.T,
-                model.timestepper.implicit_solver,
-                model.closure,
-                model.diffusivity_fields,
-                Val(1),
-                model.clock,
-                Δt₀)
+vlaunch_config = if vmodel.timestepper.implicit_solver.tridiagonal_direction isa XDirection
+                        :yz
+                    elseif vmodel.timestepper.implicit_solver.tridiagonal_direction isa YDirection
+                        :xz
+                    elseif vmodel.timestepper.implicit_solver.tridiagonal_direction isa ZDirection
+                        :xy
+                    end
 
-@show @which implicit_step!(vmodel.tracers.T,
-                vmodel.timestepper.implicit_solver,
-                vmodel.closure,
-                vmodel.diffusivity_fields,
-                Val(1),
-                vmodel.clock,
-                Δt₀)
-
-@show model.closure isa Tuple
-@show vmodel.closure isa Tuple
-
-N  = length(model.closure)
-vN = length(vmodel.closure)
-@show Tuple(n            for n = 1:N if is_vertically_implicit(model.closure[n]))
-@show Tuple(n            for n = 1:vN if is_vertically_implicit(vmodel.closure[n]))
-
-#@show Tuple(model.closure[n]            for n = 1:N if is_vertically_implicit(model.closure[n]))
-#@show Tuple(vmodel.closure[n]            for n = 1:vN if is_vertically_implicit(vmodel.closure[n]))
-
-#@show Tuple(model.diffusivity_fields[n]            for n = 1:N if is_vertically_implicit(model.closure[n]))
-#@show Tuple(vmodel.diffusivity_fields[n]            for n = 1:vN if is_vertically_implicit(vmodel.closure[n]))
+@show launch_config, vlaunch_config
 
 @info "Comparing the pre-run model states..."
 
