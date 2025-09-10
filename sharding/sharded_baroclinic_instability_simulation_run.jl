@@ -23,7 +23,7 @@ const parsed_args = parse_args(ARGS, args_settings)
 ENV["JULIA_DEBUG"] = "Reactant_jll,Reactant"
 
 using GordonBell25
-using GordonBell25: first_time_step!, time_step!, loop!, factors, is_distributed_env_present
+using GordonBell25: fill_one_halo!, first_time_step!, time_step!, loop!, factors, is_distributed_env_present
 using Oceananigans
 using Oceananigans.Units
 using Oceananigans.Architectures: ReactantState
@@ -85,16 +85,20 @@ model = GordonBell25.baroclinic_instability_model(arch, Nx, Ny, Nz; halo=(H, H, 
 
 Ninner = ConcreteRNumber(256; sharding=Sharding.NamedSharding(arch.connectivity, ()))
 
-@info "[$rank] Compiling first_time_step!..." now(UTC)
-rfirst! = @compile sync=true raise=true first_time_step!(model)
+@info "[$rank] Compiling fill_one_halo!..." now(UTC)
+rtest! = @compile sync=true raise=true fill_one_halo!(model)
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 
+# @info "[$rank] Compiling first_time_step!..." now(UTC)
+# rfirst! = @compile sync=true raise=true first_time_step!(model)
+# @info "[$rank] allocations" GordonBell25.allocatorstats()
+
 profile_dir = joinpath(@__DIR__, "profiling", jobid_procid)
-mkpath(joinpath(profile_dir, "first_time_step"))
+mkpath(joinpath(profile_dir, "test"))
 @info "[$rank] allocations" GordonBell25.allocatorstats()
-@info "[$rank] Running first_time_step!..." now(UTC)
-Reactant.with_profiler(joinpath(profile_dir, "first_time_step")) do
-    @time "[$rank] first time step" rfirst!(model)
+@info "[$rank] Running test code..." now(UTC)
+Reactant.with_profiler(joinpath(profile_dir, "test")) do
+    @time "[$rank] test " rtest!(model)
 end
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 

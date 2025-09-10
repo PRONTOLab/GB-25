@@ -19,6 +19,13 @@ function try_compile_code(f)
     end
 end
 
+function fill_one_halo!(model)
+    u = model.velocities.u
+    model_fields = Oceananigans.Models.HydrostaticFreeSurfaceModels.fields(model)
+    Oceananigans.BoundaryConditions.fill_halo_regions!(u, model.grid, model.clock, model_fields)
+    return nothing
+end
+
 function first_time_step!(model)
     Δt = model.clock.last_Δt
     @show which(Oceananigans.TimeSteppers.initialize!, (typeof(model),))
