@@ -238,7 +238,6 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fiel
                                                         step_free_surface!,
                                                         _ab2_step_tracer_field!
 
-using InteractiveUtils
 
 function run_reentrant_channel_model!(model, Tᵢ)
     # setting IC's and BC's:
@@ -271,10 +270,10 @@ function bad_implicit_step!(field,
                         kwargs...)
 
     # Filter explicit closures for closure tuples
+    closure_tuple = closure
+    N = length(closure_tuple)
     vi_closure            = Tuple(closure[n]            for n = 1:N if is_vertically_implicit(closure[n]))
     vi_diffusivity_fields = Tuple(diffusivity_fields[n] for n = 1:N if is_vertically_implicit(closure[n]))
-
-    @show @which solve!(field, implicit_solver, field, vi_closure, vi_diffusivity_fields, tracer_index, Center(), Center(), Center(), Δt, clock; kwargs...)
 
     return solve!(field, implicit_solver, field,
                   vi_closure, vi_diffusivity_fields, tracer_index, Center(), Center(), Center(), Δt, clock; kwargs...)
@@ -310,6 +309,8 @@ varchitecture = CPU()
 vgrid        = make_grid(varchitecture, Nx, Ny, Nz, Δz_center)
 vmodel       = build_model(vgrid, Δt₀, parameters)
 vTᵢ          = temperature_init(vmodel.grid, parameters)
+
+using InteractiveUtils
 
 @show @which implicit_step!(model.tracers.T,
                 model.timestepper.implicit_solver,
