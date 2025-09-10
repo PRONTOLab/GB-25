@@ -238,6 +238,7 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fiel
                                                         step_free_surface!,
                                                         _ab2_step_tracer_field!
 
+using InteractiveUtils
 
 function run_reentrant_channel_model!(model, Tᵢ)
     # setting IC's and BC's:
@@ -270,22 +271,13 @@ function bad_implicit_step!(field,
                         kwargs...)
 
     # Filter explicit closures for closure tuples
-    if closure isa Tuple
-        closure_tuple = closure
-        N = length(closure_tuple)
-        vi_closure            = Tuple(closure[n]            for n = 1:N if is_vertically_implicit(closure[n]))
-        vi_diffusivity_fields = Tuple(diffusivity_fields[n] for n = 1:N if is_vertically_implicit(closure[n]))
-    else
-        vi_closure = closure
-        vi_diffusivity_fields = diffusivity_fields
-    end
+    vi_closure            = Tuple(closure[n]            for n = 1:N if is_vertically_implicit(closure[n]))
+    vi_diffusivity_fields = Tuple(diffusivity_fields[n] for n = 1:N if is_vertically_implicit(closure[n]))
 
-    LX, LY, LZ = location(field)
-    # Nullify tracer_index if `field` is not a tracer
-    (LX, LY, LZ) == (Center, Center, Center) || (tracer_index = nothing)
+    @show @which solve!(field, implicit_solver, field, vi_closure, vi_diffusivity_fields, tracer_index, Center(), Center(), Center(), Δt, clock; kwargs...)
+
     return solve!(field, implicit_solver, field,
-                  # ivd_*_diagonal gets called with these args after (i, j, k, grid):
-                  vi_closure, vi_diffusivity_fields, tracer_index, LX(), LY(), LZ(), Δt, clock; kwargs...)
+                  vi_closure, vi_diffusivity_fields, tracer_index, Center(), Center(), Center(), Δt, clock; kwargs...)
 end
 
 #####
@@ -319,8 +311,6 @@ vgrid        = make_grid(varchitecture, Nx, Ny, Nz, Δz_center)
 vmodel       = build_model(vgrid, Δt₀, parameters)
 vTᵢ          = temperature_init(vmodel.grid, parameters)
 
-using InteractiveUtils
-
 @show @which implicit_step!(model.tracers.T,
                 model.timestepper.implicit_solver,
                 model.closure,
@@ -340,8 +330,11 @@ using InteractiveUtils
 @show model.closure isa Tuple
 @show vmodel.closure isa Tuple
 
-#N  = length(model.closure)
-#vN = length(vmodel.closure)
+N  = length(model.closure)
+vN = length(vmodel.closure)
+@show Tuple(n            for n = 1:N if is_vertically_implicit(model.closure[n]))
+@show Tuple(n            for n = 1:vN if is_vertically_implicit(vmodel.closure[n]))
+
 #@show Tuple(model.closure[n]            for n = 1:N if is_vertically_implicit(model.closure[n]))
 #@show Tuple(vmodel.closure[n]            for n = 1:vN if is_vertically_implicit(vmodel.closure[n]))
 
