@@ -292,7 +292,7 @@ end
     i, j = @index(Global, NTuple)
     
     @inbounds begin
-        β  = bad_ivd_diagonal(i, j, 1, grid, args...)
+        β  = one(grid) - _ivd_lower_diagonal(i, j, 0, grid, args...)
         f[i, j, 1] = f[i, j, 1] / β
 
         for k = 2:Nz
@@ -301,19 +301,10 @@ end
             t[i, j, k] = 1.0 / β
             β = 1 - aᵏ⁻¹ * t[i, j, k]
 
-            # If the problem is not diagonally-dominant such that `β ≈ 0`,
-            # the algorithm is unstable and we elide the forward pass update of `ϕ`.
-            definitely_diagonally_dominant = abs(β) > 10 * eps(eltype(f))
-            f★ = (f[i, j, k] - aᵏ⁻¹ * f[i, j, k-1]) / β
-            f[i, j, k] = ifelse(definitely_diagonally_dominant, f★, f[i, j, k])
+            f[i, j, k] = (f[i, j, k] - aᵏ⁻¹ * f[i, j, k-1]) / β
         end
     end
 end
-
-@inline bad_ivd_diagonal(i, j, k, grid, closure, K, id, ℓx, ℓy, ℓz, Δt, clock) =
-    one(grid) - Δt * _implicit_linear_coefficient(i, j, k,   grid, closure, K, id, ℓx, ℓy, ℓz, Δt, clock) -
-                              _ivd_upper_diagonal(i, j, k,   grid, closure, K, id, ℓx, ℓy, ℓz, Δt, clock) -
-                              _ivd_lower_diagonal(i, j, k-1, grid, closure, K, id, ℓx, ℓy, ℓz, Δt, clock)
 
 #####
 ##### Actually creating our model and using these functions to run it:
