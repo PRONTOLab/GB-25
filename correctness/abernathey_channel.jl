@@ -211,7 +211,7 @@ function run_reentrant_channel_model!(model, Tᵢ)
     # Step it forward
     Δt = model.clock.last_Δt
     bad_implicit_step!(model.tracers.T,
-                model.timestepper.implicit_solver,
+                model.grid,
                 model.closure,
                 model.diffusivity_fields,
                 1)
@@ -220,7 +220,7 @@ function run_reentrant_channel_model!(model, Tᵢ)
 end
 
 function bad_implicit_step!(field,
-                        solver,
+                        grid,
                         closure,
                         diffusivity_fields,
                         tracer_index)
@@ -231,24 +231,18 @@ function bad_implicit_step!(field,
     vi_diffusivity_fields = Tuple(diffusivity_fields[n] for n = 1:N if is_vertically_implicit(closure[n]))
     vi_diffusivity_fields = vi_diffusivity_fields[1]
 
-    launch!(solver.grid.architecture, solver.grid, :xy,
+    launch!(grid.architecture, grid, :xy,
             bad_solve_batched_tridiagonal_system_kernel!,
             field,
-            size(solver.grid, 3),
-            vi_diffusivity_fields,
-            tracer_index)
+            size(grid, 3),
+            vi_diffusivity_fields._tupled_tracer_diffusivities[tracer_index])
 end
 
-@kernel function bad_solve_batched_tridiagonal_system_kernel!(f, Nz, K, id)
+@kernel function bad_solve_batched_tridiagonal_system_kernel!(f, Nz, K)
     i, j = @index(Global, NTuple)
     
-    @inbounds begin
-        β  = 1 + K._tupled_tracer_diffusivities[id][i, j, 0] 
-        f[i, j, 1] = f[i, j, 1] / β
-
-        for k = 2:Nz
-            f[i, j, k] = f[i, j, k] + K._tupled_tracer_diffusivities[id][i, j, k-1] * f[i, j, k-1]
-        end
+    for k = 2:Nz
+        @inbounds f[i, j, k] = f[i, j, k] + K[i, j, k-1] * f[i, j, k-1]
     end
 end
 
