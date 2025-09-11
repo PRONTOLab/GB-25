@@ -200,16 +200,16 @@ using InteractiveUtils
 
 using KernelAbstractions: @kernel, @index
 
-function run_reentrant_channel_model!(model, Tᵢ)
+function run_reentrant_channel_model!(grid, T, K, Tᵢ)
     # setting IC's and BC's:
-    set!(model.tracers.T, Tᵢ)
+    set!(T, Tᵢ)
 
     # Step it forward
-    launch!(model.grid.architecture, model.grid, :xy,
+    launch!(model.grid.architecture, grid, :xy,
             a_kernel!,
-            model.tracers.T,
-            size(model.grid, 3),
-            model.diffusivity_fields[1]._tupled_tracer_diffusivities[1])
+            T,
+            size(grid, 3),
+            K)
 
     return nothing
 end
@@ -233,9 +233,10 @@ architecture = ReactantState()
 Δt₀ = 5minutes 
 
 # Make the grid:
-grid        = make_grid(architecture, Nx, Ny, Nz, Δz_center)
-model       = build_model(grid, Δt₀, parameters)
-Tᵢ          = temperature_init(model.grid, parameters)
+grid  = make_grid(architecture, Nx, Ny, Nz, Δz_center)
+model = build_model(grid, Δt₀, parameters)
+Tᵢ    = temperature_init(grid, parameters)
+T     = Field{Center, Center, Center}(grid)
 
 
 @info "Built $model."
@@ -249,29 +250,10 @@ varchitecture = CPU()
 Δt₀ = 5minutes 
 
 # Make the grid:
-vgrid        = make_grid(varchitecture, Nx, Ny, Nz, Δz_center)
-vmodel       = build_model(vgrid, Δt₀, parameters)
-vTᵢ          = temperature_init(vmodel.grid, parameters)
-
-
-N = length(model.closure)
-vi_closure            = Tuple(model.closure[n]            for n = 1:N if is_vertically_implicit(model.closure[n]))
-vi_diffusivity_fields = Tuple(model.diffusivity_fields[n] for n = 1:N if is_vertically_implicit(model.closure[n]))
-@show @which getclosure(1, 1, vi_closure[1])
-
-vN = length(vmodel.closure)
-vvi_closure            = Tuple(vmodel.closure[n]            for n = 1:vN if is_vertically_implicit(vmodel.closure[n]))
-vvi_diffusivity_fields = Tuple(vmodel.diffusivity_fields[n] for n = 1:vN if is_vertically_implicit(vmodel.closure[n]))
-@show @which getclosure(1, 1, vvi_closure[1])
-
-@show @which diffusivity(vi_closure[1], vi_diffusivity_fields[1], Val(1))
-@show @which diffusivity(vvi_closure[1], vvi_diffusivity_fields[1], Val(1))
-
-@show @which κᶜᶜᶠ(1, 1, 1, model.timestepper.implicit_solver.grid, (Center(), Center(), Center()), diffusivity(vi_closure[1], vi_diffusivity_fields[1], Val(1)), Val(1), model.clock)
-@show @which κᶜᶜᶠ(1, 1, 1, vmodel.timestepper.implicit_solver.grid, (Center(), Center(), Center()), diffusivity(vvi_closure[1], vvi_diffusivity_fields[1], Val(1)), Val(1), vmodel.clock)
-
-@show @which ℑzᵃᵃᶠ(1, 1, 1, model.timestepper.implicit_solver.grid, vi_diffusivity_fields[1]._tupled_tracer_diffusivities[1])
-@show @which ℑzᵃᵃᶠ(1, 1, 1, vmodel.timestepper.implicit_solver.grid, vvi_diffusivity_fields[1]._tupled_tracer_diffusivities[1])
+vgrid  = make_grid(varchitecture, Nx, Ny, Nz, Δz_center)
+vmodel = build_model(vgrid, Δt₀, parameters)
+vTᵢ    = temperature_init(vgrid, parameters)
+vT     = Field{Center, Center, Center}(vgrid)
 
 @info "Comparing the pre-run model states..."
 
@@ -280,27 +262,27 @@ include_halos = false
 rtol = sqrt(eps(Float64))
 atol = sqrt(eps(Float64))
 
-GordonBell25.compare_states(model, vmodel; include_halos, throw_error, rtol, atol)
-
 @info "Compiling the model run..."
 tic = time()
-rrun_reentrant_channel_model! = @compile raise_first=true raise=true sync=true run_reentrant_channel_model!(model, Tᵢ)
+rrun_reentrant_channel_model! = @compile raise_first=true raise=true sync=true run_reentrant_channel_model!(grid, T, model.diffusivity_fields[1]._tupled_tracer_diffusivities[1], Tᵢ)
 compile_toc = time() - tic
 
 @show compile_toc
 
 @info "Running the simulations..."
 
+@allowscalar @show maximum(abs.(convert(Array, T) - vT))
+
 tic      = time()
-rrun_reentrant_channel_model!(model, Tᵢ)
+rrun_reentrant_channel_model!(grid, T, model.diffusivity_fields[1]._tupled_tracer_diffusivities[1], Tᵢ)
 rrun_toc = time() - tic
 @show rrun_toc
 
 tic       = time()
-run_reentrant_channel_model!(vmodel, vTᵢ)
+run_reentrant_channel_model!(vgrid, vT, vmodel.diffusivity_fields[1]._tupled_tracer_diffusivities[1], vTᵢ)
 vrun_toc  = time() - tic
 @show vrun_toc
 
 @info "Comparing the model states after running..."
 
-GordonBell25.compare_states(model, vmodel; include_halos, throw_error, rtol, atol)
+@allowscalar @show maximum(abs.(convert(Array, T) - vT))
