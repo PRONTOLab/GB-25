@@ -204,41 +204,17 @@ function run_reentrant_channel_model!(model, Tᵢ)
     # setting IC's and BC's:
     set!(model.tracers.T, Tᵢ)
 
-    # Initialize the model
-    model.clock.iteration = 1
-    model.clock.time = 0
-
     # Step it forward
-    Δt = model.clock.last_Δt
-    bad_implicit_step!(model.tracers.T,
-                model.grid,
-                model.closure,
-                model.diffusivity_fields,
-                1)
+    launch!(model.grid.architecture, model.grid, :xy,
+            a_kernel!,
+            model.tracers.T,
+            size(model.grid, 3),
+            model.diffusivity_fields[1]._tupled_tracer_diffusivities[1])
 
     return nothing
 end
 
-function bad_implicit_step!(field,
-                        grid,
-                        closure,
-                        diffusivity_fields,
-                        tracer_index)
-
-    # Filter explicit closures for closure tuples
-    closure_tuple = closure
-    N = length(closure_tuple)
-    vi_diffusivity_fields = Tuple(diffusivity_fields[n] for n = 1:N if is_vertically_implicit(closure[n]))
-    vi_diffusivity_fields = vi_diffusivity_fields[1]
-
-    launch!(grid.architecture, grid, :xy,
-            bad_solve_batched_tridiagonal_system_kernel!,
-            field,
-            size(grid, 3),
-            vi_diffusivity_fields._tupled_tracer_diffusivities[tracer_index])
-end
-
-@kernel function bad_solve_batched_tridiagonal_system_kernel!(f, Nz, K)
+@kernel function a_kernel!(f, Nz, K)
     i, j = @index(Global, NTuple)
     
     for k = 2:Nz
