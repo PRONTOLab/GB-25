@@ -11,7 +11,7 @@ using Statistics
 using Oceananigans
 using Oceananigans.Units
 using Oceananigans.OutputReaders: FieldTimeSeries
-using Oceananigans.Grids: xnode, ynode, znode, XDirection, YDirection, ZDirection, peripheral_node, static_column_depthᶜᶜᵃ, rnode
+using Oceananigans.Grids: xnode, ynode, znode, XDirection, YDirection, ZDirection, peripheral_node, static_column_depthᶜᶜᵃ, rnode, getnode
 using Oceananigans.TurbulenceClosures: CATKEVerticalDiffusivity
 
 using SeawaterPolynomials
@@ -225,7 +225,7 @@ end
     # is recomputed in time_step_turbulent_kinetic_energy.
     κu★ = κuᶜᶜᶠ(i, j, k, grid, closure, velocities, tracers, buoyancy, Jᵇ)
     κc★ = κcᶜᶜᶠ(i, j, k, grid, closure, velocities, tracers, buoyancy, Jᵇ)
-    @inbounds κe★ = rnode(i, j, grid.Nz+1, grid, Center(), Center(), Face()) - grid.immersed_boundary.bottom_height[i, j, 1]
+    @inbounds κe★ = getnode(grid.underlying_grid.z.cᵃᵃᶠ, grid.Nz+1) - grid.immersed_boundary.bottom_height[i, j, 1]
 
     @inbounds begin
         diffusivities.κu[i, j, k] = κu★
@@ -233,7 +233,6 @@ end
         diffusivities.κe[i, j, k] = κe★
     end
 end
-
 
 #####
 ##### Actually creating our model and using these functions to run it:
@@ -259,8 +258,10 @@ vmodel       = build_model(vgrid, Δt₀, parameters)
 #vdiffusivity_fields = build_model(grid, Δt₀, parameters)
 
 @info "Comparing the bottom heights:"
-@allowscalar @show convert(Array, model.grid.immersed_boundary.bottom_height)
-@show vmodel.grid.immersed_boundary.bottom_height
+@allowscalar @show convert(Array, grid.immersed_boundary.bottom_height)
+@show convert(Array, vgrid.immersed_boundary.bottom_height)
+
+@allowscalar @show getnode(grid.underlying_grid.z.cᵃᵃᶠ, grid.Nz+1) - getnode(vgrid.underlying_grid.z.cᵃᵃᶠ, vgrid.Nz+1)
 
 @info "Comparing the pre-init model states..."
 @allowscalar @show maximum(abs.(convert(Array, model.diffusivity_fields.κe) - vmodel.diffusivity_fields.κe))
@@ -271,8 +272,8 @@ vmodel       = build_model(vgrid, Δt₀, parameters)
 @show @which compute_diffusivities!(model.diffusivity_fields, model.closure, model; parameters = :xyz)
 @show @which compute_diffusivities!(vmodel.diffusivity_fields, vmodel.closure, vmodel; parameters = :xyz)
 
-@show @which rnode(1, 1, model.grid.Nz+1, model.grid, Center(), Center(), Face())
-@show @which rnode(1, 1, vmodel.grid.Nz+1, vmodel.grid, Center(), Center(), Face())
+@show @which rnode(1, 1, model.grid.Nz+1, model.grid.underlying_grid, Center(), Center(), Face())
+@show @which rnode(1, 1, vmodel.grid.Nz+1, vmodel.grid.underlying_grid, Center(), Center(), Face())
 
 # MLIR Error:
 #rupdate_state! = @compile raise_first=true raise=true sync=true update_state!(model)
