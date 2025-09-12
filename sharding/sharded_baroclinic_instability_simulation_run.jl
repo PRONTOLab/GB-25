@@ -113,7 +113,8 @@ if test_type == "fill_all_halos"
 
 elseif test_type == "fill_north_south"
 
-    loc = (Center(), Center(), Center())
+    c = Oceananigans.Fields.Center()
+    loc = (c, c, c)
     north_south_bcs = FieldBoundaryConditions(model.grid, loc, west=nothing, east=nothing, top=nothing, bottom=nothing)
     north_south_field = CenterField(model.grid; boundary_conditions=north_south_bcs)
 
@@ -131,7 +132,8 @@ elseif test_type == "fill_north_south"
 
 elseif test_type == "fill_east_west"
 
-    loc = (Center(), Center(), Center())
+    c = Oceananigans.Fields.Center()
+    loc = (c, c, c)
     east_west_bcs = FieldBoundaryConditions(model.grid, loc, south=nothing, north=nothing, top=nothing, bottom=nothing)
     east_west_field = CenterField(model.grid; boundary_conditions=east_west_bcs)
 
