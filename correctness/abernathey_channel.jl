@@ -219,10 +219,11 @@ function bad_compute_diffusivities!(diffusivities, closure, model; parameters = 
     u⁻, v⁻ = diffusivities.previous_velocities
     parent(u⁻) .= parent(u)
     parent(v⁻) .= parent(v)
-    
+    #=
     launch!(arch, grid, :xy,
             bad_compute_average_surface_buoyancy_flux!,
-            diffusivities.Jᵇ, grid, closure, velocities, tracers, buoyancy, top_tracer_bcs, clock, Δt)
+            diffusivities.Jᵇ, grid, closure, Δt)
+    =#
     #=
     launch!(arch, grid, parameters,
             compute_CATKE_diffusivities!,
@@ -231,24 +232,17 @@ function bad_compute_diffusivities!(diffusivities, closure, model; parameters = 
     return nothing
 end
 
-@kernel function bad_compute_average_surface_buoyancy_flux!(Jᵇ, grid, closure, velocities, tracers,
-                                                        buoyancy, top_tracer_bcs, clock, Δt)
+@kernel function bad_compute_average_surface_buoyancy_flux!(Jᵇ, grid, closure, Δt)
     i, j = @index(Global, NTuple)
     k = grid.Nz
 
-    closure = getclosure(i, j, closure)
-
-    model_fields = merge(velocities, tracers)
-    Jᵇ★ = top_buoyancy_flux(i, j, grid, buoyancy, top_tracer_bcs, clock, model_fields)
-    ℓᴰ = dissipation_length_scaleᶜᶜᶜ(i, j, k, grid, closure, velocities, tracers, buoyancy, Jᵇ)
-
     Jᵇᵋ = closure.minimum_convective_buoyancy_flux
     Jᵇᵢⱼ = @inbounds Jᵇ[i, j, 1]
-    Jᵇ⁺ = max(Jᵇᵋ, Jᵇᵢⱼ, Jᵇ★) # selects fastest (dominant) time-scale
-    t★ = cbrt(ℓᴰ^2 / Jᵇ⁺)
+    Jᵇ⁺ = max(Jᵇᵋ, Jᵇᵢⱼ) # selects fastest (dominant) time-scale
+    t★ = cbrt(100.0 / Jᵇ⁺)
     ϵ = Δt / t★
 
-    @inbounds Jᵇ[i, j, 1] = (Jᵇᵢⱼ + ϵ * Jᵇ★) / (1 + ϵ)
+    @inbounds Jᵇ[i, j, 1] = Jᵇᵢⱼ / (1 + ϵ)
 end
 
 
@@ -279,18 +273,8 @@ vmodel       = build_model(vgrid, Δt₀, parameters)
 @allowscalar @show abs.(convert(Array, model.diffusivity_fields.κe) - vmodel.diffusivity_fields.κe)
 @allowscalar @show abs.(convert(Array, model.diffusivity_fields.κc) - vmodel.diffusivity_fields.κc)
 
-
-@show @which compute_diffusivities!(model.diffusivity_fields, model.closure, model; parameters = :xyz)
-@show @which compute_diffusivities!(vmodel.diffusivity_fields, vmodel.closure, vmodel; parameters = :xyz)
-
-@show @which top_buoyancy_flux(1, 1, model.grid, model.buoyancy.formulation, get_top_tracer_bcs(model.buoyancy.formulation, model.tracers), model.clock, merge(model.velocities, model.tracers))
-@show @which top_buoyancy_flux(1, 1, vmodel.grid, vmodel.buoyancy.formulation, get_top_tracer_bcs(vmodel.buoyancy.formulation, vmodel.tracers), vmodel.clock, merge(vmodel.velocities, vmodel.tracers))
-
-for i = 1:8
-    for j = 1:8
-        @allowscalar @show top_buoyancy_flux(1, 1, model.grid, model.buoyancy.formulation, get_top_tracer_bcs(model.buoyancy.formulation, model.tracers), model.clock, merge(model.velocities, model.tracers))
-    end
-end
+@show @which dissipation_length_scaleᶜᶜᶜ(1, 1, 1, model.grid, model.closure, model.velocities, model.tracers, model.buoyancy, model.diffusivity_fields.Jᵇ)
+@show @which dissipation_length_scaleᶜᶜᶜ(1, 1, 1, vmodel.grid, vmodel.closure, vmodel.velocities, vmodel.tracers, vmodel.buoyancy, vmodel.diffusivity_fields.Jᵇ)
 
 # MLIR Error:
 #rupdate_state! = @compile raise_first=true raise=true sync=true update_state!(model)
