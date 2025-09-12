@@ -11,7 +11,7 @@ using Statistics
 using Oceananigans
 using Oceananigans.Units
 using Oceananigans.OutputReaders: FieldTimeSeries
-using Oceananigans.Grids: xnode, ynode, znode, XDirection, YDirection, ZDirection, peripheral_node
+using Oceananigans.Grids: xnode, ynode, znode, XDirection, YDirection, ZDirection, peripheral_node, static_column_depthᶜᶜᵃ
 using Oceananigans.TurbulenceClosures: CATKEVerticalDiffusivity
 
 using SeawaterPolynomials
@@ -191,7 +191,9 @@ using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: get_top_tra
                                                                      compute_CATKE_diffusivities!,
                                                                      mask_diffusivity,
                                                                      κuᶜᶜᶠ, κcᶜᶜᶠ, κeᶜᶜᶠ,
-                                                                     TKE_mixing_lengthᶜᶜᶠ, turbulent_velocityᶜᶜᶜ
+                                                                     TKE_mixing_lengthᶜᶜᶠ, turbulent_velocityᶜᶜᶜ,
+                                                                     convective_length_scaleᶜᶜᶠ, stability_functionᶜᶜᶠ,
+                                                                     stable_length_scaleᶜᶜᶠ
 
 
 
@@ -217,14 +219,13 @@ end
     i, j, k = @index(Global, NTuple)
 
     # Ensure this works with "ensembles" of closures, in addition to ordinary single closures
-    closure_ij = getclosure(i, j, closure)
     Jᵇ = diffusivities.Jᵇ
 
     # Note: we also compute the TKE diffusivity here for diagnostic purposes, even though it
     # is recomputed in time_step_turbulent_kinetic_energy.
-    κu★ = κuᶜᶜᶠ(i, j, k, grid, closure_ij, velocities, tracers, buoyancy, Jᵇ)
-    κc★ = κcᶜᶜᶠ(i, j, k, grid, closure_ij, velocities, tracers, buoyancy, Jᵇ)
-    κe★ = bad_κeᶜᶜᶠ(i, j, k, grid, closure_ij, velocities, tracers, buoyancy, Jᵇ)
+    κu★ = κuᶜᶜᶠ(i, j, k, grid, closure, velocities, tracers, buoyancy, Jᵇ)
+    κc★ = κcᶜᶜᶠ(i, j, k, grid, closure, velocities, tracers, buoyancy, Jᵇ)
+    κe★ = bad_κeᶜᶜᶠ(i, j, k, grid, closure, velocities, tracers, buoyancy, Jᵇ)
 
     @inbounds begin
         diffusivities.κu[i, j, k] = κu★
@@ -234,11 +235,27 @@ end
 end
 
 @inline function bad_κeᶜᶜᶠ(i, j, k, grid, closure, velocities, tracers, buoyancy, surface_buoyancy_flux)
-    w★ = ℑzᵃᵃᶠ(i, j, k, grid, turbulent_velocityᶜᶜᶜ, closure, tracers.e)
-    ℓe = TKE_mixing_lengthᶜᶜᶠ(i, j, k, grid, closure, velocities, tracers, buoyancy, surface_buoyancy_flux)
-    κe = ℓe * w★
-    FT = eltype(grid)
-    return FT(κe)
+    return bad_TKE_mixing_lengthᶜᶜᶠ(i, j, k, grid, closure, velocities, tracers, buoyancy, surface_buoyancy_flux)
+end
+
+@inline function bad_TKE_mixing_lengthᶜᶜᶠ(i, j, k, grid, closure, velocities, tracers, buoyancy, surface_buoyancy_flux)
+    Cᶜ  = closure.mixing_length.Cᶜe
+    Cᵉ  = closure.mixing_length.Cᵉe
+    Cˢᵖ = closure.mixing_length.Cˢᵖ
+    ℓʰ  = convective_length_scaleᶜᶜᶠ(i, j, k, grid, closure, Cᶜ, Cᵉ, Cˢᵖ, velocities, tracers, buoyancy, surface_buoyancy_flux)
+
+    Cᵘⁿ = closure.mixing_length.Cᵘⁿe
+    Cˡᵒ = closure.mixing_length.Cˡᵒe
+    Cʰⁱ = closure.mixing_length.Cʰⁱe
+    σ = stability_functionᶜᶜᶠ(i, j, k, grid, closure, Cᵘⁿ, Cˡᵒ, Cʰⁱ, velocities, tracers, buoyancy)
+    ℓ★ = σ * stable_length_scaleᶜᶜᶠ(i, j, k, grid, closure, tracers.e, velocities, tracers, buoyancy)
+
+    ℓʰ = ifelse(isnan(ℓʰ), zero(grid), ℓʰ)
+    ℓ★ = ifelse(isnan(ℓ★), zero(grid), ℓ★)
+    ℓe = max(ℓ★, ℓʰ)
+
+    H = static_column_depthᶜᶜᵃ(i, j, grid)
+    return min(H, ℓe)
 end
 
 
