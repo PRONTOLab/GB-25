@@ -13,6 +13,10 @@ const args_settings = ArgParseSettings()
         help = "Base factor for number of grid points on the y axis."
         default = 768
         arg_type = Int
+    "--test-type"
+        help = "Which test to run (fill_all_halos, fill_east_west, fill_north_south)."
+        default = "fill_all_halos"
+        arg_type = String
     "--grid-z"
         help = "Base factor for number of grid points on the z axis."
         default = 4
@@ -25,6 +29,7 @@ ENV["JULIA_DEBUG"] = "Reactant_jll,Reactant"
 using GordonBell25
 using GordonBell25: fill_one_halo!, first_time_step!, time_step!, loop!, factors, is_distributed_env_present
 using Oceananigans
+using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Units
 using Oceananigans.Architectures: ReactantState
 using Random
@@ -85,21 +90,62 @@ model = GordonBell25.baroclinic_instability_model(arch, Nx, Ny, Nz; halo=(H, H, 
 
 Ninner = ConcreteRNumber(256; sharding=Sharding.NamedSharding(arch.connectivity, ()))
 
-@info "[$rank] Compiling fill_one_halo!..." now(UTC)
-rtest! = @compile sync=true raise=true fill_one_halo!(model)
-@info "[$rank] allocations" GordonBell25.allocatorstats()
 
 # @info "[$rank] Compiling first_time_step!..." now(UTC)
 # rfirst! = @compile sync=true raise=true first_time_step!(model)
 # @info "[$rank] allocations" GordonBell25.allocatorstats()
 
 profile_dir = joinpath(@__DIR__, "profiling", jobid_procid)
-mkpath(joinpath(profile_dir, "test"))
-@info "[$rank] allocations" GordonBell25.allocatorstats()
-@info "[$rank] Running test code..." now(UTC)
-Reactant.with_profiler(joinpath(profile_dir, "test")) do
-    @time "[$rank] test " rtest!(model)
+test_type = parsed_args["test-type"]
+
+if test_type == "fill_all_halos"
+    @info "[$rank] Compiling fill_halo_regions!..." now(UTC)
+    rfill_all_halos!= @compile sync=true raise=true fill_halo_regions!(model.tracers.T)
+    @info "[$rank] allocations" GordonBell25.allocatorstats()
+
+    mkpath(joinpath(profile_dir, "fill_all_halos"))
+    @info "[$rank] allocations" GordonBell25.allocatorstats()
+    @info "[$rank] Running test code..." now(UTC)
+    Reactant.with_profiler(joinpath(profile_dir, "fill_all_halos")) do
+        @time "[$rank] test " rfill_all_halos!(model.tracers.T)
+    end
+    @info "[$rank] allocations" GordonBell25.allocatorstats()
+
+elseif test_type == "fill_north_south"
+
+    loc = (Center(), Center(), Center())
+    north_south_bcs = FieldBoundaryConditions(model.grid, loc, west=nothing, east=nothing, top=nothing, bottom=nothing)
+    north_south_field = CenterField(model.grid; boundary_conditions=north_south_bcs)
+
+    @info "[$rank] Compiling fill_halo_regions! for east_west_field..." now(UTC)
+    rfill_east_west! = @compile sync=true raise=true fill_halo_regions!(east_west_field)
+    @info "[$rank] allocations" GordonBell25.allocatorstats()
+
+    mkpath(joinpath(profile_dir, "fill_east_west"))
+    @info "[$rank] allocations" GordonBell25.allocatorstats()
+    @info "[$rank] Running test code..." now(UTC)
+    Reactant.with_profiler(joinpath(profile_dir, "fill_east_west")) do
+        @time "[$rank] test " rfill_east_west!(east_west_field)
+    end
+    @info "[$rank] allocations" GordonBell25.allocatorstats()
+
+elseif test_type == "fill_east_west"
+
+    loc = (Center(), Center(), Center())
+    east_west_bcs = FieldBoundaryConditions(model.grid, loc, south=nothing, north=nothing, top=nothing, bottom=nothing)
+    east_west_field = CenterField(model.grid; boundary_conditions=east_west_bcs)
+
+    @info "[$rank] Compiling fill_halo_regions! for north_south_field..." now(UTC)
+    rfill_north_south! = @compile sync=true raise=true fill_halo_regions!(north_south_field)
+    @info "[$rank] allocations" GordonBell25.allocatorstats()
+
+    mkpath(joinpath(profile_dir, "fill_north_south"))
+    @info "[$rank] allocations" GordonBell25.allocatorstats()
+    @info "[$rank] Running test code..." now(UTC)
+    Reactant.with_profiler(joinpath(profile_dir, "fill_north_south")) do
+        @time "[$rank] test " rfill_north_south!(north_south_field)
+    end
+    @info "[$rank] allocations" GordonBell25.allocatorstats()
 end
-@info "[$rank] allocations" GordonBell25.allocatorstats()
 
 @info "Done!" now(UTC)
