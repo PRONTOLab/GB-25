@@ -188,10 +188,13 @@ using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: get_top_tra
                                                                      update_previous_compute_time!,
                                                                      time_step_catke_equation!,
                                                                      compute_average_surface_buoyancy_flux!,
-                                                                     compute_CATKE_diffusivities!
+                                                                     compute_CATKE_diffusivities!,
+                                                                     dissipation_length_scaleᶜᶜᶜ
 
 
 using KernelAbstractions: @kernel, @index
+
+using Oceananigans.BuoyancyFormulations: top_buoyancy_flux
 
 
 function bad_compute_diffusivities!(diffusivities, closure, model; parameters = :xyz)
@@ -216,16 +219,36 @@ function bad_compute_diffusivities!(diffusivities, closure, model; parameters = 
     u⁻, v⁻ = diffusivities.previous_velocities
     parent(u⁻) .= parent(u)
     parent(v⁻) .= parent(v)
-
+    
     launch!(arch, grid, :xy,
-            compute_average_surface_buoyancy_flux!,
+            bad_compute_average_surface_buoyancy_flux!,
             diffusivities.Jᵇ, grid, closure, velocities, tracers, buoyancy, top_tracer_bcs, clock, Δt)
-
+    #=
     launch!(arch, grid, parameters,
             compute_CATKE_diffusivities!,
             diffusivities, grid, closure, velocities, tracers, buoyancy)
-
+    =#
     return nothing
+end
+
+@kernel function bad_compute_average_surface_buoyancy_flux!(Jᵇ, grid, closure, velocities, tracers,
+                                                        buoyancy, top_tracer_bcs, clock, Δt)
+    i, j = @index(Global, NTuple)
+    k = grid.Nz
+
+    closure = getclosure(i, j, closure)
+
+    model_fields = merge(velocities, tracers)
+    Jᵇ★ = top_buoyancy_flux(i, j, grid, buoyancy, top_tracer_bcs, clock, model_fields)
+    ℓᴰ = dissipation_length_scaleᶜᶜᶜ(i, j, k, grid, closure, velocities, tracers, buoyancy, Jᵇ)
+
+    Jᵇᵋ = closure.minimum_convective_buoyancy_flux
+    Jᵇᵢⱼ = @inbounds Jᵇ[i, j, 1]
+    Jᵇ⁺ = max(Jᵇᵋ, Jᵇᵢⱼ, Jᵇ★) # selects fastest (dominant) time-scale
+    t★ = cbrt(ℓᴰ^2 / Jᵇ⁺)
+    ϵ = Δt / t★
+
+    @inbounds Jᵇ[i, j, 1] = (Jᵇᵢⱼ + ϵ * Jᵇ★) / (1 + ϵ)
 end
 
 
@@ -259,6 +282,15 @@ vmodel       = build_model(vgrid, Δt₀, parameters)
 
 @show @which compute_diffusivities!(model.diffusivity_fields, model.closure, model; parameters = :xyz)
 @show @which compute_diffusivities!(vmodel.diffusivity_fields, vmodel.closure, vmodel; parameters = :xyz)
+
+@show @which top_buoyancy_flux(1, 1, model.grid, model.buoyancy.formulation, get_top_tracer_bcs(model.buoyancy.formulation, model.tracers), model.clock, merge(model.velocities, model.tracers))
+@show @which top_buoyancy_flux(1, 1, vmodel.grid, vmodel.buoyancy.formulation, get_top_tracer_bcs(vmodel.buoyancy.formulation, vmodel.tracers), vmodel.clock, merge(vmodel.velocities, vmodel.tracers))
+
+for i = 1:8
+    for j = 1:8
+        @allowscalar @show top_buoyancy_flux(1, 1, model.grid, model.buoyancy.formulation, get_top_tracer_bcs(model.buoyancy.formulation, model.tracers), model.clock, merge(model.velocities, model.tracers))
+    end
+end
 
 # MLIR Error:
 #rupdate_state! = @compile raise_first=true raise=true sync=true update_state!(model)
