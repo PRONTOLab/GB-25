@@ -188,7 +188,10 @@ using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: get_top_tra
                                                                      update_previous_compute_time!,
                                                                      time_step_catke_equation!,
                                                                      compute_average_surface_buoyancy_flux!,
-                                                                     compute_CATKE_diffusivities!
+                                                                     compute_CATKE_diffusivities!,
+                                                                     mask_diffusivity,
+                                                                     κuᶜᶜᶠ, κcᶜᶜᶠ, κeᶜᶜᶠ
+
 
 
 using KernelAbstractions: @kernel, @index
@@ -201,31 +204,36 @@ function bad_compute_diffusivities!(diffusivities, closure, model; parameters = 
     tracers = model.tracers
     buoyancy = model.buoyancy
     clock = model.clock
-    top_tracer_bcs = get_top_tracer_bcs(model.buoyancy.formulation, tracers)
-    Δt = update_previous_compute_time!(diffusivities, model)
-
-    if isfinite(model.clock.last_Δt) # Check that we have taken a valid time-step first.
-        # Compute e at the current time:
-        #   * update tendency Gⁿ using current and previous velocity field
-        #   * use tridiagonal solve to take an implicit step
-        time_step_catke_equation!(model, model.timestepper)
-    end
-
-    # Update "previous velocities"
-    u, v, w = model.velocities
-    u⁻, v⁻ = diffusivities.previous_velocities
-    parent(u⁻) .= parent(u)
-    parent(v⁻) .= parent(v)
-
-    launch!(arch, grid, :xy,
-            compute_average_surface_buoyancy_flux!,
-            diffusivities.Jᵇ, grid, closure, velocities, tracers, buoyancy, top_tracer_bcs, clock, Δt)
-
+    
     launch!(arch, grid, parameters,
-            compute_CATKE_diffusivities!,
+            bad_compute_CATKE_diffusivities!,
             diffusivities, grid, closure, velocities, tracers, buoyancy)
-
+    
     return nothing
+end
+
+@kernel function bad_compute_CATKE_diffusivities!(diffusivities, grid, closure, velocities, tracers, buoyancy)
+    i, j, k = @index(Global, NTuple)
+
+    # Ensure this works with "ensembles" of closures, in addition to ordinary single closures
+    closure_ij = getclosure(i, j, closure)
+    Jᵇ = diffusivities.Jᵇ
+
+    # Note: we also compute the TKE diffusivity here for diagnostic purposes, even though it
+    # is recomputed in time_step_turbulent_kinetic_energy.
+    κu★ = κuᶜᶜᶠ(i, j, k, grid, closure_ij, velocities, tracers, buoyancy, Jᵇ)
+    κc★ = κcᶜᶜᶠ(i, j, k, grid, closure_ij, velocities, tracers, buoyancy, Jᵇ)
+    κe★ = κeᶜᶜᶠ(i, j, k, grid, closure_ij, velocities, tracers, buoyancy, Jᵇ)
+
+    κu★ = mask_diffusivity(i, j, k, grid, κu★)
+    κc★ = mask_diffusivity(i, j, k, grid, κc★)
+    κe★ = mask_diffusivity(i, j, k, grid, κe★)
+
+    @inbounds begin
+        diffusivities.κu[i, j, k] = κu★
+        diffusivities.κc[i, j, k] = κc★
+        diffusivities.κe[i, j, k] = κe★
+    end
 end
 
 
@@ -255,6 +263,7 @@ vmodel       = build_model(vgrid, Δt₀, parameters)
 @info "Comparing the pre-init model states..."
 @allowscalar @show abs.(convert(Array, model.diffusivity_fields.κe) - vmodel.diffusivity_fields.κe)
 @allowscalar @show abs.(convert(Array, model.diffusivity_fields.κc) - vmodel.diffusivity_fields.κc)
+@allowscalar @show maximum(abs.(convert(Array, model.diffusivity_fields.κu) - vmodel.diffusivity_fields.κu))
 
 
 @show @which compute_diffusivities!(model.diffusivity_fields, model.closure, model; parameters = :xyz)
@@ -272,3 +281,4 @@ bad_compute_diffusivities!(vmodel.diffusivity_fields, vmodel.closure, vmodel; pa
 @info "And now comparing them again"
 @allowscalar @show abs.(convert(Array, model.diffusivity_fields.κe) - vmodel.diffusivity_fields.κe)
 @allowscalar @show abs.(convert(Array, model.diffusivity_fields.κc) - vmodel.diffusivity_fields.κc)
+@allowscalar @show maximum(abs.(convert(Array, model.diffusivity_fields.κu) - vmodel.diffusivity_fields.κu))
