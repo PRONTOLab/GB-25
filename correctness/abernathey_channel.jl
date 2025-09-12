@@ -11,7 +11,7 @@ using Statistics
 using Oceananigans
 using Oceananigans.Units
 using Oceananigans.OutputReaders: FieldTimeSeries
-using Oceananigans.Grids: xnode, ynode, znode, XDirection, YDirection, ZDirection, peripheral_node, static_column_depthᶜᶜᵃ
+using Oceananigans.Grids: xnode, ynode, znode, XDirection, YDirection, ZDirection, peripheral_node, static_column_depthᶜᶜᵃ, rnode
 using Oceananigans.TurbulenceClosures: CATKEVerticalDiffusivity
 
 using SeawaterPolynomials
@@ -225,37 +225,13 @@ end
     # is recomputed in time_step_turbulent_kinetic_energy.
     κu★ = κuᶜᶜᶠ(i, j, k, grid, closure, velocities, tracers, buoyancy, Jᵇ)
     κc★ = κcᶜᶜᶠ(i, j, k, grid, closure, velocities, tracers, buoyancy, Jᵇ)
-    κe★ = bad_κeᶜᶜᶠ(i, j, k, grid, closure, velocities, tracers, buoyancy, Jᵇ)
+    @inbounds κe★ = rnode(i, j, grid.Nz+1, grid, Center(), Center(), Face()) - grid.immersed_boundary.bottom_height[i, j, 1]
 
     @inbounds begin
         diffusivities.κu[i, j, k] = κu★
         diffusivities.κc[i, j, k] = κc★
         diffusivities.κe[i, j, k] = κe★
     end
-end
-
-@inline function bad_κeᶜᶜᶠ(i, j, k, grid, closure, velocities, tracers, buoyancy, surface_buoyancy_flux)
-    return bad_TKE_mixing_lengthᶜᶜᶠ(i, j, k, grid, closure, velocities, tracers, buoyancy, surface_buoyancy_flux)
-end
-
-@inline function bad_TKE_mixing_lengthᶜᶜᶠ(i, j, k, grid, closure, velocities, tracers, buoyancy, surface_buoyancy_flux)
-    Cᶜ  = closure.mixing_length.Cᶜe
-    Cᵉ  = closure.mixing_length.Cᵉe
-    Cˢᵖ = closure.mixing_length.Cˢᵖ
-    ℓʰ  = convective_length_scaleᶜᶜᶠ(i, j, k, grid, closure, Cᶜ, Cᵉ, Cˢᵖ, velocities, tracers, buoyancy, surface_buoyancy_flux)
-
-    Cᵘⁿ = closure.mixing_length.Cᵘⁿe
-    Cˡᵒ = closure.mixing_length.Cˡᵒe
-    Cʰⁱ = closure.mixing_length.Cʰⁱe
-    σ = stability_functionᶜᶜᶠ(i, j, k, grid, closure, Cᵘⁿ, Cˡᵒ, Cʰⁱ, velocities, tracers, buoyancy)
-    ℓ★ = σ * stable_length_scaleᶜᶜᶠ(i, j, k, grid, closure, tracers.e, velocities, tracers, buoyancy)
-
-    ℓʰ = ifelse(isnan(ℓʰ), zero(grid), ℓʰ)
-    ℓ★ = ifelse(isnan(ℓ★), zero(grid), ℓ★)
-    ℓe = max(ℓ★, ℓʰ)
-
-    H = static_column_depthᶜᶜᵃ(i, j, grid)
-    return min(H, ℓe)
 end
 
 
@@ -282,14 +258,21 @@ vgrid        = make_grid(varchitecture, Nx, Ny, Nz, Δz_center)
 vmodel       = build_model(vgrid, Δt₀, parameters)
 #vdiffusivity_fields = build_model(grid, Δt₀, parameters)
 
+@info "Comparing the bottom heights:"
+@allowscalar @show convert(Array, model.grid.immersed_boundary.bottom_height)
+@show vmodel.grid.immersed_boundary.bottom_height
+
 @info "Comparing the pre-init model states..."
-@allowscalar @show abs.(convert(Array, model.diffusivity_fields.κe) - vmodel.diffusivity_fields.κe)
+@allowscalar @show maximum(abs.(convert(Array, model.diffusivity_fields.κe) - vmodel.diffusivity_fields.κe))
 @allowscalar @show maximum(abs.(convert(Array, model.diffusivity_fields.κc) - vmodel.diffusivity_fields.κc))
 @allowscalar @show maximum(abs.(convert(Array, model.diffusivity_fields.κu) - vmodel.diffusivity_fields.κu))
 
 
 @show @which compute_diffusivities!(model.diffusivity_fields, model.closure, model; parameters = :xyz)
 @show @which compute_diffusivities!(vmodel.diffusivity_fields, vmodel.closure, vmodel; parameters = :xyz)
+
+@show @which rnode(1, 1, model.grid.Nz+1, model.grid, Center(), Center(), Face())
+@show @which rnode(1, 1, vmodel.grid.Nz+1, vmodel.grid, Center(), Center(), Face())
 
 # MLIR Error:
 #rupdate_state! = @compile raise_first=true raise=true sync=true update_state!(model)
@@ -301,6 +284,6 @@ bad_compute_diffusivities!(model.diffusivity_fields, model.closure, model; param
 bad_compute_diffusivities!(vmodel.diffusivity_fields, vmodel.closure, vmodel; parameters = :xyz)
 
 @info "And now comparing them again"
-@allowscalar @show abs.(convert(Array, model.diffusivity_fields.κe) - vmodel.diffusivity_fields.κe)
+@allowscalar @show maximum(abs.(convert(Array, model.diffusivity_fields.κe) - vmodel.diffusivity_fields.κe))
 @allowscalar @show maximum(abs.(convert(Array, model.diffusivity_fields.κc) - vmodel.diffusivity_fields.κc))
 @allowscalar @show maximum(abs.(convert(Array, model.diffusivity_fields.κu) - vmodel.diffusivity_fields.κu))
