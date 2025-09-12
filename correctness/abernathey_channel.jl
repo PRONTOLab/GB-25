@@ -99,44 +99,12 @@ function make_grid(architecture, Nx, Ny, Nz, Δz_center)
     ridge = Field{Center, Center, Nothing}(underlying_grid)
     set!(ridge, ridge_function)
 
+    @show @which materialize_immersed_boundary(underlying_grid, GridFittedBottom(ridge))
+
+    @show @which ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(ridge))
+
     grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(ridge))
-    return grid
-end
-
-#####
-##### Model construction:
-#####
-
-function build_model(grid, Δt₀, parameters)
-
-    # closure
-    vertical_closure_CATKE = CATKEVerticalDiffusivity()
-
-    @info "Building a model..."
-
-    @show @which model = HydrostaticFreeSurfaceModel(
-                        grid = grid,
-                        free_surface = SplitExplicitFreeSurface(substeps=50),
-                        momentum_advection = nothing,
-                        tracer_advection = nothing,
-                        buoyancy = SeawaterBuoyancy(equation_of_state=LinearEquationOfState(Oceananigans.defaults.FloatType),constant_salinity=35),
-                        coriolis = nothing,
-                        closure = vertical_closure_CATKE,
-                        tracers = (:T, :e)
-    )
-
-    model = HydrostaticFreeSurfaceModel(
-        grid = grid,
-        free_surface = SplitExplicitFreeSurface(substeps=50),
-        momentum_advection = nothing,
-        tracer_advection = nothing,
-        buoyancy = SeawaterBuoyancy(equation_of_state=LinearEquationOfState(Oceananigans.defaults.FloatType),constant_salinity=35),
-        coriolis = nothing,
-        closure = vertical_closure_CATKE,
-        tracers = (:T, :e)
-    )
-
-    return model
+    return grid, underlying_grid
 end
 
 #####
@@ -163,7 +131,7 @@ using Oceananigans.TurbulenceClosures: compute_diffusivities!, implicit_step!,
                                        _ivd_upper_diagonal, _implicit_linear_coefficient, ivd_diffusivity, getclosure,
                                        κzᶜᶜᶠ, κᶜᶜᶠ, diffusivity
 
-using Oceananigans.ImmersedBoundaries: mask_immersed_field!, mask_immersed_field_xy!, inactive_node
+using Oceananigans.ImmersedBoundaries: mask_immersed_field!, mask_immersed_field_xy!, inactive_node, materialize_immersed_boundary, compute_numerical_bottom_height!
 using Oceananigans.Models: update_model_field_time_series!, initialization_update_state!
 using Oceananigans.Models.NonhydrostaticModels: update_hydrostatic_pressure!, p_kernel_parameters
 using Oceananigans.Fields: tupled_fill_halo_regions!
@@ -199,43 +167,17 @@ using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: get_top_tra
 
 using KernelAbstractions: @kernel, @index
 
-
-function bad_compute_diffusivities!(diffusivities, closure, model; parameters = :xyz)
-    arch = model.architecture
-    grid = model.grid
-    velocities = model.velocities
-    tracers = model.tracers
-    buoyancy = model.buoyancy
-    clock = model.clock
-    
-    launch!(arch, grid, parameters,
-            bad_compute_CATKE_diffusivities!,
-            diffusivities, grid, closure, velocities, tracers, buoyancy)
-    
-    return nothing
-end
-
-@kernel function bad_compute_CATKE_diffusivities!(diffusivities, grid, closure, velocities, tracers, buoyancy)
-    i, j, k = @index(Global, NTuple)
-
-    # Ensure this works with "ensembles" of closures, in addition to ordinary single closures
-    Jᵇ = diffusivities.Jᵇ
-
-    # Note: we also compute the TKE diffusivity here for diagnostic purposes, even though it
-    # is recomputed in time_step_turbulent_kinetic_energy.
-    κu★ = κuᶜᶜᶠ(i, j, k, grid, closure, velocities, tracers, buoyancy, Jᵇ)
-    κc★ = κcᶜᶜᶠ(i, j, k, grid, closure, velocities, tracers, buoyancy, Jᵇ)
-    @inbounds κe★ = getnode(grid.underlying_grid.z.cᵃᵃᶠ, grid.Nz+1) - grid.immersed_boundary.bottom_height[i, j, 1]
-
-    @inbounds begin
-        diffusivities.κu[i, j, k] = κu★
-        diffusivities.κc[i, j, k] = κc★
-        diffusivities.κe[i, j, k] = κe★
-    end
+function bad_materialize_immersed_boundary(grid, ib::GridFittedBottom)
+    bottom_field = Field{Center, Center, Nothing}(grid)
+    set!(bottom_field, ib.bottom_height)
+    @apply_regionally compute_numerical_bottom_height!(bottom_field, grid, ib)
+    fill_halo_regions!(bottom_field)
+    new_ib = GridFittedBottom(bottom_field)
+    return new_ib
 end
 
 #####
-##### Actually creating our model and using these functions to run it:
+##### Actually creating our grid:
 #####
 
 # Architecture
@@ -243,9 +185,11 @@ architecture = ReactantState()
 Δt₀ = 5minutes
 
 # Make the grid:
-grid        = make_grid(architecture, Nx, Ny, Nz, Δz_center)
-model       = build_model(grid, Δt₀, parameters)
-#diffusivity_fields = build_model(grid, Δt₀, parameters)
+grid, underlying_grid = make_grid(architecture, Nx, Ny, Nz, Δz_center)
+
+ridge = Field{Center, Center, Nothing}(underlying_grid)
+set!(ridge, ridge_function)
+materialized_ib = bad_materialize_immersed_boundary(underlying_grid, GridFittedBottom(ridge))
 
 @info "Vanilla model as a comparison..."
 
@@ -253,38 +197,13 @@ model       = build_model(grid, Δt₀, parameters)
 varchitecture = CPU()
 
 # Make the grid:
-vgrid        = make_grid(varchitecture, Nx, Ny, Nz, Δz_center)
-vmodel       = build_model(vgrid, Δt₀, parameters)
-#vdiffusivity_fields = build_model(grid, Δt₀, parameters)
+vgrid, vunderlying_grid = make_grid(varchitecture, Nx, Ny, Nz, Δz_center)
+
+vridge = Field{Center, Center, Nothing}(vunderlying_grid)
+set!(vridge, ridge_function)
+vmaterialized_ib = bad_materialize_immersed_boundary(vunderlying_grid, GridFittedBottom(vridge))
 
 @info "Comparing the bottom heights:"
-@allowscalar @show convert(Array, grid.immersed_boundary.bottom_height)
-@show convert(Array, vgrid.immersed_boundary.bottom_height)
+#@allowscalar @show convert(Array, grid.immersed_boundary.bottom_height) - convert(Array, vgrid.immersed_boundary.bottom_height)
 
-@allowscalar @show getnode(grid.underlying_grid.z.cᵃᵃᶠ, grid.Nz+1) - getnode(vgrid.underlying_grid.z.cᵃᵃᶠ, vgrid.Nz+1)
-
-@info "Comparing the pre-init model states..."
-@allowscalar @show maximum(abs.(convert(Array, model.diffusivity_fields.κe) - vmodel.diffusivity_fields.κe))
-@allowscalar @show maximum(abs.(convert(Array, model.diffusivity_fields.κc) - vmodel.diffusivity_fields.κc))
-@allowscalar @show maximum(abs.(convert(Array, model.diffusivity_fields.κu) - vmodel.diffusivity_fields.κu))
-
-
-@show @which compute_diffusivities!(model.diffusivity_fields, model.closure, model; parameters = :xyz)
-@show @which compute_diffusivities!(vmodel.diffusivity_fields, vmodel.closure, vmodel; parameters = :xyz)
-
-@show @which rnode(1, 1, model.grid.Nz+1, model.grid.underlying_grid, Center(), Center(), Face())
-@show @which rnode(1, 1, vmodel.grid.Nz+1, vmodel.grid.underlying_grid, Center(), Center(), Face())
-
-# MLIR Error:
-#rupdate_state! = @compile raise_first=true raise=true sync=true update_state!(model)
-
-# What about this?
-#rbad_compute_diffusivities! = @compile raise_first=true raise=true sync=true bad_compute_diffusivities!(model.diffusivity_fields, model.closure, model; parameters = :xyz)
-
-bad_compute_diffusivities!(model.diffusivity_fields, model.closure, model; parameters = :xyz)
-bad_compute_diffusivities!(vmodel.diffusivity_fields, vmodel.closure, vmodel; parameters = :xyz)
-
-@info "And now comparing them again"
-@allowscalar @show maximum(abs.(convert(Array, model.diffusivity_fields.κe) - vmodel.diffusivity_fields.κe))
-@allowscalar @show maximum(abs.(convert(Array, model.diffusivity_fields.κc) - vmodel.diffusivity_fields.κc))
-@allowscalar @show maximum(abs.(convert(Array, model.diffusivity_fields.κu) - vmodel.diffusivity_fields.κu))
+@allowscalar @show convert(Array, materialized_ib.bottom_height) - convert(Array, vmaterialized_ib.bottom_height)
