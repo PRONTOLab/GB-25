@@ -16,6 +16,8 @@ using Oceananigans.TurbulenceClosures: CATKEVerticalDiffusivity
 
 using SeawaterPolynomials
 
+using InteractiveUtils
+
 #using Oceananigans.Architectures: GPU
 #using CUDA
 #CUDA.device!(0)
@@ -108,47 +110,33 @@ end
 function build_model(grid, Δt₀, parameters)
 
     # closure
-
-    κh = 0.5e-5 # [m²/s] horizontal diffusivity
-    νh = 30.0   # [m²/s] horizontal viscocity
-    κz = 0.5e-5 # [m²/s] vertical diffusivity
-    νz = 3e-4   # [m²/s] vertical viscocity
-
-    horizontal_closure = HorizontalScalarDiffusivity(ν = νh, κ = κh)
-    vertical_closure = VerticalScalarDiffusivity(ν = νz, κ = κz)
-
-    vertical_closure_CATKE = CATKEVerticalDiffusivity(minimum_tke=1e-7,
-                                                    maximum_tracer_diffusivity=0.3,
-                                                    maximum_viscosity=0.5)
+    vertical_closure_CATKE = CATKEVerticalDiffusivity()
 
     @info "Building a model..."
+
+    @show @which model = HydrostaticFreeSurfaceModel(
+                        grid = grid,
+                        free_surface = SplitExplicitFreeSurface(substeps=50),
+                        momentum_advection = nothing,
+                        tracer_advection = nothing,
+                        buoyancy = SeawaterBuoyancy(equation_of_state=LinearEquationOfState(Oceananigans.defaults.FloatType),constant_salinity=35),
+                        coriolis = nothing,
+                        closure = vertical_closure_CATKE,
+                        tracers = (:T, :e)
+    )
 
     model = HydrostaticFreeSurfaceModel(
         grid = grid,
         free_surface = SplitExplicitFreeSurface(substeps=50),
         momentum_advection = nothing,
-        tracer_advection = WENO(),
-        buoyancy = SeawaterBuoyancy(equation_of_state=SeawaterPolynomials.TEOS10EquationOfState(Oceananigans.defaults.FloatType),constant_salinity=35),
+        tracer_advection = nothing,
+        buoyancy = SeawaterBuoyancy(equation_of_state=LinearEquationOfState(Oceananigans.defaults.FloatType),constant_salinity=35),
         coriolis = nothing,
-        closure = (horizontal_closure, vertical_closure, vertical_closure_CATKE),
+        closure = vertical_closure_CATKE,
         tracers = (:T, :e)
     )
 
-    model.clock.last_Δt = Δt₀
-
     return model
-end
-
-#####
-##### Special initial and boundary conditions
-#####
-
-# resting initial condition
-function temperature_init(grid, parameters)
-    Tᵢ_function(x, y, z) = parameters.ΔT * (exp(z / parameters.h) - exp(-Lz / parameters.h)) / (1 - exp(-Lz / parameters.h))
-    Tᵢ = Field{Center, Center, Center}(grid)
-    set!(Tᵢ, Tᵢ_function)
-    return Tᵢ
 end
 
 #####
@@ -176,7 +164,7 @@ using Oceananigans.TurbulenceClosures: compute_diffusivities!, implicit_step!,
                                        κzᶜᶜᶠ, κᶜᶜᶠ, diffusivity
 
 using Oceananigans.ImmersedBoundaries: mask_immersed_field!, mask_immersed_field_xy!, inactive_node
-using Oceananigans.Models: update_model_field_time_series!
+using Oceananigans.Models: update_model_field_time_series!, initialization_update_state!
 using Oceananigans.Models.NonhydrostaticModels: update_hydrostatic_pressure!, p_kernel_parameters
 using Oceananigans.Fields: tupled_fill_halo_regions!
 using Oceananigans.Solvers: solve!, solve_batched_tridiagonal_system_kernel!, solve_batched_tridiagonal_system_z!, get_coefficient
@@ -196,31 +184,37 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fiel
                                                         step_free_surface!,
                                                         _ab2_step_tracer_field!
 
-using InteractiveUtils
 
 using KernelAbstractions: @kernel, @index
 
-function run_reentrant_channel_model!(grid, model, Tᵢ)
-    # setting IC's and BC's:
-    set!(model.tracers.T, Tᵢ)
 
-    # Step it forward
-    launch!(grid.architecture, grid, :xy,
-            a_kernel!,
-            model.tracers.T,
-            size(grid, 3),
-            model.diffusivity_fields[1]._tupled_tracer_diffusivities[1])
+function bad_update_state!(model, grid, callbacks; compute_tendencies = false)
+
+    @apply_regionally mask_immersed_model_fields!(model, grid)
+
+    # Update possible FieldTimeSeries used in the model
+    @apply_regionally update_model_field_time_series!(model, model.clock)
+
+    # Update the boundary conditions
+    @apply_regionally update_boundary_conditions!(fields(model), model)
+
+    # Fill the halos
+    fill_halo_regions!(prognostic_fields(model), model.grid, model.clock, fields(model); async=true)
+
+    @apply_regionally compute_auxiliaries!(model)
+
+    fill_halo_regions!(model.diffusivity_fields; only_local_halos=true)
+
+    [callback(model) for callback in callbacks if callback.callsite isa UpdateStateCallsite]
+
+    update_biogeochemical_state!(model.biogeochemistry, model)
+
+    compute_tendencies &&
+        @apply_regionally compute_tendencies!(model, callbacks)
 
     return nothing
 end
 
-@kernel function a_kernel!(f, Nz, K)
-    i, j = @index(Global, NTuple)
-    
-    for k = 2:Nz
-        @inbounds f[i, j, k] = f[i, j, k] + K[i, j, k-1] * f[i, j, k-1]
-    end
-end
 
 #####
 ##### Actually creating our model and using these functions to run it:
@@ -228,76 +222,39 @@ end
 
 # Architecture
 architecture = ReactantState()
-
-# Timestep size:
-Δt₀ = 5minutes 
+Δt₀ = 5minutes
 
 # Make the grid:
 grid        = make_grid(architecture, Nx, Ny, Nz, Δz_center)
 model       = build_model(grid, Δt₀, parameters)
-Tᵢ          = temperature_init(model.grid, parameters)
-
-
-@info "Built $model."
+#diffusivity_fields = build_model(grid, Δt₀, parameters)
 
 @info "Vanilla model as a comparison..."
 
 # Architecture
 varchitecture = CPU()
 
-# Timestep size:
-Δt₀ = 5minutes 
-
 # Make the grid:
 vgrid        = make_grid(varchitecture, Nx, Ny, Nz, Δz_center)
 vmodel       = build_model(vgrid, Δt₀, parameters)
-vTᵢ          = temperature_init(vmodel.grid, parameters)
+#vdiffusivity_fields = build_model(grid, Δt₀, parameters)
 
-@info "Comparing the pre-run model states..."
-#=
-@allowscalar @show convert(Array, model.diffusivity_fields[1]._tupled_tracer_diffusivities[1])
-@allowscalar @show typeof(convert(Array, model.diffusivity_fields[1]._tupled_tracer_diffusivities[1]))
-@allowscalar @show size(convert(Array, model.diffusivity_fields[1]._tupled_tracer_diffusivities[1]))
-@allowscalar @show vmodel.diffusivity_fields[1]._tupled_tracer_diffusivities[1]
-@allowscalar @show typeof(vmodel.diffusivity_fields[1]._tupled_tracer_diffusivities[1])
-@allowscalar @show size(vmodel.diffusivity_fields[1]._tupled_tracer_diffusivities[1])
+@info "Comparing the pre-init model states..."
+@allowscalar @show abs.(convert(Array, model.diffusivity_fields.κe) - vmodel.diffusivity_fields.κe)
+@allowscalar @show abs.(convert(Array, model.diffusivity_fields.κc) - vmodel.diffusivity_fields.κc)
 
-@allowscalar @show maximum(abs.(convert(Array, model.diffusivity_fields[1]._tupled_tracer_diffusivities[1]) - vmodel.diffusivity_fields[1]._tupled_tracer_diffusivities[1]))
-=#
+#@allowscalar @show abs.(convert(Array, diffusivity_fields.κe) - vdiffusivity_fields.κe)
+#@allowscalar @show abs.(convert(Array, diffusivity_fields.κc) - vdiffusivity_fields.κc)
 
-#@allowscalar @show vmodel.diffusivity_fields[1].κe
+@show @which update_state!(model; compute_tendencies=false)
+@show @which update_state!(vmodel; compute_tendencies=false)
 
+# MLIR Error:
+#rupdate_state! = @compile raise_first=true raise=true sync=true update_state!(model)
 
-@allowscalar @show abs.(convert(Array, model.diffusivity_fields[1].κc) - vmodel.diffusivity_fields[1].κc)
+bad_update_state!(model, model.grid, [])
+bad_update_state!(vmodel, vmodel.grid, [])
 
-
-
-throw_error = false
-include_halos = false
-rtol = sqrt(eps(Float64))
-atol = sqrt(eps(Float64))
-
-GordonBell25.compare_states(model, vmodel; include_halos, throw_error, rtol, atol)
-
-@info "Compiling the model run..."
-tic = time()
-rrun_reentrant_channel_model! = @compile raise_first=true raise=true sync=true run_reentrant_channel_model!(grid, model, Tᵢ)
-compile_toc = time() - tic
-
-@show compile_toc
-
-@info "Running the simulations..."
-
-tic      = time()
-rrun_reentrant_channel_model!(grid, model, Tᵢ)
-rrun_toc = time() - tic
-@show rrun_toc
-
-tic       = time()
-run_reentrant_channel_model!(vgrid, vmodel, vTᵢ)
-vrun_toc  = time() - tic
-@show vrun_toc
-
-@info "Comparing the model states after running..."
-
-GordonBell25.compare_states(model, vmodel; include_halos, throw_error, rtol, atol)
+@info "And now comparing them again"
+@allowscalar @show abs.(convert(Array, model.diffusivity_fields.κe) - vmodel.diffusivity_fields.κe)
+@allowscalar @show abs.(convert(Array, model.diffusivity_fields.κc) - vmodel.diffusivity_fields.κc)
