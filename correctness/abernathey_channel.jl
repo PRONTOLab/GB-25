@@ -188,29 +188,11 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fiel
 using KernelAbstractions: @kernel, @index
 
 
-function bad_update_state!(model, grid, callbacks; compute_tendencies = false)
+function bad_compute_auxiliaries!(model::HydrostaticFreeSurfaceModel; w_parameters = w_kernel_parameters(model.grid),
+                                                                  p_parameters = p_kernel_parameters(model.grid),
+                                                                  κ_parameters = :xyz)
 
-    @apply_regionally mask_immersed_model_fields!(model, grid)
-
-    # Update possible FieldTimeSeries used in the model
-    @apply_regionally update_model_field_time_series!(model, model.clock)
-
-    # Update the boundary conditions
-    @apply_regionally update_boundary_conditions!(fields(model), model)
-
-    # Fill the halos
-    fill_halo_regions!(prognostic_fields(model), model.grid, model.clock, fields(model); async=true)
-
-    @apply_regionally compute_auxiliaries!(model)
-
-    fill_halo_regions!(model.diffusivity_fields; only_local_halos=true)
-
-    [callback(model) for callback in callbacks if callback.callsite isa UpdateStateCallsite]
-
-    update_biogeochemical_state!(model.biogeochemistry, model)
-
-    compute_tendencies &&
-        @apply_regionally compute_tendencies!(model, callbacks)
+    compute_diffusivities!(model.diffusivity_fields, model.closure, model; parameters = :xyz)
 
     return nothing
 end
@@ -243,17 +225,15 @@ vmodel       = build_model(vgrid, Δt₀, parameters)
 @allowscalar @show abs.(convert(Array, model.diffusivity_fields.κe) - vmodel.diffusivity_fields.κe)
 @allowscalar @show abs.(convert(Array, model.diffusivity_fields.κc) - vmodel.diffusivity_fields.κc)
 
-#@allowscalar @show abs.(convert(Array, diffusivity_fields.κe) - vdiffusivity_fields.κe)
-#@allowscalar @show abs.(convert(Array, diffusivity_fields.κc) - vdiffusivity_fields.κc)
 
-@show @which update_state!(model; compute_tendencies=false)
-@show @which update_state!(vmodel; compute_tendencies=false)
+@show @which compute_diffusivities!(model.diffusivity_fields, model.closure, model; parameters = :xyz)
+@show @which compute_diffusivities!(vmodel.diffusivity_fields, vmodel.closure, vmodel; parameters = :xyz)
 
 # MLIR Error:
 #rupdate_state! = @compile raise_first=true raise=true sync=true update_state!(model)
 
-bad_update_state!(model, model.grid, [])
-bad_update_state!(vmodel, vmodel.grid, [])
+bad_compute_auxiliaries!(model)
+bad_compute_auxiliaries!(vmodel)
 
 @info "And now comparing them again"
 @allowscalar @show abs.(convert(Array, model.diffusivity_fields.κe) - vmodel.diffusivity_fields.κe)
