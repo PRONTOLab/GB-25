@@ -190,7 +190,8 @@ using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: get_top_tra
                                                                      compute_average_surface_buoyancy_flux!,
                                                                      compute_CATKE_diffusivities!,
                                                                      mask_diffusivity,
-                                                                     κuᶜᶜᶠ, κcᶜᶜᶠ, κeᶜᶜᶠ
+                                                                     κuᶜᶜᶠ, κcᶜᶜᶠ, κeᶜᶜᶠ,
+                                                                     TKE_mixing_lengthᶜᶜᶠ, turbulent_velocityᶜᶜᶜ
 
 
 
@@ -223,17 +224,21 @@ end
     # is recomputed in time_step_turbulent_kinetic_energy.
     κu★ = κuᶜᶜᶠ(i, j, k, grid, closure_ij, velocities, tracers, buoyancy, Jᵇ)
     κc★ = κcᶜᶜᶠ(i, j, k, grid, closure_ij, velocities, tracers, buoyancy, Jᵇ)
-    κe★ = κeᶜᶜᶠ(i, j, k, grid, closure_ij, velocities, tracers, buoyancy, Jᵇ)
-
-    κu★ = mask_diffusivity(i, j, k, grid, κu★)
-    κc★ = mask_diffusivity(i, j, k, grid, κc★)
-    κe★ = mask_diffusivity(i, j, k, grid, κe★)
+    κe★ = bad_κeᶜᶜᶠ(i, j, k, grid, closure_ij, velocities, tracers, buoyancy, Jᵇ)
 
     @inbounds begin
         diffusivities.κu[i, j, k] = κu★
         diffusivities.κc[i, j, k] = κc★
         diffusivities.κe[i, j, k] = κe★
     end
+end
+
+@inline function bad_κeᶜᶜᶠ(i, j, k, grid, closure, velocities, tracers, buoyancy, surface_buoyancy_flux)
+    w★ = ℑzᵃᵃᶠ(i, j, k, grid, turbulent_velocityᶜᶜᶜ, closure, tracers.e)
+    ℓe = TKE_mixing_lengthᶜᶜᶠ(i, j, k, grid, closure, velocities, tracers, buoyancy, surface_buoyancy_flux)
+    κe = ℓe * w★
+    FT = eltype(grid)
+    return FT(κe)
 end
 
 
@@ -262,7 +267,7 @@ vmodel       = build_model(vgrid, Δt₀, parameters)
 
 @info "Comparing the pre-init model states..."
 @allowscalar @show abs.(convert(Array, model.diffusivity_fields.κe) - vmodel.diffusivity_fields.κe)
-@allowscalar @show abs.(convert(Array, model.diffusivity_fields.κc) - vmodel.diffusivity_fields.κc)
+@allowscalar @show maximum(abs.(convert(Array, model.diffusivity_fields.κc) - vmodel.diffusivity_fields.κc))
 @allowscalar @show maximum(abs.(convert(Array, model.diffusivity_fields.κu) - vmodel.diffusivity_fields.κu))
 
 
@@ -280,5 +285,5 @@ bad_compute_diffusivities!(vmodel.diffusivity_fields, vmodel.closure, vmodel; pa
 
 @info "And now comparing them again"
 @allowscalar @show abs.(convert(Array, model.diffusivity_fields.κe) - vmodel.diffusivity_fields.κe)
-@allowscalar @show abs.(convert(Array, model.diffusivity_fields.κc) - vmodel.diffusivity_fields.κc)
+@allowscalar @show maximum(abs.(convert(Array, model.diffusivity_fields.κc) - vmodel.diffusivity_fields.κc))
 @allowscalar @show maximum(abs.(convert(Array, model.diffusivity_fields.κu) - vmodel.diffusivity_fields.κu))
