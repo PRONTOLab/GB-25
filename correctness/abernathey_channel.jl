@@ -211,38 +211,11 @@ function bad_compute_diffusivities!(diffusivities, closure, model; parameters = 
         # Compute e at the current time:
         #   * update tendency Gⁿ using current and previous velocity field
         #   * use tridiagonal solve to take an implicit step
+        @show isfinite(model.clock.last_Δt), model.architecture
         time_step_catke_equation!(model, model.timestepper)
     end
 
-    # Update "previous velocities"
-    u, v, w = model.velocities
-    u⁻, v⁻ = diffusivities.previous_velocities
-    parent(u⁻) .= parent(u)
-    parent(v⁻) .= parent(v)
-    #=
-    launch!(arch, grid, :xy,
-            bad_compute_average_surface_buoyancy_flux!,
-            diffusivities.Jᵇ, grid, closure, Δt)
-    =#
-    #=
-    launch!(arch, grid, parameters,
-            compute_CATKE_diffusivities!,
-            diffusivities, grid, closure, velocities, tracers, buoyancy)
-    =#
     return nothing
-end
-
-@kernel function bad_compute_average_surface_buoyancy_flux!(Jᵇ, grid, closure, Δt)
-    i, j = @index(Global, NTuple)
-    k = grid.Nz
-
-    Jᵇᵋ = closure.minimum_convective_buoyancy_flux
-    Jᵇᵢⱼ = @inbounds Jᵇ[i, j, 1]
-    Jᵇ⁺ = max(Jᵇᵋ, Jᵇᵢⱼ) # selects fastest (dominant) time-scale
-    t★ = cbrt(100.0 / Jᵇ⁺)
-    ϵ = Δt / t★
-
-    @inbounds Jᵇ[i, j, 1] = Jᵇᵢⱼ / (1 + ϵ)
 end
 
 
@@ -257,6 +230,7 @@ architecture = ReactantState()
 # Make the grid:
 grid        = make_grid(architecture, Nx, Ny, Nz, Δz_center)
 model       = build_model(grid, Δt₀, parameters)
+@show model.clock.last_Δt
 #diffusivity_fields = build_model(grid, Δt₀, parameters)
 
 @info "Vanilla model as a comparison..."
@@ -267,6 +241,7 @@ varchitecture = CPU()
 # Make the grid:
 vgrid        = make_grid(varchitecture, Nx, Ny, Nz, Δz_center)
 vmodel       = build_model(vgrid, Δt₀, parameters)
+@show vmodel.clock.last_Δt
 #vdiffusivity_fields = build_model(grid, Δt₀, parameters)
 
 @info "Comparing the pre-init model states..."
