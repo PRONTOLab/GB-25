@@ -132,7 +132,7 @@ using Oceananigans.TurbulenceClosures: compute_diffusivities!, implicit_step!,
                                        κzᶜᶜᶠ, κᶜᶜᶠ, diffusivity
 
 using Oceananigans.ImmersedBoundaries: mask_immersed_field!, mask_immersed_field_xy!, inactive_node, materialize_immersed_boundary, compute_numerical_bottom_height!
-using Oceananigans.Models: update_model_field_time_series!, initialization_update_state!
+using Oceananigans.Models: update_model_field_time_series!, initialization_update_state!, initialize_immersed_boundary_grid!
 using Oceananigans.Models.NonhydrostaticModels: update_hydrostatic_pressure!, p_kernel_parameters
 using Oceananigans.Fields: tupled_fill_halo_regions!
 using Oceananigans.Solvers: solve!, solve_batched_tridiagonal_system_kernel!, solve_batched_tridiagonal_system_z!, get_coefficient
@@ -186,10 +186,9 @@ architecture = ReactantState()
 
 # Make the grid:
 grid, underlying_grid = make_grid(architecture, Nx, Ny, Nz, Δz_center)
-
 ridge = Field{Center, Center, Nothing}(underlying_grid)
 set!(ridge, ridge_function)
-materialized_ib = bad_materialize_immersed_boundary(underlying_grid, GridFittedBottom(ridge))
+materialized_ib = materialize_immersed_boundary(underlying_grid, GridFittedBottom(ridge))
 
 @info "Vanilla model as a comparison..."
 
@@ -198,12 +197,13 @@ varchitecture = CPU()
 
 # Make the grid:
 vgrid, vunderlying_grid = make_grid(varchitecture, Nx, Ny, Nz, Δz_center)
-
 vridge = Field{Center, Center, Nothing}(vunderlying_grid)
 set!(vridge, ridge_function)
-vmaterialized_ib = bad_materialize_immersed_boundary(vunderlying_grid, GridFittedBottom(vridge))
+vmaterialized_ib = materialize_immersed_boundary(vunderlying_grid, GridFittedBottom(vridge))
+
+@show @which materialize_immersed_boundary(underlying_grid, GridFittedBottom(ridge))
+@show @which materialize_immersed_boundary(vunderlying_grid, GridFittedBottom(vridge))
 
 @info "Comparing the bottom heights:"
-#@allowscalar @show convert(Array, grid.immersed_boundary.bottom_height) - convert(Array, vgrid.immersed_boundary.bottom_height)
-
+@allowscalar @show convert(Array, grid.immersed_boundary.bottom_height) - convert(Array, vgrid.immersed_boundary.bottom_height)
 @allowscalar @show convert(Array, materialized_ib.bottom_height) - convert(Array, vmaterialized_ib.bottom_height)
