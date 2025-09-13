@@ -11,7 +11,7 @@ using Statistics
 using Oceananigans
 using Oceananigans.Units
 using Oceananigans.OutputReaders: FieldTimeSeries
-using Oceananigans.Grids: xnode, ynode, znode
+using Oceananigans.Grids: xnode, ynode, znode, XDirection, YDirection, ZDirection, peripheral_node, static_column_depthᶜᶜᵃ, rnode, getnode
 using Oceananigans.TurbulenceClosures: CATKEVerticalDiffusivity
 
 using SeawaterPolynomials
@@ -27,32 +27,7 @@ using Oceananigans.Architectures: ReactantState
 
 using Enzyme
 
-#=
-# https://github.com/CliMA/Oceananigans.jl/blob/c29939097a8d2f42966e930f2f2605803bf5d44c/src/AbstractOperations/binary_operations.jl#L5
-Base.@nospecializeinfer function Reactant.traced_type_inner(
-    @nospecialize(OA::Type{Oceananigans.AbstractOperations.BinaryOperation{LX, LY, LZ, O, A, B, IA, IB, G, T}}),
-    seen,
-    mode::Reactant.TraceMode,
-    @nospecialize(track_numbers::Type),
-    @nospecialize(sharding),
-    @nospecialize(runtime)
-) where {LX, LY, LZ, O, A, B, IA, IB, G, T}
-    LX2 = Reactant.traced_type_inner(LX, seen, mode, track_numbers, sharding, runtime)
-    LY2 = Reactant.traced_type_inner(LY, seen, mode, track_numbers, sharding, runtime)
-    LZ2 = Reactant.traced_type_inner(LZ, seen, mode, track_numbers, sharding, runtime)
 
-    O2 = Reactant.traced_type_inner(O, seen, mode, track_numbers, sharding, runtime)
-
-    A2 = Reactant.traced_type_inner(A, seen, mode, track_numbers, sharding, runtime)
-    B2 = Reactant.traced_type_inner(B, seen, mode, track_numbers, sharding, runtime)
-    IA2 = Reactant.traced_type_inner(IA, seen, mode, track_numbers, sharding, runtime)
-    IB2 = Reactant.traced_type_inner(IB, seen, mode, track_numbers, sharding, runtime)
-    G2 = Reactant.traced_type_inner(G, seen, mode, track_numbers, sharding, runtime)
-
-    T2 = eltype(G2)
-    return Oceananigans.AbstractOperations.BinaryOperation{LX2, LY2, LZ2, O2, A2, B2, IA2, IB2, G2, T2}
-end
-=#
 Oceananigans.defaults.FloatType = Float64
 
 #
@@ -265,7 +240,9 @@ end
 ##### Forward simulation (not actually using the Simulation struct)
 #####
 
-using Oceananigans: AbstractModel
+using Oceananigans: AbstractModel, fields, prognostic_fields, location
+using Oceananigans.Utils: launch!
+using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.TimeSteppers: update_state!,
                                 tick!,
                                 compute_pressure_correction!,
@@ -273,7 +250,51 @@ using Oceananigans.TimeSteppers: update_state!,
                                 step_lagrangian_particles!,
                                 ab2_step!,
                                 QuasiAdamsBashforth2TimeStepper,
-                                compute_flux_bc_tendencies!
+                                compute_flux_bc_tendencies!,
+                                compute_tendencies!
+
+using Oceananigans.Biogeochemistry: update_biogeochemical_state!
+using Oceananigans.BoundaryConditions: update_boundary_conditions!
+using Oceananigans.TurbulenceClosures: compute_diffusivities!, implicit_step!,
+                                       is_vertically_implicit, ivd_diagonal, _ivd_lower_diagonal,
+                                       _ivd_upper_diagonal, _implicit_linear_coefficient, ivd_diffusivity, getclosure,
+                                       κzᶜᶜᶠ, κᶜᶜᶠ, diffusivity
+
+using Oceananigans.ImmersedBoundaries: mask_immersed_field!, mask_immersed_field_xy!, inactive_node, materialize_immersed_boundary, compute_numerical_bottom_height!
+using Oceananigans.Models: update_model_field_time_series!, initialization_update_state!, initialize_immersed_boundary_grid!
+using Oceananigans.Models.NonhydrostaticModels: update_hydrostatic_pressure!, p_kernel_parameters
+using Oceananigans.Fields: tupled_fill_halo_regions!
+using Oceananigans.Solvers: solve!, solve_batched_tridiagonal_system_kernel!, solve_batched_tridiagonal_system_z!, get_coefficient
+using Oceananigans.Operators: σⁿ, σ⁻, Δz⁻¹, ℑzᵃᵃᶠ
+
+using Oceananigans.Models.NonhydrostaticModels: compute_auxiliaries!, p_kernel_parameters
+using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fields!,
+                                                        compute_w_from_continuity!,
+                                                        w_kernel_parameters,
+                                                        update_grid_vertical_velocity!,
+                                                        _compute_w_from_continuity!,
+                                                        compute_free_surface_tendency!,
+                                                        scale_by_stretching_factor!,
+                                                        ab2_step_grid!,
+                                                        ab2_step_velocities!,
+                                                        ab2_step_tracers!,
+                                                        step_free_surface!,
+                                                        _ab2_step_tracer_field!
+
+using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: get_top_tracer_bcs, 
+                                                                     update_previous_compute_time!,
+                                                                     time_step_catke_equation!,
+                                                                     compute_average_surface_buoyancy_flux!,
+                                                                     compute_CATKE_diffusivities!,
+                                                                     mask_diffusivity,
+                                                                     κuᶜᶜᶠ, κcᶜᶜᶠ, κeᶜᶜᶠ,
+                                                                     TKE_mixing_lengthᶜᶜᶠ, turbulent_velocityᶜᶜᶜ,
+                                                                     convective_length_scaleᶜᶜᶠ, stability_functionᶜᶜᶠ,
+                                                                     stable_length_scaleᶜᶜᶠ
+
+
+
+using KernelAbstractions: @kernel, @index
 
 function loop!(model)
     Δt = model.clock.last_Δt
@@ -305,12 +326,34 @@ function bad_time_step!(model, Δt;
     compute_flux_bc_tendencies!(model)
     ab2_step!(model, Δt)
 
-    tick!(model.clock, Δt)
+    bad_update_state!(model, model.grid, callbacks; compute_tendencies=true)
 
-    compute_pressure_correction!(model, Δt)
-    correct_velocities_and_cache_previous_tendencies!(model, Δt)
+    return nothing
+end
 
-    update_state!(model, callbacks; compute_tendencies=true)
+function bad_update_state!(model, grid, callbacks; compute_tendencies = true)
+
+    @apply_regionally mask_immersed_model_fields!(model, grid)
+
+    # Update possible FieldTimeSeries used in the model
+    @apply_regionally update_model_field_time_series!(model, model.clock)
+
+    # Update the boundary conditions
+    @apply_regionally update_boundary_conditions!(fields(model), model)
+
+    # Fill the halos
+    fill_halo_regions!(prognostic_fields(model), model.grid, model.clock, fields(model); async=true)
+
+    @apply_regionally compute_auxiliaries!(model)
+
+    fill_halo_regions!(model.diffusivity_fields; only_local_halos=true)
+
+    [callback(model) for callback in callbacks if callback.callsite isa UpdateStateCallsite]
+
+    update_biogeochemical_state!(model.biogeochemistry, model)
+
+    compute_tendencies &&
+        @apply_regionally compute_tendencies!(model, callbacks)
 
     return nothing
 end
@@ -350,8 +393,8 @@ vTᵢ          = temperature_init(vmodel.grid, parameters)
 
 using InteractiveUtils
 
-@show @which time_step!(model, Δt₀)
-@show @which time_step!(vmodel, Δt₀)
+@show @which update_state!(model, []; compute_tendencies=true)
+@show @which update_state!(vmodel, []; compute_tendencies=true)
 
 @info "Comparing the pre-run model states..."
 
