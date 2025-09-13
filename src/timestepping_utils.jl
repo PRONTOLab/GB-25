@@ -1,6 +1,7 @@
 using Reactant
 using Oceananigans
 import Oceananigans.TimeSteppers: first_time_step!, time_step!
+using Oceananigans.Utils: @apply_regionally
 using Reactant_jll: libReactantExtra
 
 const TRY_COMPILE_FAILED = Ref(false)
@@ -18,9 +19,37 @@ function try_compile_code(f)
     end
 end
 
+function fill_one_halo!(model)
+    u = model.velocities.u
+    model_fields = Oceananigans.Models.HydrostaticFreeSurfaceModels.fields(model)
+    Oceananigans.BoundaryConditions.fill_halo_regions!(u, model.grid, model.clock, model_fields)
+    return nothing
+end
+
 function first_time_step!(model)
     Δt = model.clock.last_Δt
-    Oceananigans.TimeSteppers.first_time_step!(model, Δt)
+    @show which(Oceananigans.TimeSteppers.initialize!, (typeof(model),))
+    Oceananigans.TimeSteppers.initialize!(model)
+
+    @apply_regionally Oceananigans.Models.HydrostaticFreeSurfaceModels.mask_immersed_model_fields!(model, model.grid)
+
+    # Update possible FieldTimeSeries used in the model
+    @apply_regionally Oceananigans.Models.update_model_field_time_series!(model, model.clock)
+
+    # Update the boundary conditions
+    @apply_regionally Oceananigans.BoundaryConditions.update_boundary_condition!(fields(model), model)
+
+    Oceananigans.Fields.tupled_fill_halo_regions!(Oceananigans.Models.HydrostaticFreeSurfaceModels.prognostic_fields(model), model.grid, model.clock, Oceananigans.Models.HydrostaticFreeSurfaceModels.fields(model), async=true)
+
+    # @apply_regionally Oceananigans.BoundaryConditions.replace_horizontal_vector_halos!(model.velocities, model.grid)
+    # @apply_regionally Oceananigans.Models.NonhydrostaticModels.compute_auxiliaries!(model)
+
+    # Oceananigans.Models.HydrostaticFreeSurfaceModels.fill_halo_regions!(model.diffusivity_fields; only_local_halos = true)
+
+    # Oceananigans.Biogeochemistry.update_biogeochemical_state!(model.biogeochemistry, model)
+
+    # @apply_regionally Oceananigans.Models.HydrostaticFreeSurfaceModels.compute_tendencies!(model, [])
+
     return nothing
 end
 
