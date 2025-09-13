@@ -118,15 +118,15 @@ elseif test_type == "fill_north_south"
     north_south_bcs = FieldBoundaryConditions(model.grid, loc, west=nothing, east=nothing, top=nothing, bottom=nothing)
     north_south_field = CenterField(model.grid; boundary_conditions=north_south_bcs)
 
-    @info "[$rank] Compiling fill_halo_regions! for east_west_field..." now(UTC)
-    rfill_east_west! = @compile sync=true raise=true fill_halo_regions!(east_west_field)
+    @info "[$rank] Compiling fill_halo_regions! for north_south_field..." now(UTC)
+    rfill_north_south! = @compile sync=true raise=true fill_halo_regions!(north_south_field)
     @info "[$rank] allocations" GordonBell25.allocatorstats()
 
-    mkpath(joinpath(profile_dir, "fill_east_west"))
+    mkpath(joinpath(profile_dir, "fill_north_south"))
     @info "[$rank] allocations" GordonBell25.allocatorstats()
     @info "[$rank] Running test code..." now(UTC)
-    Reactant.with_profiler(joinpath(profile_dir, "fill_east_west")) do
-        @time "[$rank] test " rfill_east_west!(east_west_field)
+    Reactant.with_profiler(joinpath(profile_dir, "fill_north_south")) do
+        @time "[$rank] test " rfill_north_south!(north_south_field)
     end
     @info "[$rank] allocations" GordonBell25.allocatorstats()
 
@@ -137,15 +137,15 @@ elseif test_type == "fill_east_west"
     east_west_bcs = FieldBoundaryConditions(model.grid, loc, south=nothing, north=nothing, top=nothing, bottom=nothing)
     east_west_field = CenterField(model.grid; boundary_conditions=east_west_bcs)
 
-    @info "[$rank] Compiling fill_halo_regions! for north_south_field..." now(UTC)
-    rfill_north_south! = @compile sync=true raise=true fill_halo_regions!(north_south_field)
+    @info "[$rank] Compiling fill_halo_regions! for east_west_field..." now(UTC)
+    rfill_east_west! = @compile sync=true raise=true fill_halo_regions!(east_west_field)
     @info "[$rank] allocations" GordonBell25.allocatorstats()
 
-    mkpath(joinpath(profile_dir, "fill_north_south"))
+    mkpath(joinpath(profile_dir, "fill_east_west"))
     @info "[$rank] allocations" GordonBell25.allocatorstats()
     @info "[$rank] Running test code..." now(UTC)
-    Reactant.with_profiler(joinpath(profile_dir, "fill_north_south")) do
-        @time "[$rank] test " rfill_north_south!(north_south_field)
+    Reactant.with_profiler(joinpath(profile_dir, "east_west")) do
+        @time "[$rank] test " rfill_east_west!(east_west_field)
     end
     @info "[$rank] allocations" GordonBell25.allocatorstats()
 end
