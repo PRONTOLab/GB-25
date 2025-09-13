@@ -100,7 +100,7 @@ test_type = parsed_args["test-type"]
 
 if test_type == "fill_all_halos"
     @info "[$rank] Compiling fill_halo_regions!..." now(UTC)
-    rfill_all_halos!= @compile sync=true raise=true fill_halo_regions!(model.tracers.T)
+    rfill_all_halos! = @compile sync=true raise=true fill_halo_regions!(model.tracers.T)
     @info "[$rank] allocations" GordonBell25.allocatorstats()
 
     mkpath(joinpath(profile_dir, "fill_all_halos"))
