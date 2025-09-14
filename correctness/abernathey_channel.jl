@@ -108,17 +108,11 @@ end
 
 function build_model(grid, Δt₀, parameters)
 
-    @inline function buoyancy_flux(i, j, grid, clock, model_fields, p)
-        y = ynode(j, grid, Center())
-        return ifelse(y < p.y_shutoff, p.Qᵇ * cos(3π * y / p.Ly), 0.0)
-    end
-
     @inline function temperature_flux(i, j, grid, clock, model_fields, p)
         y = ynode(j, grid, Center())
         return ifelse(y < p.y_shutoff, p.Qᵀ * cos(3π * y / p.Ly), 0.0)
     end
 
-    buoyancy_flux_bc    = FluxBoundaryCondition(buoyancy_flux, discrete_form = true, parameters = parameters)
     temperature_flux_bc = FluxBoundaryCondition(temperature_flux, discrete_form = true, parameters = parameters)
 
     u_stress_bc = FluxBoundaryCondition(Field{Face, Center, Nothing}(grid))
@@ -129,7 +123,6 @@ function build_model(grid, Δt₀, parameters)
     u_drag_bc = FluxBoundaryCondition(u_drag, discrete_form = true, parameters = parameters)
     v_drag_bc = FluxBoundaryCondition(v_drag, discrete_form = true, parameters = parameters)
 
-    b_bcs = FieldBoundaryConditions(top = buoyancy_flux_bc)
     T_bcs = FieldBoundaryConditions(top = temperature_flux_bc)
 
     u_bcs = FieldBoundaryConditions(top = u_stress_bc, bottom = u_drag_bc)
@@ -143,21 +136,8 @@ function build_model(grid, Δt₀, parameters)
     #####
     ##### Forcing and initial condition
     #####
-
-    @inline initial_buoyancy(z, p)    = p.ΔB * (exp(z / p.h) - exp(-p.Lz / p.h)) / (1 - exp(-p.Lz / p.h))
     @inline initial_temperature(z, p) = p.ΔT * (exp(z / p.h) - exp(-p.Lz / p.h)) / (1 - exp(-p.Lz / p.h))
     @inline mask(y, p)                = max(0.0, y - p.y_sponge) / (Ly - p.y_sponge)
-
-
-    @inline function buoyancy_relaxation(i, j, k, grid, clock, model_fields, p)
-        timescale = p.λt
-        y = ynode(j, grid, Center())
-        z = znode(k, grid, Center())
-        target_b = initial_buoyancy(z, p)
-        b = @inbounds model_fields.b[i, j, k]
-
-        return -1 / timescale * mask(y, p) * (b - target_b)
-    end
 
     @inline function temperature_relaxation(i, j, k, grid, clock, model_fields, p)
         timescale = p.λt
@@ -169,7 +149,6 @@ function build_model(grid, Δt₀, parameters)
         return -1 / timescale * mask(y, p) * (T - target_T)
     end
 
-    Fb = Forcing(buoyancy_relaxation, discrete_form = true, parameters = parameters)
     FT = Forcing(temperature_relaxation, discrete_form = true, parameters = parameters)
 
     # closure
@@ -219,18 +198,8 @@ function wind_stress_init(grid, p)
 end
 
 # resting initial condition
-function buoyancy_init(grid, parameters)
-    ε(σ) = σ * randn()
-    bᵢ_function(x, y, z) = parameters.ΔB * (exp(z / parameters.h) - exp(-Lz / parameters.h)) / (1 - exp(-Lz / parameters.h)) + ε(1e-8)
-    bᵢ = Field{Center, Center, Center}(grid)
-    set!(bᵢ, bᵢ_function)
-    return bᵢ
-end
-
-# resting initial condition
 function temperature_init(grid, parameters)
-    #ε(σ) = σ * randn()
-    Tᵢ_function(x, y, z) = parameters.ΔT * (exp(z / parameters.h) - exp(-Lz / parameters.h)) / (1 - exp(-Lz / parameters.h))# + ε(1e-8)
+    Tᵢ_function(x, y, z) = parameters.ΔT * (exp(z / parameters.h) - exp(-Lz / parameters.h)) / (1 - exp(-Lz / parameters.h))
     Tᵢ = Field{Center, Center, Center}(grid)
     set!(Tᵢ, Tᵢ_function)
     return Tᵢ
@@ -240,7 +209,7 @@ end
 ##### Forward simulation (not actually using the Simulation struct)
 #####
 
-using Oceananigans: AbstractModel, fields, prognostic_fields, location
+using Oceananigans: AbstractModel, fields, prognostic_fields, location, TendencyCallsite
 using Oceananigans.Utils: launch!
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.TimeSteppers: update_state!,
@@ -253,15 +222,18 @@ using Oceananigans.TimeSteppers: update_state!,
                                 compute_flux_bc_tendencies!,
                                 compute_tendencies!
 
-using Oceananigans.Biogeochemistry: update_biogeochemical_state!
+using Oceananigans.Biogeochemistry: update_biogeochemical_state!, update_tendencies!
 using Oceananigans.BoundaryConditions: update_boundary_conditions!
 using Oceananigans.TurbulenceClosures: compute_diffusivities!, implicit_step!,
                                        is_vertically_implicit, ivd_diagonal, _ivd_lower_diagonal,
                                        _ivd_upper_diagonal, _implicit_linear_coefficient, ivd_diffusivity, getclosure,
                                        κzᶜᶜᶠ, κᶜᶜᶠ, diffusivity
 
-using Oceananigans.ImmersedBoundaries: mask_immersed_field!, mask_immersed_field_xy!, inactive_node, materialize_immersed_boundary, compute_numerical_bottom_height!
-using Oceananigans.Models: update_model_field_time_series!, initialization_update_state!, initialize_immersed_boundary_grid!
+using Oceananigans.ImmersedBoundaries: mask_immersed_field!, mask_immersed_field_xy!, inactive_node, materialize_immersed_boundary, compute_numerical_bottom_height!, get_active_cells_map
+using Oceananigans.Models: update_model_field_time_series!, initialization_update_state!,
+                           initialize_immersed_boundary_grid!, interior_tendency_kernel_parameters,
+                           complete_communication_and_compute_buffer!
+
 using Oceananigans.Models.NonhydrostaticModels: update_hydrostatic_pressure!, p_kernel_parameters
 using Oceananigans.Fields: tupled_fill_halo_regions!
 using Oceananigans.Solvers: solve!, solve_batched_tridiagonal_system_kernel!, solve_batched_tridiagonal_system_z!, get_coefficient
@@ -279,7 +251,8 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fiel
                                                         ab2_step_velocities!,
                                                         ab2_step_tracers!,
                                                         step_free_surface!,
-                                                        _ab2_step_tracer_field!
+                                                        _ab2_step_tracer_field!,
+                                                        compute_hydrostatic_free_surface_tendency_contributions!
 
 using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: get_top_tracer_bcs, 
                                                                      update_previous_compute_time!,
@@ -333,27 +306,32 @@ end
 
 function bad_update_state!(model, grid, callbacks; compute_tendencies = true)
 
-    @apply_regionally mask_immersed_model_fields!(model, grid)
+    compute_auxiliaries!(model)
 
-    # Update possible FieldTimeSeries used in the model
-    @apply_regionally update_model_field_time_series!(model, model.clock)
+    bad_compute_tendencies!(model, callbacks)
 
-    # Update the boundary conditions
-    @apply_regionally update_boundary_conditions!(fields(model), model)
+    return nothing
+end
 
-    # Fill the halos
-    fill_halo_regions!(prognostic_fields(model), model.grid, model.clock, fields(model); async=true)
+function bad_compute_tendencies!(model, callbacks)
 
-    @apply_regionally compute_auxiliaries!(model)
+    grid = model.grid
+    arch = grid.architecture
 
-    fill_halo_regions!(model.diffusivity_fields; only_local_halos=true)
+    # Calculate contributions to momentum and tracer tendencies from fluxes and volume terms in the
+    # interior of the domain. The active cells map restricts the computation to the active cells in the
+    # interior if the grid is _immersed_ and the `active_cells_map` kwarg is active
+    active_cells_map = get_active_cells_map(model.grid, Val(:interior))
+    kernel_parameters = interior_tendency_kernel_parameters(arch, grid)
 
-    [callback(model) for callback in callbacks if callback.callsite isa UpdateStateCallsite]
+    compute_hydrostatic_free_surface_tendency_contributions!(model, kernel_parameters; active_cells_map)
+    complete_communication_and_compute_buffer!(model, grid, arch)
 
-    update_biogeochemical_state!(model.biogeochemistry, model)
+    for callback in callbacks
+        callback.callsite isa TendencyCallsite && callback(model)
+    end
 
-    compute_tendencies &&
-        @apply_regionally compute_tendencies!(model, callbacks)
+    update_tendencies!(model.biogeochemistry, model)
 
     return nothing
 end
@@ -393,8 +371,8 @@ vTᵢ          = temperature_init(vmodel.grid, parameters)
 
 using InteractiveUtils
 
-@show @which update_state!(model, []; compute_tendencies=true)
-@show @which update_state!(vmodel, []; compute_tendencies=true)
+@show @which compute_tendencies!(model, [])
+@show @which compute_tendencies!(vmodel, [])
 
 @info "Comparing the pre-run model states..."
 
