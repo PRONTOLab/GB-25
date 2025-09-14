@@ -235,7 +235,7 @@ using Oceananigans.Models: update_model_field_time_series!, initialization_updat
                            complete_communication_and_compute_buffer!
 
 using Oceananigans.Models.NonhydrostaticModels: update_hydrostatic_pressure!, p_kernel_parameters
-using Oceananigans.Fields: tupled_fill_halo_regions!
+using Oceananigans.Fields: tupled_fill_halo_regions!, immersed_boundary_condition
 using Oceananigans.Solvers: solve!, solve_batched_tridiagonal_system_kernel!, solve_batched_tridiagonal_system_z!, get_coefficient
 using Oceananigans.Operators: σⁿ, σ⁻, Δz⁻¹, ℑzᵃᵃᶠ
 
@@ -252,7 +252,9 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fiel
                                                         ab2_step_tracers!,
                                                         step_free_surface!,
                                                         _ab2_step_tracer_field!,
-                                                        compute_hydrostatic_free_surface_tendency_contributions!
+                                                        compute_hydrostatic_free_surface_tendency_contributions!,
+                                                        compute_hydrostatic_momentum_tendencies!,
+                                                        compute_hydrostatic_free_surface_Gc!
 
 using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: get_top_tracer_bcs, 
                                                                      update_previous_compute_time!,
@@ -308,30 +310,47 @@ function bad_update_state!(model, grid, callbacks; compute_tendencies = true)
 
     compute_auxiliaries!(model)
 
-    bad_compute_tendencies!(model, callbacks)
+    bad_compute_hydrostatic_free_surface_tendency_contributions!(model, :xyz; active_cells_map=nothing)
 
     return nothing
 end
 
-function bad_compute_tendencies!(model, callbacks)
+function bad_compute_hydrostatic_free_surface_tendency_contributions!(model, kernel_parameters; active_cells_map=nothing)
 
+    arch = model.architecture
     grid = model.grid
-    arch = grid.architecture
 
-    # Calculate contributions to momentum and tracer tendencies from fluxes and volume terms in the
-    # interior of the domain. The active cells map restricts the computation to the active cells in the
-    # interior if the grid is _immersed_ and the `active_cells_map` kwarg is active
-    active_cells_map = get_active_cells_map(model.grid, Val(:interior))
-    kernel_parameters = interior_tendency_kernel_parameters(arch, grid)
+    compute_hydrostatic_momentum_tendencies!(model, model.velocities, kernel_parameters; active_cells_map)
 
-    compute_hydrostatic_free_surface_tendency_contributions!(model, kernel_parameters; active_cells_map)
-    complete_communication_and_compute_buffer!(model, grid, arch)
+    for (tracer_index, tracer_name) in enumerate(propertynames(model.tracers))
 
-    for callback in callbacks
-        callback.callsite isa TendencyCallsite && callback(model)
+        @inbounds c_tendency    = model.timestepper.Gⁿ[tracer_name]
+        @inbounds c_advection   = model.advection[tracer_name]
+        @inbounds c_forcing     = model.forcing[tracer_name]
+        @inbounds c_immersed_bc = immersed_boundary_condition(model.tracers[tracer_name])
+
+        args = tuple(Val(tracer_index),
+                     Val(tracer_name),
+                     c_advection,
+                     model.closure,
+                     c_immersed_bc,
+                     model.buoyancy,
+                     model.biogeochemistry,
+                     model.velocities,
+                     model.free_surface,
+                     model.tracers,
+                     model.diffusivity_fields,
+                     model.auxiliary_fields,
+                     model.clock,
+                     c_forcing)
+
+        launch!(arch, grid, kernel_parameters,
+                compute_hydrostatic_free_surface_Gc!,
+                c_tendency,
+                grid,
+                args;
+                active_cells_map)
     end
-
-    update_tendencies!(model.biogeochemistry, model)
 
     return nothing
 end
@@ -371,8 +390,11 @@ vTᵢ          = temperature_init(vmodel.grid, parameters)
 
 using InteractiveUtils
 
-@show @which compute_tendencies!(model, [])
-@show @which compute_tendencies!(vmodel, [])
+@show @which get_active_cells_map(model.grid, Val(:interior))
+@show @which get_active_cells_map(vmodel.grid, Val(:interior))
+
+@show @which interior_tendency_kernel_parameters(model.grid.architecture, model.grid)
+@show @which interior_tendency_kernel_parameters(vmodel.grid.architecture, vmodel.grid)
 
 @info "Comparing the pre-run model states..."
 
