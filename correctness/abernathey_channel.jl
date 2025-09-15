@@ -306,7 +306,12 @@ function bad_time_step!(model, Δt)
 
     # Full step for tracers, fractional step for velocities.
     compute_flux_bc_tendencies!(model)
-    bad_ab2_step_velocities!(model.velocities, model, Δt, model.timestepper.χ)
+    
+    launch!(model.architecture, model.grid, :xyz,
+            bad_ab2_step_field!, model.velocities.u, Δt, model.timestepper.χ, model.timestepper.Gⁿ.u, model.timestepper.G⁻.u)
+
+    launch!(model.architecture, model.grid, :xyz,
+            bad_ab2_step_field!, model.velocities.v, Δt, model.timestepper.χ, model.timestepper.Gⁿ.v, model.timestepper.G⁻.v)
 
     grid = model.grid
     arch = grid.architecture
@@ -318,26 +323,19 @@ function bad_time_step!(model, Δt)
     return nothing
 end
 
-function bad_ab2_step_velocities!(velocities, model, Δt, χ)
+@kernel function bad_ab2_step_field!(u, Δt, χ, Gⁿ, G⁻)
+    i, j, k = @index(Global, NTuple)
 
-    for (i, name) in enumerate((:u, :v))
-        Gⁿ = model.timestepper.Gⁿ[name]
-        G⁻ = model.timestepper.G⁻[name]
-        velocity_field = model.velocities[name]
+    FT = eltype(u)
+    Δt = convert(FT, Δt)
+    one_point_five = convert(FT, 1.5)
+    oh_point_five  = convert(FT, 0.5)
+    not_euler = χ != convert(FT, -0.5) # use to prevent corruption by leftover NaNs in G⁻
 
-        launch!(model.architecture, model.grid, :xyz,
-                ab2_step_field!, velocity_field, Δt, χ, Gⁿ, G⁻)
-
-        implicit_step!(velocity_field,
-                       model.timestepper.implicit_solver,
-                       model.closure,
-                       model.diffusivity_fields,
-                       nothing,
-                       model.clock,
-                       Δt)
+    @inbounds begin
+        Gu = (one_point_five + χ) * Gⁿ[i, j, k] - (oh_point_five + χ) * G⁻[i, j, k] * not_euler
+        u[i, j, k] += Δt * Gu
     end
-
-    return nothing
 end
 
 """ Calculate the right-hand-side of the v-velocity equation. """
@@ -381,8 +379,8 @@ vTᵢ          = temperature_init(vmodel.grid, parameters)
 
 using InteractiveUtils
 
-@show @which ab2_step!(model, Δt₀)
-@show @which ab2_step!(vmodel, Δt₀)
+@show @which compute_flux_bc_tendencies!(model)
+@show @which compute_flux_bc_tendencies!(vmodel)
 
 @info "Comparing the pre-run model states..."
 
