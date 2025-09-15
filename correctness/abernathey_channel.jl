@@ -222,7 +222,8 @@ using Oceananigans.TimeSteppers: update_state!,
                                 ab2_step!,
                                 QuasiAdamsBashforth2TimeStepper,
                                 compute_flux_bc_tendencies!,
-                                compute_tendencies!
+                                compute_tendencies!,
+                                ab2_step_field!
 
 using Oceananigans.Biogeochemistry: update_biogeochemical_state!, update_tendencies!
 using Oceananigans.BoundaryConditions: update_boundary_conditions!
@@ -305,7 +306,7 @@ function bad_time_step!(model, Δt)
 
     # Full step for tracers, fractional step for velocities.
     compute_flux_bc_tendencies!(model)
-    bad_ab2_step!(model, Δt)
+    bad_ab2_step_velocities!(model.velocities, model, Δt, model.timestepper.χ)
 
     grid = model.grid
     arch = grid.architecture
@@ -317,24 +318,24 @@ function bad_time_step!(model, Δt)
     return nothing
 end
 
-function bad_ab2_step!(model, Δt)
+function bad_ab2_step_velocities!(velocities, model, Δt, χ)
 
-    grid = model.grid
-    compute_free_surface_tendency!(grid, model, model.free_surface)
+    for (i, name) in enumerate((:u, :v))
+        Gⁿ = model.timestepper.Gⁿ[name]
+        G⁻ = model.timestepper.G⁻[name]
+        velocity_field = model.velocities[name]
 
-    FT = eltype(grid)
-    χ  = convert(FT, model.timestepper.χ)
-    Δt = convert(FT, Δt)
+        launch!(model.architecture, model.grid, :xyz,
+                ab2_step_field!, velocity_field, Δt, χ, Gⁿ, G⁻)
 
-    # Step locally velocity and tracers
-    @apply_regionally begin
-        scale_by_stretching_factor!(model.timestepper.Gⁿ, model.tracers, model.grid)
-        ab2_step_grid!(model.grid, model, model.vertical_coordinate, Δt, χ)
-        ab2_step_velocities!(model.velocities, model, Δt, χ)
-        ab2_step_tracers!(model.tracers, model, Δt, χ)
+        implicit_step!(velocity_field,
+                       model.timestepper.implicit_solver,
+                       model.closure,
+                       model.diffusivity_fields,
+                       nothing,
+                       model.clock,
+                       Δt)
     end
-
-    step_free_surface!(model.free_surface, model, model.timestepper, Δt)
 
     return nothing
 end
