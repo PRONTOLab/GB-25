@@ -22,7 +22,7 @@ using SeawaterPolynomials
 
 using Reactant
 using GordonBell25
-using Oceananigans.Architectures: ReactantState
+using Oceananigans.Architectures: ReactantState, architecture
 #Reactant.set_default_backend("cpu")
 
 using Enzyme
@@ -301,117 +301,48 @@ function run_reentrant_channel_model!(model, Tᵢ, wind_stress)
     return nothing
 end
 
-function bad_time_step!(model, Δt;
-                    callbacks=[], euler=false)
+function bad_time_step!(model, Δt)
 
     # Full step for tracers, fractional step for velocities.
     compute_flux_bc_tendencies!(model)
-    ab2_step!(model, Δt)
-
-    bad_update_state!(model, model.grid, callbacks; compute_tendencies=true)
-
-    return nothing
-end
-
-function bad_update_state!(model, grid, callbacks; compute_tendencies = true)
-
-    bad_compute_auxiliaries!(model)
-
-    bad_compute_hydrostatic_momentum_tendencies!(model, model.velocities, :xyz; active_cells_map=nothing)
-
-    return nothing
-end
-
-function bad_compute_auxiliaries!(model; w_parameters = w_kernel_parameters(model.grid),
-                                         p_parameters = p_kernel_parameters(model.grid),
-                                         κ_parameters = :xyz)
-
-    grid        = model.grid
-    closure     = model.closure
-    tracers     = model.tracers
-    diffusivity = model.diffusivity_fields
-    buoyancy    = model.buoyancy
-
-    P    = model.pressure.pHY′
-    arch = grid.architecture
-
-    # Update the vertical velocity to comply with the barotropic correction step
-    update_grid_vertical_velocity!(model, grid, model.vertical_coordinate)
-
-    # Advance diagnostic quantities
-    compute_w_from_continuity!(model; parameters = w_parameters)
-    update_hydrostatic_pressure!(P, arch, grid, buoyancy, tracers; parameters = p_parameters)
-
-    # Update closure diffusivities
-    compute_diffusivities!(diffusivity, closure, model; parameters = κ_parameters)
-
-    return nothing
-end
-
-function bad_compute_hydrostatic_momentum_tendencies!(model, velocities, kernel_parameters; active_cells_map=nothing)
+    bad_ab2_step!(model, Δt)
 
     grid = model.grid
     arch = grid.architecture
 
-    v_immersed_bc = immersed_boundary_condition(velocities.v)
-
-    v_forcing = model.forcing.v
-
-    start_momentum_kernel_args = (model.advection.momentum,
-                                  model.coriolis,
-                                  model.closure)
-
-    end_momentum_kernel_args = (velocities,
-                                model.free_surface,
-                                model.tracers,
-                                model.buoyancy,
-                                model.diffusivity_fields,
-                                model.pressure.pHY′,
-                                model.auxiliary_fields,
-                                model.vertical_coordinate,
-                                model.clock)
-
-    v_kernel_args = tuple(start_momentum_kernel_args..., v_immersed_bc, end_momentum_kernel_args..., v_forcing)
-
-    launch!(arch, grid, kernel_parameters,
+    launch!(arch, grid, :xyz,
             bad_compute_hydrostatic_free_surface_Gv!, model.timestepper.Gⁿ.v, grid, 
-            v_kernel_args; active_cells_map)
+            model.coriolis, model.velocities; active_cells_map=nothing)
+
+    return nothing
+end
+
+function bad_ab2_step!(model, Δt)
+
+    grid = model.grid
+    compute_free_surface_tendency!(grid, model, model.free_surface)
+
+    FT = eltype(grid)
+    χ  = convert(FT, model.timestepper.χ)
+    Δt = convert(FT, Δt)
+
+    # Step locally velocity and tracers
+    @apply_regionally begin
+        scale_by_stretching_factor!(model.timestepper.Gⁿ, model.tracers, model.grid)
+        ab2_step_grid!(model.grid, model, model.vertical_coordinate, Δt, χ)
+        ab2_step_velocities!(model.velocities, model, Δt, χ)
+        ab2_step_tracers!(model.tracers, model, Δt, χ)
+    end
+
+    step_free_surface!(model.free_surface, model, model.timestepper, Δt)
 
     return nothing
 end
 
 """ Calculate the right-hand-side of the v-velocity equation. """
-@kernel function bad_compute_hydrostatic_free_surface_Gv!(Gv, grid, args)
+@kernel function bad_compute_hydrostatic_free_surface_Gv!(Gv, grid, coriolis, velocities)
     i, j, k = @index(Global, NTuple)
-    @inbounds Gv[i, j, k] = bad_hydrostatic_free_surface_v_velocity_tendency(i, j, k, grid, args...)
-end
-
-@inline function bad_hydrostatic_free_surface_v_velocity_tendency(i, j, k, grid,
-                                                              advection,
-                                                              coriolis,
-                                                              closure,
-                                                              v_immersed_bc,
-                                                              velocities,
-                                                              free_surface,
-                                                              tracers,
-                                                              buoyancy,
-                                                              diffusivities,
-                                                              hydrostatic_pressure_anomaly,
-                                                              auxiliary_fields,
-                                                              ztype,
-                                                              clock,
-                                                              forcing)
-
-    model_fields = merge(hydrostatic_fields(velocities, free_surface, tracers), auxiliary_fields)
-
-    return ( - U_dot_∇v(i, j, k, grid, advection, velocities)
-             - explicit_barotropic_pressure_y_gradient(i, j, k, grid, free_surface)
-             - y_f_cross_U(i, j, k, grid, coriolis, velocities)
-             - ∂yᶜᶠᶜ(i, j, k, grid, hydrostatic_pressure_anomaly)
-             - grid_slope_contribution_y(i, j, k, grid, buoyancy, ztype, model_fields)
-             - ∂ⱼ_τ₂ⱼ(i, j, k, grid, closure, diffusivities, clock, model_fields, buoyancy)
-             - immersed_∂ⱼ_τ₂ⱼ(i, j, k, grid, velocities, v_immersed_bc, closure, diffusivities, clock, model_fields)
-             + forcing(i, j, k, grid, clock, model_fields))
+    @inbounds Gv[i, j, k] = - y_f_cross_U(i, j, k, grid, coriolis, velocities)
 end
 
 #####
@@ -419,13 +350,13 @@ end
 #####
 
 # Architecture
-architecture = ReactantState()
+arch = ReactantState()
 
 # Timestep size:
 Δt₀ = 5minutes 
 
 # Make the grid:
-grid        = make_grid(architecture, Nx, Ny, Nz, Δz_center)
+grid        = make_grid(arch, Nx, Ny, Nz, Δz_center)
 model       = build_model(grid, Δt₀, parameters)
 wind_stress = wind_stress_init(model.grid, parameters)
 Tᵢ          = temperature_init(model.grid, parameters)
@@ -436,24 +367,21 @@ Tᵢ          = temperature_init(model.grid, parameters)
 @info "Vanilla model as a comparison..."
 
 # Architecture
-varchitecture = CPU()
+varch = CPU()
 
 # Timestep size:
 Δt₀ = 5minutes 
 
 # Make the grid:
-vgrid        = make_grid(varchitecture, Nx, Ny, Nz, Δz_center)
+vgrid        = make_grid(varch, Nx, Ny, Nz, Δz_center)
 vmodel       = build_model(vgrid, Δt₀, parameters)
 vwind_stress = wind_stress_init(vmodel.grid, parameters)
 vTᵢ          = temperature_init(vmodel.grid, parameters)
 
 using InteractiveUtils
 
-@show @which compute_auxiliaries!(model)
-@show @which compute_auxiliaries!(vmodel)
-
-@show @which interior_tendency_kernel_parameters(model.grid.architecture, model.grid)
-@show @which interior_tendency_kernel_parameters(vmodel.grid.architecture, vmodel.grid)
+@show @which ab2_step!(model, Δt₀)
+@show @which ab2_step!(vmodel, Δt₀)
 
 @info "Comparing the pre-run model states..."
 
