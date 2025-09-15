@@ -226,7 +226,7 @@ using Oceananigans.TimeSteppers: update_state!,
                                 ab2_step_field!
 
 using Oceananigans.Biogeochemistry: update_biogeochemical_state!, update_tendencies!
-using Oceananigans.BoundaryConditions: update_boundary_conditions!
+using Oceananigans.BoundaryConditions: update_boundary_conditions!, compute_x_bcs!, compute_y_bcs!, compute_z_bcs!, compute_z_bottom_bc!, compute_z_top_bc!
 using Oceananigans.TurbulenceClosures: compute_diffusivities!, implicit_step!,
                                        is_vertically_implicit, ivd_diagonal, _ivd_lower_diagonal,
                                        _ivd_upper_diagonal, _implicit_linear_coefficient, ivd_diffusivity, getclosure,
@@ -238,7 +238,7 @@ using Oceananigans.Models: update_model_field_time_series!, initialization_updat
                            complete_communication_and_compute_buffer!
 
 using Oceananigans.Models.NonhydrostaticModels: update_hydrostatic_pressure!, p_kernel_parameters
-using Oceananigans.Fields: tupled_fill_halo_regions!, immersed_boundary_condition
+using Oceananigans.Fields: tupled_fill_halo_regions!, immersed_boundary_condition, instantiated_location
 using Oceananigans.Solvers: solve!, solve_batched_tridiagonal_system_kernel!, solve_batched_tridiagonal_system_z!, get_coefficient
 using Oceananigans.Operators: σⁿ, σ⁻, Δz⁻¹, ℑzᵃᵃᶠ, ∂yᶜᶠᶜ
 
@@ -262,7 +262,8 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fiel
                                                         compute_hydrostatic_free_surface_Gv!,
                                                         explicit_barotropic_pressure_y_gradient,
                                                         grid_slope_contribution_y,
-                                                        hydrostatic_fields
+                                                        hydrostatic_fields,
+                                                        compute_flux_bcs!
 
 using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: get_top_tracer_bcs, 
                                                                      update_previous_compute_time!,
@@ -305,7 +306,7 @@ end
 function bad_time_step!(model, Δt)
 
     # Full step for tracers, fractional step for velocities.
-    compute_flux_bc_tendencies!(model)
+    bad_compute_flux_bc_tendencies!(model)
     
     launch!(model.architecture, model.grid, :xyz,
             bad_ab2_step_field!, model.velocities.u, Δt, model.timestepper.χ, model.timestepper.Gⁿ.u, model.timestepper.G⁻.u)
@@ -321,6 +322,28 @@ function bad_time_step!(model, Δt)
             model.coriolis, model.velocities; active_cells_map=nothing)
 
     return nothing
+end
+
+function bad_compute_flux_bc_tendencies!(model)
+
+    Gⁿ         = model.timestepper.Gⁿ
+    arch       = model.grid.architecture
+    velocities = model.velocities
+    
+    args = (model.clock, fields(model), model.closure, model.buoyancy)
+
+    bad_compute_z_bcs!(Gⁿ.u, Gⁿ.u.grid, velocities.u, velocities.u.boundary_conditions.bottom, velocities.u.boundary_conditions.top, arch, args...)
+
+    return nothing
+end
+
+bad_compute_z_bcs!(Gc, grid, c, bottom_bc, top_bc, arch, args...) =
+    launch!(arch, grid, :xy, _bad_compute_z_bcs!, Gc, instantiated_location(Gc), grid, bottom_bc, top_bc, Tuple(args))
+
+@kernel function _bad_compute_z_bcs!(Gc, loc, grid, bottom_bc, top_bc, args)
+    i, j = @index(Global, NTuple)
+    compute_z_bottom_bc!(Gc, loc, bottom_bc, i, j, grid, args...)
+       compute_z_top_bc!(Gc, loc, top_bc,    i, j, grid, args...)
 end
 
 @kernel function bad_ab2_step_field!(u, Δt, χ, Gⁿ, G⁻)
