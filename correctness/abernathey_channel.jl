@@ -306,7 +306,11 @@ end
 function bad_time_step!(model, Δt)
 
     # Full step for tracers, fractional step for velocities.
-    bad_compute_flux_bc_tendencies!(model)
+    grid = model.grid
+    arch = grid.architecture
+    Gⁿ   = model.timestepper.Gⁿ
+    
+    launch!(arch, Gⁿ.u.grid, :xy, _bad_compute_z_bcs!, Gⁿ.u, instantiated_location(Gⁿ.u), Gⁿ.u.grid)
     
     launch!(model.architecture, model.grid, :xyz,
             _bad_ab2_step_field!, model.velocities.u, Δt, model.timestepper.χ, model.timestepper.Gⁿ.u, model.timestepper.G⁻.u)
@@ -314,41 +318,17 @@ function bad_time_step!(model, Δt)
     launch!(model.architecture, model.grid, :xyz,
             _bad_ab2_step_field!, model.velocities.v, Δt, model.timestepper.χ, model.timestepper.Gⁿ.v, model.timestepper.G⁻.v)
 
-    grid = model.grid
-    arch = grid.architecture
-
     launch!(arch, grid, :xyz,
-            bad_compute_hydrostatic_free_surface_Gv!, model.timestepper.Gⁿ.v, grid, 
+            _bad_compute_hydrostatic_free_surface_Gv!, model.timestepper.Gⁿ.v, grid, 
             model.coriolis, model.velocities; active_cells_map=nothing)
 
     return nothing
 end
 
-function bad_compute_flux_bc_tendencies!(model)
-
-    Gⁿ         = model.timestepper.Gⁿ
-    arch       = model.grid.architecture
-    velocities = model.velocities
-    
-    args = (model.clock, fields(model), model.closure, model.buoyancy)
-
-    bad_compute_z_bcs!(Gⁿ.u, Gⁿ.u.grid, velocities.u, velocities.u.boundary_conditions.bottom, velocities.u.boundary_conditions.top, arch, args...)
-
-    return nothing
-end
-
-bad_compute_z_bcs!(Gc, grid, c, bottom_bc, top_bc, arch, args...) =
-    launch!(arch, grid, :xy, _bad_compute_z_bcs!, Gc, instantiated_location(Gc), grid, bottom_bc, top_bc, Tuple(args))
-
-@kernel function _bad_compute_z_bcs!(Gc, loc, grid, bottom_bc, top_bc, args)
+@kernel function _bad_compute_z_bcs!(Gc, loc, grid)
     i, j = @index(Global, NTuple)
-    bad_compute_z_top_bc!(Gc, loc, top_bc, i, j, grid, args...)
-end
-
-@inline function bad_compute_z_top_bc!(Gc, loc, top_flux, i, j, grid, args...)
     LX, LY, LZ = loc
-    @inbounds Gc[i, j, grid.Nz] -= getbc(top_flux, i, j, grid, args...) * Az(i, j, grid.Nz+1, grid, LX, LY, Face()) / volume(i, j, grid.Nz, grid, LX, LY, LZ)
-    return nothing
+    @inbounds Gc[i, j, grid.Nz] -= 100.0 * Az(i, j, grid.Nz+1, grid, LX, LY, Face()) / volume(i, j, grid.Nz, grid, LX, LY, LZ)
 end
 
 @kernel function _bad_ab2_step_field!(u, Δt, χ, Gⁿ, G⁻)
@@ -367,7 +347,7 @@ end
 end
 
 """ Calculate the right-hand-side of the v-velocity equation. """
-@kernel function bad_compute_hydrostatic_free_surface_Gv!(Gv, grid, coriolis, velocities)
+@kernel function _bad_compute_hydrostatic_free_surface_Gv!(Gv, grid, coriolis, velocities)
     i, j, k = @index(Global, NTuple)
     @inbounds Gv[i, j, k] = - y_f_cross_U(i, j, k, grid, coriolis, velocities)
 end
