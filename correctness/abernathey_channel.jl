@@ -226,7 +226,7 @@ using Oceananigans.TimeSteppers: update_state!,
                                 ab2_step_field!
 
 using Oceananigans.Biogeochemistry: update_biogeochemical_state!, update_tendencies!
-using Oceananigans.BoundaryConditions: update_boundary_conditions!, compute_x_bcs!, compute_y_bcs!, compute_z_bcs!, compute_z_bottom_bc!, compute_z_top_bc!
+using Oceananigans.BoundaryConditions: update_boundary_conditions!, compute_x_bcs!, compute_y_bcs!, compute_z_bcs!, compute_z_bottom_bc!, compute_z_top_bc!, getbc
 using Oceananigans.TurbulenceClosures: compute_diffusivities!, implicit_step!,
                                        is_vertically_implicit, ivd_diagonal, _ivd_lower_diagonal,
                                        _ivd_upper_diagonal, _implicit_linear_coefficient, ivd_diffusivity, getclosure,
@@ -240,7 +240,7 @@ using Oceananigans.Models: update_model_field_time_series!, initialization_updat
 using Oceananigans.Models.NonhydrostaticModels: update_hydrostatic_pressure!, p_kernel_parameters
 using Oceananigans.Fields: tupled_fill_halo_regions!, immersed_boundary_condition, instantiated_location
 using Oceananigans.Solvers: solve!, solve_batched_tridiagonal_system_kernel!, solve_batched_tridiagonal_system_z!, get_coefficient
-using Oceananigans.Operators: σⁿ, σ⁻, Δz⁻¹, ℑzᵃᵃᶠ, ∂yᶜᶠᶜ
+using Oceananigans.Operators: σⁿ, σ⁻, Δz⁻¹, ℑzᵃᵃᶠ, ∂yᶜᶠᶜ, Az, volume
 
 using Oceananigans.Models.NonhydrostaticModels: compute_auxiliaries!, p_kernel_parameters
 using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fields!,
@@ -309,10 +309,10 @@ function bad_time_step!(model, Δt)
     bad_compute_flux_bc_tendencies!(model)
     
     launch!(model.architecture, model.grid, :xyz,
-            bad_ab2_step_field!, model.velocities.u, Δt, model.timestepper.χ, model.timestepper.Gⁿ.u, model.timestepper.G⁻.u)
+            _bad_ab2_step_field!, model.velocities.u, Δt, model.timestepper.χ, model.timestepper.Gⁿ.u, model.timestepper.G⁻.u)
 
     launch!(model.architecture, model.grid, :xyz,
-            bad_ab2_step_field!, model.velocities.v, Δt, model.timestepper.χ, model.timestepper.Gⁿ.v, model.timestepper.G⁻.v)
+            _bad_ab2_step_field!, model.velocities.v, Δt, model.timestepper.χ, model.timestepper.Gⁿ.v, model.timestepper.G⁻.v)
 
     grid = model.grid
     arch = grid.architecture
@@ -342,11 +342,16 @@ bad_compute_z_bcs!(Gc, grid, c, bottom_bc, top_bc, arch, args...) =
 
 @kernel function _bad_compute_z_bcs!(Gc, loc, grid, bottom_bc, top_bc, args)
     i, j = @index(Global, NTuple)
-    compute_z_bottom_bc!(Gc, loc, bottom_bc, i, j, grid, args...)
-       compute_z_top_bc!(Gc, loc, top_bc,    i, j, grid, args...)
+    bad_compute_z_top_bc!(Gc, loc, top_bc, i, j, grid, args...)
 end
 
-@kernel function bad_ab2_step_field!(u, Δt, χ, Gⁿ, G⁻)
+@inline function bad_compute_z_top_bc!(Gc, loc, top_flux, i, j, grid, args...)
+    LX, LY, LZ = loc
+    @inbounds Gc[i, j, grid.Nz] -= getbc(top_flux, i, j, grid, args...) * Az(i, j, grid.Nz+1, grid, LX, LY, Face()) / volume(i, j, grid.Nz, grid, LX, LY, LZ)
+    return nothing
+end
+
+@kernel function _bad_ab2_step_field!(u, Δt, χ, Gⁿ, G⁻)
     i, j, k = @index(Global, NTuple)
 
     FT = eltype(u)
