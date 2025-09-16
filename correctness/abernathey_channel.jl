@@ -186,26 +186,6 @@ function build_model(grid, Δt₀, parameters)
 end
 
 #####
-##### Special initial and boundary conditions
-#####
-
-# wind stress:
-function wind_stress_init(grid, p)
-    @inline u_stress(x, y) = -p.τ * sin(π * y / p.Ly)
-    wind_stress = Field{Face, Center, Nothing}(grid)
-    set!(wind_stress, u_stress)
-    return wind_stress
-end
-
-# resting initial condition
-function temperature_init(grid, parameters)
-    Tᵢ_function(x, y, z) = parameters.ΔT * (exp(z / parameters.h) - exp(-Lz / parameters.h)) / (1 - exp(-Lz / parameters.h))
-    Tᵢ = Field{Center, Center, Center}(grid)
-    set!(Tᵢ, Tᵢ_function)
-    return Tᵢ
-end
-
-#####
 ##### Forward simulation (not actually using the Simulation struct)
 #####
 
@@ -284,9 +264,6 @@ using KernelAbstractions: @kernel, @index
 
 function loop!(model)
     Δt = model.clock.last_Δt
-    
-    launch!(model.architecture, model.grid, :xyz,
-            _bad_ab2_step_field!, model.velocities.v, Δt, model.timestepper.Gⁿ.v)
 
     launch!(model.architecture, model.grid, :xyz,
             _bad_compute_hydrostatic_free_surface_Gv!, model.timestepper.Gⁿ.v, model.grid; active_cells_map=nothing)
@@ -308,6 +285,8 @@ end
 end
 
 @inline function ridge_check(i, j, k, grid)
+    # Doesn't work:
+    
     active_nodes = (!(grid.underlying_grid.z.cᵃᵃᶜ[k] ≤ grid.immersed_boundary.bottom_height[i, j-1, 1]) # NEGATING THIS ELIMINATES ERROR, NEED TO INVESTIGATE
                   & !(grid.underlying_grid.z.cᵃᵃᶜ[k] ≤ grid.immersed_boundary.bottom_height[i-1, j-1, 1])
                   & !(grid.underlying_grid.z.cᵃᵃᶜ[k] ≤ grid.immersed_boundary.bottom_height[i+1, j-1, 1])
@@ -316,23 +295,19 @@ end
                   & (k > 0)
                   & (k < grid.Nz+1))
     
+    #=
+    # Works:
+    active_nodes = ((grid.underlying_grid.z.cᵃᵃᶜ[k] > grid.immersed_boundary.bottom_height[i, j-1, 1])
+                  & (grid.underlying_grid.z.cᵃᵃᶜ[k] > grid.immersed_boundary.bottom_height[i-1, j-1, 1])
+                  & (grid.underlying_grid.z.cᵃᵃᶜ[k] > grid.immersed_boundary.bottom_height[i+1, j-1, 1])
+                  & (j > 1)
+                  & (j < (grid.Ny+2))
+                  & (k > 0)
+                  & (k < grid.Nz+1))
+    =#
     
     mask = active_nodes == 0
     return ifelse(mask, zero(grid), 100.0 / active_nodes)
-end
-
-function run_reentrant_channel_model!(model, Tᵢ, wind_stress)
-    # setting IC's and BC's:
-    set!(model.velocities.u.boundary_conditions.top.condition, wind_stress)
-
-    # Initialize the model
-    model.clock.iteration = 1
-    model.clock.time = 0
-
-    # Step it forward
-    loop!(model)
-
-    return nothing
 end
 
 #####
@@ -346,10 +321,8 @@ arch = ReactantState()
 Δt₀ = 5minutes 
 
 # Make the grid:
-grid        = make_grid(arch, Nx, Ny, Nz, Δz_center)
-model       = build_model(grid, Δt₀, parameters)
-wind_stress = wind_stress_init(model.grid, parameters)
-Tᵢ          = temperature_init(model.grid, parameters)
+grid  = make_grid(arch, Nx, Ny, Nz, Δz_center)
+model = build_model(grid, Δt₀, parameters)
 
 
 @info "Built $model."
@@ -363,15 +336,10 @@ varch = CPU()
 Δt₀ = 5minutes 
 
 # Make the grid:
-vgrid        = make_grid(varch, Nx, Ny, Nz, Δz_center)
-vmodel       = build_model(vgrid, Δt₀, parameters)
-vwind_stress = wind_stress_init(vmodel.grid, parameters)
-vTᵢ          = temperature_init(vmodel.grid, parameters)
+vgrid  = make_grid(varch, Nx, Ny, Nz, Δz_center)
+vmodel = build_model(vgrid, Δt₀, parameters)
 
 using InteractiveUtils
-
-@show @which getnode(grid.underlying_grid.z.cᵃᵃᶜ, 1)
-@show @which getnode(vgrid.underlying_grid.z.cᵃᵃᶜ, 1)
 
 @info "Comparing the pre-run model states..."
 
@@ -384,13 +352,13 @@ GordonBell25.compare_states(model, vmodel; include_halos, throw_error, rtol, ato
 
 @info "Running the vanilla model"
 tic       = time()
-run_reentrant_channel_model!(vmodel, vTᵢ, vwind_stress)
+loop!(vmodel)
 vrun_toc  = time() - tic
 @show vrun_toc
 
 @info "Compiling the model run..."
 tic = time()
-rrun_reentrant_channel_model! = @compile raise_first=true raise=true sync=true run_reentrant_channel_model!(model, Tᵢ, wind_stress)
+rloop! = @compile raise_first=true raise=true sync=true loop!(model)
 compile_toc = time() - tic
 
 @show compile_toc
@@ -398,7 +366,7 @@ compile_toc = time() - tic
 @info "Running the Reactant model"
 
 tic      = time()
-rrun_reentrant_channel_model!(model, Tᵢ, wind_stress)
+rloop!(model)
 rrun_toc = time() - tic
 @show rrun_toc
 
