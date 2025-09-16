@@ -11,7 +11,7 @@ using Statistics
 using Oceananigans
 using Oceananigans.Units
 using Oceananigans.OutputReaders: FieldTimeSeries
-using Oceananigans.Grids: xnode, ynode, znode, XDirection, YDirection, ZDirection, peripheral_node, static_column_depthᶜᶜᵃ, rnode, getnode
+using Oceananigans.Grids: xnode, ynode, znode, XDirection, YDirection, ZDirection, peripheral_node, static_column_depthᶜᶜᵃ, rnode, getnode, inactive_cell
 using Oceananigans.TurbulenceClosures: CATKEVerticalDiffusivity
 
 using SeawaterPolynomials
@@ -232,7 +232,9 @@ using Oceananigans.TurbulenceClosures: compute_diffusivities!, implicit_step!,
                                        _ivd_upper_diagonal, _implicit_linear_coefficient, ivd_diffusivity, getclosure,
                                        κzᶜᶜᶠ, κᶜᶜᶠ, diffusivity, ∂ⱼ_τ₂ⱼ, immersed_∂ⱼ_τ₂ⱼ
 
-using Oceananigans.ImmersedBoundaries: mask_immersed_field!, mask_immersed_field_xy!, inactive_node, materialize_immersed_boundary, compute_numerical_bottom_height!, get_active_cells_map
+using Oceananigans.ImmersedBoundaries: mask_immersed_field!, mask_immersed_field_xy!, inactive_node, materialize_immersed_boundary,
+                                       compute_numerical_bottom_height!, get_active_cells_map, immersed_cell, _immersed_cell
+
 using Oceananigans.Models: update_model_field_time_series!, initialization_update_state!,
                            initialize_immersed_boundary_grid!, interior_tendency_kernel_parameters,
                            complete_communication_and_compute_buffer!
@@ -240,7 +242,7 @@ using Oceananigans.Models: update_model_field_time_series!, initialization_updat
 using Oceananigans.Models.NonhydrostaticModels: update_hydrostatic_pressure!, p_kernel_parameters
 using Oceananigans.Fields: tupled_fill_halo_regions!, immersed_boundary_condition, instantiated_location
 using Oceananigans.Solvers: solve!, solve_batched_tridiagonal_system_kernel!, solve_batched_tridiagonal_system_z!, get_coefficient
-using Oceananigans.Operators: σⁿ, σ⁻, Δz⁻¹, ℑzᵃᵃᶠ, ∂yᶜᶠᶜ, Az, volume
+using Oceananigans.Operators: σⁿ, σ⁻, Δz⁻¹, ℑzᵃᵃᶠ, ∂yᶜᶠᶜ, Az, volume, active_weighted_ℑxyᶜᶠᶜ, ℑxyᶜᶠᵃ, not_peripheral_node, ℑyᵃᶠᵃ, ℑxᶜᵃᵃ
 
 using Oceananigans.Models.NonhydrostaticModels: compute_auxiliaries!, p_kernel_parameters
 using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fields!,
@@ -285,21 +287,6 @@ function loop!(model)
     @trace mincut = true track_numbers = false for i = 1:2
         bad_time_step!(model, Δt)
     end
-    return nothing
-end
-
-function run_reentrant_channel_model!(model, Tᵢ, wind_stress)
-    # setting IC's and BC's:
-    set!(model.velocities.u.boundary_conditions.top.condition, wind_stress)
-    set!(model.tracers.T, Tᵢ)
-
-    # Initialize the model
-    model.clock.iteration = 1
-    model.clock.time = 0
-
-    # Step it forward
-    loop!(model)
-
     return nothing
 end
 
@@ -349,7 +336,43 @@ end
 """ Calculate the right-hand-side of the v-velocity equation. """
 @kernel function _bad_compute_hydrostatic_free_surface_Gv!(Gv, grid, coriolis, velocities)
     i, j, k = @index(Global, NTuple)
-    @inbounds Gv[i, j, k] = - y_f_cross_U(i, j, k, grid, coriolis, velocities)
+    @inbounds Gv[i, j, k] = - bad_y_f_cross_U(i, j, k, grid, coriolis, velocities)
+end
+
+@inline function bad_y_f_cross_U(i, j, k, grid, coriolis, U)
+    f₀ = coriolis.f₀
+    β = coriolis.β
+    y = ynode(i, j, k, grid, Center(), Face(), Center())
+    return (f₀ + β*y) * bad_active_weighted_ℑxyᶜᶠᶜ(i, j, k, grid, U[1])
+end
+
+@inline function bad_active_weighted_ℑxyᶜᶠᶜ(i, j, k, grid, q, args...)
+    active_nodes = (!(rnode(i, j-1, k, grid.underlying_grid, Center(), Center(), Center()) ≤ grid.immersed_boundary.bottom_height[i, j-1, 1]) # NEGATING THIS ELIMINATES ERROR, NEED TO INVESTIGATE
+                  & !(rnode(i-1, j-1, k, grid.underlying_grid, Center(), Center(), Center()) ≤ grid.immersed_boundary.bottom_height[i-1, j-1, 1])
+                  & !(rnode(i+1, j-1, k, grid.underlying_grid, Center(), Center(), Center()) ≤ grid.immersed_boundary.bottom_height[i+1, j-1, 1])
+                  & (j > 1)
+                  & (j < (grid.Ny+2))
+                  & (k > 0)
+                  & (k < grid.Nz+1))
+    
+    
+    mask = active_nodes == 0
+    return ifelse(mask, zero(grid), 100.0 / active_nodes)
+end
+
+function run_reentrant_channel_model!(model, Tᵢ, wind_stress)
+    # setting IC's and BC's:
+    set!(model.velocities.u.boundary_conditions.top.condition, wind_stress)
+    set!(model.tracers.T, Tᵢ)
+
+    # Initialize the model
+    model.clock.iteration = 1
+    model.clock.time = 0
+
+    # Step it forward
+    loop!(model)
+
+    return nothing
 end
 
 #####
@@ -387,8 +410,8 @@ vTᵢ          = temperature_init(vmodel.grid, parameters)
 
 using InteractiveUtils
 
-@show @which compute_flux_bc_tendencies!(model)
-@show @which compute_flux_bc_tendencies!(vmodel)
+@show @which rnode(1, 1, 1, grid.underlying_grid, Center(), Center(), Center())
+@show @which rnode(1, 1, 1, vgrid.underlying_grid, Center(), Center(), Center())
 
 @info "Comparing the pre-run model states..."
 
