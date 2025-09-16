@@ -35,9 +35,9 @@ Oceananigans.defaults.FloatType = Float64
 #
 
 # number of grid points
-Nx = 48 #96  # LowRes: 48
-Ny = 96 #192 # LowRes: 96
-Nz = 32
+Nx = 8
+Ny = 8
+Nz = 8
 
 # stretched grid
 k_center = collect(1:Nz)
@@ -262,14 +262,13 @@ using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: get_top_tra
 
 using KernelAbstractions: @kernel, @index
 
-function loop!(model)
-    Δt = model.clock.last_Δt
+function loop!(arch, grid, v, Gv, Δt)
 
-    launch!(model.architecture, model.grid, :xyz,
-            _bad_compute_hydrostatic_free_surface_Gv!, model.timestepper.Gⁿ.v, model.grid; active_cells_map=nothing)
+    launch!(arch, grid, :xyz,
+            _bad_compute_hydrostatic_free_surface_Gv!, Gv, grid; active_cells_map=nothing)
 
-    launch!(model.architecture, model.grid, :xyz,
-            _bad_ab2_step_field!, model.velocities.v, Δt, model.timestepper.Gⁿ.v)
+    launch!(arch, grid, :xyz,
+            _bad_ab2_step_field!, v, Δt, Gv)
     return nothing
 end
 
@@ -321,11 +320,11 @@ arch = ReactantState()
 Δt₀ = 5minutes 
 
 # Make the grid:
-grid  = make_grid(arch, Nx, Ny, Nz, Δz_center)
-model = build_model(grid, Δt₀, parameters)
+grid    = make_grid(arch, Nx, Ny, Nz, Δz_center)
+vfield  = Field{Center, Face, Center}(grid)
+Gvfield = Field{Center, Face, Center}(grid)
 
-
-@info "Built $model."
+@info "Built model."
 
 @info "Vanilla model as a comparison..."
 
@@ -336,8 +335,9 @@ varch = CPU()
 Δt₀ = 5minutes 
 
 # Make the grid:
-vgrid  = make_grid(varch, Nx, Ny, Nz, Δz_center)
-vmodel = build_model(vgrid, Δt₀, parameters)
+vgrid    = make_grid(varch, Nx, Ny, Nz, Δz_center)
+vvfield  = Field{Center, Face, Center}(vgrid)
+vGvfield = Field{Center, Face, Center}(vgrid)
 
 using InteractiveUtils
 
@@ -348,17 +348,18 @@ include_halos = false
 rtol = sqrt(eps(Float64))
 atol = sqrt(eps(Float64))
 
-GordonBell25.compare_states(model, vmodel; include_halos, throw_error, rtol, atol)
+@allowscalar @show maximum(abs.(convert(Array, vfield) - convert(Array, vvfield)))
+@allowscalar @show maximum(abs.(convert(Array, Gvfield) - convert(Array, vGvfield)))
 
 @info "Running the vanilla model"
 tic       = time()
-loop!(vmodel)
+loop!(varch, vgrid, vvfield, vGvfield, Δt₀)
 vrun_toc  = time() - tic
 @show vrun_toc
 
 @info "Compiling the model run..."
 tic = time()
-rloop! = @compile raise_first=true raise=true sync=true loop!(model)
+rloop! = @compile raise_first=true raise=true sync=true loop!(arch, grid, vfield, Gvfield, Δt₀)
 compile_toc = time() - tic
 
 @show compile_toc
@@ -366,10 +367,11 @@ compile_toc = time() - tic
 @info "Running the Reactant model"
 
 tic      = time()
-rloop!(model)
+rloop!(arch, grid, vfield, Gvfield, Δt₀)
 rrun_toc = time() - tic
 @show rrun_toc
 
 @info "Comparing the model states after running..."
 
-GordonBell25.compare_states(model, vmodel; include_halos, throw_error, rtol, atol)
+@allowscalar @show maximum(abs.(convert(Array, vfield) - convert(Array, vvfield)))
+@allowscalar @show maximum(abs.(convert(Array, Gvfield) - convert(Array, vGvfield)))
