@@ -300,14 +300,13 @@ function bad_time_step!(model, Δt)
     launch!(arch, Gⁿ.u.grid, :xy, _bad_compute_z_bcs!, Gⁿ.u, instantiated_location(Gⁿ.u), Gⁿ.u.grid)
     
     launch!(model.architecture, model.grid, :xyz,
-            _bad_ab2_step_field!, model.velocities.u, Δt, model.timestepper.χ, model.timestepper.Gⁿ.u, model.timestepper.G⁻.u)
+            _bad_ab2_step_field!, model.velocities.u, Δt, model.timestepper.Gⁿ.u)
 
     launch!(model.architecture, model.grid, :xyz,
-            _bad_ab2_step_field!, model.velocities.v, Δt, model.timestepper.χ, model.timestepper.Gⁿ.v, model.timestepper.G⁻.v)
+            _bad_ab2_step_field!, model.velocities.v, Δt, model.timestepper.Gⁿ.v)
 
     launch!(arch, grid, :xyz,
-            _bad_compute_hydrostatic_free_surface_Gv!, model.timestepper.Gⁿ.v, grid, 
-            model.coriolis, model.velocities; active_cells_map=nothing)
+            _bad_compute_hydrostatic_free_surface_Gv!, model.timestepper.Gⁿ.v, grid; active_cells_map=nothing)
 
     return nothing
 end
@@ -318,38 +317,21 @@ end
     @inbounds Gc[i, j, grid.Nz] -= 100.0 * Az(i, j, grid.Nz+1, grid, LX, LY, Face()) / volume(i, j, grid.Nz, grid, LX, LY, LZ)
 end
 
-@kernel function _bad_ab2_step_field!(u, Δt, χ, Gⁿ, G⁻)
+@kernel function _bad_ab2_step_field!(u, Δt, Gⁿ)
     i, j, k = @index(Global, NTuple)
-
-    FT = eltype(u)
-    Δt = convert(FT, Δt)
-    one_point_five = convert(FT, 1.5)
-    oh_point_five  = convert(FT, 0.5)
-    not_euler = χ != convert(FT, -0.5) # use to prevent corruption by leftover NaNs in G⁻
-
-    @inbounds begin
-        Gu = (one_point_five + χ) * Gⁿ[i, j, k] - (oh_point_five + χ) * G⁻[i, j, k] * not_euler
-        u[i, j, k] += Δt * Gu
-    end
+    @inbounds u[i, j, k] += Δt * Gⁿ[i, j, k]
 end
 
 """ Calculate the right-hand-side of the v-velocity equation. """
-@kernel function _bad_compute_hydrostatic_free_surface_Gv!(Gv, grid, coriolis, velocities)
+@kernel function _bad_compute_hydrostatic_free_surface_Gv!(Gv, grid)
     i, j, k = @index(Global, NTuple)
-    @inbounds Gv[i, j, k] = - bad_y_f_cross_U(i, j, k, grid, coriolis, velocities)
+    @inbounds Gv[i, j, k] = -1e6 * ridge_check(i, j, k, grid)
 end
 
-@inline function bad_y_f_cross_U(i, j, k, grid, coriolis, U)
-    f₀ = coriolis.f₀
-    β = coriolis.β
-    y = ynode(i, j, k, grid, Center(), Face(), Center())
-    return (f₀ + β*y) * bad_active_weighted_ℑxyᶜᶠᶜ(i, j, k, grid, U[1])
-end
-
-@inline function bad_active_weighted_ℑxyᶜᶠᶜ(i, j, k, grid, q, args...)
-    active_nodes = (!(rnode(i, j-1, k, grid.underlying_grid, Center(), Center(), Center()) ≤ grid.immersed_boundary.bottom_height[i, j-1, 1]) # NEGATING THIS ELIMINATES ERROR, NEED TO INVESTIGATE
-                  & !(rnode(i-1, j-1, k, grid.underlying_grid, Center(), Center(), Center()) ≤ grid.immersed_boundary.bottom_height[i-1, j-1, 1])
-                  & !(rnode(i+1, j-1, k, grid.underlying_grid, Center(), Center(), Center()) ≤ grid.immersed_boundary.bottom_height[i+1, j-1, 1])
+@inline function ridge_check(i, j, k, grid)
+    active_nodes = (!(grid.underlying_grid.z.cᵃᵃᶜ[k] ≤ grid.immersed_boundary.bottom_height[i, j-1, 1]) # NEGATING THIS ELIMINATES ERROR, NEED TO INVESTIGATE
+                  & !(grid.underlying_grid.z.cᵃᵃᶜ[k] ≤ grid.immersed_boundary.bottom_height[i-1, j-1, 1])
+                  & !(grid.underlying_grid.z.cᵃᵃᶜ[k] ≤ grid.immersed_boundary.bottom_height[i+1, j-1, 1])
                   & (j > 1)
                   & (j < (grid.Ny+2))
                   & (k > 0)
@@ -410,8 +392,8 @@ vTᵢ          = temperature_init(vmodel.grid, parameters)
 
 using InteractiveUtils
 
-@show @which rnode(1, 1, 1, grid.underlying_grid, Center(), Center(), Center())
-@show @which rnode(1, 1, 1, vgrid.underlying_grid, Center(), Center(), Center())
+@show @which getnode(grid.underlying_grid.z.cᵃᵃᶜ, 1)
+@show @which getnode(vgrid.underlying_grid.z.cᵃᵃᶜ, 1)
 
 @info "Comparing the pre-run model states..."
 
