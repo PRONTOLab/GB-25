@@ -284,37 +284,16 @@ using KernelAbstractions: @kernel, @index
 
 function loop!(model)
     Δt = model.clock.last_Δt
-    @trace mincut = true track_numbers = false for i = 1:2
-        bad_time_step!(model, Δt)
-    end
-    return nothing
-end
-
-function bad_time_step!(model, Δt)
-
-    # Full step for tracers, fractional step for velocities.
-    grid = model.grid
-    arch = grid.architecture
-    Gⁿ   = model.timestepper.Gⁿ
     
-    launch!(arch, Gⁿ.u.grid, :xy, _bad_compute_z_bcs!, Gⁿ.u, instantiated_location(Gⁿ.u), Gⁿ.u.grid)
-    
-    launch!(model.architecture, model.grid, :xyz,
-            _bad_ab2_step_field!, model.velocities.u, Δt, model.timestepper.Gⁿ.u)
-
     launch!(model.architecture, model.grid, :xyz,
             _bad_ab2_step_field!, model.velocities.v, Δt, model.timestepper.Gⁿ.v)
 
-    launch!(arch, grid, :xyz,
-            _bad_compute_hydrostatic_free_surface_Gv!, model.timestepper.Gⁿ.v, grid; active_cells_map=nothing)
+    launch!(model.architecture, model.grid, :xyz,
+            _bad_compute_hydrostatic_free_surface_Gv!, model.timestepper.Gⁿ.v, model.grid; active_cells_map=nothing)
 
+    launch!(model.architecture, model.grid, :xyz,
+            _bad_ab2_step_field!, model.velocities.v, Δt, model.timestepper.Gⁿ.v)
     return nothing
-end
-
-@kernel function _bad_compute_z_bcs!(Gc, loc, grid)
-    i, j = @index(Global, NTuple)
-    LX, LY, LZ = loc
-    @inbounds Gc[i, j, grid.Nz] -= 100.0 * Az(i, j, grid.Nz+1, grid, LX, LY, Face()) / volume(i, j, grid.Nz, grid, LX, LY, LZ)
 end
 
 @kernel function _bad_ab2_step_field!(u, Δt, Gⁿ)
@@ -345,7 +324,6 @@ end
 function run_reentrant_channel_model!(model, Tᵢ, wind_stress)
     # setting IC's and BC's:
     set!(model.velocities.u.boundary_conditions.top.condition, wind_stress)
-    set!(model.tracers.T, Tᵢ)
 
     # Initialize the model
     model.clock.iteration = 1
