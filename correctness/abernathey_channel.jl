@@ -152,7 +152,16 @@ end
                   & (k > 0)
                   & (k < grid.Nz+1))
     =#
-    
+    #=
+    # Works
+    active_nodes = ((grid.underlying_grid.z.cᵃᵃᶜ[k] > grid.immersed_boundary.bottom_height[i, j-1, 1])
+                  & (grid.underlying_grid.z.cᵃᵃᶜ[k] > grid.immersed_boundary.bottom_height[i-1, j-1, 1])
+                  & (grid.underlying_grid.z.cᵃᵃᶜ[k] > grid.immersed_boundary.bottom_height[i+1, j-1, 1])
+                  & !(j < 2)
+                  & !(j > (grid.Ny+1))
+                  & !(k < 1)
+                  & !(k > grid.Nz))
+    =#
     mask = active_nodes == 0
     return ifelse(mask, zero(grid), 100.0 / active_nodes)
 end
