@@ -136,7 +136,6 @@ end
     
     active_nodes = (!(grid.underlying_grid.z.cᵃᵃᶜ[k] ≤ grid.immersed_boundary.bottom_height[i, j-1, 1]) # NEGATING THIS ELIMINATES ERROR, NEED TO INVESTIGATE
                   & !(grid.underlying_grid.z.cᵃᵃᶜ[k] ≤ grid.immersed_boundary.bottom_height[i-1, j-1, 1])
-                  & !(grid.underlying_grid.z.cᵃᵃᶜ[k] ≤ grid.immersed_boundary.bottom_height[i+1, j-1, 1])
                   & (j > 1)
                   & (j < (grid.Ny+2))
                   & (k > 0)
@@ -146,7 +145,6 @@ end
     # Works:
     active_nodes = ((grid.underlying_grid.z.cᵃᵃᶜ[k] > grid.immersed_boundary.bottom_height[i, j-1, 1])
                   & (grid.underlying_grid.z.cᵃᵃᶜ[k] > grid.immersed_boundary.bottom_height[i-1, j-1, 1])
-                  & (grid.underlying_grid.z.cᵃᵃᶜ[k] > grid.immersed_boundary.bottom_height[i+1, j-1, 1])
                   & (j > 1)
                   & (j < (grid.Ny+2))
                   & (k > 0)
@@ -156,7 +154,6 @@ end
     # Works
     active_nodes = ((grid.underlying_grid.z.cᵃᵃᶜ[k] > grid.immersed_boundary.bottom_height[i, j-1, 1])
                   & (grid.underlying_grid.z.cᵃᵃᶜ[k] > grid.immersed_boundary.bottom_height[i-1, j-1, 1])
-                  & (grid.underlying_grid.z.cᵃᵃᶜ[k] > grid.immersed_boundary.bottom_height[i+1, j-1, 1])
                   & !(j < 2)
                   & !(j > (grid.Ny+1))
                   & !(k < 1)
