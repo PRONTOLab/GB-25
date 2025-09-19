@@ -356,7 +356,7 @@ compile_toc = time() - tic
 
 using FileIO, JLD2
 
-graph_directory = "run_abernathy_model_1000steps_noRidge_TEOS10/"
+graph_directory = "run_abernathy_model_1000steps_noRidge/"
 filename        = graph_directory * "data_init.jld2"
 
 if !isdir(graph_directory) Base.Filesystem.mkdir(graph_directory) end
