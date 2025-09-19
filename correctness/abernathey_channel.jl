@@ -110,7 +110,7 @@ using KernelAbstractions: @kernel, @index
 
 using Oceananigans.Utils: launch!
 
-function loop!(arch, grid, v, Gv, Δt)
+function loop!(arch, grid, Gv)
 
     launch!(arch, grid, :xyz,
             _bad_compute_hydrostatic_free_surface_Gv!, Gv, grid; active_cells_map=nothing)
@@ -121,17 +121,17 @@ end
 """ Calculate the right-hand-side of the v-velocity equation. """
 @kernel function _bad_compute_hydrostatic_free_surface_Gv!(Gv, grid)
     i, j, k = @index(Global, NTuple)
-    @inbounds Gv[i, j, k] = -1e6 * ridge_check(i, j, k, grid)
+    @inbounds Gv[i, j, k] = ridge_check(i, j, k, grid)
 end
 
 @inline function ridge_check(i, j, k, grid)
     # Doesn't work:
-    active_nodes = !(grid.underlying_grid.z.cᵃᵃᶜ[k] ≤ grid.immersed_boundary.bottom_height[i, j, 1]) # NEGATING THIS ELIMINATES ERROR, NEED TO INVESTIGATE
+    active_nodes = !(grid.underlying_grid.z.cᵃᵃᶜ[k] ≤ -1500) # NEGATING THIS ELIMINATES ERROR, NEED TO INVESTIGATE
     # Works:
-    #active_nodes = grid.underlying_grid.z.cᵃᵃᶜ[k] > grid.immersed_boundary.bottom_height[i, j, 1]
+    #active_nodes = grid.underlying_grid.z.cᵃᵃᶜ[k] > -1500
     
     mask = active_nodes == 0
-    return ifelse(mask, zero(grid), 100.0 / active_nodes)
+    return active_nodes
 end
 
 #####
@@ -141,12 +141,8 @@ end
 # Architecture
 arch = ReactantState()
 
-# Timestep size:
-Δt₀ = 5minutes 
-
 # Make the grid:
 grid    = make_grid(arch, Nx, Ny, Nz, Δz_center)
-vfield  = Field{Center, Face, Center}(grid)
 Gvfield = Field{Center, Face, Center}(grid)
 
 @info "Built model."
@@ -156,12 +152,8 @@ Gvfield = Field{Center, Face, Center}(grid)
 # Architecture
 varch = CPU()
 
-# Timestep size:
-Δt₀ = 5minutes 
-
 # Make the grid:
 vgrid    = make_grid(varch, Nx, Ny, Nz, Δz_center)
-vvfield  = Field{Center, Face, Center}(vgrid)
 vGvfield = Field{Center, Face, Center}(vgrid)
 
 using InteractiveUtils
@@ -173,18 +165,17 @@ include_halos = false
 rtol = sqrt(eps(Float64))
 atol = sqrt(eps(Float64))
 
-@allowscalar @show maximum(abs.(convert(Array, vfield) - convert(Array, vvfield)))
 @allowscalar @show maximum(abs.(convert(Array, Gvfield) - convert(Array, vGvfield)))
 
 @info "Running the vanilla model"
 tic       = time()
-loop!(varch, vgrid, vvfield, vGvfield, Δt₀)
+loop!(varch, vgrid, vGvfield)
 vrun_toc  = time() - tic
 @show vrun_toc
 
 @info "Compiling the model run..."
 tic = time()
-rloop! = @compile raise_first=true raise=true sync=true loop!(arch, grid, vfield, Gvfield, Δt₀)
+rloop! = @compile raise_first=true raise="canonicalize,llvm-to-memref-access,canonicalize,convert-llvm-to-cf,canonicalize,enzyme-lift-cf-to-scf,canonicalize,func.func(canonicalize-loops),canonicalize-scf-for,canonicalize,libdevice-funcs-raise,canonicalize,affine-cfg,canonicalize,func.func(canonicalize-loops),canonicalize,llvm-to-affine-access,canonicalize,delinearize-indexing,canonicalize,simplify-affine-exprs,affine-cfg,canonicalize,func.func(affine-loop-invariant-code-motion),canonicalize,sort-memory,raise-affine-to-stablehlo{prefer_while_raising=false},canonicalize,arith-raise{stablehlo=true}" sync=true loop!(arch, grid, Gvfield)
 compile_toc = time() - tic
 
 @show compile_toc
@@ -192,11 +183,10 @@ compile_toc = time() - tic
 @info "Running the Reactant model"
 
 tic      = time()
-rloop!(arch, grid, vfield, Gvfield, Δt₀)
+rloop!(arch, grid, Gvfield)
 rrun_toc = time() - tic
 @show rrun_toc
 
 @info "Comparing the model states after running..."
 
-@allowscalar @show maximum(abs.(convert(Array, vfield) - convert(Array, vvfield)))
 @allowscalar @show maximum(abs.(convert(Array, Gvfield) - convert(Array, vGvfield)))
