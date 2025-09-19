@@ -115,14 +115,7 @@ function loop!(arch, grid, v, Gv, Δt)
     launch!(arch, grid, :xyz,
             _bad_compute_hydrostatic_free_surface_Gv!, Gv, grid; active_cells_map=nothing)
 
-    #launch!(arch, grid, :xyz,
-    #        _bad_ab2_step_field!, v, Δt, Gv)
     return nothing
-end
-
-@kernel function _bad_ab2_step_field!(u, Δt, Gⁿ)
-    i, j, k = @index(Global, NTuple)
-    @inbounds u[i, j, k] += Δt * Gⁿ[i, j, k]
 end
 
 """ Calculate the right-hand-side of the v-velocity equation. """
@@ -133,23 +126,10 @@ end
 
 @inline function ridge_check(i, j, k, grid)
     # Doesn't work:
-    #=
-    active_nodes = (!(grid.underlying_grid.z.cᵃᵃᶜ[k] ≤ grid.immersed_boundary.bottom_height[i, j, 1]) # NEGATING THIS ELIMINATES ERROR, NEED TO INVESTIGATE
-                  & (k > 0)
-                  & (k < grid.Nz+1))
-    =#
-    
+    active_nodes = !(grid.underlying_grid.z.cᵃᵃᶜ[k] ≤ grid.immersed_boundary.bottom_height[i, j, 1]) # NEGATING THIS ELIMINATES ERROR, NEED TO INVESTIGATE
     # Works:
-    active_nodes = ((grid.underlying_grid.z.cᵃᵃᶜ[k] > grid.immersed_boundary.bottom_height[i, j, 1])
-                  & (k > 0)
-                  & (k < grid.Nz+1))
+    #active_nodes = grid.underlying_grid.z.cᵃᵃᶜ[k] > grid.immersed_boundary.bottom_height[i, j, 1]
     
-    #=
-    # Works
-    active_nodes = ((grid.underlying_grid.z.cᵃᵃᶜ[k] > grid.immersed_boundary.bottom_height[i, j, 1])
-                  & !(k < 1)
-                  & !(k > grid.Nz))
-    =#
     mask = active_nodes == 0
     return ifelse(mask, zero(grid), 100.0 / active_nodes)
 end
