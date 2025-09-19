@@ -115,8 +115,8 @@ function loop!(arch, grid, v, Gv, Δt)
     launch!(arch, grid, :xyz,
             _bad_compute_hydrostatic_free_surface_Gv!, Gv, grid; active_cells_map=nothing)
 
-    launch!(arch, grid, :xyz,
-            _bad_ab2_step_field!, v, Δt, Gv)
+    #launch!(arch, grid, :xyz,
+    #        _bad_ab2_step_field!, v, Δt, Gv)
     return nothing
 end
 
@@ -133,23 +133,20 @@ end
 
 @inline function ridge_check(i, j, k, grid)
     # Doesn't work:
-    
-    active_nodes = (!(grid.underlying_grid.z.cᵃᵃᶜ[k] ≤ grid.immersed_boundary.bottom_height[i, j-1, 1]) # NEGATING THIS ELIMINATES ERROR, NEED TO INVESTIGATE
-                  & !(grid.underlying_grid.z.cᵃᵃᶜ[k] ≤ grid.immersed_boundary.bottom_height[i-1, j-1, 1])
-                  & (k > 0)
-                  & (k < grid.Nz+1))
-    
     #=
-    # Works:
-    active_nodes = ((grid.underlying_grid.z.cᵃᵃᶜ[k] > grid.immersed_boundary.bottom_height[i, j-1, 1])
-                  & (grid.underlying_grid.z.cᵃᵃᶜ[k] > grid.immersed_boundary.bottom_height[i-1, j-1, 1])
+    active_nodes = (!(grid.underlying_grid.z.cᵃᵃᶜ[k] ≤ grid.immersed_boundary.bottom_height[i, j, 1]) # NEGATING THIS ELIMINATES ERROR, NEED TO INVESTIGATE
                   & (k > 0)
                   & (k < grid.Nz+1))
     =#
+    
+    # Works:
+    active_nodes = ((grid.underlying_grid.z.cᵃᵃᶜ[k] > grid.immersed_boundary.bottom_height[i, j, 1])
+                  & (k > 0)
+                  & (k < grid.Nz+1))
+    
     #=
     # Works
-    active_nodes = ((grid.underlying_grid.z.cᵃᵃᶜ[k] > grid.immersed_boundary.bottom_height[i, j-1, 1])
-                  & (grid.underlying_grid.z.cᵃᵃᶜ[k] > grid.immersed_boundary.bottom_height[i-1, j-1, 1])
+    active_nodes = ((grid.underlying_grid.z.cᵃᵃᶜ[k] > grid.immersed_boundary.bottom_height[i, j, 1])
                   & !(k < 1)
                   & !(k > grid.Nz))
     =#
