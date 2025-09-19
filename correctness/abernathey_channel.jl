@@ -110,27 +110,26 @@ using KernelAbstractions: @kernel, @index
 
 using Oceananigans.Utils: launch!
 
-function loop!(arch, grid, Gv)
+function loop!(arch, grid, Gv, z)
 
     launch!(arch, grid, :xyz,
-            _bad_compute_hydrostatic_free_surface_Gv!, Gv, grid; active_cells_map=nothing)
+            _bad_compute_hydrostatic_free_surface_Gv!, Gv, z; active_cells_map=nothing)
 
     return nothing
 end
 
 """ Calculate the right-hand-side of the v-velocity equation. """
-@kernel function _bad_compute_hydrostatic_free_surface_Gv!(Gv, grid)
+@kernel function _bad_compute_hydrostatic_free_surface_Gv!(Gv, z)
     i, j, k = @index(Global, NTuple)
-    @inbounds Gv[i, j, k] = ridge_check(i, j, k, grid)
+    @inbounds Gv[i, j, k] = ridge_check(k, z)
 end
 
-@inline function ridge_check(i, j, k, grid)
+@inline function ridge_check(k, z)
     # Doesn't work:
-    active_nodes = !(grid.underlying_grid.z.cᵃᵃᶜ[k] ≤ -1500) # NEGATING THIS ELIMINATES ERROR, NEED TO INVESTIGATE
+    active_nodes = !(z[k] ≤ -1500)
     # Works:
-    #active_nodes = grid.underlying_grid.z.cᵃᵃᶜ[k] > -1500
+    #active_nodes = z[k] > -1500
     
-    mask = active_nodes == 0
     return active_nodes
 end
 
@@ -138,44 +137,39 @@ end
 ##### Actually creating our model and using these functions to run it:
 #####
 
-# Architecture
-arch = ReactantState()
-
-# Make the grid:
-grid    = make_grid(arch, Nx, Ny, Nz, Δz_center)
-Gvfield = Field{Center, Face, Center}(grid)
-
-@info "Built model."
-
 @info "Vanilla model as a comparison..."
 
-# Architecture
-varch = CPU()
-
-# Make the grid:
+# "Vanilla" data:
+varch    = CPU()
 vgrid    = make_grid(varch, Nx, Ny, Nz, Δz_center)
-vGvfield = Field{Center, Face, Center}(vgrid)
+vGvfield = zeros((8, 9, 8))
+vz       = [-185.99366913029345, -166.00501682133535, -146.0163645123772, -126.0277122034191, -106.03905989446096, -86.99190207831609, -69.73904173760515, -54.111450849280025,
+            -39.95602432000002, -27.13408000000002, -15.520000000000017, -5.000000000000007, 5.000000000000007, 15.000000000000021, 25.000000000000036, 35.00000000000005]
+
+# Architecture
+arch    = ReactantState()
+grid    = make_grid(arch, Nx, Ny, Nz, Δz_center)
+Gvfield = Reactant.ConcreteRArray(vGvfield)
+z       = Reactant.ConcreteRArray(vz)
+
+@info "Built model."
 
 using InteractiveUtils
 
 @info "Comparing the pre-run model states..."
 
-throw_error = false
-include_halos = false
-rtol = sqrt(eps(Float64))
-atol = sqrt(eps(Float64))
-
 @allowscalar @show maximum(abs.(convert(Array, Gvfield) - convert(Array, vGvfield)))
 
 @info "Running the vanilla model"
 tic       = time()
-loop!(varch, vgrid, vGvfield)
+loop!(varch, vgrid, vGvfield, vz)
 vrun_toc  = time() - tic
 @show vrun_toc
 
 @info "Compiling the model run..."
 tic = time()
-rloop! = @compile raise_first=true raise="canonicalize,llvm-to-memref-access,canonicalize,convert-llvm-to-cf,canonicalize,enzyme-lift-cf-to-scf,canonicalize,func.func(canonicalize-loops),canonicalize-scf-for,canonicalize,libdevice-funcs-raise,canonicalize,affine-cfg,canonicalize,func.func(canonicalize-loops),canonicalize,llvm-to-affine-access,canonicalize,delinearize-indexing,canonicalize,simplify-affine-exprs,affine-cfg,canonicalize,func.func(affine-loop-invariant-code-motion),canonicalize,sort-memory,raise-affine-to-stablehlo{prefer_while_raising=false},canonicalize,arith-raise{stablehlo=true}" sync=true loop!(arch, grid, Gvfield)
+thing = "canonicalize,llvm-to-memref-access,canonicalize,convert-llvm-to-cf,canonicalize,enzyme-lift-cf-to-scf,canonicalize,func.func(canonicalize-loops),canonicalize-scf-for,canonicalize,libdevice-funcs-raise,canonicalize,affine-cfg,canonicalize,func.func(canonicalize-loops),canonicalize,llvm-to-affine-access,canonicalize,delinearize-indexing,canonicalize,simplify-affine-exprs,affine-cfg,canonicalize,func.func(affine-loop-invariant-code-motion),canonicalize,sort-memory,raise-affine-to-stablehlo{prefer_while_raising=false},canonicalize,arith-raise{stablehlo=true}"
+rloop! = @compile raise_first=true raise=thing sync=true loop!(arch, grid, Gvfield, z)
 compile_toc = time() - tic
 
 @show compile_toc
@@ -183,7 +177,7 @@ compile_toc = time() - tic
 @info "Running the Reactant model"
 
 tic      = time()
-rloop!(arch, grid, Gvfield)
+rloop!(arch, grid, Gvfield, z)
 rrun_toc = time() - tic
 @show rrun_toc
 
