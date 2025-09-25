@@ -20,7 +20,10 @@ using SeawaterPolynomials
 #using CUDA
 #CUDA.device!(0)
 
+ENV["JULIA_DEBUG"] = "Reactant_jll,Reactant"
+
 using Reactant
+Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
 using GordonBell25
 using Oceananigans.Architectures: ReactantState
 Reactant.set_default_backend("cpu")
