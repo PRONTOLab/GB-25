@@ -23,7 +23,7 @@ using SeawaterPolynomials
 using Reactant
 using GordonBell25
 using Oceananigans.Architectures: ReactantState
-#Reactant.set_default_backend("cpu")
+Reactant.set_default_backend("cpu")
 
 using Enzyme
 
@@ -346,8 +346,8 @@ dJ  = Field{Face, Center, Nothing}(model.grid)
 
 @info "Compiling the model run..."
 tic = time()
-restimate_tracer_error = @compile raise_first=true raise=true compile_options=CompileOptions(; disable_auto_batching_passes=true) sync=true estimate_tracer_error(model, Tᵢ, wind_stress)
-#rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true  differentiate_tracer_error(model, Tᵢ, wind_stress, dmodel, dTᵢ, dJ)
+#restimate_tracer_error = @compile raise_first=true raise=true compile_options=CompileOptions(; disable_auto_batching_passes=true) sync=true estimate_tracer_error(model, Tᵢ, wind_stress)
+rdifferentiate_tracer_error = @compile raise_first=true raise=true compile_options=CompileOptions(; disable_auto_batching_passes=true) sync=true  differentiate_tracer_error(model, Tᵢ, wind_stress, dmodel, dTᵢ, dJ)
 compile_toc = time() - tic
 
 @show compile_toc
@@ -375,12 +375,12 @@ jldsave(filename; Nx, Ny, Nz,
                   wind_stress=convert(Array, interior(wind_stress)))
 
 tic = time()
-avg_temp = restimate_tracer_error(model, Tᵢ, wind_stress)
-#rdifferentiate_tracer_error(model, bᵢ, wind_stress, dmodel, dbᵢ, dJ)
+#avg_temp = restimate_tracer_error(model, Tᵢ, wind_stress)
+rdifferentiate_tracer_error(model, bᵢ, wind_stress, dmodel, dbᵢ, dJ)
 run_toc = time() - tic
 
 @show run_toc
-@show avg_temp
+#@show avg_temp
 
 filename = graph_directory * "data_final.jld2"
 
