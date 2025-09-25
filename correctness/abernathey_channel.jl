@@ -267,7 +267,7 @@ end
 
 function loop!(model)
     Δt = model.clock.last_Δt
-    @trace mincut = true checkpointing = true track_numbers = false for i = 1:1000
+    @trace mincut = true checkpointing = true track_numbers = false for i = 1:9
         time_step!(model, Δt)
     end
     return nothing
@@ -356,7 +356,7 @@ compile_toc = time() - tic
 
 using FileIO, JLD2
 
-graph_directory = "run_abernathy_model_1000steps/"
+graph_directory = "run_abernathy_model_9steps_ad/"
 filename        = graph_directory * "data_init.jld2"
 
 if !isdir(graph_directory) Base.Filesystem.mkdir(graph_directory) end
