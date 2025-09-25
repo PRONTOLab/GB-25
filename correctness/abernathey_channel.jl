@@ -347,7 +347,7 @@ dJ  = Field{Face, Center, Nothing}(model.grid)
 @info "Compiling the model run..."
 tic = time()
 #restimate_tracer_error = @compile raise_first=true raise=true compile_options=CompileOptions(; disable_auto_batching_passes=true) sync=true estimate_tracer_error(model, Tᵢ, wind_stress)
-rdifferentiate_tracer_error = @compile raise_first=true raise=true compile_options=CompileOptions(; disable_auto_batching_passes=true) sync=true  differentiate_tracer_error(model, Tᵢ, wind_stress, dmodel, dTᵢ, dJ)
+rdifferentiate_tracer_error = @compile compile_options=CompileOptions(; disable_auto_batching_passes=true, raise_first=true, raise=true) sync=true  differentiate_tracer_error(model, Tᵢ, wind_stress, dmodel, dTᵢ, dJ)
 compile_toc = time() - tic
 
 @show compile_toc
