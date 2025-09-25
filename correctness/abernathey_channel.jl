@@ -267,7 +267,7 @@ end
 
 function loop!(model)
     Δt = model.clock.last_Δt
-    @trace mincut = true track_numbers = false for i = 1:1000
+    @trace mincut = true checkpointing = true track_numbers = false for i = 1:1000
         time_step!(model, Δt)
     end
     return nothing
