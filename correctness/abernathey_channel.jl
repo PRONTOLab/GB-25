@@ -22,7 +22,6 @@ using SeawaterPolynomials
 
 using GordonBell25
 using Oceananigans.Architectures: ReactantState
-Reactant.set_default_backend("cpu")
 
 using Enzyme
 
