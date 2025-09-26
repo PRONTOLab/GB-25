@@ -24,6 +24,10 @@ using GordonBell25
 using Oceananigans.Architectures: ReactantState
 
 using Enzyme
+using IntelITT
+
+Enzyme.API.looseTypeAnalysis!(true)
+Enzyme.API.strictAliasing!(false)
 
 Oceananigans.defaults.FloatType = Float64
 
@@ -308,6 +312,7 @@ Tᵢ          = temperature_init(model.grid, parameters)
 
 
 @info "Built $model."
+IntelITT.resume()
 
 dmodel = Enzyme.make_zero(model)
 dTᵢ = Field{Center, Center, Center}(model.grid)
