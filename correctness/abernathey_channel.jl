@@ -313,8 +313,6 @@ dmodel = Enzyme.make_zero(model)
 dTᵢ = Field{Center, Center, Center}(model.grid)
 dJ  = Field{Face, Center, Nothing}(model.grid)
 
-@show compile_toc
-
 @info "Running the simulation..."
 
 using FileIO, JLD2
