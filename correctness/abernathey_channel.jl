@@ -20,42 +20,12 @@ using SeawaterPolynomials
 #using CUDA
 #CUDA.device!(0)
 
-ENV["JULIA_DEBUG"] = "Reactant_jll,Reactant"
-
-using Reactant
-Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
 using GordonBell25
 using Oceananigans.Architectures: ReactantState
 Reactant.set_default_backend("cpu")
 
 using Enzyme
 
-#=
-# https://github.com/CliMA/Oceananigans.jl/blob/c29939097a8d2f42966e930f2f2605803bf5d44c/src/AbstractOperations/binary_operations.jl#L5
-Base.@nospecializeinfer function Reactant.traced_type_inner(
-    @nospecialize(OA::Type{Oceananigans.AbstractOperations.BinaryOperation{LX, LY, LZ, O, A, B, IA, IB, G, T}}),
-    seen,
-    mode::Reactant.TraceMode,
-    @nospecialize(track_numbers::Type),
-    @nospecialize(sharding),
-    @nospecialize(runtime)
-) where {LX, LY, LZ, O, A, B, IA, IB, G, T}
-    LX2 = Reactant.traced_type_inner(LX, seen, mode, track_numbers, sharding, runtime)
-    LY2 = Reactant.traced_type_inner(LY, seen, mode, track_numbers, sharding, runtime)
-    LZ2 = Reactant.traced_type_inner(LZ, seen, mode, track_numbers, sharding, runtime)
-
-    O2 = Reactant.traced_type_inner(O, seen, mode, track_numbers, sharding, runtime)
-
-    A2 = Reactant.traced_type_inner(A, seen, mode, track_numbers, sharding, runtime)
-    B2 = Reactant.traced_type_inner(B, seen, mode, track_numbers, sharding, runtime)
-    IA2 = Reactant.traced_type_inner(IA, seen, mode, track_numbers, sharding, runtime)
-    IB2 = Reactant.traced_type_inner(IB, seen, mode, track_numbers, sharding, runtime)
-    G2 = Reactant.traced_type_inner(G, seen, mode, track_numbers, sharding, runtime)
-
-    T2 = eltype(G2)
-    return Oceananigans.AbstractOperations.BinaryOperation{LX2, LY2, LZ2, O2, A2, B2, IA2, IB2, G2, T2}
-end
-=#
 Oceananigans.defaults.FloatType = Float64
 
 #
@@ -270,7 +240,7 @@ end
 
 function loop!(model)
     Δt = model.clock.last_Δt
-    @trace mincut = true checkpointing = true track_numbers = false for i = 1:9
+    for i = 1:9
         time_step!(model, Δt)
     end
     return nothing
@@ -326,7 +296,7 @@ end
 #####
 
 # Architecture
-architecture = ReactantState() #GPU()
+architecture = CPU()
 
 # Timestep size:
 Δt₀ = 5minutes 
@@ -344,22 +314,13 @@ dmodel = Enzyme.make_zero(model)
 dTᵢ = Field{Center, Center, Center}(model.grid)
 dJ  = Field{Face, Center, Nothing}(model.grid)
 
-# Trying zonal transport:
-#@allowscalar zonal_transport = Field(Integral(model.velocities.u, dims=(2,3)))
-
-@info "Compiling the model run..."
-tic = time()
-#restimate_tracer_error = @compile raise_first=true raise=true compile_options=CompileOptions(; disable_auto_batching_passes=true) sync=true estimate_tracer_error(model, Tᵢ, wind_stress)
-rdifferentiate_tracer_error = @compile compile_options=CompileOptions(; disable_auto_batching_passes=true, raise_first=true, raise=true) sync=true  differentiate_tracer_error(model, Tᵢ, wind_stress, dmodel, dTᵢ, dJ)
-compile_toc = time() - tic
-
 @show compile_toc
 
 @info "Running the simulation..."
 
 using FileIO, JLD2
 
-graph_directory = "run_abernathy_model_9steps_ad/"
+graph_directory = "run_abernathy_model_9steps_ad_noReactant/"
 filename        = graph_directory * "data_init.jld2"
 
 if !isdir(graph_directory) Base.Filesystem.mkdir(graph_directory) end
@@ -378,12 +339,10 @@ jldsave(filename; Nx, Ny, Nz,
                   wind_stress=convert(Array, interior(wind_stress)))
 
 tic = time()
-#avg_temp = restimate_tracer_error(model, Tᵢ, wind_stress)
-rdifferentiate_tracer_error(model, bᵢ, wind_stress, dmodel, dbᵢ, dJ)
+differentiate_tracer_error(model, bᵢ, wind_stress, dmodel, dbᵢ, dJ)
 run_toc = time() - tic
 
 @show run_toc
-#@show avg_temp
 
 filename = graph_directory * "data_final.jld2"
 
