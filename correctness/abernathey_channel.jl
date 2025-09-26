@@ -336,7 +336,7 @@ jldsave(filename; Nx, Ny, Nz,
                   wind_stress=convert(Array, interior(wind_stress)))
 
 tic = time()
-differentiate_tracer_error(model, bᵢ, wind_stress, dmodel, dbᵢ, dJ)
+differentiate_tracer_error(model, Tᵢ, wind_stress, dmodel, dTᵢ, dJ)
 run_toc = time() - tic
 
 @show run_toc
