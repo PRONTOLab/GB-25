@@ -17,6 +17,7 @@ JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
 KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
 MPI = "da04e1cc-30fd-572f-bb4f-1f8673147195"
 Oceananigans = "9e8cae18-63c1-5223-a75c-80ca9d6e9a09"
+PProf = "e4faabce-9ead-11e9-39d9-4379958e3056"
 Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
 PrecompileTools = "aea7be01-6a6a-4083-8856-8a6e6704d82a"
 Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
@@ -27,6 +28,10 @@ ReactantCore = "a3311ec8-5e00-46d5-b541-4f83e724a433"
 Reactant_jll = "0192cb87-2b54-54ad-80e0-3be72ad8a3c0"
 SeawaterPolynomials = "d496a93d-167e-4197-9f49-d3af4ff8fe40"
 Serialization = "9e88b42a-f829-5b0c-bbe9-9e923198166b"
+Tracy = "e689c965-62c8-4b79-b2c5-8359227902fd"
+
+[sources]
+ClimaOcean = {rev = "vc/bounds", url = "https://github.com/vchuravy/ClimaOcean.jl"}
 
 [compat]
 CUDA = "5.7.1"
@@ -41,6 +46,7 @@ JLD2 = "0.5.15"
 KernelAbstractions = "0.9.34"
 MPI = "0.20.22"
 Oceananigans = "0.99"
+PProf = "3.2.0"
 Plots = "1.40.19"
 PrecompileTools = "1.2.1"
 Printf = "1"
@@ -50,9 +56,7 @@ ReactantCore = "0.1"
 Reactant_jll = "0.0"
 SeawaterPolynomials = "0.3.9"
 Serialization = "1"
+Tracy = "0.1.6"
 
 [preferences.Reactant]
 xla_runtime = "IFRT"
-
-[sources]
-ClimaOcean = {url = "https://github.com/vchuravy/ClimaOcean.jl", rev="vc/bounds"}

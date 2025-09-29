@@ -25,6 +25,7 @@ using Oceananigans.Architectures: ReactantState
 
 using Enzyme
 using IntelITT
+using Tracy
 
 Enzyme.API.looseTypeAnalysis!(true)
 Enzyme.API.strictAliasing!(false)
@@ -314,6 +315,7 @@ Tᵢ          = temperature_init(model.grid, parameters)
 @info "Built $model."
 IntelITT.resume()
 
+@time Enzyme.make_zero(model)
 dmodel = Enzyme.make_zero(model)
 dTᵢ = Field{Center, Center, Center}(model.grid)
 dJ  = Field{Face, Center, Nothing}(model.grid)
@@ -340,8 +342,15 @@ jldsave(filename; Nx, Ny, Nz,
                   e_init=convert(Array, interior(model.tracers.e)),
                   wind_stress=convert(Array, interior(wind_stress)))
 
+with_stack(f, n) = fetch(schedule(Core.Task(f,n)))
 tic = time()
-differentiate_tracer_error(model, Tᵢ, wind_stress, dmodel, dTᵢ, dJ)
+
+# Enzyme.Compiler.VERBOSE_ERRORS[] = true 
+
+with_stack(16_000_000) do
+    @tracepoint "differentiate" differentiate_tracer_error(model, Tᵢ, wind_stress, dmodel, dTᵢ, dJ)
+end
+
 run_toc = time() - tic
 
 @show run_toc
