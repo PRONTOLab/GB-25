@@ -1,5 +1,16 @@
-#using Pkg
-# pkg"add Oceananigans CairoMakie"
+
+profiling::Bool = false
+
+import ProfileEndpoints
+if haskey(ENV, "JULIA_WAIT_FOR_TRACY") && ENV["JULIA_WAIT_FOR_TRACY"] == "1"
+    profiling = true
+end
+if haskey(ENV, "JULIA_PPROF") && ENV["JULIA_PPROF"] == "1"
+    profiling = true
+    t = Base.Threads.@spawn :interactive ProfileEndpoints.serve_profiling_server()
+    sleep(1)
+end
+
 using Oceananigans
 ENV["GKSwstype"] = "100"
 
@@ -336,16 +347,25 @@ else
     set!(bottom_height, -Lz)
 end
 
-jldsave(filename; Nx, Ny, Nz,
-                  bottom_height=convert(Array, interior(bottom_height)),
-                  T_init=convert(Array, interior(model.tracers.T)),
-                  e_init=convert(Array, interior(model.tracers.e)),
-                  wind_stress=convert(Array, interior(wind_stress)))
+# jldsave(filename; Nx, Ny, Nz,
+#                   bottom_height=convert(Array, interior(bottom_height)),
+#                   T_init=convert(Array, interior(model.tracers.T)),
+#                   e_init=convert(Array, interior(model.tracers.e)),
+#                   wind_stress=convert(Array, interior(wind_stress)))
 
-with_stack(f, n) = fetch(schedule(Core.Task(f,n)))
+function with_stack(f, n, pool=:default)
+    t = Core.Task(f, n)
+    t.sticky=false
+    Base.Threads._spawn_set_thrpool(t, pool)
+    wait(schedule(t))
+end
 tic = time()
 
-# Enzyme.Compiler.VERBOSE_ERRORS[] = true 
+profiling |= IntelITT.isactive()
+
+if !profiling
+    Enzyme.Compiler.VERBOSE_ERRORS[] = true 
+end
 
 with_stack(16_000_000) do
     @tracepoint "differentiate" differentiate_tracer_error(model, Tᵢ, wind_stress, dmodel, dTᵢ, dJ)
@@ -355,13 +375,13 @@ run_toc = time() - tic
 
 @show run_toc
 
-filename = graph_directory * "data_final.jld2"
+# filename = graph_directory * "data_final.jld2"
 
-jldsave(filename; Nx, Ny, Nz,
-                  T_final=convert(Array, interior(model.tracers.T)),
-                  e_final=convert(Array, interior(model.tracers.e)),
-                  ssh=convert(Array, interior(model.free_surface.η)),
-                  u=convert(Array, interior(model.velocities.u)),
-                  v=convert(Array, interior(model.velocities.v)),
-                  w=convert(Array, interior(model.velocities.w)))
+# jldsave(filename; Nx, Ny, Nz,
+#                   T_final=convert(Array, interior(model.tracers.T)),
+#                   e_final=convert(Array, interior(model.tracers.e)),
+#                   ssh=convert(Array, interior(model.free_surface.η)),
+#                   u=convert(Array, interior(model.velocities.u)),
+#                   v=convert(Array, interior(model.velocities.v)),
+#                   w=convert(Array, interior(model.velocities.w)))
 
