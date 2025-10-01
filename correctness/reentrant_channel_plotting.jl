@@ -6,7 +6,7 @@ using GLMakie
 #
 
 
-graph_directory = "run_abernathy_model_1000steps_noRidge_noReactant/"
+graph_directory = "run_abernathy_model_100000steps/"
 
 data1 = jldopen(graph_directory * "data_init.jld2", "r")
 

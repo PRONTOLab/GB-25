@@ -14,7 +14,7 @@ using Oceananigans.Grids: xnode, ynode, znode
 
 using Plots
 
-graph_directory = "run_abernathy_model_1000steps_noRidge_noReactant/"
+graph_directory = "run_abernathy_model_100000steps/"
 
 #
 # First we gather the data and create a grid for plotting purposes:

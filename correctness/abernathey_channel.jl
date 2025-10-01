@@ -219,14 +219,14 @@ function build_model(grid, Δt₀, parameters)
     model = HydrostaticFreeSurfaceModel(
         grid = grid,
         free_surface = SplitExplicitFreeSurface(substeps=500),
-        momentum_advection = WENO(),
+        momentum_advection = nothing,
         tracer_advection = WENO(),
         buoyancy = SeawaterBuoyancy(equation_of_state=SeawaterPolynomials.TEOS10EquationOfState(Oceananigans.defaults.FloatType),constant_salinity=35),
-        coriolis = coriolis,
+        coriolis = nothing,
         closure = (horizontal_closure, vertical_closure, vertical_closure_CATKE),
         tracers = (:T, :e),
-        boundary_conditions = (T = T_bcs, u = u_bcs, v = v_bcs),
-        forcing = (; T = FT)
+        boundary_conditions = (T = T_bcs, u = u_bcs, v = v_bcs)
+        #forcing = (; T = FT)
     )
 
     model.clock.last_Δt = Δt₀
@@ -247,15 +247,6 @@ function wind_stress_init(grid, p)
 end
 
 # resting initial condition
-function buoyancy_init(grid, parameters)
-    ε(σ) = σ * randn()
-    bᵢ_function(x, y, z) = parameters.ΔB * (exp(z / parameters.h) - exp(-Lz / parameters.h)) / (1 - exp(-Lz / parameters.h)) + ε(1e-8)
-    bᵢ = Field{Center, Center, Center}(grid)
-    set!(bᵢ, bᵢ_function)
-    return bᵢ
-end
-
-# resting initial condition
 function temperature_init(grid, parameters)
     ε(σ) = σ * randn()
     Tᵢ_function(x, y, z) = parameters.ΔT * (exp(z / parameters.h) - exp(-Lz / parameters.h)) / (1 - exp(-Lz / parameters.h)) + ε(1e-8)
@@ -270,17 +261,14 @@ end
 
 function loop!(model)
     Δt = model.clock.last_Δt
-    @trace mincut = true checkpointing = true track_numbers = false for i = 1:9
+    @trace mincut = true checkpointing = true track_numbers = false for i = 1:4
         time_step!(model, Δt)
     end
     return nothing
 end
 
-function run_reentrant_channel_model!(model, Tᵢ, wind_stress)
-    # setting IC's and BC's:
-    set!(model.velocities.u.boundary_conditions.top.condition, wind_stress)
-    set!(model.tracers.T, Tᵢ)
-
+function run_reentrant_channel_model!(model)
+    
     # Initialize the model
     model.clock.iteration = 0
     model.clock.time = 0
@@ -292,7 +280,7 @@ function run_reentrant_channel_model!(model, Tᵢ, wind_stress)
 end
 
 function estimate_tracer_error(model, initial_temperature, wind_stress)
-    run_reentrant_channel_model!(model, initial_temperature, wind_stress)
+    run_reentrant_channel_model!(model)
     # Compute the mean mixed layer depth:
     #compute!(mld)
     Nx, Ny, Nz = size(model.grid)
@@ -379,7 +367,7 @@ jldsave(filename; Nx, Ny, Nz,
 
 tic = time()
 #avg_temp = restimate_tracer_error(model, Tᵢ, wind_stress)
-rdifferentiate_tracer_error(model, bᵢ, wind_stress, dmodel, dbᵢ, dJ)
+rdifferentiate_tracer_error(model, Tᵢ, wind_stress, dmodel, dTᵢ, dJ)
 run_toc = time() - tic
 
 @show run_toc
