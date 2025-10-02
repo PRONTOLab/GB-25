@@ -215,7 +215,7 @@ function build_model(grid, Δt₀, parameters)
 
     model = HydrostaticFreeSurfaceModel(
         grid = grid,
-        free_surface = SplitExplicitFreeSurface(substeps=500),
+        free_surface = SplitExplicitFreeSurface(substeps=10),
         momentum_advection = WENO(),
         tracer_advection = WENO(),
         buoyancy = SeawaterBuoyancy(equation_of_state=SeawaterPolynomials.TEOS10EquationOfState(Oceananigans.defaults.FloatType),constant_salinity=35),
