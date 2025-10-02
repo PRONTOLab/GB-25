@@ -10,6 +10,9 @@ if haskey(ENV, "JULIA_PPROF") && ENV["JULIA_PPROF"] == "1"
     t = Base.Threads.@spawn :interactive ProfileEndpoints.serve_profiling_server()
     sleep(1)
 end
+if haskey(ENV, "ENABLE_JITPROFILING") && ENV["ENABLE_JITPROFILING"] == "1"
+    profiling = true
+end
 
 using Oceananigans
 ENV["GKSwstype"] = "100"
@@ -357,23 +360,32 @@ function with_stack(f, n, pool=:default)
     t = Core.Task(f, n)
     t.sticky=false
     Base.Threads._spawn_set_thrpool(t, pool)
-    wait(schedule(t))
+    schedule(t)
+    Base.Threads._wait(t) # 1.11 specific to wait without error reporting
+    t
 end
 tic = time()
 
 profiling |= IntelITT.isactive()
 
 if !profiling
-    Enzyme.Compiler.VERBOSE_ERRORS[] = true 
+    @info "Verbose errors are enabled"
+    Enzyme.Compiler.VERBOSE_ERRORS[] = true
+else
+    @info "Profiling"
 end
 
-with_stack(16_000_000) do
+t = with_stack(16_000_000) do
     @tracepoint "differentiate" differentiate_tracer_error(model, Tᵢ, wind_stress, dmodel, dTᵢ, dJ)
 end
 
 run_toc = time() - tic
 
 @show run_toc
+
+if !profiling # Finish with success to make VTunes happier
+    fetch(t) # to get error
+end
 
 # filename = graph_directory * "data_final.jld2"
 
