@@ -16,6 +16,8 @@ using Oceananigans.TurbulenceClosures: CATKEVerticalDiffusivity
 
 using SeawaterPolynomials
 
+using ClimaOcean.Diagnostics: MixedLayerDepthField
+
 #using Oceananigans.Architectures: GPU
 #using CUDA
 #CUDA.device!(0)
@@ -288,10 +290,10 @@ function run_reentrant_channel_model!(model, Tᵢ, wind_stress)
     return nothing
 end
 
-function estimate_tracer_error(model, initial_temperature, wind_stress)
+function estimate_tracer_error(model, initial_temperature, wind_stress, mld)
     run_reentrant_channel_model!(model, initial_temperature, wind_stress)
     # Compute the mean mixed layer depth:
-    #compute!(mld)
+    compute!(mld)
     Nx, Ny, Nz = size(model.grid)
     #=
     avg_mld = 0.0
@@ -302,8 +304,8 @@ function estimate_tracer_error(model, initial_temperature, wind_stress)
     avg_mld = avg_mld / (Nx * Ny)
     =#
     # Hard way
-    c² = parent(model.tracers.T).^2
-    avg_mld = sum(c²) / (Nx * Ny * Nz)
+    c² = parent(mld).^2
+    avg_mld = sum(c²) / (Nx * Ny)
     return avg_mld
 end
 
@@ -333,20 +335,21 @@ grid        = make_grid(architecture, Nx, Ny, Nz, Δz_center)
 model       = build_model(grid, Δt₀, parameters)
 wind_stress = wind_stress_init(model.grid, parameters)
 Tᵢ          = temperature_init(model.grid, parameters)
-
+mld         = MixedLayerDepthField(model.buoyancy, model.grid, model.tracers)
 
 @info "Built $model."
 
 dmodel = Enzyme.make_zero(model)
-dTᵢ = Field{Center, Center, Center}(model.grid)
-dJ  = Field{Face, Center, Nothing}(model.grid)
+dTᵢ    = Field{Center, Center, Center}(model.grid)
+dJ     = Field{Face, Center, Nothing}(model.grid)
+dmld   = MixedLayerDepthField(dmodel.buoyancy, dmodel.grid, dmodel.tracers)
 
 # Trying zonal transport:
 #@allowscalar zonal_transport = Field(Integral(model.velocities.u, dims=(2,3)))
 
 @info "Compiling the model run..."
 tic = time()
-restimate_tracer_error = @compile raise_first=true raise=true compile_options=CompileOptions(; disable_auto_batching_passes=true) sync=true estimate_tracer_error(model, Tᵢ, wind_stress)
+restimate_tracer_error = @compile raise_first=true raise=true compile_options=CompileOptions(; disable_auto_batching_passes=true) sync=true estimate_tracer_error(model, Tᵢ, wind_stress, mld)
 #rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true  differentiate_tracer_error(model, Tᵢ, wind_stress, dmodel, dTᵢ, dJ)
 compile_toc = time() - tic
 
@@ -375,7 +378,7 @@ jldsave(filename; Nx, Ny, Nz,
                   wind_stress=convert(Array, interior(wind_stress)))
 
 tic = time()
-avg_temp = restimate_tracer_error(model, Tᵢ, wind_stress)
+avg_temp = restimate_tracer_error(model, Tᵢ, wind_stress, mld)
 #rdifferentiate_tracer_error(model, bᵢ, wind_stress, dmodel, dbᵢ, dJ)
 run_toc = time() - tic
 
