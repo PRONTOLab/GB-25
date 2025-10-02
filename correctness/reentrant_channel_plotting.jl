@@ -6,7 +6,7 @@ using GLMakie
 #
 
 
-graph_directory = "run_abernathy_model_1000steps_noRidge_noReactant/"
+graph_directory = "run_abernathy_model_1000steps_raisedRidge_noCATKE/"
 
 data1 = jldopen(graph_directory * "data_init.jld2", "r")
 
@@ -25,12 +25,12 @@ max_T_surface = maximum(abs.(T_init[1:Nx,1:Ny,Nz]))
 fig, ax, hm = heatmap(view(T_init, 1:Nx, 1:Ny, Nz),
                                 colormap = :thermal,
                                 #colorrange = (-max_T_surface, max_T_surface),
-                                axis = (xlabel = "x [degrees]",
-                                        ylabel = "y [degrees]",
+                                axis = (xlabel = "x [indices]",
+                                        ylabel = "y [indices]",
                                         title = "T(x, y, z=0, t=0)",
                                         titlesize = 24))
 
-Colorbar(fig[1, 2], hm, label = "[degrees C]")
+Colorbar(fig[1, 2], hm, label = "[indices C]")
 
 resize_to_layout!(fig)
 save(graph_directory * "init_T_surface.png", fig)
@@ -41,12 +41,12 @@ max_T_deep = maximum(abs.(T_init[1:Nx,1:Ny,1]))
 fig, ax, hm = heatmap(view(T_init, 1:Nx, 1:Ny, 1),
                                         colormap = :thermal,
                                         #colorrange = (-max_T_deep, max_T_deep),
-                                        axis = (xlabel = "x [degrees]",
-                                        ylabel = "y [degrees]",
+                                        axis = (xlabel = "x [indices]",
+                                        ylabel = "y [indices]",
                                         title = "T(x, y, z=-4000, t=0)",
                                         titlesize = 24))
 
-Colorbar(fig[1, 2], hm, label = "[degrees C]")
+Colorbar(fig[1, 2], hm, label = "[indices C]")
 
 resize_to_layout!(fig)
 save(graph_directory * "init_T_bottom.png", fig)
@@ -56,12 +56,12 @@ max_T_cross = maximum(abs.(T_init[1:Nx,20,1:Nz]))
 fig, ax, hm = heatmap(view(T_init, 1:Nx, 20, 1:Nz),
                                         colormap = :thermal,
                                         #colorrange = (-max_T_deep, max_T_deep),
-                                        axis = (xlabel = "x [degrees]",
+                                        axis = (xlabel = "x [indices]",
                                         ylabel = "z [indices - not evenly spaced]",
                                         title = "T(x, y=-50, z, t=0)",
                                         titlesize = 24))
 
-Colorbar(fig[1, 2], hm, label = "[degrees C]")
+Colorbar(fig[1, 2], hm, label = "[indices C]")
 
 resize_to_layout!(fig)
 save(graph_directory * "init_T_zonal.png", fig)
@@ -71,12 +71,12 @@ max_T_cross = maximum(abs.(T_init[140,1:Ny,1:Nz]))
 fig, ax, hm = heatmap(view(T_init, 140, 1:Ny, 1:Nz),
                                         colormap = :thermal,
                                         #colorrange = (-max_T_deep, max_T_deep),
-                                        axis = (xlabel = "y [degrees]",
+                                        axis = (xlabel = "y [indices]",
                                         ylabel = "z [indices - not evenly spaced]",
                                         title = "T(x=140, y, z, t=0)",
                                         titlesize = 24))
 
-Colorbar(fig[1, 2], hm, label = "[degrees C]")
+Colorbar(fig[1, 2], hm, label = "[indices C]")
 
 resize_to_layout!(fig)
 save(graph_directory * "init_T_meridional.png", fig)
@@ -87,8 +87,8 @@ save(graph_directory * "init_T_meridional.png", fig)
 # Ridge:
 fig, ax, hm = heatmap(view(bottom_height, 1:Nx, 1:Ny),
                       colormap = :deep,
-                      axis = (xlabel = "x [degrees]",
-                              ylabel = "y [degrees]",
+                      axis = (xlabel = "x [indices]",
+                              ylabel = "y [indices]",
                               title = "bottom height(x, y, z=0, t=0)",
                               titlesize = 24))
 
@@ -99,8 +99,8 @@ save(graph_directory * "bottom_height.png", fig)
 # Energy:
 fig, ax, hm = heatmap(view(e_init, 1:Nx, 1:Ny, Nz),
                       colormap = :deep,
-                      axis = (xlabel = "x [degrees]",
-                              ylabel = "y [degrees]",
+                      axis = (xlabel = "x [indices]",
+                              ylabel = "y [indices]",
                               title = "e(x, y, z=0, t=0)",
                               titlesize = 24))
 
@@ -111,8 +111,8 @@ save(graph_directory * "init_e_surface.png", fig)
 
 fig, ax, hm = heatmap(view(e_init, 1:Nx, 1:Ny, 1),
                       colormap = :deep,
-                      axis = (xlabel = "x [degrees]",
-                              ylabel = "y [degrees]",
+                      axis = (xlabel = "x [indices]",
+                              ylabel = "y [indices]",
                               title = "e(x, y, z=-4000, t=0)",
                               titlesize = 24))
 
@@ -125,8 +125,8 @@ save(graph_directory * "init_e_bottom.png", fig)
 # Wind stress:
 fig, ax, hm = heatmap(view(wind_stress, 1:Nx, 1:Ny),
                       colormap = :deep,
-                      axis = (xlabel = "x [degrees]",
-                              ylabel = "y [degrees]",
+                      axis = (xlabel = "x [indices]",
+                              ylabel = "y [indices]",
                               title = "zonal wind_stress(x, y, t=0)",
                               titlesize = 24))
 
@@ -150,6 +150,7 @@ Nz = data["Nz"]
 T_final = data["T_final"]
 e_final = data["e_final"]
 ssh     = data["ssh"]
+mld     = data["mld"]
 
 u = data["u"]
 v = data["v"]
@@ -158,45 +159,45 @@ w = data["w"]
 # Build final temperature fields:
 fig, ax, hm = heatmap(view(T_final, 1:Nx, 1:Ny, Nz),
                       colormap = :thermal,
-                      axis = (xlabel = "x [degrees]",
-                              ylabel = "y [degrees]",
+                      axis = (xlabel = "x [indices]",
+                              ylabel = "y [indices]",
                               title = "T(x, y, z=0, t=end)",
                               titlesize = 24))
 
-Colorbar(fig[1, 2], hm, label = "[degrees C]")
+Colorbar(fig[1, 2], hm, label = "[indices C]")
 
 save(graph_directory * "final_T_surface.png", fig)
 
 fig, ax, hm = heatmap(view(T_final, 1:Nx, 1:Ny, 32),
                       colormap = :thermal,
-                      axis = (xlabel = "x [degrees]",
-                              ylabel = "y [degrees]",
+                      axis = (xlabel = "x [indices]",
+                              ylabel = "y [indices]",
                               title = "T(x, y, z=0, t=end)",
                               titlesize = 24))
 
-Colorbar(fig[1, 2], hm, label = "[degrees C]")
+Colorbar(fig[1, 2], hm, label = "[indices C]")
 
 save(graph_directory * "final_T_200.png", fig)
 
 fig, ax, hm = heatmap(view(T_final, 1:Nx, 1:Ny, 16),
                       colormap = :thermal,
-                      axis = (xlabel = "x [degrees]",
-                              ylabel = "y [degrees]",
+                      axis = (xlabel = "x [indices]",
+                              ylabel = "y [indices]",
                               title = "T(x, y, z=-4000, t=end)",
                               titlesize = 24))
 
-Colorbar(fig[1, 2], hm, label = "[degrees C]")
+Colorbar(fig[1, 2], hm, label = "[indices C]")
 
 save(graph_directory * "final_T_1000.png", fig)
 
 fig, ax, hm = heatmap(view(T_final, 1:Nx, 1:Ny, 1),
                       colormap = :thermal,
-                      axis = (xlabel = "x [degrees]",
-                              ylabel = "y [degrees]",
+                      axis = (xlabel = "x [indices]",
+                              ylabel = "y [indices]",
                               title = "T(x, y, z=-4000, t=end)",
                               titlesize = 24))
 
-Colorbar(fig[1, 2], hm, label = "[degrees C]")
+Colorbar(fig[1, 2], hm, label = "[indices C]")
 
 save(graph_directory * "final_T_bottom.png", fig)
 #=
@@ -205,12 +206,12 @@ max_T_cross = maximum(abs.(T_final[1:Nx,20,1:Nz]))
 fig, ax, hm = heatmap(view(T_final, 1:Nx, 20, 1:Nz),
                                         colormap = :thermal,
                                         #colorrange = (-max_T_deep, max_T_deep),
-                                        axis = (xlabel = "x [degrees]",
+                                        axis = (xlabel = "x [indices]",
                                         ylabel = "z [indices - not evenly spaced]",
                                         title = "T(x, y=-50, z, t=0)",
                                         titlesize = 24))
 
-Colorbar(fig[1, 2], hm, label = "[degrees C]")
+Colorbar(fig[1, 2], hm, label = "[indices C]")
 
 resize_to_layout!(fig)
 save(graph_directory * "final_T_zonal.png", fig)
@@ -220,12 +221,12 @@ max_T_cross = maximum(abs.(T_final[140,1:Ny,1:Nz]))
 fig, ax, hm = heatmap(view(T_final, 140, 1:Ny, 1:Nz),
                                         colormap = :thermal,
                                         #colorrange = (-max_T_deep, max_T_deep),
-                                        axis = (xlabel = "y [degrees]",
+                                        axis = (xlabel = "y [indices]",
                                         ylabel = "z [indices - not evenly spaced]",
                                         title = "T(x=140, y, z, t=0)",
                                         titlesize = 24))
 
-Colorbar(fig[1, 2], hm, label = "[degrees C]")
+Colorbar(fig[1, 2], hm, label = "[indices C]")
 
 resize_to_layout!(fig)
 save(graph_directory * "final_T_meridional.png", fig)
@@ -235,8 +236,8 @@ save(graph_directory * "final_T_meridional.png", fig)
 #
 fig, ax, hm = heatmap(view(e_final, 1:Nx, 1:Ny, Nz),
                       colormap = :deep,
-                      axis = (xlabel = "x [degrees]",
-                              ylabel = "y [degrees]",
+                      axis = (xlabel = "x [indices]",
+                              ylabel = "y [indices]",
                               title = "e(x, y, z=0, end)",
                               titlesize = 24))
 
@@ -246,8 +247,8 @@ save(graph_directory * "final_e_surface.png", fig)
 
 fig, ax, hm = heatmap(view(e_final, 1:Nx, 1:Ny, 1),
                       colormap = :deep,
-                      axis = (xlabel = "x [degrees]",
-                              ylabel = "y [degrees]",
+                      axis = (xlabel = "x [indices]",
+                              ylabel = "y [indices]",
                               title = "e(x, y, z=-4000, t=end)",
                               titlesize = 24))
 
@@ -262,8 +263,8 @@ max_surface_w = maximum(abs.(w[1:Nx, 1:Ny, Nz]))
 fig, ax, hm = heatmap(view(w, 1:Nx, 1:Ny, Nz),
                       colormap = :seismic,
                       colorrange = (-max_surface_w, max_surface_w),
-                      axis = (xlabel = "x [degrees]",
-                              ylabel = "y [degrees]",
+                      axis = (xlabel = "x [indices]",
+                              ylabel = "y [indices]",
                               title = "w(x, y, z=0, t=end)",
                               titlesize = 24))
 
@@ -277,8 +278,8 @@ max_surface_u = maximum(abs.(u[1:Nx, 1:Ny, Nz]))
 fig, ax, hm = heatmap(view(u, 1:Nx, 1:Ny, Nz),
                       colormap = :seismic,
                       colorrange = (-max_surface_u, max_surface_u),
-                      axis = (xlabel = "x [degrees]",
-                              ylabel = "y [degrees]",
+                      axis = (xlabel = "x [indices]",
+                              ylabel = "y [indices]",
                               title = "u(x, y, z=0, t=end)",
                               titlesize = 24))
 
@@ -291,8 +292,8 @@ max_200_u = maximum(abs.(u[1:Nx, 1:Ny, 16]))
 fig, ax, hm = heatmap(view(u, 1:Nx, 1:Ny, 16),
                       colormap = :seismic,
                       colorrange = (-max_surface_u, max_surface_u),
-                      axis = (xlabel = "x [degrees]",
-                              ylabel = "y [degrees]",
+                      axis = (xlabel = "x [indices]",
+                              ylabel = "y [indices]",
                               title = "u(x, y, z=200m, t=end)",
                               titlesize = 24))
 
@@ -305,8 +306,8 @@ max_deep_u = maximum(abs.(u[1:Nx, 1:Ny, 1]))
 fig, ax, hm = heatmap(view(u, 1:Nx, 1:Ny, 1),
                       colormap = :seismic,
                       colorrange = (-max_deep_u, max_deep_u),
-                      axis = (xlabel = "x [degrees]",
-                              ylabel = "y [degrees]",
+                      axis = (xlabel = "x [indices]",
+                              ylabel = "y [indices]",
                               title = "u(x, y, z=-4000, t=end)",
                               titlesize = 24))
 
@@ -320,8 +321,8 @@ max_surface_v = maximum(abs.(v[1:Nx, 1:Ny, Nz]))
 fig, ax, hm = heatmap(view(v, 1:Nx, 1:Ny, Nz),
                       colormap = :seismic,
                       colorrange = (-max_surface_v, max_surface_v),
-                      axis = (xlabel = "x [degrees]",
-                              ylabel = "y [degrees]",
+                      axis = (xlabel = "x [indices]",
+                              ylabel = "y [indices]",
                               title = "v(x, y, z=0, t=end)",
                               titlesize = 24))
 
@@ -332,8 +333,8 @@ save(graph_directory * "final_surface_v.png", fig)
 fig, ax, hm = heatmap(view(v, 1:Nx, 1:Ny, 16),
                       colormap = :seismic,
                       colorrange = (-max_surface_u, max_surface_u),
-                      axis = (xlabel = "x [degrees]",
-                              ylabel = "y [degrees]",
+                      axis = (xlabel = "x [indices]",
+                              ylabel = "y [indices]",
                               title = "v(x, y, z=200m, t=end)",
                               titlesize = 24))
 
@@ -346,8 +347,8 @@ max_deep_v = maximum(abs.(v[1:Nx, 1:Ny, 1]))
 fig, ax, hm = heatmap(view(v, 1:Nx, 1:Ny, 1),
                       colormap = :seismic,
                       colorrange = (-max_deep_v, max_deep_v),
-                      axis = (xlabel = "x [degrees]",
-                              ylabel = "y [degrees]",
+                      axis = (xlabel = "x [indices]",
+                              ylabel = "y [indices]",
                               title = "v(x, y, z=-4000, t=end)",
                               titlesize = 24))
 
@@ -360,13 +361,28 @@ max_η = maximum(abs.(ssh))
 fig, ax, hm = heatmap(view(ssh, 1:Nx, 1:Ny, 1),
                       colormap = :seismic,
                       colorrange = (-max_η, max_η),
-                      axis = (xlabel = "x [degrees]",
-                              ylabel = "y [degrees]",
+                      axis = (xlabel = "x [indices]",
+                              ylabel = "y [indices]",
                               title = "SSH(x, y, t=end)",
                               titlesize = 24))
 
 Colorbar(fig[1, 2], hm, label = "m")
 
 save(graph_directory * "final_SSH.png", fig)
+
+max_mld = maximum(mld)
+min_mld = minimum(mld)
+
+fig, ax, hm = heatmap(view(mld, 1:Nx, 1:Ny, 1),
+                      colormap = :deep,
+                      colorrange = (min_mld, max_mld),
+                      axis = (xlabel = "x [indices]",
+                              ylabel = "y [indices]",
+                              title = "mld(x, y, t=end)",
+                              titlesize = 24))
+
+Colorbar(fig[1, 2], hm, label = "m")
+
+save(graph_directory * "final_mld.png", fig)
 
 close(data)

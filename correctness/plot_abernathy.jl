@@ -14,7 +14,7 @@ using Oceananigans.Grids: xnode, ynode, znode
 
 using Plots
 
-graph_directory = "run_abernathy_model_1000steps_noRidge_noReactant/"
+graph_directory = "run_abernathy_model_1000steps_raisedRidge_noCATKE/"
 
 #
 # First we gather the data and create a grid for plotting purposes:
@@ -30,25 +30,24 @@ Nz = data1["Nz"]
 k_center = collect(1:Nz)
 Δz_center = @. 10 * 1.104^(Nz - k_center)
 
+halo_size = 4
+
 const Lx = 1000kilometers # zonal domain length [m]
 const Ly = 2000kilometers # meridional domain length [m]
 const Lz = sum(Δz_center)
 
 # full ridge function:
 function ridge_function(x, y)
-    zonal = (Lz+100)exp(-(x - Lx/2)^2/(1e6kilometers))
+    zonal = (Lz+300)exp(-(x - Lx/2)^2/(1e6kilometers))
     gap   = 1 - 0.5(tanh((y - (Ly/6))/1e5) - tanh((y - (Ly/2))/1e5))
     return zonal * gap - Lz
 end
 
-function make_grid(architecture, Nx, Ny, Nz, Δz_center; ridge=true)
-    halo_size     = 4
-    z_faces       = vcat([-Lz], -Lz .+ cumsum(Δz_center))
+function make_grid(architecture, Nx, Ny, Nz, Δz_center)
+    z_faces = vcat([-Lz], -Lz .+ cumsum(Δz_center))
     z_faces[Nz+1] = 0
 
-    @show z_faces
-
-    grid = RectilinearGrid(architecture,
+    underlying_grid = RectilinearGrid(architecture,
         topology = (Periodic, Bounded, Bounded),
         size = (Nx, Ny, Nz),
         halo = (halo_size, halo_size, halo_size),
@@ -56,10 +55,11 @@ function make_grid(architecture, Nx, Ny, Nz, Δz_center; ridge=true)
         y = (0, Ly),
         z = z_faces)
 
-    if ridge
-        grid = ImmersedBoundaryGrid(grid, GridFittedBottom(ridge_function))
-    end
+    # Make into a ridge array:
+    ridge = Field{Center, Center, Nothing}(underlying_grid)
+    set!(ridge, ridge_function)
 
+    grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(ridge))
     return grid
 end
 

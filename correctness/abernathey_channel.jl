@@ -104,7 +104,7 @@ parameters = (
 
 # full ridge function:
 function ridge_function(x, y)
-    zonal = (Lz+100)exp(-(x - Lx/2)^2/(1e6kilometers))
+    zonal = (Lz+300)exp(-(x - Lx/2)^2/(1e6kilometers))
     gap   = 1 - 0.5(tanh((y - (Ly/6))/1e5) - tanh((y - (Ly/2))/1e5))
     return zonal * gap - Lz
 end
@@ -135,17 +135,11 @@ end
 
 function build_model(grid, Δt₀, parameters)
 
-    @inline function buoyancy_flux(i, j, grid, clock, model_fields, p)
-        y = ynode(j, grid, Center())
-        return ifelse(y < p.y_shutoff, p.Qᵇ * cos(3π * y / p.Ly), 0.0)
-    end
-
     @inline function temperature_flux(i, j, grid, clock, model_fields, p)
         y = ynode(j, grid, Center())
         return ifelse(y < p.y_shutoff, p.Qᵀ * cos(3π * y / p.Ly), 0.0)
     end
 
-    buoyancy_flux_bc    = FluxBoundaryCondition(buoyancy_flux, discrete_form = true, parameters = parameters)
     temperature_flux_bc = FluxBoundaryCondition(temperature_flux, discrete_form = true, parameters = parameters)
 
     u_stress_bc = FluxBoundaryCondition(Field{Face, Center, Nothing}(grid))
@@ -156,7 +150,6 @@ function build_model(grid, Δt₀, parameters)
     u_drag_bc = FluxBoundaryCondition(u_drag, discrete_form = true, parameters = parameters)
     v_drag_bc = FluxBoundaryCondition(v_drag, discrete_form = true, parameters = parameters)
 
-    b_bcs = FieldBoundaryConditions(top = buoyancy_flux_bc)
     T_bcs = FieldBoundaryConditions(top = temperature_flux_bc)
 
     u_bcs = FieldBoundaryConditions(top = u_stress_bc, bottom = u_drag_bc)
@@ -170,21 +163,8 @@ function build_model(grid, Δt₀, parameters)
     #####
     ##### Forcing and initial condition
     #####
-
-    @inline initial_buoyancy(z, p)    = p.ΔB * (exp(z / p.h) - exp(-p.Lz / p.h)) / (1 - exp(-p.Lz / p.h))
     @inline initial_temperature(z, p) = p.ΔT * (exp(z / p.h) - exp(-p.Lz / p.h)) / (1 - exp(-p.Lz / p.h))
     @inline mask(y, p)                = max(0.0, y - p.y_sponge) / (Ly - p.y_sponge)
-
-
-    @inline function buoyancy_relaxation(i, j, k, grid, clock, model_fields, p)
-        timescale = p.λt
-        y = ynode(j, grid, Center())
-        z = znode(k, grid, Center())
-        target_b = initial_buoyancy(z, p)
-        b = @inbounds model_fields.b[i, j, k]
-
-        return -1 / timescale * mask(y, p) * (b - target_b)
-    end
 
     @inline function temperature_relaxation(i, j, k, grid, clock, model_fields, p)
         timescale = p.λt
@@ -196,7 +176,6 @@ function build_model(grid, Δt₀, parameters)
         return -1 / timescale * mask(y, p) * (T - target_T)
     end
 
-    Fb = Forcing(buoyancy_relaxation, discrete_form = true, parameters = parameters)
     FT = Forcing(temperature_relaxation, discrete_form = true, parameters = parameters)
 
     # closure
@@ -222,7 +201,7 @@ function build_model(grid, Δt₀, parameters)
         tracer_advection = WENO(),
         buoyancy = SeawaterBuoyancy(equation_of_state=SeawaterPolynomials.TEOS10EquationOfState(Oceananigans.defaults.FloatType),constant_salinity=35),
         coriolis = coriolis,
-        closure = (horizontal_closure, vertical_closure, vertical_closure_CATKE),
+        closure = (horizontal_closure, vertical_closure), #, vertical_closure_CATKE),
         tracers = (:T, :e),
         boundary_conditions = (T = T_bcs, u = u_bcs, v = v_bcs),
         forcing = (; T = FT)
@@ -243,15 +222,6 @@ function wind_stress_init(grid, p)
     wind_stress = Field{Face, Center, Nothing}(grid)
     set!(wind_stress, u_stress)
     return wind_stress
-end
-
-# resting initial condition
-function buoyancy_init(grid, parameters)
-    ε(σ) = σ * randn()
-    bᵢ_function(x, y, z) = parameters.ΔB * (exp(z / parameters.h) - exp(-Lz / parameters.h)) / (1 - exp(-Lz / parameters.h)) + ε(1e-8)
-    bᵢ = Field{Center, Center, Center}(grid)
-    set!(bᵢ, bᵢ_function)
-    return bᵢ
 end
 
 # resting initial condition
@@ -309,13 +279,14 @@ function estimate_tracer_error(model, initial_temperature, wind_stress, mld)
     return avg_mld
 end
 
-function differentiate_tracer_error(model, Tᵢ, J, dmodel, dTᵢ, dJ)
+function differentiate_tracer_error(model, Tᵢ, J, mld, dmodel, dTᵢ, dJ, dmld)
 
     dedν = autodiff(set_strong_zero(Enzyme.Reverse),
                     estimate_tracer_error, Active,
                     Duplicated(model, dmodel),
                     Duplicated(Tᵢ, dTᵢ),
-                    Duplicated(J, dJ))
+                    Duplicated(J, dJ),
+                    Duplicated(mld, dmld))
 
     return dedν, dJ
 end
@@ -350,7 +321,7 @@ dmld   = MixedLayerDepthField(dmodel.buoyancy, dmodel.grid, dmodel.tracers)
 @info "Compiling the model run..."
 tic = time()
 restimate_tracer_error = @compile raise_first=true raise=true compile_options=CompileOptions(; disable_auto_batching_passes=true) sync=true estimate_tracer_error(model, Tᵢ, wind_stress, mld)
-#rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true  differentiate_tracer_error(model, Tᵢ, wind_stress, dmodel, dTᵢ, dJ)
+#rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true  differentiate_tracer_error(model, Tᵢ, wind_stress, mld, dmodel, dTᵢ, dJ, dmld)
 compile_toc = time() - tic
 
 @show compile_toc
@@ -359,7 +330,7 @@ compile_toc = time() - tic
 
 using FileIO, JLD2
 
-graph_directory = "run_abernathy_model_1000steps/"
+graph_directory = "run_abernathy_model_1000steps_raisedRidge_noCATKE/"
 filename        = graph_directory * "data_init.jld2"
 
 if !isdir(graph_directory) Base.Filesystem.mkdir(graph_directory) end
@@ -379,7 +350,7 @@ jldsave(filename; Nx, Ny, Nz,
 
 tic = time()
 avg_temp = restimate_tracer_error(model, Tᵢ, wind_stress, mld)
-#rdifferentiate_tracer_error(model, bᵢ, wind_stress, dmodel, dbᵢ, dJ)
+#rdifferentiate_tracer_error(model, bᵢ, wind_stress, mld, dmodel, dbᵢ, dJ, dmld)
 run_toc = time() - tic
 
 @show run_toc
@@ -393,5 +364,6 @@ jldsave(filename; Nx, Ny, Nz,
                   ssh=convert(Array, interior(model.free_surface.η)),
                   u=convert(Array, interior(model.velocities.u)),
                   v=convert(Array, interior(model.velocities.v)),
-                  w=convert(Array, interior(model.velocities.w)))
+                  w=convert(Array, interior(model.velocities.w)),
+                  mld=convert(Array, interior(mld)))
 
