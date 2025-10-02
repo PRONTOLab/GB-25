@@ -219,14 +219,12 @@ function build_model(grid, Δt₀, parameters)
     model = HydrostaticFreeSurfaceModel(
         grid = grid,
         free_surface = SplitExplicitFreeSurface(substeps=10),
-        momentum_advection = WENO(),
+        momentum_advection = nothing,
         tracer_advection = WENO(),
         buoyancy = SeawaterBuoyancy(equation_of_state=SeawaterPolynomials.TEOS10EquationOfState(Oceananigans.defaults.FloatType),constant_salinity=35),
         coriolis = nothing,
         closure = (horizontal_closure, vertical_closure, vertical_closure_CATKE),
-        tracers = (:T, :e),
-        boundary_conditions = (T = T_bcs, u = u_bcs, v = v_bcs),
-        forcing = (; T = FT)
+        tracers = (:T, :e)
     )
 
     model.clock.last_Δt = Δt₀
@@ -347,7 +345,7 @@ compile_toc = time() - tic
 
 using FileIO, JLD2
 
-graph_directory = "run_abernathy_model_9steps_ad/"
+graph_directory = "run_abernathy_model_4steps_ad/"
 filename        = graph_directory * "data_init.jld2"
 
 if !isdir(graph_directory) Base.Filesystem.mkdir(graph_directory) end
