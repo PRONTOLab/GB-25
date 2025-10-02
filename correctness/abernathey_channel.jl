@@ -218,15 +218,15 @@ function build_model(grid, Δt₀, parameters)
 
     model = HydrostaticFreeSurfaceModel(
         grid = grid,
-        free_surface = SplitExplicitFreeSurface(substeps=500),
-        momentum_advection = nothing,
+        free_surface = SplitExplicitFreeSurface(substeps=10),
+        momentum_advection = WENO(),
         tracer_advection = WENO(),
         buoyancy = SeawaterBuoyancy(equation_of_state=SeawaterPolynomials.TEOS10EquationOfState(Oceananigans.defaults.FloatType),constant_salinity=35),
         coriolis = nothing,
         closure = (horizontal_closure, vertical_closure, vertical_closure_CATKE),
         tracers = (:T, :e),
-        boundary_conditions = (T = T_bcs, u = u_bcs, v = v_bcs)
-        #forcing = (; T = FT)
+        boundary_conditions = (T = T_bcs, u = u_bcs, v = v_bcs),
+        forcing = (; T = FT)
     )
 
     model.clock.last_Δt = Δt₀
@@ -261,7 +261,7 @@ end
 
 function loop!(model)
     Δt = model.clock.last_Δt
-    @trace mincut = true checkpointing = true track_numbers = false for i = 1:4
+    @trace mincut = true track_numbers = false for i = 1:2
         time_step!(model, Δt)
     end
     return nothing
