@@ -284,7 +284,7 @@ end
 
 function differentiate_tracer_error(model, Tᵢ, J, Δz, mld, dmodel, dTᵢ, dJ, dΔz, dmld)
 
-    dedν = autodiff(set_strong_zero(Enzyme.Reverse),
+    dedν = autodiff(set_strong_zero(Enzyme.ReverseWithPrimal),
                     estimate_tracer_error, Active,
                     Duplicated(model, dmodel),
                     Duplicated(Tᵢ, dTᵢ),
@@ -292,7 +292,7 @@ function differentiate_tracer_error(model, Tᵢ, J, Δz, mld, dmodel, dTᵢ, dJ,
                     Duplicated(Δz, dΔz),
                     Duplicated(mld, dmld))
 
-    return dedν, dJ
+    return dedν, dJ, dTᵢ
 end
 
 #####
@@ -311,8 +311,7 @@ model       = build_model(grid, Δt₀, parameters)
 wind_stress = wind_stress_init(model.grid, parameters)
 Tᵢ          = temperature_init(model.grid, parameters)
 mld         = MixedLayerDepthField(model.buoyancy, model.grid, model.tracers)
-
-Δz = Reactant.ConcreteRArray(Δz)
+Δz          = Reactant.ConcreteRArray(Δz)
 
 @info "Built $model."
 
@@ -320,14 +319,15 @@ dmodel = Enzyme.make_zero(model)
 dTᵢ    = Field{Center, Center, Center}(model.grid)
 dJ     = Field{Face, Center, Nothing}(model.grid)
 dmld   = MixedLayerDepthField(dmodel.buoyancy, dmodel.grid, dmodel.tracers)
+dΔz    = Enzyme.make_zero(Δz)
 
 # Trying zonal transport:
 #@allowscalar zonal_transport = Field(Integral(model.velocities.u, dims=(2,3)))
 
 @info "Compiling the model run..."
 tic = time()
-restimate_tracer_error = @compile raise_first=true raise=true compile_options=CompileOptions(; disable_auto_batching_passes=true) sync=true estimate_tracer_error(model, Tᵢ, wind_stress, Δz, mld)
-#rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true  differentiate_tracer_error(model, Tᵢ, wind_stress, Δz, mld, dmodel, dTᵢ, dJ, dΔz, dmld)
+#restimate_tracer_error = @compile raise_first=true raise=true compile_options=CompileOptions(; disable_auto_batching_passes=true) sync=true estimate_tracer_error(model, Tᵢ, wind_stress, Δz, mld)
+rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true  differentiate_tracer_error(model, Tᵢ, wind_stress, Δz, mld, dmodel, dTᵢ, dJ, dΔz, dmld)
 compile_toc = time() - tic
 
 @show compile_toc
@@ -355,12 +355,14 @@ jldsave(filename; Nx, Ny, Nz,
                   wind_stress=convert(Array, interior(wind_stress)))
 
 tic = time()
-output = restimate_tracer_error(model, Tᵢ, wind_stress, Δz, mld)
-#rdifferentiate_tracer_error(model, bᵢ, wind_stress, mld, dmodel, dbᵢ, dJ, dmld)
+#output = restimate_tracer_error(model, Tᵢ, wind_stress, Δz, mld)
+dedν, dJ, dTᵢ = rdifferentiate_tracer_error(model, Tᵢ, wind_stress, Δz, mld, dmodel, dTᵢ, dJ, dΔz, dmld)
 run_toc = time() - tic
 
 @show run_toc
-@show output
+#@show output
+
+@show dedν
 
 filename = graph_directory * "data_final.jld2"
 
@@ -372,5 +374,7 @@ jldsave(filename; Nx, Ny, Nz,
                   v=convert(Array, interior(model.velocities.v)),
                   w=convert(Array, interior(model.velocities.w)),
                   mld=convert(Array, interior(mld)),
-                  zonal_transport=output)
+                  zonal_transport=convert(Float64, dedν[2]),
+                  dwind_stress=convert(Array, interior(dJ)),
+                  dT=convert(Array, interior(dTᵢ)))
 
