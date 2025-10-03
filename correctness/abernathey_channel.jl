@@ -62,9 +62,11 @@ Oceananigans.defaults.FloatType = Float64
 #
 
 # number of grid points
-Nx = 48 #96  # LowRes: 48
-Ny = 96 #192 # LowRes: 96
-Nz = 32
+const Nx = 48 #96  # LowRes: 48
+const Ny = 96 #192 # LowRes: 96
+const Nz = 32
+
+const x_midpoint = Int(Nx / 2) + 1
 
 # stretched grid
 k_center = collect(1:Nz)
@@ -73,6 +75,13 @@ k_center = collect(1:Nz)
 const Lx = 1000kilometers # zonal domain length [m]
 const Ly = 2000kilometers # meridional domain length [m]
 const Lz = sum(Δz_center)
+
+z_faces = vcat([-Lz], -Lz .+ cumsum(Δz_center))
+z_faces[Nz+1] = 0
+
+Δz = z_faces[2:end] - z_faces[1:end-1]
+
+Δz = reshape(Δz, 1, :)
 
 # Coriolis variables:
 const f = -1e-4
@@ -109,9 +118,7 @@ function ridge_function(x, y)
     return zonal * gap - Lz
 end
 
-function make_grid(architecture, Nx, Ny, Nz, Δz_center)
-    z_faces = vcat([-Lz], -Lz .+ cumsum(Δz_center))
-    z_faces[Nz+1] = 0
+function make_grid(architecture, Nx, Ny, Nz, z_faces)
 
     underlying_grid = RectilinearGrid(architecture,
         topology = (Periodic, Bounded, Bounded),
@@ -239,7 +246,7 @@ end
 
 function loop!(model)
     Δt = model.clock.last_Δt
-    @trace mincut = true track_numbers = false for i = 1:1000
+    @trace mincut = true track_numbers = false for i = 1:10
         time_step!(model, Δt)
     end
     return nothing
@@ -260,32 +267,29 @@ function run_reentrant_channel_model!(model, Tᵢ, wind_stress)
     return nothing
 end
 
-function estimate_tracer_error(model, initial_temperature, wind_stress, mld)
+function estimate_tracer_error(model, initial_temperature, wind_stress, Δz, mld)
     run_reentrant_channel_model!(model, initial_temperature, wind_stress)
-    # Compute the mean mixed layer depth:
-    compute!(mld)
-    Nx, Ny, Nz = size(model.grid)
-    #=
-    avg_mld = 0.0
     
-    for j0 = 1:Nx, i0 = 1:Ny
-        @allowscalar avg_mld += @inbounds model.velocities.u[i0, j0, 1]^2
-    end
-    avg_mld = avg_mld / (Nx * Ny)
-    =#
-    # Hard way
-    c² = parent(mld).^2
-    avg_mld = sum(c²) / (Nx * Ny)
-    return avg_mld
+    Nx, Ny, Nz = size(model.grid)
+
+    # Compute the mean mixed layer depth:
+    #compute!(mld)
+    #avg_mld = sum(parent(mld)) / (Nx * Ny)
+
+    # Alternatively, compute the zonal transport:
+    zonal_transport = (model.velocities.u[x_midpoint,1:Ny,1:Nz] .* model.grid.Δyᵃᶜᵃ) .* Δz
+
+    return sum(zonal_transport)
 end
 
-function differentiate_tracer_error(model, Tᵢ, J, mld, dmodel, dTᵢ, dJ, dmld)
+function differentiate_tracer_error(model, Tᵢ, J, Δz, mld, dmodel, dTᵢ, dJ, dΔz, dmld)
 
     dedν = autodiff(set_strong_zero(Enzyme.Reverse),
                     estimate_tracer_error, Active,
                     Duplicated(model, dmodel),
                     Duplicated(Tᵢ, dTᵢ),
                     Duplicated(J, dJ),
+                    Duplicated(Δz, dΔz),
                     Duplicated(mld, dmld))
 
     return dedν, dJ
@@ -302,11 +306,13 @@ architecture = ReactantState() #GPU()
 Δt₀ = 5minutes 
 
 # Make the grid:
-grid        = make_grid(architecture, Nx, Ny, Nz, Δz_center)
+grid        = make_grid(architecture, Nx, Ny, Nz, z_faces)
 model       = build_model(grid, Δt₀, parameters)
 wind_stress = wind_stress_init(model.grid, parameters)
 Tᵢ          = temperature_init(model.grid, parameters)
 mld         = MixedLayerDepthField(model.buoyancy, model.grid, model.tracers)
+
+Δz = Reactant.ConcreteRArray(Δz)
 
 @info "Built $model."
 
@@ -320,8 +326,8 @@ dmld   = MixedLayerDepthField(dmodel.buoyancy, dmodel.grid, dmodel.tracers)
 
 @info "Compiling the model run..."
 tic = time()
-restimate_tracer_error = @compile raise_first=true raise=true compile_options=CompileOptions(; disable_auto_batching_passes=true) sync=true estimate_tracer_error(model, Tᵢ, wind_stress, mld)
-#rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true  differentiate_tracer_error(model, Tᵢ, wind_stress, mld, dmodel, dTᵢ, dJ, dmld)
+restimate_tracer_error = @compile raise_first=true raise=true compile_options=CompileOptions(; disable_auto_batching_passes=true) sync=true estimate_tracer_error(model, Tᵢ, wind_stress, Δz, mld)
+#rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true  differentiate_tracer_error(model, Tᵢ, wind_stress, Δz, mld, dmodel, dTᵢ, dJ, dΔz, dmld)
 compile_toc = time() - tic
 
 @show compile_toc
@@ -330,7 +336,7 @@ compile_toc = time() - tic
 
 using FileIO, JLD2
 
-graph_directory = "run_abernathy_model_1000steps_raisedRidge_noCATKE/"
+graph_directory = "test/"
 filename        = graph_directory * "data_init.jld2"
 
 if !isdir(graph_directory) Base.Filesystem.mkdir(graph_directory) end
@@ -349,12 +355,12 @@ jldsave(filename; Nx, Ny, Nz,
                   wind_stress=convert(Array, interior(wind_stress)))
 
 tic = time()
-avg_temp = restimate_tracer_error(model, Tᵢ, wind_stress, mld)
+output = restimate_tracer_error(model, Tᵢ, wind_stress, Δz, mld)
 #rdifferentiate_tracer_error(model, bᵢ, wind_stress, mld, dmodel, dbᵢ, dJ, dmld)
 run_toc = time() - tic
 
 @show run_toc
-@show avg_temp
+@show output
 
 filename = graph_directory * "data_final.jld2"
 
@@ -365,5 +371,6 @@ jldsave(filename; Nx, Ny, Nz,
                   u=convert(Array, interior(model.velocities.u)),
                   v=convert(Array, interior(model.velocities.v)),
                   w=convert(Array, interior(model.velocities.w)),
-                  mld=convert(Array, interior(mld)))
+                  mld=convert(Array, interior(mld)),
+                  zonal_transport=output)
 
