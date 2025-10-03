@@ -62,8 +62,8 @@ Oceananigans.defaults.FloatType = Float64
 #
 
 # number of grid points
-const Nx = 96  # LowRes: 48
-const Ny = 192 # LowRes: 96
+const Nx = 48 #96  # LowRes: 48
+const Ny = 96 #192 # LowRes: 96
 const Nz = 32
 
 const x_midpoint = Int(Nx / 2) + 1
@@ -336,7 +336,7 @@ compile_toc = time() - tic
 
 using FileIO, JLD2
 
-graph_directory = "run_abernathy_model_ad_100steps_noCATKE_sverdrups_hiRes/"
+graph_directory = "run_abernathy_model_ad_100steps_noCATKE_sverdrups/"
 filename        = graph_directory * "data_init.jld2"
 
 if !isdir(graph_directory) Base.Filesystem.mkdir(graph_directory) end

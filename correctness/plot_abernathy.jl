@@ -14,7 +14,7 @@ using Oceananigans.Grids: xnode, ynode, znode
 
 using Plots
 
-graph_directory = "run_abernathy_model_100000steps_noCATKE/"
+graph_directory = "run_abernathy_model_ad_100steps_noCATKE_sverdrups/"
 
 #
 # First we gather the data and create a grid for plotting purposes:
@@ -79,6 +79,9 @@ ssh     = data2["ssh"]
 u = data2["u"]
 v = data2["v"]
 w = data2["w"]
+
+dwind_stress = data2["dwind_stress"]
+dT           = data2["dT"]
 
 #
 # Then we set up the node points:
@@ -182,3 +185,5 @@ plot_variables(T_final[:, j′, :], T_final[:, :, grid.Nz], T_final[:, :, 25], x
 plot_variables(T_final[:, j′, :], T_final[:, :, 16], T_final[:, :, 1], xc, zc, xc, yc, xc, yc, "T(x, z)", "T(x, y, 533m)", "T(x, y, 2180m)", graph_directory * "final_T_533to2180m.png")
 
 plot_variables(e_final[:, j′, :], e_final[:,:,grid.Nz], ssh[:,:,1], xc, zc, xc, yc, xc, yc, "e(x, z)", "e(x, y, 0m)", "ssh(x, y)", graph_directory * "final_e_ssh.png")
+
+plot_variables(dT[:, j′, :], dT[:,:,grid.Nz], dwind_stress[:,:,1], xc, zc, xc, yc, xu, yu, "Initial Temperature Gradient (x, z)", "Initial Temperature Gradient (x, y, 0m)", "Initial Wind Stress Gradient (x, y)", graph_directory * "gradient.png")

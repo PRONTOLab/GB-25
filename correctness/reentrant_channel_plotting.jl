@@ -159,9 +159,12 @@ w = data["w"]
 dwind_stress = data["dwind_stress"]
 dT           = data["dT"]
 
+max_surface_T = maximum(abs.(T_final[:,:,Nz]))
+
 # Build final temperature fields:
 fig, ax, hm = heatmap(view(T_final, 1:Nx, 1:Ny, Nz),
                       colormap = :thermal,
+                      colorrange = (0, max_surface_T),
                       axis = (xlabel = "x [indices]",
                               ylabel = "y [indices]",
                               title = "T(x, y, z=0, t=end)",
@@ -170,6 +173,7 @@ fig, ax, hm = heatmap(view(T_final, 1:Nx, 1:Ny, Nz),
 Colorbar(fig[1, 2], hm, label = "[indices C]")
 
 save(graph_directory * "final_T_surface.png", fig)
+
 
 fig, ax, hm = heatmap(view(T_final, 1:Nx, 1:Ny, 32),
                       colormap = :thermal,
@@ -193,8 +197,12 @@ Colorbar(fig[1, 2], hm, label = "[indices C]")
 
 save(graph_directory * "final_T_1000.png", fig)
 
+
+max_bottom_T = maximum(abs.(T_final[:,:,1]))
+
 fig, ax, hm = heatmap(view(T_final, 1:Nx, 1:Ny, 1),
                       colormap = :thermal,
+                      colorrange = (0, max_bottom_T),
                       axis = (xlabel = "x [indices]",
                               ylabel = "y [indices]",
                               title = "T(x, y, z=-4000, t=end)",
@@ -388,6 +396,7 @@ Colorbar(fig[1, 2], hm, label = "m")
 
 save(graph_directory * "final_mld.png", fig)
 =#
+
 
 max_dwind_stress = maximum(dwind_stress)
 min_dwind_stress = minimum(dwind_stress)
