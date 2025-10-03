@@ -361,13 +361,14 @@ function with_stack(f, n, pool=:default)
     t.sticky=false
     Base.Threads._spawn_set_thrpool(t, pool)
     schedule(t)
-    Base.Threads._wait(t) # 1.11 specific to wait without error reporting
+    Base._wait(t) # 1.11 specific to wait without error reporting
     t
 end
 tic = time()
 
 profiling |= IntelITT.isactive()
 
+Enzyme.Compiler.RunAttributor[] = false
 if !profiling
     @info "Verbose errors are enabled"
     Enzyme.Compiler.VERBOSE_ERRORS[] = true
