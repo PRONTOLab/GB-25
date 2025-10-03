@@ -6,7 +6,7 @@ using GLMakie
 #
 
 
-graph_directory = "run_abernathy_model_100000steps_noCATKE/"
+graph_directory = "run_abernathy_model_ad_100steps_noCATKE_sverdrups/"
 
 data1 = jldopen(graph_directory * "data_init.jld2", "r")
 
@@ -155,6 +155,9 @@ mld     = data["mld"]
 u = data["u"]
 v = data["v"]
 w = data["w"]
+
+dwind_stress = data["dwind_stress"]
+dT           = data["dT"]
 
 # Build final temperature fields:
 fig, ax, hm = heatmap(view(T_final, 1:Nx, 1:Ny, Nz),
@@ -369,7 +372,7 @@ fig, ax, hm = heatmap(view(ssh, 1:Nx, 1:Ny, 1),
 Colorbar(fig[1, 2], hm, label = "m")
 
 save(graph_directory * "final_SSH.png", fig)
-
+#=
 max_mld = maximum(mld)
 min_mld = minimum(mld)
 
@@ -384,5 +387,36 @@ fig, ax, hm = heatmap(view(mld, 1:Nx, 1:Ny, 1),
 Colorbar(fig[1, 2], hm, label = "m")
 
 save(graph_directory * "final_mld.png", fig)
+=#
+
+max_dwind_stress = maximum(dwind_stress)
+min_dwind_stress = minimum(dwind_stress)
+
+fig, ax, hm = heatmap(view(dwind_stress, 1:Nx, 1:Ny, 1),
+                      colormap = :deep,
+                      colorrange = (min_dwind_stress, max_dwind_stress),
+                      axis = (xlabel = "x [indices]",
+                              ylabel = "y [indices]",
+                              title = "dwind_stress(x, y)",
+                              titlesize = 24))
+
+Colorbar(fig[1, 2], hm, label = "m")
+
+save(graph_directory * "dwind_stress.png", fig)
+
+max_dT = maximum(dT)
+min_dT = minimum(dT)
+
+fig, ax, hm = heatmap(view(dT, 1:Nx, 1:Ny, 1),
+                      colormap = :deep,
+                      colorrange = (min_dT, max_dT),
+                      axis = (xlabel = "x [indices]",
+                              ylabel = "y [indices]",
+                              title = "dT(x, y)",
+                              titlesize = 24))
+
+Colorbar(fig[1, 2], hm, label = "m")
+
+save(graph_directory * "dT.png", fig)
 
 close(data)
