@@ -150,6 +150,7 @@ function build_model(grid, Δt₀, parameters)
     temperature_flux_bc = FluxBoundaryCondition(temperature_flux, discrete_form = true, parameters = parameters)
 
     u_stress_bc = FluxBoundaryCondition(Field{Face, Center, Nothing}(grid))
+    v_stress_bc = FluxBoundaryCondition(Field{Center, Face, Nothing}(grid))
 
     @inline u_drag(i, j, grid, clock, model_fields, p) = @inbounds -p.μ * p.Lz * model_fields.u[i, j, 1]
     @inline v_drag(i, j, grid, clock, model_fields, p) = @inbounds -p.μ * p.Lz * model_fields.v[i, j, 1]
@@ -160,7 +161,7 @@ function build_model(grid, Δt₀, parameters)
     T_bcs = FieldBoundaryConditions(top = temperature_flux_bc)
 
     u_bcs = FieldBoundaryConditions(top = u_stress_bc, bottom = u_drag_bc)
-    v_bcs = FieldBoundaryConditions(bottom = v_drag_bc)
+    v_bcs = FieldBoundaryConditions(top = v_stress_bc, bottom = v_drag_bc)
 
     #####
     ##### Coriolis
@@ -224,10 +225,16 @@ end
 #####
 
 # wind stress:
-function wind_stress_init(grid, p)
+function u_wind_stress_init(grid, p)
     @inline u_stress(x, y) = -p.τ * sin(π * y / p.Ly)
     wind_stress = Field{Face, Center, Nothing}(grid)
     set!(wind_stress, u_stress)
+    return wind_stress
+end
+
+function v_wind_stress_init(grid, p)
+    wind_stress = Field{Center, Face, Nothing}(grid)
+    set!(wind_stress, 0)
     return wind_stress
 end
 
@@ -246,15 +253,16 @@ end
 
 function loop!(model)
     Δt = model.clock.last_Δt
-    @trace mincut = true checkpointing = true track_numbers = false for i = 1:25
+    @trace mincut = true checkpointing = true track_numbers = false for i = 1:169
         time_step!(model, Δt)
     end
     return nothing
 end
 
-function run_reentrant_channel_model!(model, Tᵢ, wind_stress)
+function run_reentrant_channel_model!(model, Tᵢ, u_wind_stress, v_wind_stress)
     # setting IC's and BC's:
-    set!(model.velocities.u.boundary_conditions.top.condition, wind_stress)
+    set!(model.velocities.u.boundary_conditions.top.condition, u_wind_stress)
+    set!(model.velocities.v.boundary_conditions.top.condition, v_wind_stress)
     set!(model.tracers.T, Tᵢ)
 
     # Initialize the model
@@ -267,8 +275,8 @@ function run_reentrant_channel_model!(model, Tᵢ, wind_stress)
     return nothing
 end
 
-function estimate_tracer_error(model, initial_temperature, wind_stress, Δz, mld)
-    run_reentrant_channel_model!(model, initial_temperature, wind_stress)
+function estimate_tracer_error(model, initial_temperature, u_wind_stress, v_wind_stress, Δz, mld)
+    run_reentrant_channel_model!(model, initial_temperature, u_wind_stress, v_wind_stress)
     
     Nx, Ny, Nz = size(model.grid)
 
@@ -282,17 +290,19 @@ function estimate_tracer_error(model, initial_temperature, wind_stress, Δz, mld
     return sum(zonal_transport) / 1e6 # Put it in Sverdrups
 end
 
-function differentiate_tracer_error(model, Tᵢ, J, Δz, mld, dmodel, dTᵢ, dJ, dΔz, dmld)
+function differentiate_tracer_error(model, Tᵢ, u_wind_stress, v_wind_stress, Δz, mld,
+                                   dmodel, dTᵢ, du_wind_stress, dv_wind_stress, dΔz, dmld)
 
     dedν = autodiff(set_strong_zero(Enzyme.ReverseWithPrimal),
                     estimate_tracer_error, Active,
                     Duplicated(model, dmodel),
                     Duplicated(Tᵢ, dTᵢ),
-                    Duplicated(J, dJ),
+                    Duplicated(u_wind_stress, du_wind_stress),
+                    Duplicated(v_wind_stress, dv_wind_stress),
                     Duplicated(Δz, dΔz),
                     Duplicated(mld, dmld))
 
-    return dedν, dJ, dTᵢ
+    return dedν, du_wind_stress, dTᵢ
 end
 
 #####
@@ -306,28 +316,30 @@ architecture = ReactantState() #GPU()
 Δt₀ = 5minutes 
 
 # Make the grid:
-grid        = make_grid(architecture, Nx, Ny, Nz, z_faces)
-model       = build_model(grid, Δt₀, parameters)
-wind_stress = wind_stress_init(model.grid, parameters)
-Tᵢ          = temperature_init(model.grid, parameters)
-mld         = MixedLayerDepthField(model.buoyancy, model.grid, model.tracers)
-Δz          = Reactant.ConcreteRArray(Δz)
+grid          = make_grid(architecture, Nx, Ny, Nz, z_faces)
+model         = build_model(grid, Δt₀, parameters)
+u_wind_stress = u_wind_stress_init(model.grid, parameters)
+v_wind_stress = v_wind_stress_init(model.grid, parameters)
+Tᵢ            = temperature_init(model.grid, parameters)
+mld           = MixedLayerDepthField(model.buoyancy, model.grid, model.tracers)
+Δz            = Reactant.ConcreteRArray(Δz)
 
 @info "Built $model."
 
-dmodel = Enzyme.make_zero(model)
-dTᵢ    = Field{Center, Center, Center}(model.grid)
-dJ     = Field{Face, Center, Nothing}(model.grid)
-dmld   = MixedLayerDepthField(dmodel.buoyancy, dmodel.grid, dmodel.tracers)
-dΔz    = Enzyme.make_zero(Δz)
+dmodel         = Enzyme.make_zero(model)
+dTᵢ            = Field{Center, Center, Center}(model.grid)
+du_wind_stress = Field{Face, Center, Nothing}(model.grid)
+dv_wind_stress = Field{Center, Face, Nothing}(model.grid)
+dmld           = MixedLayerDepthField(dmodel.buoyancy, dmodel.grid, dmodel.tracers)
+dΔz            = Enzyme.make_zero(Δz)
 
 # Trying zonal transport:
 #@allowscalar zonal_transport = Field(Integral(model.velocities.u, dims=(2,3)))
 
 @info "Compiling the model run..."
 tic = time()
-#restimate_tracer_error = @compile raise_first=true raise=true compile_options=CompileOptions(; disable_auto_batching_passes=true) sync=true estimate_tracer_error(model, Tᵢ, wind_stress, Δz, mld)
-rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true  differentiate_tracer_error(model, Tᵢ, wind_stress, Δz, mld, dmodel, dTᵢ, dJ, dΔz, dmld)
+#restimate_tracer_error = @compile raise_first=true raise=true compile_options=CompileOptions(; disable_auto_batching_passes=true) sync=true estimate_tracer_error(model, Tᵢ, u_wind_stress, v_wind_stress, Δz, mld)
+rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true  differentiate_tracer_error(model, Tᵢ, u_wind_stress, v_wind_stress, Δz, mld, dmodel, dTᵢ, du_wind_stress, dv_wind_stress, dΔz, dmld)
 compile_toc = time() - tic
 
 @show compile_toc
@@ -336,7 +348,7 @@ compile_toc = time() - tic
 
 using FileIO, JLD2
 
-graph_directory = "test/"
+graph_directory = "run_abernathy_model_ad_169steps_noCATKE/"
 filename        = graph_directory * "data_init.jld2"
 
 if !isdir(graph_directory) Base.Filesystem.mkdir(graph_directory) end
@@ -352,11 +364,12 @@ jldsave(filename; Nx, Ny, Nz,
                   bottom_height=convert(Array, interior(bottom_height)),
                   T_init=convert(Array, interior(model.tracers.T)),
                   e_init=convert(Array, interior(model.tracers.e)),
-                  wind_stress=convert(Array, interior(wind_stress)))
+                  u_wind_stress=convert(Array, interior(u_wind_stress)),
+                  v_wind_stress=convert(Array, interior(v_wind_stress)))
 
 tic = time()
 #output = restimate_tracer_error(model, Tᵢ, wind_stress, Δz, mld)
-dedν, dJ, dTᵢ = rdifferentiate_tracer_error(model, Tᵢ, wind_stress, Δz, mld, dmodel, dTᵢ, dJ, dΔz, dmld)
+dedν, du_wind_stress, dTᵢ = rdifferentiate_tracer_error(model, Tᵢ, u_wind_stress, v_wind_stress, Δz, mld, dmodel, dTᵢ, du_wind_stress, dv_wind_stress, dΔz, dmld)
 run_toc = time() - tic
 
 @show run_toc
@@ -376,6 +389,7 @@ jldsave(filename; Nx, Ny, Nz,
                   mld=convert(Array, interior(mld)),
                   #zonal_transport=convert(Float64, output))
                   zonal_transport=convert(Float64, dedν[2]),
-                  dwind_stress=convert(Array, interior(dJ)),
+                  du_wind_stress=convert(Array, interior(du_wind_stress)),
+                  dv_wind_stress=convert(Array, interior(dv_wind_stress)),
                   dT=convert(Array, interior(dTᵢ)))
 
