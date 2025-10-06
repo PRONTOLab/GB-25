@@ -246,7 +246,7 @@ end
 
 function loop!(model)
     Δt = model.clock.last_Δt
-    @trace mincut = true checkpointing = true track_numbers = false for i = 1:100
+    @trace mincut = true checkpointing = true track_numbers = false for i = 1:25
         time_step!(model, Δt)
     end
     return nothing
@@ -336,7 +336,7 @@ compile_toc = time() - tic
 
 using FileIO, JLD2
 
-graph_directory = "run_abernathy_model_ad_100steps_noCATKE_sverdrups/"
+graph_directory = "test/"
 filename        = graph_directory * "data_init.jld2"
 
 if !isdir(graph_directory) Base.Filesystem.mkdir(graph_directory) end
@@ -374,6 +374,7 @@ jldsave(filename; Nx, Ny, Nz,
                   v=convert(Array, interior(model.velocities.v)),
                   w=convert(Array, interior(model.velocities.w)),
                   mld=convert(Array, interior(mld)),
+                  #zonal_transport=convert(Float64, output))
                   zonal_transport=convert(Float64, dedν[2]),
                   dwind_stress=convert(Array, interior(dJ)),
                   dT=convert(Array, interior(dTᵢ)))
