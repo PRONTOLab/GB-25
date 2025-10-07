@@ -14,7 +14,7 @@ using Oceananigans.Grids: xnode, ynode, znode
 
 using Plots
 
-graph_directory = "run_abernathy_model_ad_169steps_noCATKE/"
+graph_directory = "run_abernathy_model_ad_4900steps_noCATKE_moderateVisc_CenteredOrder4_vh2000_loweredRidge/"
 
 #
 # First we gather the data and create a grid for plotting purposes:
@@ -159,10 +159,6 @@ function plot_variables(p1_xz, p2_xy, p3_xy,
         xlims = xlims,
         ylims = ylims,
         color = :balance)
-
-    p1_xz_title = "w(x, z)"
-    p2_xy_title = "u(x, y)"
-    p3_xy_title = "v(x, y)"
 
     layout = @layout [upper_slice_plot{0.2h}
         Plots.grid(1, 2)]

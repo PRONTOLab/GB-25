@@ -12,7 +12,7 @@ using Oceananigans
 using Oceananigans.Units
 using Oceananigans.OutputReaders: FieldTimeSeries
 using Oceananigans.Grids: xnode, ynode, znode
-using Oceananigans.TurbulenceClosures: CATKEVerticalDiffusivity
+using Oceananigans.TurbulenceClosures: CATKEVerticalDiffusivity, HorizontalFormulation
 
 using SeawaterPolynomials
 
@@ -113,7 +113,7 @@ parameters = (
 
 # full ridge function:
 function ridge_function(x, y)
-    zonal = (Lz+300)exp(-(x - Lx/2)^2/(1e6kilometers))
+    zonal = (Lz)exp(-(x - Lx/2)^2/(1e6kilometers))
     gap   = 1 - 0.5(tanh((y - (Ly/6))/1e5) - tanh((y - (Ly/2))/1e5))
     return zonal * gap - Lz
 end
@@ -184,17 +184,32 @@ function build_model(grid, Δt₀, parameters)
         return -1 / timescale * mask(y, p) * (T - target_T)
     end
 
-    FT = Forcing(temperature_relaxation, discrete_form = true, parameters = parameters)
+    @inline function smooth2D_filter_u(i, j, k, grid, clock, model_fields)
+        α = 0.05
+        return (1 - 4α) * model_fields.u[i,j,k] + α * (model_fields.u[i+1,j,k] + model_fields.u[i-1,j,k] + model_fields.u[i,j+1,k] + model_fields.u[i,j-1,k])
+    end
 
-    # closure
+    @inline function smooth2D_filter_v(i, j, k, grid, clock, model_fields)
+        α = 0.05
+        return (1 - 4α) * model_fields.v[i,j,k] + α * (model_fields.v[i+1,j,k] + model_fields.v[i-1,j,k] + model_fields.v[i,j+1,k] + model_fields.v[i,j-1,k])
+    end
+    
+    FT       = Forcing(temperature_relaxation, discrete_form = true, parameters = parameters)
+    #filter_u = Forcing(smooth2D_filter_u, discrete_form = true)
+    #filter_v = Forcing(smooth2D_filter_v, discrete_form = true)
 
-    κh = 0.5e-5 # [m²/s] horizontal diffusivity
-    νh = 30.0   # [m²/s] horizontal viscocity
-    κz = 0.5e-5 # [m²/s] vertical diffusivity
-    νz = 3e-4   # [m²/s] vertical viscocity
+    # closure (moderately elevating scalar visc/diff)
+
+    κh = 5e-5 #0.5e-5 # [m²/s] horizontal diffusivity
+    νh = 2000 #30.0   # [m²/s] horizontal viscocity
+    κz = 1e-5 #0.5e-5 # [m²/s] vertical diffusivity
+    νz = 3e-3 #3e-4   # [m²/s] vertical viscocity
 
     horizontal_closure = HorizontalScalarDiffusivity(ν = νh, κ = κh)
     vertical_closure = VerticalScalarDiffusivity(ν = νz, κ = κz)
+
+    biharmonic_closure = ScalarBiharmonicDiffusivity(HorizontalFormulation(), Oceananigans.defaults.FloatType;
+                                                     ν = 1e11)
 
     vertical_closure_CATKE = CATKEVerticalDiffusivity(minimum_tke=1e-7,
                                                     maximum_tracer_diffusivity=0.3,
@@ -205,14 +220,14 @@ function build_model(grid, Δt₀, parameters)
     model = HydrostaticFreeSurfaceModel(
         grid = grid,
         free_surface = SplitExplicitFreeSurface(substeps=10),
-        momentum_advection = WENO(),
-        tracer_advection = WENO(),
+        momentum_advection = Centered(order=4),
+        tracer_advection = Centered(order=4),
         buoyancy = SeawaterBuoyancy(equation_of_state=SeawaterPolynomials.TEOS10EquationOfState(Oceananigans.defaults.FloatType),constant_salinity=35),
         coriolis = coriolis,
-        closure = (horizontal_closure, vertical_closure), #, vertical_closure_CATKE),
+        closure = (horizontal_closure, vertical_closure), #, biharmonic_closure), #, vertical_closure_CATKE),
         tracers = (:T, :e),
         boundary_conditions = (T = T_bcs, u = u_bcs, v = v_bcs),
-        forcing = (; T = FT)
+        forcing = (T = FT,) #, u = filter_u, v = filter_v)
     )
 
     model.clock.last_Δt = Δt₀
@@ -253,7 +268,7 @@ end
 
 function loop!(model)
     Δt = model.clock.last_Δt
-    @trace mincut = true checkpointing = true track_numbers = false for i = 1:169
+    @trace mincut = true checkpointing = true track_numbers = false for i = 1:4900
         time_step!(model, Δt)
     end
     return nothing
@@ -348,7 +363,7 @@ compile_toc = time() - tic
 
 using FileIO, JLD2
 
-graph_directory = "run_abernathy_model_ad_169steps_noCATKE/"
+graph_directory = "run_abernathy_model_ad_4900steps_noCATKE_moderateVisc_CenteredOrder4_vh2000_loweredRidge/"
 filename        = graph_directory * "data_init.jld2"
 
 if !isdir(graph_directory) Base.Filesystem.mkdir(graph_directory) end
@@ -368,7 +383,7 @@ jldsave(filename; Nx, Ny, Nz,
                   v_wind_stress=convert(Array, interior(v_wind_stress)))
 
 tic = time()
-#output = restimate_tracer_error(model, Tᵢ, wind_stress, Δz, mld)
+#output = restimate_tracer_error(model, Tᵢ, u_wind_stress, v_wind_stress, Δz, mld)
 dedν, du_wind_stress, dTᵢ = rdifferentiate_tracer_error(model, Tᵢ, u_wind_stress, v_wind_stress, Δz, mld, dmodel, dTᵢ, du_wind_stress, dv_wind_stress, dΔz, dmld)
 run_toc = time() - tic
 
