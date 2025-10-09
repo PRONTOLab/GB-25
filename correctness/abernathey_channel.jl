@@ -222,7 +222,7 @@ function build_model(grid, Δt₀, parameters)
         tracer_advection = Centered(order=4),
         buoyancy = SeawaterBuoyancy(equation_of_state=SeawaterPolynomials.TEOS10EquationOfState(Oceananigans.defaults.FloatType),constant_salinity=35),
         coriolis = coriolis,
-        closure = (horizontal_closure, vertical_closure), #, vertical_closure_CATKE),
+        closure = (horizontal_closure, vertical_closure, vertical_closure_CATKE),
         tracers = (:T, :e),
         boundary_conditions = (T = T_bcs, u = u_bcs, v = v_bcs),
         forcing = (T = FT,) #, u = filter_u, v = filter_v)
@@ -361,7 +361,7 @@ compile_toc = time() - tic
 
 using FileIO, JLD2
 
-graph_directory = "run_abernathy_model_ad_900steps_noCATKE_mildVisc_CenteredOrder4_partialCell/"
+graph_directory = "run_abernathy_model_ad_900steps_mildVisc_CenteredOrder4_partialCell/"
 filename        = graph_directory * "data_init.jld2"
 
 if !isdir(graph_directory) Base.Filesystem.mkdir(graph_directory) end

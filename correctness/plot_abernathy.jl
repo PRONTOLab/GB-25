@@ -14,7 +14,7 @@ using Oceananigans.Grids: xnode, ynode, znode
 
 using Plots
 
-graph_directory = "run_abernathy_model_ad_900steps_noCATKE_mildVisc_CenteredOrder4_partialCell/"
+graph_directory = "run_abernathy_model_ad_900steps_mildVisc_CenteredOrder4_partialCell/"
 
 #
 # First we gather the data and create a grid for plotting purposes:
