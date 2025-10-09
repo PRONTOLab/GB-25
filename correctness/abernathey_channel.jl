@@ -113,7 +113,7 @@ parameters = (
 
 # full ridge function:
 function ridge_function(x, y)
-    zonal = (Lz)exp(-(x - Lx/2)^2/(1e6kilometers))
+    zonal = (Lz+300)exp(-(x - Lx/2)^2/(1e6kilometers))
     gap   = 1 - 0.5(tanh((y - (Ly/6))/1e5) - tanh((y - (Ly/2))/1e5))
     return zonal * gap - Lz
 end
@@ -132,7 +132,7 @@ function make_grid(architecture, Nx, Ny, Nz, z_faces)
     ridge = Field{Center, Center, Nothing}(underlying_grid)
     set!(ridge, ridge_function)
 
-    grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(ridge))
+    grid = ImmersedBoundaryGrid(underlying_grid, PartialCellBottom(ridge))
     return grid
 end
 
@@ -200,10 +200,10 @@ function build_model(grid, Δt₀, parameters)
 
     # closure (moderately elevating scalar visc/diff)
 
-    κh = 5e-5 #0.5e-5 # [m²/s] horizontal diffusivity
-    νh = 2000 #30.0   # [m²/s] horizontal viscocity
+    κh = 2e-5 #0.5e-5 # [m²/s] horizontal diffusivity
+    νh = 100 #30.0   # [m²/s] horizontal viscocity
     κz = 1e-5 #0.5e-5 # [m²/s] vertical diffusivity
-    νz = 3e-3 #3e-4   # [m²/s] vertical viscocity
+    νz = 1e-3 #3e-4   # [m²/s] vertical viscocity
 
     horizontal_closure = HorizontalScalarDiffusivity(ν = νh, κ = κh)
     vertical_closure = VerticalScalarDiffusivity(ν = νz, κ = κz)
@@ -211,9 +211,7 @@ function build_model(grid, Δt₀, parameters)
     biharmonic_closure = ScalarBiharmonicDiffusivity(HorizontalFormulation(), Oceananigans.defaults.FloatType;
                                                      ν = 1e11)
 
-    vertical_closure_CATKE = CATKEVerticalDiffusivity(minimum_tke=1e-7,
-                                                    maximum_tracer_diffusivity=0.3,
-                                                    maximum_viscosity=0.5)
+    vertical_closure_CATKE = CATKEVerticalDiffusivity()
 
     @info "Building a model..."
 
@@ -224,7 +222,7 @@ function build_model(grid, Δt₀, parameters)
         tracer_advection = Centered(order=4),
         buoyancy = SeawaterBuoyancy(equation_of_state=SeawaterPolynomials.TEOS10EquationOfState(Oceananigans.defaults.FloatType),constant_salinity=35),
         coriolis = coriolis,
-        closure = (horizontal_closure, vertical_closure), #, biharmonic_closure), #, vertical_closure_CATKE),
+        closure = (horizontal_closure, vertical_closure), #, vertical_closure_CATKE),
         tracers = (:T, :e),
         boundary_conditions = (T = T_bcs, u = u_bcs, v = v_bcs),
         forcing = (T = FT,) #, u = filter_u, v = filter_v)
@@ -243,13 +241,13 @@ end
 function u_wind_stress_init(grid, p)
     @inline u_stress(x, y) = -p.τ * sin(π * y / p.Ly)
     wind_stress = Field{Face, Center, Nothing}(grid)
-    set!(wind_stress, u_stress)
+    @allowscalar set!(wind_stress, u_stress)
     return wind_stress
 end
 
 function v_wind_stress_init(grid, p)
     wind_stress = Field{Center, Face, Nothing}(grid)
-    set!(wind_stress, 0)
+    @allowscalar set!(wind_stress, 0)
     return wind_stress
 end
 
@@ -258,7 +256,7 @@ function temperature_init(grid, parameters)
     ε(σ) = σ * randn()
     Tᵢ_function(x, y, z) = parameters.ΔT * (exp(z / parameters.h) - exp(-Lz / parameters.h)) / (1 - exp(-Lz / parameters.h)) + ε(1e-8)
     Tᵢ = Field{Center, Center, Center}(grid)
-    set!(Tᵢ, Tᵢ_function)
+    @allowscalar set!(Tᵢ, Tᵢ_function)
     return Tᵢ
 end
 
@@ -268,7 +266,7 @@ end
 
 function loop!(model)
     Δt = model.clock.last_Δt
-    @trace mincut = true checkpointing = true track_numbers = false for i = 1:4900
+    @trace mincut = true checkpointing = true track_numbers = false for i = 1:900
         time_step!(model, Δt)
     end
     return nothing
@@ -363,7 +361,7 @@ compile_toc = time() - tic
 
 using FileIO, JLD2
 
-graph_directory = "run_abernathy_model_ad_4900steps_noCATKE_moderateVisc_CenteredOrder4_vh2000_loweredRidge/"
+graph_directory = "run_abernathy_model_ad_900steps_noCATKE_mildVisc_CenteredOrder4_partialCell/"
 filename        = graph_directory * "data_init.jld2"
 
 if !isdir(graph_directory) Base.Filesystem.mkdir(graph_directory) end

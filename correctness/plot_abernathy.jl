@@ -14,7 +14,7 @@ using Oceananigans.Grids: xnode, ynode, znode
 
 using Plots
 
-graph_directory = "run_abernathy_model_ad_4900steps_noCATKE_moderateVisc_CenteredOrder4_vh2000_loweredRidge/"
+graph_directory = "run_abernathy_model_ad_900steps_noCATKE_mildVisc_CenteredOrder4_partialCell/"
 
 #
 # First we gather the data and create a grid for plotting purposes:
@@ -59,7 +59,7 @@ function make_grid(architecture, Nx, Ny, Nz, Δz_center)
     ridge = Field{Center, Center, Nothing}(underlying_grid)
     set!(ridge, ridge_function)
 
-    grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(ridge))
+    grid = ImmersedBoundaryGrid(underlying_grid, PartialCellBottom(ridge))
     return grid
 end
 

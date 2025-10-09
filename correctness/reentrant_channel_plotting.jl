@@ -6,7 +6,7 @@ using GLMakie
 #
 
 
-graph_directory = "test/"
+graph_directory = "run_abernathy_model_ad_900steps_noCATKE_mildVisc_CenteredOrder4_partialCell/"
 
 data1 = jldopen(graph_directory * "data_init.jld2", "r")
 
@@ -17,8 +17,8 @@ Nz = data1["Nz"]
 bottom_height = data1["bottom_height"]
 T_init        = data1["T_init"]
 e_init        = data1["e_init"]
-wind_stress   = data1["wind_stress"]
-
+wind_stress   = data1["u_wind_stress"]
+#=
 # Build init temperature fields:
 max_T_surface = maximum(abs.(T_init[1:Nx,1:Ny,Nz]))
 
@@ -50,7 +50,7 @@ Colorbar(fig[1, 2], hm, label = "[indices C]")
 
 resize_to_layout!(fig)
 save(graph_directory * "init_T_bottom.png", fig)
-#=
+
 max_T_cross = maximum(abs.(T_init[1:Nx,20,1:Nz]))
 
 fig, ax, hm = heatmap(view(T_init, 1:Nx, 20, 1:Nz),
@@ -95,7 +95,7 @@ fig, ax, hm = heatmap(view(bottom_height, 1:Nx, 1:Ny),
 Colorbar(fig[1, 2], hm, label = "m")
 
 save(graph_directory * "bottom_height.png", fig)
-
+#=
 # Energy:
 fig, ax, hm = heatmap(view(e_init, 1:Nx, 1:Ny, Nz),
                       colormap = :deep,
@@ -134,13 +134,13 @@ Colorbar(fig[1, 2], hm, label = "[m/s]")
 
 resize_to_layout!(fig)
 save(graph_directory * "init_wind_stress.png", fig)
-
+=#
 close(data1)
 
 #
 # Data from end of run:
 #
-
+#=
 data = jldopen(graph_directory * "data_final.jld2", "r")
 
 Nx = data["Nx"]
@@ -429,3 +429,4 @@ Colorbar(fig[1, 2], hm, label = "m")
 save(graph_directory * "dT.png", fig)
 
 close(data)
+=#
