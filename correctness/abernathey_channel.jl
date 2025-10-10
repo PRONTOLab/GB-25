@@ -122,7 +122,7 @@ end
 # Δx, Δy: grid spacing in meters (assume uniform)
 # sigma_m: smoothing sigma in meters (e.g., 2*Δx for ~2-cell smoothing)
 # periodic: assume periodic in both x and y (typical re-entrant)
-function gaussian_smooth_bathy!(bathy_smoothed, bathy, Δx, Δy, sigma_m)
+function gaussian_smooth_bathymetry!(bathy_smoothed, bathy, Δx, Δy, sigma_m)
     Nx, Ny = size(bathy)
     # 1D sigma in grid cells
     σx = sigma_m / Δx
@@ -197,7 +197,7 @@ function make_grid(architecture, Nx, Ny, Nz, z_faces)
     smoothed_ridge = Field{Center, Center, Nothing}(underlying_grid)
     set!(ridge, ridge_function)
 
-    @allowscalar gaussian_smooth_bathy!(smoothed_ridge, ridge, underlying_grid.Δxᶜᵃᵃ, underlying_grid.Δyᵃᶜᵃ, 2*underlying_grid.Δxᶜᵃᵃ)
+    @allowscalar gaussian_smooth_bathymetry!(smoothed_ridge, ridge, underlying_grid.Δxᶜᵃᵃ, underlying_grid.Δyᵃᶜᵃ, 2*underlying_grid.Δxᶜᵃᵃ)
 
     grid = ImmersedBoundaryGrid(underlying_grid, PartialCellBottom(smoothed_ridge))
     return grid
@@ -272,8 +272,11 @@ function build_model(grid, Δt₀, parameters)
     κz = 5e-5 #0.5e-5 # [m²/s] vertical diffusivity
     νz = 3e-3 #3e-4   # [m²/s] vertical viscocity
 
+    κz_field = Field{Center, Center, Center}(grid)
+    set!(κz_field, κz)
+
     horizontal_closure = HorizontalScalarDiffusivity(ν = νh, κ = κh)
-    vertical_closure = VerticalScalarDiffusivity(ν = νz, κ = κz)
+    vertical_closure = VerticalScalarDiffusivity(ν = νz, κ = κz_field)
 
     biharmonic_closure = ScalarBiharmonicDiffusivity(HorizontalFormulation(), Oceananigans.defaults.FloatType;
                                                      ν = 1e11)
@@ -285,10 +288,10 @@ function build_model(grid, Δt₀, parameters)
         free_surface = SplitExplicitFreeSurface(substeps=10),
         momentum_advection = Centered(order=4),
         tracer_advection = Centered(order=4),
-        buoyancy = SeawaterBuoyancy(equation_of_state=SeawaterPolynomials.TEOS10EquationOfState(Oceananigans.defaults.FloatType),constant_salinity=35),
+        buoyancy = SeawaterBuoyancy(equation_of_state=SeawaterPolynomials.TEOS10EquationOfState(Oceananigans.defaults.FloatType)),
         coriolis = coriolis,
-        closure = (horizontal_closure, vertical_closure), #, biharmonic_closure),
-        tracers = (:T, :e),
+        closure = (horizontal_closure, vertical_closure, biharmonic_closure),
+        tracers = (:T, :S, :e),
         boundary_conditions = (T = T_bcs, u = u_bcs, v = v_bcs),
         forcing = (T = FT,) #, u = filter_u, v = filter_v)
     )
@@ -317,12 +320,14 @@ function v_wind_stress_init(grid, p)
 end
 
 # resting initial condition
-function temperature_init(grid, parameters)
+function temperature_salinity_init(grid, parameters)
     ε(σ) = σ * randn()
     Tᵢ_function(x, y, z) = parameters.ΔT * (exp(z / parameters.h) - exp(-Lz / parameters.h)) / (1 - exp(-Lz / parameters.h)) + ε(1e-8)
     Tᵢ = Field{Center, Center, Center}(grid)
+    Sᵢ = Field{Center, Center, Center}(grid)
     @allowscalar set!(Tᵢ, Tᵢ_function)
-    return Tᵢ
+    @allowscalar set!(Sᵢ, 35) # Initial Salinity
+    return Tᵢ, Sᵢ
 end
 
 #####
@@ -331,17 +336,18 @@ end
 
 function loop!(model)
     Δt = model.clock.last_Δt
-    @trace mincut = true checkpointing = true track_numbers = false for i = 1:900
+    @trace mincut = true checkpointing = true track_numbers = false for i = 1:4900
         time_step!(model, Δt)
     end
     return nothing
 end
 
-function run_reentrant_channel_model!(model, Tᵢ, u_wind_stress, v_wind_stress)
+function run_reentrant_channel_model!(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress)
     # setting IC's and BC's:
     set!(model.velocities.u.boundary_conditions.top.condition, u_wind_stress)
     set!(model.velocities.v.boundary_conditions.top.condition, v_wind_stress)
     set!(model.tracers.T, Tᵢ)
+    set!(model.tracers.S, Sᵢ)
 
     # Initialize the model
     model.clock.iteration = 0
@@ -353,8 +359,8 @@ function run_reentrant_channel_model!(model, Tᵢ, u_wind_stress, v_wind_stress)
     return nothing
 end
 
-function estimate_tracer_error(model, initial_temperature, u_wind_stress, v_wind_stress, Δz, mld)
-    run_reentrant_channel_model!(model, initial_temperature, u_wind_stress, v_wind_stress)
+function estimate_tracer_error(model, initial_temperature, initial_salinity, u_wind_stress, v_wind_stress, Δz, mld)
+    run_reentrant_channel_model!(model, initial_temperature, initial_salinity, u_wind_stress, v_wind_stress)
     
     Nx, Ny, Nz = size(model.grid)
 
@@ -368,13 +374,14 @@ function estimate_tracer_error(model, initial_temperature, u_wind_stress, v_wind
     return sum(zonal_transport) / 1e6 # Put it in Sverdrups
 end
 
-function differentiate_tracer_error(model, Tᵢ, u_wind_stress, v_wind_stress, Δz, mld,
-                                   dmodel, dTᵢ, du_wind_stress, dv_wind_stress, dΔz, dmld)
+function differentiate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, Δz, mld,
+                                   dmodel, dTᵢ, dSᵢ, du_wind_stress, dv_wind_stress, dΔz, dmld)
 
     dedν = autodiff(set_strong_zero(Enzyme.ReverseWithPrimal),
                     estimate_tracer_error, Active,
                     Duplicated(model, dmodel),
                     Duplicated(Tᵢ, dTᵢ),
+                    Duplicated(Sᵢ, dSᵢ),
                     Duplicated(u_wind_stress, du_wind_stress),
                     Duplicated(v_wind_stress, dv_wind_stress),
                     Duplicated(Δz, dΔz),
@@ -398,7 +405,7 @@ grid          = make_grid(architecture, Nx, Ny, Nz, z_faces)
 model         = build_model(grid, Δt₀, parameters)
 u_wind_stress = u_wind_stress_init(model.grid, parameters)
 v_wind_stress = v_wind_stress_init(model.grid, parameters)
-Tᵢ            = temperature_init(model.grid, parameters)
+Tᵢ, Sᵢ        = temperature_salinity_init(model.grid, parameters)
 mld           = MixedLayerDepthField(model.buoyancy, model.grid, model.tracers)
 Δz            = Reactant.ConcreteRArray(Δz)
 
@@ -406,6 +413,7 @@ mld           = MixedLayerDepthField(model.buoyancy, model.grid, model.tracers)
 
 dmodel         = Enzyme.make_zero(model)
 dTᵢ            = Field{Center, Center, Center}(model.grid)
+dSᵢ            = Field{Center, Center, Center}(model.grid)
 du_wind_stress = Field{Face, Center, Nothing}(model.grid)
 dv_wind_stress = Field{Center, Face, Nothing}(model.grid)
 dmld           = MixedLayerDepthField(dmodel.buoyancy, dmodel.grid, dmodel.tracers)
@@ -414,10 +422,14 @@ dΔz            = Enzyme.make_zero(Δz)
 # Trying zonal transport:
 #@allowscalar zonal_transport = Field(Integral(model.velocities.u, dims=(2,3)))
 
+#@show convert(Array, interior(model.closure[2].κ[1]))
+#@show convert(Array, interior(model.closure[2].κ[2]))
+#@show convert(Array, interior(model.closure[2].κ[3]))
+
 @info "Compiling the model run..."
 tic = time()
-#restimate_tracer_error = @compile raise_first=true raise=true compile_options=CompileOptions(; disable_auto_batching_passes=true) sync=true estimate_tracer_error(model, Tᵢ, u_wind_stress, v_wind_stress, Δz, mld)
-rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true  differentiate_tracer_error(model, Tᵢ, u_wind_stress, v_wind_stress, Δz, mld, dmodel, dTᵢ, du_wind_stress, dv_wind_stress, dΔz, dmld)
+#restimate_tracer_error = @compile raise_first=true raise=true compile_options=CompileOptions(; disable_auto_batching_passes=true) sync=true estimate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, Δz, mld)
+rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true  differentiate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, Δz, mld, dmodel, dTᵢ, dSᵢ, du_wind_stress, dv_wind_stress, dΔz, dmld)
 compile_toc = time() - tic
 
 @show compile_toc
@@ -426,7 +438,7 @@ compile_toc = time() - tic
 
 using FileIO, JLD2
 
-graph_directory = "run_abernathy_model_ad_900steps_noCATKE_moderateVisc_CenteredOrder4_partialCell_vSmoothedRidge/"
+graph_directory = "run_abernathy_model_ad_4900steps_noCATKE_moderateVisc_CenteredOrder4_partialCell_smoothedRidge_biharmonic/"
 filename        = graph_directory * "data_init.jld2"
 
 if !isdir(graph_directory) Base.Filesystem.mkdir(graph_directory) end
@@ -443,11 +455,13 @@ jldsave(filename; Nx, Ny, Nz,
                   T_init=convert(Array, interior(model.tracers.T)),
                   e_init=convert(Array, interior(model.tracers.e)),
                   u_wind_stress=convert(Array, interior(u_wind_stress)),
-                  v_wind_stress=convert(Array, interior(v_wind_stress)))
+                  v_wind_stress=convert(Array, interior(v_wind_stress)),
+                  dkappaT_init=convert(Array, interior(dmodel.closure[2].κ[1])),
+                  dkappaS_init=convert(Array, interior(dmodel.closure[2].κ[2])))
 
 tic = time()
 #output = restimate_tracer_error(model, Tᵢ, u_wind_stress, v_wind_stress, Δz, mld)
-dedν, du_wind_stress, dTᵢ = rdifferentiate_tracer_error(model, Tᵢ, u_wind_stress, v_wind_stress, Δz, mld, dmodel, dTᵢ, du_wind_stress, dv_wind_stress, dΔz, dmld)
+dedν, du_wind_stress, dTᵢ = rdifferentiate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, Δz, mld, dmodel, dTᵢ, dSᵢ, du_wind_stress, dv_wind_stress, dΔz, dmld)
 run_toc = time() - tic
 
 @show run_toc
@@ -459,6 +473,7 @@ filename = graph_directory * "data_final.jld2"
 
 jldsave(filename; Nx, Ny, Nz,
                   T_final=convert(Array, interior(model.tracers.T)),
+                  S_final=convert(Array, interior(model.tracers.S)),
                   e_final=convert(Array, interior(model.tracers.e)),
                   ssh=convert(Array, interior(model.free_surface.η)),
                   u=convert(Array, interior(model.velocities.u)),
@@ -469,5 +484,8 @@ jldsave(filename; Nx, Ny, Nz,
                   zonal_transport=convert(Float64, dedν[2]),
                   du_wind_stress=convert(Array, interior(du_wind_stress)),
                   dv_wind_stress=convert(Array, interior(dv_wind_stress)),
-                  dT=convert(Array, interior(dTᵢ)))
+                  dT=convert(Array, interior(dTᵢ)),
+                  dS=convert(Array, interior(dSᵢ)),
+                  dkappaT_final=convert(Array, interior(dmodel.closure[2].κ[1])),
+                  dkappaS_final=convert(Array, interior(dmodel.closure[2].κ[2])))
 

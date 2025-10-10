@@ -14,7 +14,7 @@ using Oceananigans.Grids: xnode, ynode, znode
 
 using Plots
 
-graph_directory = "run_abernathy_model_ad_900steps_noCATKE_moderateVisc_CenteredOrder4_partialCell_vSmoothedRidge/"
+graph_directory = "run_abernathy_model_ad_900steps_noCATKE_moderateVisc_CenteredOrder4_partialCell_smoothedRidge_biharmonic/"
 
 #
 # First we gather the data and create a grid for plotting purposes:
@@ -138,6 +138,9 @@ T_init        = data1["T_init"]
 e_init        = data1["e_init"]
 wind_stress   = data1["u_wind_stress"]
 
+dkappaT_init = data1["dkappaT_init"]
+dkappaS_init = data1["dkappaS_init"]
+
 data2 = jldopen(graph_directory * "data_final.jld2", "r")
 
 T_final = data2["T_final"]
@@ -147,6 +150,9 @@ ssh     = data2["ssh"]
 u = data2["u"]
 v = data2["v"]
 w = data2["w"]
+
+dkappaT_final = data2["dkappaT_final"]
+dkappaS_final = data2["dkappaS_final"]
 
 #
 # Then we set up the node points:
@@ -238,7 +244,7 @@ end
 
 plot_variables(w[:, j′, :], u[:, :, grid.Nz], v[:, :, grid.Nz], xw, zw, xu, yu, xv, yv, "w(x, z)", "u(x, y, 0m)", "v(x, y, 0m)", graph_directory * "final_velocities_surface.png")
 plot_variables(w[:, j′, :], u[:, :, 1], v[:, :, 1], xw, zw, xu, yu, xv, yv, "w(x, z)", "u(x, y, 2180m)", "v(x, y, 2180m)", graph_directory * "final_velocities_bottom.png")
-plot_variables(u[:, j′, :], u[:, :, 14], v[:, :, 14], xu, zu, xu, yu, xv, yv, "u(x, z)", "u(x, y, 533m)", "v(x, y, 533m)", graph_directory * "final_velocities_533m.png")
+plot_variables(u[25, :, :], u[:, :, 14], v[:, :, 14], yu, zu, xu, yu, xv, yv, "u(y, z) (NOT x,z)", "u(x, y, 533m)", "v(x, y, 533m)", graph_directory * "final_velocities_533m.png")
 plot_variables(v[:, j′, :], u[:, :, 25], v[:, :, 25], xv, zv, xu, yu, xv, yv, "v(x, z)", "u(x, y, 116m)", "v(x, y, 116m)", graph_directory * "final_velocities_116m.png")
 
 
@@ -250,7 +256,15 @@ plot_variables(e_final[:, j′, :], e_final[:,:,grid.Nz], ssh[:,:,1], xc, zc, xc
 du_wind_stress = data2["du_wind_stress"]
 dv_wind_stress = data2["dv_wind_stress"]
 dT             = data2["dT"]
+dS             = data2["dS"]
 close(data2)
 
 plot_variables(dT[:, j′, :], du_wind_stress[:,:,1], dv_wind_stress[:,:,1], xc, zc, xu, yu, xv, yv, "Initial Temperature Gradient (x, z)", "Initial Zonal Wind Stress Gradient (x, y)", "Initial Meridional Wind Stress Gradient (x, y)", graph_directory * "gradient_wind_stress.png")
 plot_variables(dT[:, j′, :], dT[:,:,grid.Nz], dT[:,:,1], xc, zc, xc, yc, xc, yc, "Initial Temperature Gradient (x, z)", "Initial Temperature Gradient (x, y, 0m)", "Initial Temperature Gradient (x, y, 2180m)", graph_directory * "gradient_temp.png")
+plot_variables(dS[:, j′, :], dS[:,:,grid.Nz], dS[:,:,1], xc, zc, xc, yc, xc, yc, "Initial Salinity Gradient (x, z)", "Initial Salinity Gradient (x, y, 0m)", "Initial Salinity Gradient (x, y, 2180m)", graph_directory * "gradient_salinity.png")
+
+plot_variables(dkappaT_init[:, j′, :], dkappaT_init[:,:,grid.Nz], dkappaT_init[:,:,1], xc, zc, xc, yc, xc, yc, "Initialized T Vertical Diffusivity Gradient (x, z)", "Initialized T Vertical Diffusivity Gradient  (x, y, 0m)", "Initialized T Vertical Diffusivity Gradient  (x, y, 2180m)", graph_directory * "gradient_kappaTinit.png")
+plot_variables(dkappaT_final[:, j′, :], dkappaT_final[:,:,grid.Nz], dkappaT_final[:,:,1], xc, zc, xc, yc, xc, yc, "T Vertical Diffusivity Gradient (x, z)", "T Vertical Diffusivity Gradient  (x, y, 0m)", "T Vertical Diffusivity Gradient  (x, y, 2180m)", graph_directory * "gradient_kappaT.png")
+
+plot_variables(dkappaS_init[:, j′, :], dkappaS_init[:,:,grid.Nz], dkappaS_init[:,:,1], xc, zc, xc, yc, xc, yc, "Initialized S Vertical Diffusivity Gradient (x, z)", "Initialized S Vertical Diffusivity Gradient  (x, y, 0m)", "Initialized S Vertical Diffusivity Gradient  (x, y, 2180m)", graph_directory * "gradient_kappaSinit.png")
+plot_variables(dkappaS_final[:, j′, :], dkappaS_final[:,:,grid.Nz], dkappaS_final[:,:,1], xc, zc, xc, yc, xc, yc, "S Vertical Diffusivity Gradient (x, z)", "S Vertical Diffusivity Gradient  (x, y, 0m)", "S Vertical Diffusivity Gradient  (x, y, 2180m)", graph_directory * "gradient_kappaS.png")
