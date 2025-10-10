@@ -41,7 +41,7 @@ z_faces[Nz+1] = 0
 
 # full ridge function:
 function ridge_function(x, y)
-    zonal = (Lz+2800)exp(-(x - Lx/2)^2/(1e6kilometers))
+    zonal = (Lz+3000)exp(-(x - Lx/2)^2/(1e6kilometers))
     gap   = 1 - 0.5(tanh((y - (Ly/6))/1e5) - tanh((y - (Ly/2))/1e5))
     return zonal * gap - Lz
 end
