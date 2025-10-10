@@ -331,6 +331,35 @@ function temperature_salinity_init(grid, parameters)
 end
 
 #####
+##### Spin up (because step cound is hardcoded we need separate functions for each loop...)
+#####
+
+function spinup_loop!(model)
+    Δt = model.clock.last_Δt
+    @trace mincut = true track_numbers = false for i = 1:100000
+        time_step!(model, Δt)
+    end
+    return nothing
+end
+
+function spinup_reentrant_channel_model!(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress)
+    # setting IC's and BC's:
+    set!(model.velocities.u.boundary_conditions.top.condition, u_wind_stress)
+    set!(model.velocities.v.boundary_conditions.top.condition, v_wind_stress)
+    set!(model.tracers.T, Tᵢ)
+    set!(model.tracers.S, Sᵢ)
+
+    # Initialize the model
+    model.clock.iteration = 0
+    model.clock.time = 0
+
+    # Step it forward
+    spinup_loop!(model)
+
+    return nothing
+end
+
+#####
 ##### Forward simulation (not actually using the Simulation struct)
 #####
 
@@ -420,14 +449,10 @@ dmld           = MixedLayerDepthField(dmodel.buoyancy, dmodel.grid, dmodel.trace
 dΔz            = Enzyme.make_zero(Δz)
 
 # Trying zonal transport:
-#@allowscalar zonal_transport = Field(Integral(model.velocities.u, dims=(2,3)))
-
-#@show convert(Array, interior(model.closure[2].κ[1]))
-#@show convert(Array, interior(model.closure[2].κ[2]))
-#@show convert(Array, interior(model.closure[2].κ[3]))
 
 @info "Compiling the model run..."
 tic = time()
+rspinup_reentrant_channel_model! = @compile raise_first=true raise=true sync=true  spinup_reentrant_channel_model!(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress)
 #restimate_tracer_error = @compile raise_first=true raise=true compile_options=CompileOptions(; disable_auto_batching_passes=true) sync=true estimate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, Δz, mld)
 rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true  differentiate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, Δz, mld, dmodel, dTᵢ, dSᵢ, du_wind_stress, dv_wind_stress, dΔz, dmld)
 compile_toc = time() - tic
@@ -438,7 +463,7 @@ compile_toc = time() - tic
 
 using FileIO, JLD2
 
-graph_directory = "run_abernathy_model_ad_4900steps_noCATKE_moderateVisc_CenteredOrder4_partialCell_smoothedRidge_biharmonic/"
+graph_directory = "run_abernathy_model_ad_spinup100000_4900steps_noCATKE_moderateVisc_CenteredOrder4_partialCell_smoothedRidge_biharmonic/"
 filename        = graph_directory * "data_init.jld2"
 
 if !isdir(graph_directory) Base.Filesystem.mkdir(graph_directory) end
@@ -458,6 +483,14 @@ jldsave(filename; Nx, Ny, Nz,
                   v_wind_stress=convert(Array, interior(v_wind_stress)),
                   dkappaT_init=convert(Array, interior(dmodel.closure[2].κ[1])),
                   dkappaS_init=convert(Array, interior(dmodel.closure[2].κ[2])))
+
+# Spinup the model for a sufficient amount of time, save the T and S from this state:
+tic = time()
+rspinup_reentrant_channel_model!(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress)
+@allowscalar set!(Tᵢ, model.tracers.T)
+@allowscalar set!(Sᵢ, model.tracers.S)
+spinup_toc = time() - tic
+@show spinup_toc
 
 tic = time()
 #output = restimate_tracer_error(model, Tᵢ, u_wind_stress, v_wind_stress, Δz, mld)
