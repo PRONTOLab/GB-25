@@ -118,6 +118,12 @@ function ridge_function(x, y)
     return zonal * gap - Lz
 end
 
+function wall_function(x, y)
+    zonal = (x > 470kilometers) && (x < 530kilometers)
+    gap   = (y < 400kilometers) || (y > 1000kilometers)
+    return (Lz+1) * zonal * gap - Lz
+end
+
 # bathy: 2D Array{Float64}(Nx, Ny) at cell centers
 # Δx, Δy: grid spacing in meters (assume uniform)
 # sigma_m: smoothing sigma in meters (e.g., 2*Δx for ~2-cell smoothing)
@@ -195,11 +201,11 @@ function make_grid(architecture, Nx, Ny, Nz, z_faces)
     # Make into a ridge array:
     ridge = Field{Center, Center, Nothing}(underlying_grid)
     smoothed_ridge = Field{Center, Center, Nothing}(underlying_grid)
-    set!(ridge, ridge_function)
+    set!(ridge, wall_function)
 
-    @allowscalar gaussian_smooth_bathymetry!(smoothed_ridge, ridge, underlying_grid.Δxᶜᵃᵃ, underlying_grid.Δyᵃᶜᵃ, 2*underlying_grid.Δxᶜᵃᵃ)
+    #@allowscalar gaussian_smooth_bathymetry!(smoothed_ridge, ridge, underlying_grid.Δxᶜᵃᵃ, underlying_grid.Δyᵃᶜᵃ, 2*underlying_grid.Δxᶜᵃᵃ)
 
-    grid = ImmersedBoundaryGrid(underlying_grid, PartialCellBottom(smoothed_ridge))
+    grid = ImmersedBoundaryGrid(underlying_grid, PartialCellBottom(ridge))
     return grid
 end
 
@@ -336,7 +342,7 @@ end
 
 function spinup_loop!(model)
     Δt = model.clock.last_Δt
-    @trace mincut = true track_numbers = false for i = 1:100000
+    @trace mincut = true track_numbers = false for i = 1:2000000
         time_step!(model, Δt)
     end
     return nothing
@@ -463,7 +469,7 @@ compile_toc = time() - tic
 
 using FileIO, JLD2
 
-graph_directory = "run_abernathy_model_ad_spinup100000_4900steps_noCATKE_moderateVisc_CenteredOrder4_partialCell_smoothedRidge_biharmonic/"
+graph_directory = "run_abernathy_model_ad_spinup2000000_4900steps_noCATKE_moderateVisc_CenteredOrder4_partialCell_wallRidge_biharmonic/"
 filename        = graph_directory * "data_init.jld2"
 
 if !isdir(graph_directory) Base.Filesystem.mkdir(graph_directory) end
