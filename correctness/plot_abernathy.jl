@@ -14,7 +14,7 @@ using Oceananigans.Grids: xnode, ynode, znode
 
 using Plots
 
-graph_directory = "run_abernathy_model_ad_900steps_mildVisc_CenteredOrder4_partialCell/"
+graph_directory = "run_abernathy_model_ad_900steps_noCATKE_moderateVisc_CenteredOrder4_partialCell_vSmoothedRidge/"
 
 #
 # First we gather the data and create a grid for plotting purposes:
@@ -30,22 +30,87 @@ Nz = data1["Nz"]
 k_center = collect(1:Nz)
 Δz_center = @. 10 * 1.104^(Nz - k_center)
 
-halo_size = 4
+halo_size = 4 #3 for non-immersed grid
 
 const Lx = 1000kilometers # zonal domain length [m]
 const Ly = 2000kilometers # meridional domain length [m]
 const Lz = sum(Δz_center)
 
+z_faces = vcat([-Lz], -Lz .+ cumsum(Δz_center))
+z_faces[Nz+1] = 0
+
 # full ridge function:
 function ridge_function(x, y)
-    zonal = (Lz+300)exp(-(x - Lx/2)^2/(1e6kilometers))
+    zonal = (Lz+2800)exp(-(x - Lx/2)^2/(1e6kilometers))
     gap   = 1 - 0.5(tanh((y - (Ly/6))/1e5) - tanh((y - (Ly/2))/1e5))
     return zonal * gap - Lz
 end
 
-function make_grid(architecture, Nx, Ny, Nz, Δz_center)
-    z_faces = vcat([-Lz], -Lz .+ cumsum(Δz_center))
-    z_faces[Nz+1] = 0
+# bathy: 2D Array{Float64}(Nx, Ny) at cell centers
+# Δx, Δy: grid spacing in meters (assume uniform)
+# sigma_m: smoothing sigma in meters (e.g., 2*Δx for ~2-cell smoothing)
+# periodic: assume periodic in both x and y (typical re-entrant)
+function gaussian_smooth_bathy!(bathy_smoothed, bathy, Δx, Δy, sigma_m)
+    Nx, Ny = size(bathy)
+    # 1D sigma in grid cells
+    σx = sigma_m / Δx
+    σy = sigma_m / Δy
+
+    # Choose kernel half-width in cells (truncate at ~4σ)
+    hx = max(1, Int(ceil(4*σx)))
+    hy = max(1, Int(ceil(4*σy)))
+
+    # Build 1D kernel in x and y (normalized)
+    kx = [exp(-0.5 * (i/σx)^2) for i in -hx:hx]
+    ky = [exp(-0.5 * (j/σy)^2) for j in -hy:hy]
+    kx ./= sum(kx)
+    ky ./= sum(ky)
+
+    # Temporary array for intermediate result (x-smoothed)
+    tmp = similar(bathy)
+
+    # Convolve in x (periodic)
+    for j in 1:Ny
+        for i in 1:Nx
+            s = 0.0
+            for (ii, wt) in enumerate(kx)
+                offset = ii - (hx + 1)  # -hx: +hx
+                idx = i + offset
+                # periodic wrap
+                if idx < 1
+                    idx += Nx
+                elseif idx > Nx
+                    idx -= Nx
+                end
+                s += wt * bathy[idx, j]
+            end
+            tmp[i, j] = s
+        end
+    end
+
+    # Convolve in y (periodic) into bathy_smoothed
+    for i in 1:Nx
+        for j in 1:Ny
+            s = 0.0
+            for (jj, wt) in enumerate(ky)
+                offset = jj - (hy + 1)
+                idy = j + offset
+                if idy < 1
+                    idy += Ny
+                elseif idy > Ny
+                    idy -= Ny
+                end
+                s += wt * tmp[i, idy]
+            end
+            bathy_smoothed[i, j] = s
+        end
+    end
+
+    return bathy_smoothed
+end
+
+
+function make_grid(architecture, Nx, Ny, Nz, z_faces)
 
     underlying_grid = RectilinearGrid(architecture,
         topology = (Periodic, Bounded, Bounded),
@@ -57,13 +122,16 @@ function make_grid(architecture, Nx, Ny, Nz, Δz_center)
 
     # Make into a ridge array:
     ridge = Field{Center, Center, Nothing}(underlying_grid)
+    smoothed_ridge = Field{Center, Center, Nothing}(underlying_grid)
     set!(ridge, ridge_function)
 
-    grid = ImmersedBoundaryGrid(underlying_grid, PartialCellBottom(ridge))
+    gaussian_smooth_bathy!(smoothed_ridge, ridge, underlying_grid.Δxᶜᵃᵃ, underlying_grid.Δyᵃᶜᵃ, 2*underlying_grid.Δxᶜᵃᵃ)
+
+    grid = ImmersedBoundaryGrid(underlying_grid, PartialCellBottom(smoothed_ridge))
     return grid
 end
 
-grid = make_grid(CPU(), Nx, Ny, Nz, Δz_center)
+grid = make_grid(CPU(), Nx, Ny, Nz, z_faces)
 
 bottom_height = data1["bottom_height"]
 T_init        = data1["T_init"]

@@ -113,10 +113,74 @@ parameters = (
 
 # full ridge function:
 function ridge_function(x, y)
-    zonal = (Lz+300)exp(-(x - Lx/2)^2/(1e6kilometers))
+    zonal = (Lz+2800)exp(-(x - Lx/2)^2/(1e6kilometers))
     gap   = 1 - 0.5(tanh((y - (Ly/6))/1e5) - tanh((y - (Ly/2))/1e5))
     return zonal * gap - Lz
 end
+
+# bathy: 2D Array{Float64}(Nx, Ny) at cell centers
+# Δx, Δy: grid spacing in meters (assume uniform)
+# sigma_m: smoothing sigma in meters (e.g., 2*Δx for ~2-cell smoothing)
+# periodic: assume periodic in both x and y (typical re-entrant)
+function gaussian_smooth_bathy!(bathy_smoothed, bathy, Δx, Δy, sigma_m)
+    Nx, Ny = size(bathy)
+    # 1D sigma in grid cells
+    σx = sigma_m / Δx
+    σy = sigma_m / Δy
+
+    # Choose kernel half-width in cells (truncate at ~4σ)
+    hx = max(1, Int(ceil(4*σx)))
+    hy = max(1, Int(ceil(4*σy)))
+
+    # Build 1D kernel in x and y (normalized)
+    kx = [exp(-0.5 * (i/σx)^2) for i in -hx:hx]
+    ky = [exp(-0.5 * (j/σy)^2) for j in -hy:hy]
+    kx ./= sum(kx)
+    ky ./= sum(ky)
+
+    # Temporary array for intermediate result (x-smoothed)
+    tmp = similar(bathy)
+
+    # Convolve in x (periodic)
+    for j in 1:Ny
+        for i in 1:Nx
+            s = 0.0
+            for (ii, wt) in enumerate(kx)
+                offset = ii - (hx + 1)  # -hx: +hx
+                idx = i + offset
+                # periodic wrap
+                if idx < 1
+                    idx += Nx
+                elseif idx > Nx
+                    idx -= Nx
+                end
+                s += wt * bathy[idx, j]
+            end
+            tmp[i, j] = s
+        end
+    end
+
+    # Convolve in y (periodic) into bathy_smoothed
+    for i in 1:Nx
+        for j in 1:Ny
+            s = 0.0
+            for (jj, wt) in enumerate(ky)
+                offset = jj - (hy + 1)
+                idy = j + offset
+                if idy < 1
+                    idy += Ny
+                elseif idy > Ny
+                    idy -= Ny
+                end
+                s += wt * tmp[i, idy]
+            end
+            bathy_smoothed[i, j] = s
+        end
+    end
+
+    return bathy_smoothed
+end
+
 
 function make_grid(architecture, Nx, Ny, Nz, z_faces)
 
@@ -130,9 +194,12 @@ function make_grid(architecture, Nx, Ny, Nz, z_faces)
 
     # Make into a ridge array:
     ridge = Field{Center, Center, Nothing}(underlying_grid)
+    smoothed_ridge = Field{Center, Center, Nothing}(underlying_grid)
     set!(ridge, ridge_function)
 
-    grid = ImmersedBoundaryGrid(underlying_grid, PartialCellBottom(ridge))
+    @allowscalar gaussian_smooth_bathy!(smoothed_ridge, ridge, underlying_grid.Δxᶜᵃᵃ, underlying_grid.Δyᵃᶜᵃ, 2*underlying_grid.Δxᶜᵃᵃ)
+
+    grid = ImmersedBoundaryGrid(underlying_grid, PartialCellBottom(smoothed_ridge))
     return grid
 end
 
@@ -200,18 +267,16 @@ function build_model(grid, Δt₀, parameters)
 
     # closure (moderately elevating scalar visc/diff)
 
-    κh = 2e-5 #0.5e-5 # [m²/s] horizontal diffusivity
-    νh = 100 #30.0   # [m²/s] horizontal viscocity
-    κz = 1e-5 #0.5e-5 # [m²/s] vertical diffusivity
-    νz = 1e-3 #3e-4   # [m²/s] vertical viscocity
+    κh = 5e-5 #0.5e-5 # [m²/s] horizontal diffusivity
+    νh = 500 #30.0   # [m²/s] horizontal viscocity
+    κz = 5e-5 #0.5e-5 # [m²/s] vertical diffusivity
+    νz = 3e-3 #3e-4   # [m²/s] vertical viscocity
 
     horizontal_closure = HorizontalScalarDiffusivity(ν = νh, κ = κh)
     vertical_closure = VerticalScalarDiffusivity(ν = νz, κ = κz)
 
     biharmonic_closure = ScalarBiharmonicDiffusivity(HorizontalFormulation(), Oceananigans.defaults.FloatType;
                                                      ν = 1e11)
-
-    vertical_closure_CATKE = CATKEVerticalDiffusivity()
 
     @info "Building a model..."
 
@@ -222,7 +287,7 @@ function build_model(grid, Δt₀, parameters)
         tracer_advection = Centered(order=4),
         buoyancy = SeawaterBuoyancy(equation_of_state=SeawaterPolynomials.TEOS10EquationOfState(Oceananigans.defaults.FloatType),constant_salinity=35),
         coriolis = coriolis,
-        closure = (horizontal_closure, vertical_closure, vertical_closure_CATKE),
+        closure = (horizontal_closure, vertical_closure), #, biharmonic_closure),
         tracers = (:T, :e),
         boundary_conditions = (T = T_bcs, u = u_bcs, v = v_bcs),
         forcing = (T = FT,) #, u = filter_u, v = filter_v)
@@ -361,7 +426,7 @@ compile_toc = time() - tic
 
 using FileIO, JLD2
 
-graph_directory = "run_abernathy_model_ad_900steps_mildVisc_CenteredOrder4_partialCell/"
+graph_directory = "run_abernathy_model_ad_900steps_noCATKE_moderateVisc_CenteredOrder4_partialCell_vSmoothedRidge/"
 filename        = graph_directory * "data_init.jld2"
 
 if !isdir(graph_directory) Base.Filesystem.mkdir(graph_directory) end

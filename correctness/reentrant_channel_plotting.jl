@@ -6,7 +6,7 @@ using GLMakie
 #
 
 
-graph_directory = "run_abernathy_model_ad_900steps_mildVisc_CenteredOrder4_partialCell/"
+graph_directory = "run_abernathy_model_ad_900steps_noCATKE_moderateVisc_CenteredOrder4_partialCell_vSmoothedRidge/"
 
 data1 = jldopen(graph_directory * "data_init.jld2", "r")
 
@@ -85,7 +85,13 @@ save(graph_directory * "init_T_meridional.png", fig)
 
 
 # Ridge:
+min_h = minimum(bottom_height[1:Nx,1:Ny])
+max_h = maximum(bottom_height[1:Nx,1:Ny])
+
+@show max_h
+
 fig, ax, hm = heatmap(view(bottom_height, 1:Nx, 1:Ny),
+                      colorrange = (min_h, max_h),
                       colormap = :deep,
                       axis = (xlabel = "x [indices]",
                               ylabel = "y [indices]",
