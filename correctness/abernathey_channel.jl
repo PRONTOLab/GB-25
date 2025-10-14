@@ -256,20 +256,8 @@ function build_model(grid, Δt₀, parameters)
     
         return -1 / timescale * mask(y, p) * (T - target_T)
     end
-
-    @inline function smooth2D_filter_u(i, j, k, grid, clock, model_fields)
-        α = 0.05
-        return (1 - 4α) * model_fields.u[i,j,k] + α * (model_fields.u[i+1,j,k] + model_fields.u[i-1,j,k] + model_fields.u[i,j+1,k] + model_fields.u[i,j-1,k])
-    end
-
-    @inline function smooth2D_filter_v(i, j, k, grid, clock, model_fields)
-        α = 0.05
-        return (1 - 4α) * model_fields.v[i,j,k] + α * (model_fields.v[i+1,j,k] + model_fields.v[i-1,j,k] + model_fields.v[i,j+1,k] + model_fields.v[i,j-1,k])
-    end
     
-    FT       = Forcing(temperature_relaxation, discrete_form = true, parameters = parameters)
-    #filter_u = Forcing(smooth2D_filter_u, discrete_form = true)
-    #filter_v = Forcing(smooth2D_filter_v, discrete_form = true)
+    FT = Forcing(temperature_relaxation, discrete_form = true, parameters = parameters)
 
     # closure (moderately elevating scalar visc/diff)
 
@@ -298,8 +286,8 @@ function build_model(grid, Δt₀, parameters)
         coriolis = coriolis,
         closure = (horizontal_closure, vertical_closure, biharmonic_closure),
         tracers = (:T, :S, :e),
-        boundary_conditions = (T = T_bcs, u = u_bcs, v = v_bcs),
-        forcing = (T = FT,) #, u = filter_u, v = filter_v)
+        boundary_conditions = (u = u_bcs, v = v_bcs),
+        forcing = (T = FT,)
     )
 
     model.clock.last_Δt = Δt₀
@@ -342,7 +330,7 @@ end
 
 function spinup_loop!(model)
     Δt = model.clock.last_Δt
-    @trace mincut = true track_numbers = false for i = 1:2000000
+    @trace mincut = true track_numbers = false for i = 1:1000
         time_step!(model, Δt)
     end
     return nothing
@@ -371,7 +359,7 @@ end
 
 function loop!(model)
     Δt = model.clock.last_Δt
-    @trace mincut = true checkpointing = true track_numbers = false for i = 1:4900
+    @trace mincut = true checkpointing = true track_numbers = false for i = 1:900
         time_step!(model, Δt)
     end
     return nothing
@@ -469,7 +457,7 @@ compile_toc = time() - tic
 
 using FileIO, JLD2
 
-graph_directory = "run_abernathy_model_ad_spinup2000000_4900steps_noCATKE_moderateVisc_CenteredOrder4_partialCell_wallRidge_biharmonic/"
+graph_directory = "run_abernathy_model_ad_spinup2000000_4900steps_noCATKE_moderateVisc_CenteredOrder4_partialCell_wallRidge_biharmonic_noSurfaceTempFlux/"
 filename        = graph_directory * "data_init.jld2"
 
 if !isdir(graph_directory) Base.Filesystem.mkdir(graph_directory) end
@@ -481,15 +469,6 @@ else
     set!(bottom_height, -Lz)
 end
 
-jldsave(filename; Nx, Ny, Nz,
-                  bottom_height=convert(Array, interior(bottom_height)),
-                  T_init=convert(Array, interior(model.tracers.T)),
-                  e_init=convert(Array, interior(model.tracers.e)),
-                  u_wind_stress=convert(Array, interior(u_wind_stress)),
-                  v_wind_stress=convert(Array, interior(v_wind_stress)),
-                  dkappaT_init=convert(Array, interior(dmodel.closure[2].κ[1])),
-                  dkappaS_init=convert(Array, interior(dmodel.closure[2].κ[2])))
-
 # Spinup the model for a sufficient amount of time, save the T and S from this state:
 tic = time()
 rspinup_reentrant_channel_model!(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress)
@@ -497,6 +476,16 @@ rspinup_reentrant_channel_model!(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress
 @allowscalar set!(Sᵢ, model.tracers.S)
 spinup_toc = time() - tic
 @show spinup_toc
+
+jldsave(filename; Nx, Ny, Nz,
+                  bottom_height=convert(Array, interior(bottom_height)),
+                  T_init=convert(Array, interior(model.tracers.T)),
+                  S_init=convert(Array, interior(model.tracers.S)),
+                  e_init=convert(Array, interior(model.tracers.e)),
+                  u_wind_stress=convert(Array, interior(u_wind_stress)),
+                  v_wind_stress=convert(Array, interior(v_wind_stress)),
+                  dkappaT_init=convert(Array, interior(dmodel.closure[2].κ[1])),
+                  dkappaS_init=convert(Array, interior(dmodel.closure[2].κ[2])))
 
 tic = time()
 #output = restimate_tracer_error(model, Tᵢ, u_wind_stress, v_wind_stress, Δz, mld)
