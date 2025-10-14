@@ -298,7 +298,7 @@ end
 
 function loop!(model)
     Δt = model.clock.last_Δt
-    @trace mincut = true checkpointing = true track_numbers = false for i = 1:4900
+    @trace mincut = true checkpointing = true track_numbers = false for i = 1:900
         time_step!(model, Δt)
     end
     return nothing
@@ -401,7 +401,7 @@ compile_toc = time() - tic
 
 using FileIO, JLD2
 
-graph_directory = "run_abernathy_model_ad_spinup2000000_4900steps_noCATKE_moderateVisc_CenteredOrder4_partialCell_wallRidge_biharmonic/"
+graph_directory = "run_abernathy_model_ad_spinup0_900steps_noCATKE_moderateVisc_CenteredOrder4_partialCell_wallRidge_biharmonic/"
 filename        = graph_directory * "data_init.jld2"
 
 if !isdir(graph_directory) Base.Filesystem.mkdir(graph_directory) end
@@ -415,9 +415,9 @@ end
 
 # Spinup the model for a sufficient amount of time, save the T and S from this state:
 tic = time()
-rspinup_reentrant_channel_model!(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux)
-@allowscalar set!(Tᵢ, model.tracers.T)
-@allowscalar set!(Sᵢ, model.tracers.S)
+#rspinup_reentrant_channel_model!(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux)
+#@allowscalar set!(Tᵢ, model.tracers.T)
+#@allowscalar set!(Sᵢ, model.tracers.S)
 spinup_toc = time() - tic
 @show spinup_toc
 
@@ -433,7 +433,7 @@ jldsave(filename; Nx, Ny, Nz,
                   T_flux=convert(Array, interior(T_flux)))
 
 tic = time()
-#output = restimate_tracer_error(model, Tᵢ, u_wind_stress, v_wind_stress, Δz, mld)
+#output = restimate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux, Δz, mld)
 dedν, du_wind_stress, dTᵢ = rdifferentiate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux, Δz, mld, dmodel, dTᵢ, dSᵢ, du_wind_stress, dv_wind_stress, dT_flux, dΔz, dmld)
 run_toc = time() - tic
 
@@ -464,3 +464,53 @@ jldsave(filename; Nx, Ny, Nz,
                   dT_flux=convert(Array, interior(dT_flux)))
 
 @allowscalar @show argmax(abs.(dTᵢ))
+
+#
+# Loop of FD results for comparison:
+#
+i_range = [21, 22, 23, 24, 25, 26, 27, 28]
+j_range = [45, 46, 47, 48, 49, 50, 51, 52]
+
+epsilon_range = [1e-2, 1e-4, 1e-6]
+
+for i = 21:28
+    for j = 45:52
+
+        @show i, j
+        @allowscalar @show dTᵢ[i, j, 1]
+
+        for eps in epsilon_range
+            # Reset everything to 0:
+            model_fd = build_model(grid, Δt₀, parameters)
+            
+            # Set new T and S init fields for FD:
+            Tᵢ_fd, Sᵢ_fd = temperature_salinity_init(model_fd.grid, parameters)
+
+            # Permute the model field at i,j,1
+            @allowscalar Tᵢ_fd[i, j, 1] = Tᵢ_fd[i, j, 1] + eps
+
+            outputP = restimate_tracer_error(model_fd, Tᵢ_fd, Sᵢ_fd, u_wind_stress, v_wind_stress, T_flux, Δz, mld)
+
+            # Reset everything to 0:
+            model_fd = build_model(grid, Δt₀, parameters)
+            
+            # Set new T and S init fields for FD:
+            Tᵢ_fd, Sᵢ_fd = temperature_salinity_init(model_fd.grid, parameters)
+
+            # Permute the model field at i,j,1
+            @allowscalar Tᵢ_fd[i, j, 1] = Tᵢ_fd[i, j, 1] - eps
+
+            outputM = restimate_tracer_error(model_fd, Tᵢ_fd, Sᵢ_fd, u_wind_stress, v_wind_stress, T_flux, Δz, mld)
+
+            dT_fd = (outputP - outputM) / (2eps)
+
+            @show eps, dT_fd
+
+            if i == 21
+                @show outputP, outputM
+            end
+        end
+    end
+end
+
+            
