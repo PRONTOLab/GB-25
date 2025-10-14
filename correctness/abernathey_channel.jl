@@ -124,69 +124,6 @@ function wall_function(x, y)
     return (Lz+1) * zonal * gap - Lz
 end
 
-# bathy: 2D Array{Float64}(Nx, Ny) at cell centers
-# Δx, Δy: grid spacing in meters (assume uniform)
-# sigma_m: smoothing sigma in meters (e.g., 2*Δx for ~2-cell smoothing)
-# periodic: assume periodic in both x and y (typical re-entrant)
-function gaussian_smooth_bathymetry!(bathy_smoothed, bathy, Δx, Δy, sigma_m)
-    Nx, Ny = size(bathy)
-    # 1D sigma in grid cells
-    σx = sigma_m / Δx
-    σy = sigma_m / Δy
-
-    # Choose kernel half-width in cells (truncate at ~4σ)
-    hx = max(1, Int(ceil(4*σx)))
-    hy = max(1, Int(ceil(4*σy)))
-
-    # Build 1D kernel in x and y (normalized)
-    kx = [exp(-0.5 * (i/σx)^2) for i in -hx:hx]
-    ky = [exp(-0.5 * (j/σy)^2) for j in -hy:hy]
-    kx ./= sum(kx)
-    ky ./= sum(ky)
-
-    # Temporary array for intermediate result (x-smoothed)
-    tmp = similar(bathy)
-
-    # Convolve in x (periodic)
-    for j in 1:Ny
-        for i in 1:Nx
-            s = 0.0
-            for (ii, wt) in enumerate(kx)
-                offset = ii - (hx + 1)  # -hx: +hx
-                idx = i + offset
-                # periodic wrap
-                if idx < 1
-                    idx += Nx
-                elseif idx > Nx
-                    idx -= Nx
-                end
-                s += wt * bathy[idx, j]
-            end
-            tmp[i, j] = s
-        end
-    end
-
-    # Convolve in y (periodic) into bathy_smoothed
-    for i in 1:Nx
-        for j in 1:Ny
-            s = 0.0
-            for (jj, wt) in enumerate(ky)
-                offset = jj - (hy + 1)
-                idy = j + offset
-                if idy < 1
-                    idy += Ny
-                elseif idy > Ny
-                    idy -= Ny
-                end
-                s += wt * tmp[i, idy]
-            end
-            bathy_smoothed[i, j] = s
-        end
-    end
-
-    return bathy_smoothed
-end
-
 
 function make_grid(architecture, Nx, Ny, Nz, z_faces)
 
@@ -203,8 +140,6 @@ function make_grid(architecture, Nx, Ny, Nz, z_faces)
     smoothed_ridge = Field{Center, Center, Nothing}(underlying_grid)
     set!(ridge, wall_function)
 
-    #@allowscalar gaussian_smooth_bathymetry!(smoothed_ridge, ridge, underlying_grid.Δxᶜᵃᵃ, underlying_grid.Δyᵃᶜᵃ, 2*underlying_grid.Δxᶜᵃᵃ)
-
     grid = ImmersedBoundaryGrid(underlying_grid, PartialCellBottom(ridge))
     return grid
 end
@@ -215,12 +150,7 @@ end
 
 function build_model(grid, Δt₀, parameters)
 
-    @inline function temperature_flux(i, j, grid, clock, model_fields, p)
-        y = ynode(j, grid, Center())
-        return ifelse(y < p.y_shutoff, p.Qᵀ * cos(3π * y / p.Ly), 0.0)
-    end
-
-    temperature_flux_bc = FluxBoundaryCondition(temperature_flux, discrete_form = true, parameters = parameters)
+    temperature_flux_bc = FluxBoundaryCondition(Field{Center, Center, Nothing}(grid))
 
     u_stress_bc = FluxBoundaryCondition(Field{Face, Center, Nothing}(grid))
     v_stress_bc = FluxBoundaryCondition(Field{Center, Face, Nothing}(grid))
@@ -286,7 +216,7 @@ function build_model(grid, Δt₀, parameters)
         coriolis = coriolis,
         closure = (horizontal_closure, vertical_closure, biharmonic_closure),
         tracers = (:T, :S, :e),
-        boundary_conditions = (u = u_bcs, v = v_bcs),
+        boundary_conditions = (T = T_bcs, u = u_bcs, v = v_bcs),
         forcing = (T = FT,)
     )
 
@@ -298,6 +228,14 @@ end
 #####
 ##### Special initial and boundary conditions
 #####
+
+# Temperature flux:
+function T_flux_init(grid, p)
+    @inline temp_flux_function(x, y) = ifelse(y < p.y_shutoff, p.Qᵀ * cos(3π * y / p.Ly), 0.0)
+    temp_flux = Field{Center, Center, Nothing}(grid)
+    @allowscalar set!(temp_flux, temp_flux_function)
+    return temp_flux
+end
 
 # wind stress:
 function u_wind_stress_init(grid, p)
@@ -330,18 +268,19 @@ end
 
 function spinup_loop!(model)
     Δt = model.clock.last_Δt
-    @trace mincut = true track_numbers = false for i = 1:1000
+    @trace mincut = true track_numbers = false for i = 1:2000000
         time_step!(model, Δt)
     end
     return nothing
 end
 
-function spinup_reentrant_channel_model!(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress)
+function spinup_reentrant_channel_model!(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, temp_flux)
     # setting IC's and BC's:
     set!(model.velocities.u.boundary_conditions.top.condition, u_wind_stress)
     set!(model.velocities.v.boundary_conditions.top.condition, v_wind_stress)
     set!(model.tracers.T, Tᵢ)
     set!(model.tracers.S, Sᵢ)
+    set!(model.tracers.T.boundary_conditions.top.condition, temp_flux)
 
     # Initialize the model
     model.clock.iteration = 0
@@ -359,18 +298,19 @@ end
 
 function loop!(model)
     Δt = model.clock.last_Δt
-    @trace mincut = true checkpointing = true track_numbers = false for i = 1:900
+    @trace mincut = true checkpointing = true track_numbers = false for i = 1:4900
         time_step!(model, Δt)
     end
     return nothing
 end
 
-function run_reentrant_channel_model!(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress)
+function run_reentrant_channel_model!(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, temp_flux)
     # setting IC's and BC's:
     set!(model.velocities.u.boundary_conditions.top.condition, u_wind_stress)
     set!(model.velocities.v.boundary_conditions.top.condition, v_wind_stress)
     set!(model.tracers.T, Tᵢ)
     set!(model.tracers.S, Sᵢ)
+    set!(model.tracers.T.boundary_conditions.top.condition, temp_flux)
 
     # Initialize the model
     model.clock.iteration = 0
@@ -382,8 +322,8 @@ function run_reentrant_channel_model!(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_s
     return nothing
 end
 
-function estimate_tracer_error(model, initial_temperature, initial_salinity, u_wind_stress, v_wind_stress, Δz, mld)
-    run_reentrant_channel_model!(model, initial_temperature, initial_salinity, u_wind_stress, v_wind_stress)
+function estimate_tracer_error(model, initial_temperature, initial_salinity, u_wind_stress, v_wind_stress, temp_flux, Δz, mld)
+    run_reentrant_channel_model!(model, initial_temperature, initial_salinity, u_wind_stress, v_wind_stress, temp_flux)
     
     Nx, Ny, Nz = size(model.grid)
 
@@ -397,8 +337,8 @@ function estimate_tracer_error(model, initial_temperature, initial_salinity, u_w
     return sum(zonal_transport) / 1e6 # Put it in Sverdrups
 end
 
-function differentiate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, Δz, mld,
-                                   dmodel, dTᵢ, dSᵢ, du_wind_stress, dv_wind_stress, dΔz, dmld)
+function differentiate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, temp_flux, Δz, mld,
+                                   dmodel, dTᵢ, dSᵢ, du_wind_stress, dv_wind_stress, dtemp_flux, dΔz, dmld)
 
     dedν = autodiff(set_strong_zero(Enzyme.ReverseWithPrimal),
                     estimate_tracer_error, Active,
@@ -407,6 +347,7 @@ function differentiate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_str
                     Duplicated(Sᵢ, dSᵢ),
                     Duplicated(u_wind_stress, du_wind_stress),
                     Duplicated(v_wind_stress, dv_wind_stress),
+                    Duplicated(temp_flux, dtemp_flux),
                     Duplicated(Δz, dΔz),
                     Duplicated(mld, dmld))
 
@@ -426,6 +367,7 @@ architecture = ReactantState() #GPU()
 # Make the grid:
 grid          = make_grid(architecture, Nx, Ny, Nz, z_faces)
 model         = build_model(grid, Δt₀, parameters)
+T_flux        = T_flux_init(model.grid, parameters)
 u_wind_stress = u_wind_stress_init(model.grid, parameters)
 v_wind_stress = v_wind_stress_init(model.grid, parameters)
 Tᵢ, Sᵢ        = temperature_salinity_init(model.grid, parameters)
@@ -439,6 +381,7 @@ dTᵢ            = Field{Center, Center, Center}(model.grid)
 dSᵢ            = Field{Center, Center, Center}(model.grid)
 du_wind_stress = Field{Face, Center, Nothing}(model.grid)
 dv_wind_stress = Field{Center, Face, Nothing}(model.grid)
+dT_flux        = Field{Center, Center, Nothing}(model.grid)
 dmld           = MixedLayerDepthField(dmodel.buoyancy, dmodel.grid, dmodel.tracers)
 dΔz            = Enzyme.make_zero(Δz)
 
@@ -446,9 +389,10 @@ dΔz            = Enzyme.make_zero(Δz)
 
 @info "Compiling the model run..."
 tic = time()
-rspinup_reentrant_channel_model! = @compile raise_first=true raise=true sync=true  spinup_reentrant_channel_model!(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress)
-#restimate_tracer_error = @compile raise_first=true raise=true compile_options=CompileOptions(; disable_auto_batching_passes=true) sync=true estimate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, Δz, mld)
-rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true  differentiate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, Δz, mld, dmodel, dTᵢ, dSᵢ, du_wind_stress, dv_wind_stress, dΔz, dmld)
+rspinup_reentrant_channel_model! = @compile raise_first=true raise=true sync=true  spinup_reentrant_channel_model!(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux)
+restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux, Δz, mld)
+rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true  differentiate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux, Δz, mld,
+                                                                                                        dmodel, dTᵢ, dSᵢ, du_wind_stress, dv_wind_stress, dT_flux, dΔz, dmld)
 compile_toc = time() - tic
 
 @show compile_toc
@@ -457,7 +401,7 @@ compile_toc = time() - tic
 
 using FileIO, JLD2
 
-graph_directory = "run_abernathy_model_ad_spinup2000000_4900steps_noCATKE_moderateVisc_CenteredOrder4_partialCell_wallRidge_biharmonic_noSurfaceTempFlux/"
+graph_directory = "run_abernathy_model_ad_spinup2000000_4900steps_noCATKE_moderateVisc_CenteredOrder4_partialCell_wallRidge_biharmonic/"
 filename        = graph_directory * "data_init.jld2"
 
 if !isdir(graph_directory) Base.Filesystem.mkdir(graph_directory) end
@@ -471,7 +415,7 @@ end
 
 # Spinup the model for a sufficient amount of time, save the T and S from this state:
 tic = time()
-rspinup_reentrant_channel_model!(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress)
+rspinup_reentrant_channel_model!(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux)
 @allowscalar set!(Tᵢ, model.tracers.T)
 @allowscalar set!(Sᵢ, model.tracers.S)
 spinup_toc = time() - tic
@@ -485,11 +429,12 @@ jldsave(filename; Nx, Ny, Nz,
                   u_wind_stress=convert(Array, interior(u_wind_stress)),
                   v_wind_stress=convert(Array, interior(v_wind_stress)),
                   dkappaT_init=convert(Array, interior(dmodel.closure[2].κ[1])),
-                  dkappaS_init=convert(Array, interior(dmodel.closure[2].κ[2])))
+                  dkappaS_init=convert(Array, interior(dmodel.closure[2].κ[2])),
+                  T_flux=convert(Array, interior(T_flux)))
 
 tic = time()
 #output = restimate_tracer_error(model, Tᵢ, u_wind_stress, v_wind_stress, Δz, mld)
-dedν, du_wind_stress, dTᵢ = rdifferentiate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, Δz, mld, dmodel, dTᵢ, dSᵢ, du_wind_stress, dv_wind_stress, dΔz, dmld)
+dedν, du_wind_stress, dTᵢ = rdifferentiate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux, Δz, mld, dmodel, dTᵢ, dSᵢ, du_wind_stress, dv_wind_stress, dT_flux, dΔz, dmld)
 run_toc = time() - tic
 
 @show run_toc
@@ -515,5 +460,7 @@ jldsave(filename; Nx, Ny, Nz,
                   dT=convert(Array, interior(dTᵢ)),
                   dS=convert(Array, interior(dSᵢ)),
                   dkappaT_final=convert(Array, interior(dmodel.closure[2].κ[1])),
-                  dkappaS_final=convert(Array, interior(dmodel.closure[2].κ[2])))
+                  dkappaS_final=convert(Array, interior(dmodel.closure[2].κ[2])),
+                  dT_flux=convert(Array, interior(dT_flux)))
 
+@allowscalar @show argmax(abs.(dTᵢ))

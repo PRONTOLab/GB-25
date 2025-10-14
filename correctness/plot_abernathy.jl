@@ -14,7 +14,7 @@ using Oceananigans.Grids: xnode, ynode, znode
 
 using Plots
 
-graph_directory = "run_abernathy_model_ad_spinup2000000_4900steps_noCATKE_moderateVisc_CenteredOrder4_partialCell_wallRidge_biharmonic_noSurfaceTempFlux/"
+graph_directory = "run_abernathy_model_ad_spinup2000000_4900steps_noCATKE_moderateVisc_CenteredOrder4_partialCell_wallRidge_biharmonic/"
 
 #
 # First we gather the data and create a grid for plotting purposes:
@@ -257,10 +257,12 @@ du_wind_stress = data2["du_wind_stress"]
 dv_wind_stress = data2["dv_wind_stress"]
 dT             = data2["dT"]
 dS             = data2["dS"]
+dT_flux        = data2["dT_flux"]
 close(data2)
 
 plot_variables(dT[:, j′, :], du_wind_stress[:,:,1], dv_wind_stress[:,:,1], xc, zc, xu, yu, xv, yv, "Initial Temperature Gradient (x, z)", "Initial Zonal Wind Stress Gradient (x, y)", "Initial Meridional Wind Stress Gradient (x, y)", graph_directory * "gradient_wind_stress.png")
 plot_variables(dT[:, j′, :], dT[:,:,grid.Nz], dT[:,:,1], xc, zc, xc, yc, xc, yc, "Initial Temperature Gradient (x, z)", "Initial Temperature Gradient (x, y, 0m)", "Initial Temperature Gradient (x, y, 2180m)", graph_directory * "gradient_temp.png")
+plot_variables(dT[:, j′, :], dT_flux[:,:,1], dT[:,:,14], xc, zc, xc, yc, xc, yc, "Initial Temperature Gradient (x, z)", "Initial Temperature Surface Flux Gradient (x, y)", "Initial Temperature Gradient (x, y, 116m)", graph_directory * "gradient_temp_flux.png")
 plot_variables(dS[:, j′, :], dS[:,:,grid.Nz], dS[:,:,1], xc, zc, xc, yc, xc, yc, "Initial Salinity Gradient (x, z)", "Initial Salinity Gradient (x, y, 0m)", "Initial Salinity Gradient (x, y, 2180m)", graph_directory * "gradient_salinity.png")
 
 plot_variables(dkappaT_init[:, j′, :], dkappaT_init[:,:,grid.Nz], dkappaT_init[:,:,1], xc, zc, xc, yc, xc, yc, "Initialized T Vertical Diffusivity Gradient (x, z)", "Initialized T Vertical Diffusivity Gradient  (x, y, 0m)", "Initialized T Vertical Diffusivity Gradient  (x, y, 2180m)", graph_directory * "gradient_kappaTinit.png")
