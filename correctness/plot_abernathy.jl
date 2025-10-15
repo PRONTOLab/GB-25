@@ -14,7 +14,7 @@ using Oceananigans.Grids: xnode, ynode, znode
 
 using Plots
 
-graph_directory = "run_abernathy_model_ad_spinup2000000_4900steps_noCATKE_moderateVisc_CenteredOrder4_partialCell_wallRidge_biharmonic/"
+graph_directory = "test/"
 
 #
 # First we gather the data and create a grid for plotting purposes:
@@ -39,74 +39,10 @@ const Lz = sum(Δz_center)
 z_faces = vcat([-Lz], -Lz .+ cumsum(Δz_center))
 z_faces[Nz+1] = 0
 
-# full ridge function:
-function ridge_function(x, y)
-    zonal = (Lz+3000)exp(-(x - Lx/2)^2/(1e6kilometers))
-    gap   = 1 - 0.5(tanh((y - (Ly/6))/1e5) - tanh((y - (Ly/2))/1e5))
-    return zonal * gap - Lz
-end
-
-# bathy: 2D Array{Float64}(Nx, Ny) at cell centers
-# Δx, Δy: grid spacing in meters (assume uniform)
-# sigma_m: smoothing sigma in meters (e.g., 2*Δx for ~2-cell smoothing)
-# periodic: assume periodic in both x and y (typical re-entrant)
-function gaussian_smooth_bathy!(bathy_smoothed, bathy, Δx, Δy, sigma_m)
-    Nx, Ny = size(bathy)
-    # 1D sigma in grid cells
-    σx = sigma_m / Δx
-    σy = sigma_m / Δy
-
-    # Choose kernel half-width in cells (truncate at ~4σ)
-    hx = max(1, Int(ceil(4*σx)))
-    hy = max(1, Int(ceil(4*σy)))
-
-    # Build 1D kernel in x and y (normalized)
-    kx = [exp(-0.5 * (i/σx)^2) for i in -hx:hx]
-    ky = [exp(-0.5 * (j/σy)^2) for j in -hy:hy]
-    kx ./= sum(kx)
-    ky ./= sum(ky)
-
-    # Temporary array for intermediate result (x-smoothed)
-    tmp = similar(bathy)
-
-    # Convolve in x (periodic)
-    for j in 1:Ny
-        for i in 1:Nx
-            s = 0.0
-            for (ii, wt) in enumerate(kx)
-                offset = ii - (hx + 1)  # -hx: +hx
-                idx = i + offset
-                # periodic wrap
-                if idx < 1
-                    idx += Nx
-                elseif idx > Nx
-                    idx -= Nx
-                end
-                s += wt * bathy[idx, j]
-            end
-            tmp[i, j] = s
-        end
-    end
-
-    # Convolve in y (periodic) into bathy_smoothed
-    for i in 1:Nx
-        for j in 1:Ny
-            s = 0.0
-            for (jj, wt) in enumerate(ky)
-                offset = jj - (hy + 1)
-                idy = j + offset
-                if idy < 1
-                    idy += Ny
-                elseif idy > Ny
-                    idy -= Ny
-                end
-                s += wt * tmp[i, idy]
-            end
-            bathy_smoothed[i, j] = s
-        end
-    end
-
-    return bathy_smoothed
+function wall_function(x, y)
+    zonal = (x > 470kilometers) && (x < 530kilometers)
+    gap   = (y < 400kilometers) || (y > 1000kilometers)
+    return (Lz+1) * zonal * gap - Lz
 end
 
 
@@ -123,11 +59,9 @@ function make_grid(architecture, Nx, Ny, Nz, z_faces)
     # Make into a ridge array:
     ridge = Field{Center, Center, Nothing}(underlying_grid)
     smoothed_ridge = Field{Center, Center, Nothing}(underlying_grid)
-    set!(ridge, ridge_function)
+    set!(ridge, wall_function)
 
-    gaussian_smooth_bathy!(smoothed_ridge, ridge, underlying_grid.Δxᶜᵃᵃ, underlying_grid.Δyᵃᶜᵃ, 2*underlying_grid.Δxᶜᵃᵃ)
-
-    grid = ImmersedBoundaryGrid(underlying_grid, PartialCellBottom(smoothed_ridge))
+    grid = ImmersedBoundaryGrid(underlying_grid, PartialCellBottom(ridge))
     return grid
 end
 
@@ -153,6 +87,8 @@ w = data2["w"]
 
 dkappaT_final = data2["dkappaT_final"]
 dkappaS_final = data2["dkappaS_final"]
+
+@show mean(wind_stress)
 
 #
 # Then we set up the node points:
