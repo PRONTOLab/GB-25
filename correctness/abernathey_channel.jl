@@ -317,17 +317,25 @@ end
 
 function loop!(model, u_wind_stress, random_field)
 
-    Δt = model.clock.last_Δt
-    @trace mincut = true track_numbers = false for i = 1:16
-        # Get some new randomness:
-        randn!(random_field)
+    rng           = Random.default_rng()  # don't use any other rng
+    Δt            = model.clock.last_Δt
+    steps_per_day = 288 #Int(floor(1day / Δt)) # number of timesteps per day, doesn't need to be exactly perfect
+
+    @trace mincut = true checkpointing = true track_numbers = false for i = 1:900
+
+        # Get some daily randomness:
+        # TODO: make day a 1-length array, modify its entry at each step, use it in Random.seed!
+        day = div(i - 1, steps_per_day)
+        Random.seed!(rng, day)
+        randn!(rng, random_field)
 
         # Add our wind stress to the randomness:
-        random_field .+= u_wind_stress
+        random_field .*= 1e-6
+        random_field .+= interior(u_wind_stress)
 
         # Modify the top BC so it's wind stress + randomness:
-        set!(model.velocities.u.boundary_conditions.top.condition, u_wind_stress)
-        #model.velocities.u.boundary_conditions.top.condition .+= random_field
+        #set!(model.velocities.u.boundary_conditions.top.condition, u_wind_stress)
+        set!(model.velocities.u.boundary_conditions.top.condition, random_field)
         time_step!(model, Δt)
     end
     return nothing
