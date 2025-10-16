@@ -1,13 +1,5 @@
 
-ENV["GKSwstype"] = "100"
-
-pushfirst!(LOAD_PATH, @__DIR__)
-
-using Printf
-using Statistics
 using Random
-
-
 using Reactant
 
 
