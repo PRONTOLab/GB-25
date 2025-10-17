@@ -279,53 +279,17 @@ end
 
 #@inline ε(σ) = σ * randn()
 
-function spinup_loop!(model, u_wind_stress)
-    # Here: randomize it a bit
-    #random_field = Field{Center, Center, Nothing}(model.grid)
-    random_array = 1e-6 .* randn(Nx, Ny, 1)
-
-    Δt = model.clock.last_Δt
-    @trace mincut = true track_numbers = false for i = 1:2000000
-
-        set!(model.velocities.u.boundary_conditions.top.condition, u_wind_stress .+ random_array)
-        time_step!(model, Δt)
-    end
-    return nothing
-end
-
-function spinup_reentrant_channel_model!(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, temp_flux)
-    # setting IC's and BC's:
-    set!(model.velocities.u.boundary_conditions.top.condition, u_wind_stress)
-    set!(model.velocities.v.boundary_conditions.top.condition, v_wind_stress)
-    set!(model.tracers.T, Tᵢ)
-    set!(model.tracers.S, Sᵢ)
-    set!(model.tracers.T.boundary_conditions.top.condition, temp_flux)
-
-    # Initialize the model
-    model.clock.iteration = 0
-    model.clock.time = 0
-
-    # Step it forward
-    spinup_loop!(model, u_wind_stress)
-
-    return nothing
-end
-
-#####
-##### Forward simulation (not actually using the Simulation struct)
-#####
-
-function loop!(model, u_wind_stress, random_field)
+function spinup_loop!(model, u_wind_stress, random_field, day)
 
     rng           = Random.default_rng()  # don't use any other rng
     Δt            = model.clock.last_Δt
     steps_per_day = 288 #Int(floor(1day / Δt)) # number of timesteps per day, doesn't need to be exactly perfect
 
-    @trace mincut = true checkpointing = true track_numbers = false for i = 1:900
+    @trace mincut = true checkpointing = true track_numbers = false for i = 1:2000160
 
         # Get some daily randomness:
         # TODO: make day a 1-length array, modify its entry at each step, use it in Random.seed!
-        day = div(i - 1, steps_per_day)
+        @allowscalar day[1] = div(i - 1, steps_per_day)
         Random.seed!(rng, day)
         randn!(rng, random_field)
 
@@ -341,7 +305,7 @@ function loop!(model, u_wind_stress, random_field)
     return nothing
 end
 
-function run_reentrant_channel_model!(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, temp_flux, random_field)
+function spinup_reentrant_channel_model!(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, temp_flux, random_field, day)
     # setting IC's and BC's:
     set!(model.velocities.u.boundary_conditions.top.condition, u_wind_stress)
     set!(model.velocities.v.boundary_conditions.top.condition, v_wind_stress)
@@ -354,13 +318,61 @@ function run_reentrant_channel_model!(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_s
     model.clock.time = 0
 
     # Step it forward
-    loop!(model, u_wind_stress, random_field)
+    loop!(model, u_wind_stress, random_field, day)
 
     return nothing
 end
 
-function estimate_tracer_error(model, initial_temperature, initial_salinity, u_wind_stress, v_wind_stress, temp_flux, Δz, mld, random_field)
-    run_reentrant_channel_model!(model, initial_temperature, initial_salinity, u_wind_stress, v_wind_stress, temp_flux, random_field)
+#####
+##### Forward simulation (not actually using the Simulation struct)
+#####
+
+function loop!(model, u_wind_stress, random_field, day)
+
+    rng           = Random.default_rng()  # don't use any other rng
+    Δt            = model.clock.last_Δt
+    steps_per_day = 288 #Int(floor(1day / Δt)) # number of timesteps per day, doesn't need to be exactly perfect
+
+    @trace mincut = true checkpointing = true track_numbers = false for i = 1:4900
+
+        # Get some daily randomness:
+        # TODO: make day a 1-length array, modify its entry at each step, use it in Random.seed!
+        @allowscalar day[1] = div(i - 1, steps_per_day)
+        Random.seed!(rng, day)
+        randn!(rng, random_field)
+
+        # Add our wind stress to the randomness:
+        random_field .*= 1e-6
+        random_field .+= interior(u_wind_stress)
+
+        # Modify the top BC so it's wind stress + randomness:
+        #set!(model.velocities.u.boundary_conditions.top.condition, u_wind_stress)
+        set!(model.velocities.u.boundary_conditions.top.condition, random_field)
+        time_step!(model, Δt)
+    end
+    return nothing
+end
+
+function run_reentrant_channel_model!(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, temp_flux, random_field, day)
+    # setting IC's and BC's:
+    set!(model.velocities.u.boundary_conditions.top.condition, u_wind_stress)
+    set!(model.velocities.v.boundary_conditions.top.condition, v_wind_stress)
+    set!(model.tracers.T, Tᵢ)
+    set!(model.tracers.S, Sᵢ)
+    set!(model.tracers.T.boundary_conditions.top.condition, temp_flux)
+
+    # Initialize the model
+    model.clock.iteration = 0
+    model.clock.time = 0
+
+    # Step it forward
+    loop!(model, u_wind_stress, random_field, day)
+
+    return nothing
+end
+
+function estimate_tracer_error(model, initial_temperature, initial_salinity, u_wind_stress, v_wind_stress, temp_flux, Δz, mld, random_field, day)
+    run_reentrant_channel_model!(model, initial_temperature, initial_salinity, u_wind_stress, v_wind_stress, temp_flux, random_field, day)
     
     Nx, Ny, Nz = size(model.grid)
 
@@ -374,8 +386,8 @@ function estimate_tracer_error(model, initial_temperature, initial_salinity, u_w
     return sum(zonal_transport) / 1e6 # Put it in Sverdrups
 end
 
-function differentiate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, temp_flux, Δz, mld, random_field,
-                                   dmodel, dTᵢ, dSᵢ, du_wind_stress, dv_wind_stress, dtemp_flux, dΔz, dmld, drandom_field)
+function differentiate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, temp_flux, Δz, mld, random_field, day,
+                                   dmodel, dTᵢ, dSᵢ, du_wind_stress, dv_wind_stress, dtemp_flux, dΔz, dmld, drandom_field, dday)
 
     dedν = autodiff(set_strong_zero(Enzyme.ReverseWithPrimal),
                     estimate_tracer_error, Active,
@@ -387,7 +399,8 @@ function differentiate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_str
                     Duplicated(temp_flux, dtemp_flux),
                     Duplicated(Δz, dΔz),
                     Duplicated(mld, dmld),
-                    Duplicated(random_field, drandom_field))
+                    Duplicated(random_field, drandom_field),
+                    Duplicated(day, dday))
 
     return dedν, du_wind_stress, dTᵢ
 end
@@ -411,7 +424,8 @@ v_wind_stress = v_wind_stress_init(model.grid, parameters)
 Tᵢ, Sᵢ        = temperature_salinity_init(model.grid, parameters)
 mld           = MixedLayerDepthField(model.buoyancy, model.grid, model.tracers)
 Δz            = Reactant.ConcreteRArray(Δz)
-random_field  = Reactant.to_rarray(zeros(Nx, Ny, 1)) #Field{Center, Center, Nothing}(model.grid)
+random_field  = Reactant.to_rarray(zeros(Nx, Ny, 1))
+day           = Reactant.to_rarray(zeros(1))
 
 @info "Built $model."
 
@@ -423,29 +437,15 @@ dv_wind_stress = Field{Center, Face, Nothing}(model.grid)
 dT_flux        = Field{Center, Center, Nothing}(model.grid)
 dmld           = MixedLayerDepthField(dmodel.buoyancy, dmodel.grid, dmodel.tracers)
 dΔz            = Enzyme.make_zero(Δz)
-drandom_field  = Reactant.to_rarray(zeros(Nx, Ny, 1)) #Field{Center, Center, Nothing}(model.grid)
-
-
-random_array = zeros(Nx, Ny, 1)
-
-@show typeof(random_array)
-@show maximum(random_array)
-
-random_array = Reactant.to_rarray(random_array)
-
-@allowscalar randn!(random_array)
-
-@show typeof(random_array)
-@allowscalar @show maximum(random_array)
-
-#set!(random_field, random_array)
+drandom_field  = Reactant.to_rarray(zeros(Nx, Ny, 1))
+dday           = Reactant.to_rarray(zeros(1))
 
 @info "Compiling the model run..."
 tic = time()
-#rspinup_reentrant_channel_model! = @compile raise_first=true raise=true sync=true  spinup_reentrant_channel_model!(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux)
-restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux, Δz, mld, random_field)
-rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true  differentiate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux, Δz, mld, random_field,
-                                                                                                        dmodel, dTᵢ, dSᵢ, du_wind_stress, dv_wind_stress, dT_flux, dΔz, dmld, drandom_field)
+rspinup_reentrant_channel_model! = @compile raise_first=true raise=true sync=true  spinup_reentrant_channel_model!(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux, random_field, day)
+restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux, Δz, mld, random_field, day)
+rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true  differentiate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux, Δz, mld, random_field, day,
+                                                                                                        dmodel, dTᵢ, dSᵢ, du_wind_stress, dv_wind_stress, dT_flux, dΔz, dmld, drandom_field, dday)
 compile_toc = time() - tic
 
 @show compile_toc
@@ -454,7 +454,7 @@ compile_toc = time() - tic
 
 using FileIO, JLD2
 
-graph_directory = "test/"
+graph_directory = "run_abernathy_model_ad_spinup2000000_4900steps_windStressNoise/"
 filename        = graph_directory * "data_init.jld2"
 
 if !isdir(graph_directory) Base.Filesystem.mkdir(graph_directory) end
@@ -468,9 +468,9 @@ end
 
 # Spinup the model for a sufficient amount of time, save the T and S from this state:
 tic = time()
-#rspinup_reentrant_channel_model!(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux)
-#@allowscalar set!(Tᵢ, model.tracers.T)
-#@allowscalar set!(Sᵢ, model.tracers.S)
+rspinup_reentrant_channel_model!(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux, random_field, day)
+@allowscalar set!(Tᵢ, model.tracers.T)
+@allowscalar set!(Sᵢ, model.tracers.S)
 spinup_toc = time() - tic
 @show spinup_toc
 
@@ -487,8 +487,8 @@ jldsave(filename; Nx, Ny, Nz,
 
 tic = time()
 #output = restimate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux, Δz, mld)
-dedν, du_wind_stress, dTᵢ = rdifferentiate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux, Δz, mld, random_field,
-                                                       dmodel, dTᵢ, dSᵢ, du_wind_stress, dv_wind_stress, dT_flux, dΔz, dmld, drandom_field)
+dedν, du_wind_stress, dTᵢ = rdifferentiate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux, Δz, mld, random_field, day,
+                                                       dmodel, dTᵢ, dSᵢ, du_wind_stress, dv_wind_stress, dT_flux, dΔz, dmld, drandom_field, dday)
 run_toc = time() - tic
 
 @show run_toc
