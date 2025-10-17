@@ -197,7 +197,17 @@ function build_model(grid, Δt₀, parameters)
     νz = 3e-3 #3e-4   # [m²/s] vertical viscocity
 
     κz_field = Field{Center, Center, Center}(grid)
-    set!(κz_field, κz)
+    κz_array = zeros(Nx, Ny, Nz)
+
+    κz_add = 5e-5  # m2/s at surface
+    decay_scale = 5   # layers
+    for k in 1:Nz
+        taper = exp(- (k-1) / decay_scale)
+        κz_array[:,:,k] .= κz + κz_add * taper
+    end
+    @show κz_array[1:2,20,:]
+
+    set!(κz_field, κz_array)
 
     horizontal_closure = HorizontalScalarDiffusivity(ν = νh, κ = κh)
     vertical_closure = VerticalScalarDiffusivity(ν = νz, κ = κz_field)
@@ -268,7 +278,7 @@ end
 
 function spinup_loop!(model)
     Δt = model.clock.last_Δt
-    @trace mincut = true track_numbers = false for i = 1:2000000
+    @trace mincut = true track_numbers = false for i = 1:5000
         time_step!(model, Δt)
     end
     return nothing
@@ -401,7 +411,7 @@ compile_toc = time() - tic
 
 using FileIO, JLD2
 
-graph_directory = "run_abernathy_model_ad_spinup0_900steps_noCATKE_moderateVisc_CenteredOrder4_partialCell_wallRidge_biharmonic/"
+graph_directory = "run_abernathy_model_ad_spinup5000_900steps_noCATKE_moderateVisc_CenteredOrder4_gridFittedBottom_wallRidge_biharmonic_scaledVerticalDiff/"
 filename        = graph_directory * "data_init.jld2"
 
 if !isdir(graph_directory) Base.Filesystem.mkdir(graph_directory) end
@@ -415,9 +425,9 @@ end
 
 # Spinup the model for a sufficient amount of time, save the T and S from this state:
 tic = time()
-#rspinup_reentrant_channel_model!(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux)
-#@allowscalar set!(Tᵢ, model.tracers.T)
-#@allowscalar set!(Sᵢ, model.tracers.S)
+rspinup_reentrant_channel_model!(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux)
+@allowscalar set!(Tᵢ, model.tracers.T)
+@allowscalar set!(Sᵢ, model.tracers.S)
 spinup_toc = time() - tic
 @show spinup_toc
 
@@ -463,6 +473,7 @@ jldsave(filename; Nx, Ny, Nz,
                   dkappaS_final=convert(Array, interior(dmodel.closure[2].κ[2])),
                   dT_flux=convert(Array, interior(dT_flux)))
 
+#=
 @allowscalar @show argmax(abs.(dTᵢ))
 
 #
@@ -512,5 +523,5 @@ for i = 21:28
         end
     end
 end
-
+=#
             
