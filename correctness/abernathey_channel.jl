@@ -220,8 +220,8 @@ function build_model(grid, Δt₀, parameters)
     model = HydrostaticFreeSurfaceModel(
         grid = grid,
         free_surface = SplitExplicitFreeSurface(substeps=10),
-        momentum_advection = Centered(order=4),
-        tracer_advection = Centered(order=4),
+        momentum_advection = WENO(order=3), #Centered(order=4),
+        tracer_advection = WENO(order=3), #Centered(order=4),
         buoyancy = SeawaterBuoyancy(equation_of_state=SeawaterPolynomials.TEOS10EquationOfState(Oceananigans.defaults.FloatType)),
         coriolis = coriolis,
         closure = (horizontal_closure, vertical_closure, biharmonic_closure),
@@ -411,7 +411,7 @@ compile_toc = time() - tic
 
 using FileIO, JLD2
 
-graph_directory = "run_abernathy_model_ad_spinup5000_900steps_noCATKE_moderateVisc_CenteredOrder4_gridFittedBottom_wallRidge_biharmonic_scaledVerticalDiff/"
+graph_directory = "run_abernathy_model_ad_spinup5000_900steps_noCATKE_moderateVisc_WENOOrder3_gridFittedBottom_wallRidge_biharmonic_scaledVerticalDiff/"
 filename        = graph_directory * "data_init.jld2"
 
 if !isdir(graph_directory) Base.Filesystem.mkdir(graph_directory) end
