@@ -14,7 +14,7 @@ using Oceananigans.Grids: xnode, ynode, znode
 
 using Plots
 
-graph_directory = "run_abernathy_model_ad_spinup5000_900steps_noCATKE_moderateVisc_WENOOrder3_gridFittedBottom_wallRidge_biharmonic_scaledVerticalDiff/"
+graph_directory = "run_abernathy_model_ad_spinup2000000_4900steps_noCATKE_moderateVisc_WENOOrder3_gridFittedBottom_wallRidge_biharmonic_scaledVerticalDiff/"
 
 #
 # First we gather the data and create a grid for plotting purposes:
@@ -73,8 +73,8 @@ T_init        = data1["T_init"]
 e_init        = data1["e_init"]
 wind_stress   = data1["u_wind_stress"]
 
-dkappaT_init = data1["dkappaT_init"]
-dkappaS_init = data1["dkappaS_init"]
+#dkappaT_init = data1["dkappaT_init"]
+#dkappaS_init = data1["dkappaS_init"]
 
 data2 = jldopen(graph_directory * "data_final.jld2", "r")
 
@@ -87,8 +87,8 @@ u = data2["u"]
 v = data2["v"]
 w = data2["w"]
 
-dkappaT_final = data2["dkappaT_final"]
-dkappaS_final = data2["dkappaS_final"]
+#dkappaT_final = data2["dkappaT_final"]
+#dkappaS_final = data2["dkappaS_final"]
 
 #
 # Then we set up the node points:
@@ -229,38 +229,38 @@ plot_variables(dT[:, j′, :], dT[:,:,grid.Nz], dT[:,:,1], xc, zc, xc, yc, xc, y
 plot_variables(dS[:, j′, :], dS[:,:,grid.Nz], dS[:,:,1], xc, zc, xc, yc, xc, yc, "Initial Salinity Gradient (x, z)", "Initial Salinity Gradient (x, y, 0m)", "Initial Salinity Gradient (x, y, 2180m)", graph_directory * "gradient_salinity.png")
 
 #plot_variables(dkappaT_init[:, j′, :], dkappaT_init[:,:,grid.Nz], dkappaT_init[:,:,1], xc, zc, xc, yc, xc, yc, "Initialized T Vertical Diffusivity Gradient (x, z)", "Initialized T Vertical Diffusivity Gradient  (x, y, 0m)", "Initialized T Vertical Diffusivity Gradient  (x, y, 2180m)", graph_directory * "gradient_kappaTinit.png")
-plot_variables(dkappaT_final[:, j′, :], dkappaT_final[:,:,grid.Nz], dkappaT_final[:,:,1], xc, zc, xc, yc, xc, yc, "T Vertical Diffusivity Gradient (x, z)", "T Vertical Diffusivity Gradient  (x, y, 0m)", "T Vertical Diffusivity Gradient  (x, y, 2180m)", graph_directory * "gradient_kappaT.png")
+#plot_variables(dkappaT_final[:, j′, :], dkappaT_final[:,:,grid.Nz], dkappaT_final[:,:,1], xc, zc, xc, yc, xc, yc, "T Vertical Diffusivity Gradient (x, z)", "T Vertical Diffusivity Gradient  (x, y, 0m)", "T Vertical Diffusivity Gradient  (x, y, 2180m)", graph_directory * "gradient_kappaT.png")
 
 #plot_variables(dkappaS_init[:, j′, :], dkappaS_init[:,:,grid.Nz], dkappaS_init[:,:,1], xc, zc, xc, yc, xc, yc, "Initialized S Vertical Diffusivity Gradient (x, z)", "Initialized S Vertical Diffusivity Gradient  (x, y, 0m)", "Initialized S Vertical Diffusivity Gradient  (x, y, 2180m)", graph_directory * "gradient_kappaSinit.png")
-plot_variables(dkappaS_final[:, j′, :], dkappaS_final[:,:,grid.Nz], dkappaS_final[:,:,1], xc, zc, xc, yc, xc, yc, "S Vertical Diffusivity Gradient (x, z)", "S Vertical Diffusivity Gradient  (x, y, 0m)", "S Vertical Diffusivity Gradient  (x, y, 2180m)", graph_directory * "gradient_kappaS.png")
+#plot_variables(dkappaS_final[:, j′, :], dkappaS_final[:,:,grid.Nz], dkappaS_final[:,:,1], xc, zc, xc, yc, xc, yc, "S Vertical Diffusivity Gradient (x, z)", "S Vertical Diffusivity Gradient  (x, y, 0m)", "S Vertical Diffusivity Gradient  (x, y, 2180m)", graph_directory * "gradient_kappaS.png")
 
 plot_variables(T_final[:, j′, :], T_final[:, :, 31], T_final[:, :, 28], xc, zc, xc, yc, xc, yc, "T(x, z)", "T(x, y, 15m)", "T(x, y, 54m)", graph_directory * "final_T_15and54m.png"; p1_min=true, p2_min=true, p3_min=true, shared=true, color=:thermal)
 plot_variables(S_final[:, j′, :], S_final[:, :, 31], S_final[:, :, 28], xc, zc, xc, yc, xc, yc, "S(x, z)", "S(x, y, 15m)", "S(x, y, 54m)", graph_directory * "final_S_15and54m.png"; color=:haline)
 plot_variables(dT[:, j′, :], dT[:, :, 31], dT[:, :, 28], xc, zc, xc, yc, xc, yc, "Initial Temperature Gradient (x, z)", "Initial Temperature Gradient (x, y, 15m)", "Initial Temperature Gradient (x, y, 54m)", graph_directory * "dT_15and54m.png")
 plot_variables(dS[:, j′, :], dS[:, :, 31], dS[:, :, 28], xc, zc, xc, yc, xc, yc, "Initial Salinity Gradient (x, z)", "Initial Salinity Gradient (x, y, 15m)", "Initial Salinity Gradient (x, y, 54m)", graph_directory * "dS_15and54m.png")
-plot_variables(dkappaT_final[:, j′, :], dkappaT_final[:, :, 31], dkappaT_final[:, :, 28], xc, zc, xc, yc, xc, yc, "T Vertical Diffusivity Gradient (x, z)", "T Vertical Diffusivity Gradient (x, y, 15m)", "T Vertical Diffusivity Gradient (x, y, 54m)", graph_directory * "dkappa_T_15and54m.png")
-plot_variables(dkappaS_final[:, j′, :], dkappaS_final[:, :, 31], dkappaS_final[:, :, 28], xc, zc, xc, yc, xc, yc, "S Vertical Diffusivity Gradient (x, z)", "S Vertical Diffusivity Gradient (x, y, 15m)", "S Vertical Diffusivity Gradient (x, y, 54m)", graph_directory * "dkappa_S_15and54m.png")
+#plot_variables(dkappaT_final[:, j′, :], dkappaT_final[:, :, 31], dkappaT_final[:, :, 28], xc, zc, xc, yc, xc, yc, "T Vertical Diffusivity Gradient (x, z)", "T Vertical Diffusivity Gradient (x, y, 15m)", "T Vertical Diffusivity Gradient (x, y, 54m)", graph_directory * "dkappa_T_15and54m.png")
+#plot_variables(dkappaS_final[:, j′, :], dkappaS_final[:, :, 31], dkappaS_final[:, :, 28], xc, zc, xc, yc, xc, yc, "S Vertical Diffusivity Gradient (x, z)", "S Vertical Diffusivity Gradient (x, y, 15m)", "S Vertical Diffusivity Gradient (x, y, 54m)", graph_directory * "dkappa_S_15and54m.png")
 
 
 plot_variables(T_final[:, j′, :], T_final[:, :, 25], T_final[:, :, 14], xc, zc, xc, yc, xc, yc, "T(x, z)", "T(x, y, 106m)", "T(x, y, 504m)", graph_directory * "final_T_106and504m.png"; p1_min=true, p2_min=true, p3_min=true, shared=true, color=:thermal)
 plot_variables(S_final[:, j′, :], S_final[:, :, 25], S_final[:, :, 14], xc, zc, xc, yc, xc, yc, "S(x, z)", "S(x, y, 106m)", "S(x, y, 504m)", graph_directory * "final_S_106and504m.png"; color=:haline)
 plot_variables(dT[:, j′, :], dT[:, :, 25], dT[:, :, 14], xc, zc, xc, yc, xc, yc, "Initial Temperature Gradient (x, z)", "Initial Temperature Gradient (x, y, 106m)", "Initial Temperature Gradient (x, y, 504m)", graph_directory * "dT_106and504m.png")
 plot_variables(dS[:, j′, :], dS[:, :, 25], dS[:, :, 14], xc, zc, xc, yc, xc, yc, "Initial Salinity Gradient (x, z)", "Initial Salinity Gradient (x, y, 106m)", "Initial Salinity Gradient (x, y, 504m)", graph_directory * "dS_106and504m.png")
-plot_variables(dkappaT_final[:, j′, :], dkappaT_final[:, :, 25], dkappaT_final[:, :, 14], xc, zc, xc, yc, xc, yc, "T Vertical Diffusivity Gradient (x, z)", "T Vertical Diffusivity Gradient (x, y, 106m)", "T Vertical Diffusivity Gradient (x, y, 504m)", graph_directory * "dkappa_T_106and504m.png")
-plot_variables(dkappaS_final[:, j′, :], dkappaS_final[:, :, 25], dkappaS_final[:, :, 14], xc, zc, xc, yc, xc, yc, "S Vertical Diffusivity Gradient (x, z)", "S Vertical Diffusivity Gradient (x, y, 106m)", "S Vertical Diffusivity Gradient (x, y, 504m)", graph_directory * "dkappa_S_106and504m.png")
+#plot_variables(dkappaT_final[:, j′, :], dkappaT_final[:, :, 25], dkappaT_final[:, :, 14], xc, zc, xc, yc, xc, yc, "T Vertical Diffusivity Gradient (x, z)", "T Vertical Diffusivity Gradient (x, y, 106m)", "T Vertical Diffusivity Gradient (x, y, 504m)", graph_directory * "dkappa_T_106and504m.png")
+#plot_variables(dkappaS_final[:, j′, :], dkappaS_final[:, :, 25], dkappaS_final[:, :, 14], xc, zc, xc, yc, xc, yc, "S Vertical Diffusivity Gradient (x, z)", "S Vertical Diffusivity Gradient (x, y, 106m)", "S Vertical Diffusivity Gradient (x, y, 504m)", graph_directory * "dkappa_S_106and504m.png")
 
 
 plot_variables(T_final[:, j′, :], T_final[:, :, 10], T_final[:, :, 6], xc, zc, xc, yc, xc, yc, "T(x, z)", "T(x, y, 795m)", "T(x, y, 1228m)", graph_directory * "final_T_795and1228m.png"; p1_min=true, p2_min=true, p3_min=true, shared=true, color=:thermal)
 plot_variables(S_final[:, j′, :], S_final[:, :, 10], S_final[:, :, 6], xc, zc, xc, yc, xc, yc, "S(x, z)", "S(x, y, 795m)", "S(x, y, 1228m)", graph_directory * "final_S_795and1228m.png"; color=:haline)
 plot_variables(dT[:, j′, :], dT[:, :, 10], dT[:, :, 6], xc, zc, xc, yc, xc, yc, "Initial Temperature Gradient (x, z)", "Initial Temperature Gradient (x, y, 795m)", "Initial Temperature Gradient (x, y, 1228m)", graph_directory * "dT_795and1228m.png")
 plot_variables(dS[:, j′, :], dS[:, :, 10], dS[:, :, 6], xc, zc, xc, yc, xc, yc, "Initial Salinity Gradient (x, z)", "Initial Salinity Gradient (x, y, 795m)", "Initial Salinity Gradient (x, y, 1228m)", graph_directory * "dS_795and1228m.png")
-plot_variables(dkappaT_final[:, j′, :], dkappaT_final[:, :, 10], dkappaT_final[:, :, 6], xc, zc, xc, yc, xc, yc, "T Vertical Diffusivity Gradient (x, z)", "T Vertical Diffusivity Gradient (x, y, 795m)", "T Vertical Diffusivity Gradient (x, y, 1228m)", graph_directory * "dkappa_T_795and1228m.png")
-plot_variables(dkappaS_final[:, j′, :], dkappaS_final[:, :, 10], dkappaS_final[:, :, 6], xc, zc, xc, yc, xc, yc, "S Vertical Diffusivity Gradient (x, z)", "S Vertical Diffusivity Gradient (x, y, 795m)", "S Vertical Diffusivity Gradient (x, y, 1228m)", graph_directory * "dkappa_S_795and1228m.png")
+#plot_variables(dkappaT_final[:, j′, :], dkappaT_final[:, :, 10], dkappaT_final[:, :, 6], xc, zc, xc, yc, xc, yc, "T Vertical Diffusivity Gradient (x, z)", "T Vertical Diffusivity Gradient (x, y, 795m)", "T Vertical Diffusivity Gradient (x, y, 1228m)", graph_directory * "dkappa_T_795and1228m.png")
+#plot_variables(dkappaS_final[:, j′, :], dkappaS_final[:, :, 10], dkappaS_final[:, :, 6], xc, zc, xc, yc, xc, yc, "S Vertical Diffusivity Gradient (x, z)", "S Vertical Diffusivity Gradient (x, y, 795m)", "S Vertical Diffusivity Gradient (x, y, 1228m)", graph_directory * "dkappa_S_795and1228m.png")
 
 
 plot_variables(T_final[:, j′, :], T_final[:, :, 4], T_final[:, :, 1], xc, zc, xc, yc, xc, yc, "T(x, z)", "T(x, y, 1518m)", "T(x, y, 2076m)", graph_directory * "final_T_1518and2076m.png"; p1_min=true, p2_min=true, p3_min=true, shared=true, color=:thermal)
 plot_variables(S_final[:, j′, :], S_final[:, :, 4], S_final[:, :, 1], xc, zc, xc, yc, xc, yc, "S(x, z)", "S(x, y, 1518m)", "S(x, y, 2076m)", graph_directory * "final_S_1518and2076m.png"; color=:haline)
 plot_variables(dT[:, j′, :], dT[:, :, 4], dT[:, :, 1], xc, zc, xc, yc, xc, yc, "Initial Temperature Gradient (x, z)", "Initial Temperature Gradient (x, y, 1518m)", "Initial Temperature Gradient (x, y, 2076m)", graph_directory * "dT_1518and2076m.png")
 plot_variables(dS[:, j′, :], dS[:, :, 4], dS[:, :, 1], xc, zc, xc, yc, xc, yc, "Initial Salinity Gradient (x, z)", "Initial Salinity Gradient (x, y, 1518m)", "Initial Salinity Gradient (x, y, 2076m)", graph_directory * "dS_1518and2076m.png")
-plot_variables(dkappaT_final[:, j′, :], dkappaT_final[:, :, 4], dkappaT_final[:, :, 1], xc, zc, xc, yc, xc, yc, "T Vertical Diffusivity Gradient (x, z)", "T Vertical Diffusivity Gradient (x, y, 1518m)", "T Vertical Diffusivity Gradient (x, y, 2076m)", graph_directory * "dkappa_T_1518and2076m.png")
-plot_variables(dkappaS_final[:, j′, :], dkappaS_final[:, :, 4], dkappaS_final[:, :, 1], xc, zc, xc, yc, xc, yc, "S Vertical Diffusivity Gradient (x, z)", "S Vertical Diffusivity Gradient (x, y, 1518m)", "S Vertical Diffusivity Gradient (x, y, 2076m)", graph_directory * "dkappa_S_1518and2076m.png")
+#plot_variables(dkappaT_final[:, j′, :], dkappaT_final[:, :, 4], dkappaT_final[:, :, 1], xc, zc, xc, yc, xc, yc, "T Vertical Diffusivity Gradient (x, z)", "T Vertical Diffusivity Gradient (x, y, 1518m)", "T Vertical Diffusivity Gradient (x, y, 2076m)", graph_directory * "dkappa_T_1518and2076m.png")
+#plot_variables(dkappaS_final[:, j′, :], dkappaS_final[:, :, 4], dkappaS_final[:, :, 1], xc, zc, xc, yc, xc, yc, "S Vertical Diffusivity Gradient (x, z)", "S Vertical Diffusivity Gradient (x, y, 1518m)", "S Vertical Diffusivity Gradient (x, y, 2076m)", graph_directory * "dkappa_S_1518and2076m.png")

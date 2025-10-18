@@ -62,8 +62,8 @@ Oceananigans.defaults.FloatType = Float64
 #
 
 # number of grid points
-const Nx = 48 #96  # LowRes: 48
-const Ny = 96 #192 # LowRes: 96
+const Nx = 96  # LowRes: 48
+const Ny = 192 # LowRes: 96
 const Nz = 32
 
 const x_midpoint = Int(Nx / 2) + 1
@@ -361,7 +361,7 @@ function differentiate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_str
                     Duplicated(Δz, dΔz),
                     Duplicated(mld, dmld))
 
-    return dedν, du_wind_stress, dTᵢ
+    return dedν
 end
 
 #####
@@ -372,7 +372,7 @@ end
 architecture = ReactantState() #GPU()
 
 # Timestep size:
-Δt₀ = 5minutes 
+Δt₀ = 2.5minutes 
 
 # Make the grid:
 grid          = make_grid(architecture, Nx, Ny, Nz, z_faces)
@@ -400,7 +400,7 @@ dΔz            = Enzyme.make_zero(Δz)
 @info "Compiling the model run..."
 tic = time()
 rspinup_reentrant_channel_model! = @compile raise_first=true raise=true sync=true  spinup_reentrant_channel_model!(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux)
-restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux, Δz, mld)
+#restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux, Δz, mld)
 rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true  differentiate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux, Δz, mld,
                                                                                                         dmodel, dTᵢ, dSᵢ, du_wind_stress, dv_wind_stress, dT_flux, dΔz, dmld)
 compile_toc = time() - tic
@@ -411,7 +411,7 @@ compile_toc = time() - tic
 
 using FileIO, JLD2
 
-graph_directory = "run_abernathy_model_ad_spinup5000_900steps_noCATKE_moderateVisc_WENOOrder3_gridFittedBottom_wallRidge_biharmonic_scaledVerticalDiff/"
+graph_directory = "run_abernathy_model_ad_spinup5000_900steps_HiRes_noCATKE_halfTimeStep_moderateVisc_WENOOrder3_gridFittedBottom_wallRidge_biharmonic_scaledVerticalDiff/"
 filename        = graph_directory * "data_init.jld2"
 
 if !isdir(graph_directory) Base.Filesystem.mkdir(graph_directory) end
@@ -463,7 +463,7 @@ jldsave(filename; Nx, Ny, Nz,
                   v=convert(Array, interior(model.velocities.v)),
                   w=convert(Array, interior(model.velocities.w)),
                   mld=convert(Array, interior(mld)),
-                  #zonal_transport=convert(Float64, output))
+                  #zonal_transport=convert(Float64, output),
                   zonal_transport=convert(Float64, dedν[2]),
                   du_wind_stress=convert(Array, interior(du_wind_stress)),
                   dv_wind_stress=convert(Array, interior(dv_wind_stress)),
