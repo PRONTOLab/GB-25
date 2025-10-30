@@ -238,8 +238,8 @@ function plot_variables_two_panels_updown(p1_xy, p2_xy,
     p1lims = (p1min, p1max) .* 0.8
     p2lims = (p2min, p2max) .* 0.8
 
-    p1levels = vcat([p1min], range(p1lims[1], p1lims[2], length = 31), [p1max])
-    p2levels = vcat([p2min], range(p2lims[1], p2lims[2], length = 31), [p2max])
+    p1levels = vcat([p1min], range(p1lims[1], p1lims[2], length = 62), [p1max])
+    p2levels = vcat([p2min], range(p2lims[1], p2lims[2], length = 62), [p2max])
 
     xlims = (0, grid.Lx) .* 1e-3
     ylims = (0, grid.Ly) .* 1e-3
@@ -255,8 +255,9 @@ function plot_variables_two_panels_updown(p1_xy, p2_xy,
         colorbar_title = p1_colorbar_title,
         xlims = ylims,
         ylims = zlims,
+        tickfontsize = 12,
         color = color,
-        topmargin=5Plots.mm
+        bottom_margin = 16Plots.mm,
         )
 
     p2_xy_plot = contourf(x2 * 1e-3, y2, p2_xy',
@@ -269,8 +270,8 @@ function plot_variables_two_panels_updown(p1_xy, p2_xy,
         colorbar_title = p2_colorbar_title,
         xlims = xlims,
         ylims = zlims,
+        tickfontsize = 12,
         color = color,
-        topmargin=5Plots.mm
         )
 
     #annotate!(p1_xy_plot, (0.02, 1.80, text("(a)", :left, 14, :black)))
@@ -391,7 +392,7 @@ function plot_variables_six_panels(p1_xy, p2_xy, p3_xy, p4_xy, p5_xy, p6_xy,
                         p1_title, p2_title, p3_title, p4_title, p5_title, p6_title,
                         p1_colorbar_title, p2_colorbar_title, p3_colorbar_title, p4_colorbar_title, p5_colorbar_title, p6_colorbar_title,
                         filename;
-                        p1_min=false, p2_min=false, p3_min=false, p4_min=false, p5_min=false, p6_min=false, color=:balance)
+                        p1_min=false, p2_min=false, p3_min=false, p4_min=false, p5_min=false, p6_min=false, shared=false, color=:balance)
 
     p1max = maximum(p1_xy)
     p2max = maximum(p2_xy)
@@ -432,6 +433,13 @@ function plot_variables_six_panels(p1_xy, p2_xy, p3_xy, p4_xy, p5_xy, p6_xy,
         p6min = -p6max
     end
 
+    if shared
+        pmax = max(p1max, p2max, p3max, p4max, p5max, p6max)
+        #pmin = max(p1min, p2min, p3min, p4min, p5min, p6min)
+        p1max = p2max = p3max = p4max = p5max = p6max = pmax
+        p1min = p2min = p3min = p4min = p5min = p6min = -pmax
+    end
+
     p1lims = (p1min, p1max) .* 0.8
     p2lims = (p2min, p2max) .* 0.8
     p3lims = (p3min, p3max) .* 0.8
@@ -439,12 +447,12 @@ function plot_variables_six_panels(p1_xy, p2_xy, p3_xy, p4_xy, p5_xy, p6_xy,
     p5lims = (p5min, p5max) .* 0.8
     p6lims = (p6min, p6max) .* 0.8
 
-    p1levels = vcat([p1min], range(p1lims[1], p1lims[2], length = 31), [p1max])
-    p2levels = vcat([p2min], range(p2lims[1], p2lims[2], length = 31), [p2max])
-    p3levels = vcat([p3min], range(p3lims[1], p3lims[2], length = 31), [p3max])
-    p4levels = vcat([p4min], range(p4lims[1], p4lims[2], length = 31), [p4max])
-    p5levels = vcat([p5min], range(p5lims[1], p5lims[2], length = 31), [p5max])
-    p6levels = vcat([p6min], range(p6lims[1], p6lims[2], length = 31), [p6max])
+    p1levels = vcat([p1min], range(p1lims[1], p1lims[2], length = 62), [p1max])
+    p2levels = vcat([p2min], range(p2lims[1], p2lims[2], length = 62), [p2max])
+    p3levels = vcat([p3min], range(p3lims[1], p3lims[2], length = 62), [p3max])
+    p4levels = vcat([p4min], range(p4lims[1], p4lims[2], length = 62), [p4max])
+    p5levels = vcat([p5min], range(p5lims[1], p5lims[2], length = 62), [p5max])
+    p6levels = vcat([p6min], range(p6lims[1], p6lims[2], length = 62), [p6max])
 
     xlims = (0, grid.Lx) .* 1e-3
     ylims = (0, grid.Ly) .* 1e-3
@@ -461,7 +469,7 @@ function plot_variables_six_panels(p1_xy, p2_xy, p3_xy, p4_xy, p5_xy, p6_xy,
         xlims = xlims,
         ylims = ylims,
         tickfontsize = 12,
-        bottom_margin = 18Plots.mm,
+        bottom_margin = 16Plots.mm,
         color = color)
 
     p2_xy_plot = contourf(x2 * 1e-3, y2 * 1e-3, p2_xy',
@@ -475,7 +483,7 @@ function plot_variables_six_panels(p1_xy, p2_xy, p3_xy, p4_xy, p5_xy, p6_xy,
         xlims = xlims,
         ylims = ylims,
         tickfontsize = 12,
-        bottom_margin = 18Plots.mm,
+        bottom_margin = 16Plots.mm,
         color = color)
 
     p3_xy_plot = contourf(x3 * 1e-3, y3 * 1e-3, p3_xy',
@@ -489,7 +497,7 @@ function plot_variables_six_panels(p1_xy, p2_xy, p3_xy, p4_xy, p5_xy, p6_xy,
         xlims = xlims,
         ylims = ylims,
         tickfontsize = 12,
-        bottom_margin = 18Plots.mm,
+        bottom_margin = 16Plots.mm,
         color = color)
 
     p4_xy_plot = contourf(x4 * 1e-3, y4 * 1e-3, p4_xy',
@@ -528,6 +536,7 @@ function plot_variables_six_panels(p1_xy, p2_xy, p3_xy, p4_xy, p5_xy, p6_xy,
         levels = p6levels,
         clims = p6lims,
         colorbar_title = p6_colorbar_title,
+        #colorbar_ticks = ([-5e-3, -2.5e-3, 0, 2.5e-3, 5e-3], ["-5e-3", "-2.5e-3", "0", "2.5e-3", "5e-3"]), # ONLY GOOD FOR ONE PLOT
         xlims = xlims,
         ylims = ylims,
         tickfontsize = 12,
@@ -616,14 +625,26 @@ z_thicknesses = zw[2:end] - zw[1:end-1]
 @show z_thicknesses
 
 
-plot_variables_two_panels_updown(dT[44, :, :] ./ z_thicknesses', dT[:,j′,:] ./ z_thicknesses', yc, zc, xc, zc, "(a) Initial Temperature Gradient (x=550km, y, z)", "(b) Initial Temperature Gradient (x, y=1000km, z)", "Sv per °C·thickness (10⁶ m² s⁻¹ °C⁻¹)", "Sv per °C·thickness (10⁶ m² s⁻¹ °C⁻¹)", graph_directory * "gradients_oceananigans_depth.png")
+plot_variables_two_panels_updown(dT[44, :, :] ./ z_thicknesses', dT[:,j′,:] ./ z_thicknesses', yc, zc, xc, zc, "(a) Initial Temperature Gradient (x=550km, y, z)", "(b) Initial Temperature Gradient (x, y=1000km, z)", "Sv °C⁻¹", "Sv °C⁻¹", graph_directory * "gradients_oceananigans_depth.png")
 
 
 
 plot_variables_six_panels(du_wind_stress[:,:,1], dT[:,:,31], dkappaT_final[:,:,31], dv_wind_stress[:,:,1], dT[:,:,14], dkappaT_final[:,:,14], xu, yu, xc, yc, xc, yc, xv, yv, xc, yc, xc, yc,
                           "(a) Zonal Wind Stress Sensitivity (x, y)", "(c) Initial Temperature Sensitivity (x, y, 15m)", "(e) T Vertical Diffusivity Sensitivity (x, y, 15m)", "(b) Meridional Wind Stress Sensitivity (x, y)", "(d) Initial Temperature Sensitivity (x, y, 504m)", "(f) T Vertical Diffusivity Sensitivity (x, y, 504m)",
-                          "Sv m⁻² s²", "Sv °C⁻¹", "Sv m⁻² s", "Sv m⁻² s²", "Sv °C⁻¹", "Sv m⁻² s",
+                          "Sv / m²s⁻²", "Sv / °C", "Sv / m²s⁻¹", "Sv / m²s⁻²", "Sv / °C", "Sv / m²s⁻¹",
                           graph_directory * "gradients_oceananigans_xy.png")
+
+
+plot_variables_six_panels(u[:,:,31], u[:,:,14], u[:,:,4], v[:,:,31], v[:,:,14], v[:,:,4], xu, yu, xu, yu, xu, yu, xv, yv, xv, yv, xv, yv,
+                          "(a) u(x, y, z=15m)", "(b) u(x, y, z=504m)", "(c) u(x, y, z=1518m)", "(d) v(x, y, z=15m)", "(e) v(x, y, z=504m)", "(f) v(x, y, z=1518m)",
+                          "m s⁻¹", "m s⁻¹", "m s⁻¹", "m s⁻¹", "m s⁻¹", "m s⁻¹",
+                          graph_directory * "velocities_oceananigans_xy.png"; shared = true)
+
+plot_variables_six_panels(T_final[:,:,31], T_final[:,:,14], T_final[:,:,4], S_final[:,:,31], S_final[:,:,14], S_final[:,:,4], xc, yc, xc, yc, xc, yc, xc, yc, xc, yc, xc, yc,
+                          "(a) T(x, y, z=15m)", "(b) T(x, y, z=504m)", "(c) T(x, y, z=1518m)", "(d) S(x, y, z=15m)", "(e) S(x, y, z=504m)", "(f) S(x, y, z=1518m)",
+                          "°C", "°C", "°C", "m s⁻¹", "m s⁻¹", "m s⁻¹",
+                          graph_directory * "tracers_oceananigans_xy.png"; color=:thermal,
+                          p1_min=true, p2_min=true, p3_min=true)
 
 
 
