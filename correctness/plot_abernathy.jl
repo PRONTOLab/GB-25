@@ -22,7 +22,8 @@ gr(
 # Force scientific tick labels globally
 default(colorbar_formatter = :scientific)
 
-graph_directory = "run_abernathy_model_ad_spinup5000_8100steps_KindaHiRes_linearEOS_noCATKE_halfTimeStep_highVisc_WENOOrder3_gridFittedBottom_wallRidge_scaledVerticalDiff/"
+#graph_directory = "run_abernathy_model_ad_spinup5000_8100steps_KindaHiRes_linearEOS_noCATKE_halfTimeStep_highVisc_WENOOrder3_gridFittedBottom_wallRidge_scaledVerticalDiff/"
+graph_directory = "run_abernathy_model_ad_spinup40000000_8100steps_KindaHiRes_linearEOS_noCATKE_halfTimeStep_highVisc_WENOOrder3_gridFittedBottom_wallRidge_scaledVerticalDiff/"
 
 #
 # First we gather the data and create a grid for plotting purposes:
@@ -117,6 +118,9 @@ y′ = yζ[j′]
 @show grid
 @show zc
 @show zw
+
+@show xc, yc, zc
+@show xu, yu, zu
 
 #
 # First a plot of velocities:
@@ -218,7 +222,9 @@ function plot_variables_two_panels_updown(p1_xy, p2_xy,
                         p1_title, p2_title,
                         p1_colorbar_title, p2_colorbar_title,
                         filename;
-                        p1_min=false, p2_min=false, color=:balance)
+                        p1_min=false, p2_min=false,
+                        p1_set_min=nothing, p2_set_min=nothing,
+                        color=:balance)
 
     p1max = maximum(p1_xy)
     p2max = maximum(p2_xy)
@@ -233,6 +239,13 @@ function plot_variables_two_panels_updown(p1_xy, p2_xy,
     if !p2_min
         p2max = max(p2max, -p2min)
         p2min = -p2max
+    end
+
+    if p1_set_min != nothing
+        p1min = p1_set_min
+    end
+    if p2_set_min != nothing
+        p2min = p2_set_min
     end
 
     p1lims = (p1min, p1max) .* 0.8
@@ -552,6 +565,174 @@ function plot_variables_six_panels(p1_xy, p2_xy, p3_xy, p4_xy, p5_xy, p6_xy,
     savefig(filename)
 end
 
+
+
+function plot_variables_six_panels_3x2(p1_xy, p2_xy, p3_xy, p4_xy, p5_xy, p6_xy,
+                        x1, y1, x2, y2, x3, y3, x4, y4, x5, y5, x6, y6,
+                        p1_title, p2_title, p3_title, p4_title, p5_title, p6_title,
+                        p1_colorbar_title, p2_colorbar_title, p3_colorbar_title, p4_colorbar_title, p5_colorbar_title, p6_colorbar_title,
+                        filename;
+                        p1_min=false, p2_min=false, p3_min=false, p4_min=false, p5_min=false, p6_min=false, shared=false, color=:balance)
+
+    p1max = maximum(p1_xy)
+    p2max = maximum(p2_xy)
+    p3max = maximum(p3_xy)
+    p4max = maximum(p4_xy)
+    p5max = maximum(p5_xy)
+    p6max = maximum(p6_xy)
+
+    p1min = minimum(p1_xy)
+    p2min = minimum(p2_xy)
+    p3min = minimum(p3_xy)
+    p4min = minimum(p4_xy)
+    p5min = minimum(p5_xy)
+    p6min = minimum(p6_xy)
+
+    if !p1_min
+        p1max = max(p1max, -p1min)
+        p1min = -p1max
+    end
+    if !p2_min
+        p2max = max(p2max, -p2min)
+        p2min = -p2max
+    end
+    if !p3_min
+        p3max = max(p3max, -p3min)
+        p3min = -p3max
+    end
+    if !p4_min
+        p4max = max(p4max, -p4min)
+        p4min = -p4max
+    end
+    if !p5_min
+        p5max = max(p5max, -p5min)
+        p5min = -p5max
+    end
+    if !p6_min
+        p6max = max(p6max, -p6min)
+        p6min = -p6max
+    end
+
+    if shared
+        pmax = max(p1max, p2max, p3max, p4max, p5max, p6max)
+        #pmin = max(p1min, p2min, p3min, p4min, p5min, p6min)
+        p1max = p2max = p3max = p4max = p5max = p6max = pmax
+        p1min = p2min = p3min = p4min = p5min = p6min = -pmax
+    end
+
+    p1lims = (p1min, p1max) .* 0.8
+    p2lims = (p2min, p2max) .* 0.8
+    p3lims = (p3min, p3max) .* 0.8
+    p4lims = (p4min, p4max) .* 0.8
+    p5lims = (p5min, p5max) .* 0.8
+    p6lims = (p6min, p6max) .* 0.8
+
+    p1levels = vcat([p1min], range(p1lims[1], p1lims[2], length = 62), [p1max])
+    p2levels = vcat([p2min], range(p2lims[1], p2lims[2], length = 62), [p2max])
+    p3levels = vcat([p3min], range(p3lims[1], p3lims[2], length = 62), [p3max])
+    p4levels = vcat([p4min], range(p4lims[1], p4lims[2], length = 62), [p4max])
+    p5levels = vcat([p5min], range(p5lims[1], p5lims[2], length = 62), [p5max])
+    p6levels = vcat([p6min], range(p6lims[1], p6lims[2], length = 62), [p6max])
+
+    xlims = (0, grid.Lx) .* 1e-3
+    ylims = (0, grid.Ly) .* 1e-3
+    zlims = (-grid.Lz, 0)
+
+    p1_xy_plot = contourf(x1 * 1e-3, y1 * 1e-3, p1_xy',
+        #xlabel = "x (km)",
+        ylabel = "y (km)",
+        aspectratio = :equal,
+        linewidth = 0,
+        levels = p1levels,
+        clims = p1lims,
+        colorbar_title = p1_colorbar_title,
+        xlims = xlims,
+        ylims = ylims,
+        tickfontsize = 16,
+        bottom_margin = 16Plots.mm,
+        color = color)
+
+    p2_xy_plot = contourf(x2 * 1e-3, y2 * 1e-3, p2_xy',
+        #xlabel = "x (km)",
+        #ylabel = "y (km)",
+        aspectratio = :equal,
+        linewidth = 0,
+        levels = p2levels,
+        clims = p2lims,
+        colorbar_title = p2_colorbar_title,
+        xlims = xlims,
+        ylims = ylims,
+        tickfontsize = 16,
+        bottom_margin = 16Plots.mm,
+        color = color)
+
+    p3_xy_plot = contourf(x3 * 1e-3, y3 * 1e-3, p3_xy',
+        #xlabel = "x (km)",
+        ylabel = "y (km)",
+        aspectratio = :equal,
+        linewidth = 0,
+        levels = p3levels,
+        clims = p3lims,
+        colorbar_title = p3_colorbar_title,
+        xlims = xlims,
+        ylims = ylims,
+        tickfontsize = 16,
+        bottom_margin = 16Plots.mm,
+        color = color)
+
+    p4_xy_plot = contourf(x4 * 1e-3, y4 * 1e-3, p4_xy',
+        #xlabel = "x (km)",
+        #ylabel = "y (km)",
+        aspectratio = :equal,
+        linewidth = 0,
+        levels = p4levels,
+        clims = p4lims,
+        colorbar_title = p4_colorbar_title,
+        xlims = xlims,
+        ylims = ylims,
+        tickfontsize = 16,
+        #colorbar_formatter = x -> @sprintf("%.2e", x),
+        color = color)
+
+    p5_xy_plot = contourf(x5 * 1e-3, y5 * 1e-3, p5_xy',
+        xlabel = "x (km)",
+        ylabel = "y (km)",
+        aspectratio = :equal,
+        linewidth = 0,
+        levels = p5levels,
+        clims = p5lims,
+        colorbar_title = p5_colorbar_title,
+        xlims = xlims,
+        ylims = ylims,
+        tickfontsize = 16,
+        #colorbar_formatter = x -> @sprintf("%.2e", x),
+        color = color)
+
+    p6_xy_plot = contourf(x6 * 1e-3, y6 * 1e-3, p6_xy',
+        xlabel = "x (km)",
+        #ylabel = "y (km)",
+        aspectratio = :equal,
+        linewidth = 0,
+        levels = p6levels,
+        clims = p6lims,
+        colorbar_title = p6_colorbar_title,
+        #colorbar_ticks = ([-5e-3, -2.5e-3, 0, 2.5e-3, 5e-3], ["-5e-3", "-2.5e-3", "0", "2.5e-3", "5e-3"]), # ONLY GOOD FOR ONE PLOT
+        xlims = xlims,
+        ylims = ylims,
+        tickfontsize = 16,
+        annotationfontsize = 16,
+        #colorbar_formatter = x -> @sprintf("%.2e", x),
+        color = color)
+
+    layout = @layout [Plots.grid(1, 2)
+                      Plots.grid(1, 2)
+                      Plots.grid(1, 2)]
+
+    plot(p1_xy_plot, p2_xy_plot, p3_xy_plot, p4_xy_plot, p5_xy_plot, p6_xy_plot, layout = layout, size = (1500, 2250), title = [p1_title p2_title p3_title p4_title p5_title p6_title], colorbar_formatter = :scientific)
+
+    savefig(filename)
+end
+
 plot_variables(w[:, j′, :], u[:, :, 1], v[:, :, 1], xw, zw, xu, yu, xv, yv, "w(x, z)", "u(x, y, 2180m)", "v(x, y, 2180m)", graph_directory * "final_velocities_bottom.png")
 #plot_variables(u[25, :, :], u[:, :, 14], v[:, :, 14], yu, zu, xu, yu, xv, yv, "u(y, z) (NOT x,z)", "u(x, y, 533m)", "v(x, y, 533m)", graph_directory * "final_velocities_533m.png")
 plot_variables(v[:, j′, :], u[:, :, 25], v[:, :, 25], xv, zv, xu, yu, xv, yv, "v(x, z)", "u(x, y, 116m)", "v(x, y, 116m)", graph_directory * "final_velocities_116m.png")
@@ -624,12 +805,17 @@ z_thicknesses = zw[2:end] - zw[1:end-1]
 
 @show z_thicknesses
 
+@show size(u)
+@show size(du_wind_stress)
+
 
 plot_variables_two_panels_updown(dT[44, :, :] ./ z_thicknesses', dT[:,j′,:] ./ z_thicknesses', yc, zc, xc, zc, "(a) Initial Temperature Gradient (x=550km, y, z)", "(b) Initial Temperature Gradient (x, y=1000km, z)", "Sv °C⁻¹", "Sv °C⁻¹", graph_directory * "gradients_oceananigans_depth.png")
+plot_variables_two_panels_updown(T_final[44, :, :], T_final[:,j′,:], yc, zc, xc, zc, "(a) Final Temperature (x=550km, y, z)", "(b) Final Temperature (x, y=1000km, z)", "°C", "°C", graph_directory * "temperature_depth.png"; p1_set_min=-1.0, p2_set_min=-1.0, color=:thermal)
+plot_variables_two_panels_updown(u[44, :, :], u[:,j′,:], yu, zu, xu, zu, "(a) u(x=550km, y, z)", "(b) u(x, y=1000km, z)", "ms⁻¹", "ms⁻¹", graph_directory * "u_depth.png")
+plot_variables_two_panels_updown(v[44, :, :], v[:,j′,:], yv, zv, xv, zv, "(a) v(x=550km, y, z)", "(b) v(x, y=1000km, z)", "ms⁻¹", "ms⁻¹", graph_directory * "v_depth.png")
 
 
-
-plot_variables_six_panels(du_wind_stress[:,:,1], dT[:,:,31], dkappaT_final[:,:,31], dv_wind_stress[:,:,1], dT[:,:,14], dkappaT_final[:,:,14], xu, yu, xc, yc, xc, yc, xv, yv, xc, yc, xc, yc,
+plot_variables_six_panels_3x2(du_wind_stress[:,:,1], dT[:,:,31], dkappaT_final[:,:,31], dv_wind_stress[:,:,1], dT[:,:,14], dkappaT_final[:,:,14], xc, yc, xc, yc, xc, yc, xv, yv, xc, yc, xc, yc,
                           "(a) Zonal Wind Stress Sensitivity (x, y)", "(c) Initial Temperature Sensitivity (x, y, 15m)", "(e) T Vertical Diffusivity Sensitivity (x, y, 15m)", "(b) Meridional Wind Stress Sensitivity (x, y)", "(d) Initial Temperature Sensitivity (x, y, 504m)", "(f) T Vertical Diffusivity Sensitivity (x, y, 504m)",
                           "Sv / m²s⁻²", "Sv / °C", "Sv / m²s⁻¹", "Sv / m²s⁻²", "Sv / °C", "Sv / m²s⁻¹",
                           graph_directory * "gradients_oceananigans_xy.png")
@@ -642,7 +828,7 @@ plot_variables_six_panels(u[:,:,31], u[:,:,14], u[:,:,4], v[:,:,31], v[:,:,14], 
 
 plot_variables_six_panels(T_final[:,:,31], T_final[:,:,14], T_final[:,:,4], S_final[:,:,31], S_final[:,:,14], S_final[:,:,4], xc, yc, xc, yc, xc, yc, xc, yc, xc, yc, xc, yc,
                           "(a) T(x, y, z=15m)", "(b) T(x, y, z=504m)", "(c) T(x, y, z=1518m)", "(d) S(x, y, z=15m)", "(e) S(x, y, z=504m)", "(f) S(x, y, z=1518m)",
-                          "°C", "°C", "°C", "m s⁻¹", "m s⁻¹", "m s⁻¹",
+                          "°C", "°C", "°C", "g / kg", "g / kg", "g / kg",
                           graph_directory * "tracers_oceananigans_xy.png"; color=:thermal,
                           p1_min=true, p2_min=true, p3_min=true)
 
