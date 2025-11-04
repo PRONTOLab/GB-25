@@ -14,9 +14,8 @@ using Oceananigans.Grids: xnode, ynode, znode
 
 using GLMakie
 
-#graph_directory = "run_abernathy_model_ad_spinup5000_8100steps_KindaHiRes_linearEOS_noCATKE_halfTimeStep_highVisc_WENOOrder3_gridFittedBottom_wallRidge_scaledVerticalDiff/"
-graph_directory = "run_abernathy_model_ad_spinup40000000_8100steps_KindaHiRes_linearEOS_noCATKE_halfTimeStep_highVisc_WENOOrder3_gridFittedBottom_wallRidge_scaledVerticalDiff/"
-
+graph_directory = "run_abernathy_model_ad_spinup5000_8100steps/"
+#graph_directory = "run_abernathy_model_ad_spinup40000000_8100steps/"
 
 #
 # First we gather the data and create a grid for plotting purposes:
@@ -125,206 +124,7 @@ close(data2)
 
 using GLMakie
 
-function plot_variables_six_panels_3x2(
-    p1_xy, p2_xy, p3_xy, p4_xy, p5_xy, p6_xy,
-    x1, y1, x2, y2, x3, y3, x4, y4, x5, y5, x6, y6,
-    p1_title, p2_title, p3_title, p4_title, p5_title, p6_title,
-    p1_cbt, p2_cbt, p3_cbt, p4_cbt, p5_cbt, p6_cbt,  # colorbar titles
-    filename, landmasks;
-    p1_min=false, p2_min=false, p3_min=false, p4_min=false, p5_min=false, p6_min=false,
-    shared=false, color=:balance)
-
-    # Compute mins and maxes
-    pmins = [minimum(p[.!landmask]) for (p, landmask) in zip((p1_xy,p2_xy,p3_xy,p4_xy,p5_xy,p6_xy), landmasks)]
-    pmaxs = [maximum(p[.!landmask]) for (p, landmask) in zip((p1_xy,p2_xy,p3_xy,p4_xy,p5_xy,p6_xy), landmasks)]
-
-    for i in 1:6
-        if !( (p1_min,p2_min,p3_min,p4_min,p5_min,p6_min)[i] )
-            mmax = max(pmaxs[i], -pmins[i])
-            pmaxs[i] = mmax
-            pmins[i] = -mmax
-        end
-    end
-
-    if shared
-        mmax = maximum(abs.(vcat(pmins, pmaxs)))
-        pmins .= -mmax
-        pmaxs .=  mmax
-    end
-
-    # Bounds for levels, reduced by 20% visually just like Plots
-    plims   = [(pmins[i], pmaxs[i]) .* 0.8 for i in 1:6]
-    levels  = [[range(plims[i][1], plims[i][2], length=62)...] for i in 1:6]
-
-    # scaled coordinates (km)
-    xs = [x1,x2,x3,x4,x5,x6] .|> x -> x .* 1e-3
-    ys = [y1,y2,y3,y4,y5,y6] .|> y -> y .* 1e-3
-    ps = [p1_xy,p2_xy,p3_xy,p4_xy,p5_xy,p6_xy]
-    titles = [p1_title, p2_title, p3_title, p4_title, p5_title, p6_title]
-    cb_titles = [p1_cbt, p2_cbt, p3_cbt, p4_cbt, p5_cbt, p6_cbt]
-
-    # Build Figure (3 rows × 2 columns, but each cell has axis + colorbar)
-    fig = Figure(resolution=(1500,2250))
-
-    # Plot each panel
-    idx = 1
-    for r in 1:3
-        for c in 1:2
-            ax = Axis(fig[r, 2c-1],
-                title = titles[idx],
-                xlabel = (idx in (5,6) ? "x (km)" : ""),
-                ylabel = (c == 1 ? "y (km)" : ""),
-                aspect = 0.75,
-                titlesize = 22,
-                xlabelsize = 20,
-                ylabelsize = 20,
-                xticklabelsize = 20,
-                yticklabelsize = 20,
-                leftspinevisible = false,
-                rightspinevisible = false,
-                topspinevisible = false,
-                bottomspinevisible = false)
-
-            # contourf: Makie wants z as matrix matching x/y dims.
-            masked_field = copy(ps[idx])
-            masked_field[landmasks[idx]] .= NaN
-            @show size(masked_field)
-            cont = contourf!(ax, xs[idx], ys[idx], masked_field,
-                    colormap=color,
-                    nan_color = :gray50,
-                    levels=levels[idx],
-                    colorscale=plims[idx])
-
-            # Add colorbar in right-hand cell for this panel
-            Colorbar(fig[r, 2c];
-                colormap = to_colormap(color),
-                limits = plims[idx],
-                label = cb_titles[idx],
-                labelsize = 20,
-                ticklabelsize = 16
-                #tickformat = xs -> map(x -> @sprintf("%.2e", x), xs)
-            )
-
-            idx += 1
-        end
-    end
-
-    save(filename, fig)
-    return fig
-end
-
-function plot_variables_six_panels_3x2_heatmap(
-    p1_xy, p2_xy, p3_xy, p4_xy, p5_xy, p6_xy,
-    x1, y1, x2, y2, x3, y3, x4, y4, x5, y5, x6, y6,
-    p1_title, p2_title, p3_title, p4_title, p5_title, p6_title,
-    p1_cbt, p2_cbt, p3_cbt, p4_cbt, p5_cbt, p6_cbt,
-    filename, landmask;
-    p1_min=false, p2_min=false, p3_min=false, p4_min=false, p5_min=false, p6_min=false,
-    shared_left=false, shared_right=false,
-    color=:balance)
-
-    # Compute mins and maxes
-    pmins = [minimum(p[.!landmask]) - 1e-12 for p in (p1_xy,p2_xy,p3_xy,p4_xy,p5_xy,p6_xy)]
-    pmaxs = [maximum(p[.!landmask]) + 1e-12 for p in (p1_xy,p2_xy,p3_xy,p4_xy,p5_xy,p6_xy)]
-
-    @show pmins
-    @show pmaxs
-
-    flags = (p1_min,p2_min,p3_min,p4_min,p5_min,p6_min)
-    for i in 1:6
-        if !flags[i]
-            mmax = max(pmaxs[i], -pmins[i])
-            pmaxs[i] = mmax
-            pmins[i] = -mmax
-        end
-    end
-
-    # Column-wise shared symmetric limits
-    left_inds  = (1,3,5)
-    right_inds = (2,4,6)
-
-    if shared_left
-        mmaxL = maximum(abs.(vcat(pmaxs[1], pmaxs[3], pmaxs[5])))
-        mminL = minimum(vcat(pmins[1], pmins[3], pmins[5]))
-        for i in left_inds
-            pmins[i] = mminL
-            pmaxs[i] = mmaxL
-        end
-    end
-
-    if shared_right
-        mmaxR = maximum(abs.(vcat(pmaxs[2], pmaxs[4], pmaxs[6])))
-        mminR = minimum(vcat(pmins[2], pmins[4], pmins[6]))
-        for i in right_inds
-            pmins[i] = mminR
-            pmaxs[i] = mmaxR
-        end
-    end
-
-    # Limits & contour levels
-    plims   = [(pmins[i], pmaxs[i]) .* 0.8 for i in 1:6]
-    levels  = [[range(plims[i][1], plims[i][2], length=40)...] for i in 1:6]
-
-    # scaled coords
-    xs = [x1,x2,x3,x4,x5,x6] .|> x -> x .* 1e-3
-    ys = [y1,y2,y3,y4,y5,y6] .|> y -> y .* 1e-3
-    ps = [p1_xy,p2_xy,p3_xy,p4_xy,p5_xy,p6_xy]
-    titles = [p1_title, p2_title, p3_title, p4_title, p5_title, p6_title]
-    cb_titles = [p1_cbt, p2_cbt, p3_cbt, p4_cbt, p5_cbt, p6_cbt]
-
-    fig = Figure(resolution=(1500,2250))
-
-    idx = 1
-    for r in 1:3
-        for c in 1:2
-            ax = Axis(fig[r, 2c-1],
-                title = titles[idx],
-                xlabel = (idx in (5,6) ? "x (km)" : ""),
-                ylabel = (c == 1 ? "y (km)" : ""),
-                aspect = 0.75,
-                titlesize = 22,
-                xlabelsize = 20,
-                ylabelsize = 20,
-                xticklabelsize = 20,
-                yticklabelsize = 20,
-                leftspinevisible = false,
-                rightspinevisible = false,
-                topspinevisible = false,
-                bottomspinevisible = false)
-
-            # smooth raster shading + contour overlay
-            masked_field = copy(ps[idx])
-            masked_field[landmask] .= NaN
-            heatmap!(ax, xs[idx], ys[idx], ps[idx];
-                colormap=color,
-                nan_color = :gray50,
-                colorrange=plims[idx])
-
-            contour!(ax, xs[idx], ys[idx], ps[idx];
-                levels=levels[idx],
-                color=:black,
-                nan_color = :gray50,
-                linewidth=0.01)
-
-            # Panel colorbar
-            Colorbar(fig[r, 2c];
-                colormap = to_colormap(color),
-                limits = plims[idx],
-                label = cb_titles[idx],
-                labelsize = 20,
-                ticklabelsize = 16
-                #tickformat = xs -> [@sprintf("%.2e", x) for x in xs],
-            )
-
-            idx += 1
-        end
-    end
-
-    save(filename, fig)
-    return fig
-end
-
-function plot_variables_four_panels_2x2_heatmap(
+function plot_variables_four_panels_2x2(
     p1_xy, p2_xy, p3_xy, p4_xy,
     x1, y1, x2, y2, x3, y3, x4, y4,
     p1_title, p2_title, p3_title, p4_title,
@@ -390,7 +190,7 @@ function plot_variables_four_panels_2x2_heatmap(
 
     # Limits & contour levels
     plims   = [(pmins[i], pmaxs[i]) .* 0.8 for i in 1:4]
-    levels  = [[range(plims[i][1], plims[i][2], length=40)...] for i in 1:4]
+    levels  = [[range(plims[i][1], plims[i][2], length=60)...] for i in 1:4]
 
     # scaled coords
     xs = [x1,x2,x3,x4] .|> x -> x .* 1e-3
@@ -400,7 +200,7 @@ function plot_variables_four_panels_2x2_heatmap(
     cb_titles = [p1_cbt, p2_cbt, p3_cbt, p4_cbt]
     colors = [color1, color2, color3, color4]
 
-    fig = Figure(resolution=(1500,2250))
+    fig = Figure(resolution=(1500,1800))
 
     idx = 1
     for r in 1:2
@@ -410,11 +210,11 @@ function plot_variables_four_panels_2x2_heatmap(
                 xlabel = (idx in (3,4) ? "x (km)" : ""),
                 ylabel = (c == 1 ? "y (km)" : ""),
                 aspect = 0.75,
-                titlesize = 22,
-                xlabelsize = 20,
-                ylabelsize = 20,
-                xticklabelsize = 20,
-                yticklabelsize = 20,
+                titlesize = 28,
+                xlabelsize = 24,
+                ylabelsize = 24,
+                xticklabelsize = 24,
+                yticklabelsize = 24,
                 leftspinevisible = false,
                 rightspinevisible = false,
                 topspinevisible = false,
@@ -423,25 +223,19 @@ function plot_variables_four_panels_2x2_heatmap(
             # smooth raster shading + contour overlay
             masked_field = copy(ps[idx])
             masked_field[landmask] .= NaN
-            heatmap!(ax, xs[idx], ys[idx], ps[idx];
-                colormap = colors[idx],
-                nan_color = :gray50,
-                colorrange=plims[idx])
-
-            contour!(ax, xs[idx], ys[idx], ps[idx];
-                levels=levels[idx],
-                color=:black,
-                nan_color = :gray50,
-                linewidth=0.01)
+            cont = contourf!(ax, xs[idx], ys[idx], masked_field,
+                    colormap=colors[idx],
+                    nan_color = :gray50,
+                    levels=levels[idx],
+                    colorscale=plims[idx])
 
             # Panel colorbar
             Colorbar(fig[r, 2c];
                 colormap = to_colormap(colors[idx]),
                 limits = plims[idx],
                 label = cb_titles[idx],
-                labelsize = 20,
-                ticklabelsize = 16
-                #tickformat = xs -> [@sprintf("%.2e", x) for x in xs],
+                labelsize = 24,
+                ticklabelsize = 20,
             )
 
             idx += 1
@@ -451,20 +245,20 @@ function plot_variables_four_panels_2x2_heatmap(
     save(filename, fig)
     return fig
 end
-#=
-function plot_variables_two_panels_2x1_heatmap(
+
+function plot_variables_two_panels_1x2(
     p1_xy, p2_xy,
     x1, y1, x2, y2,
     p1_title, p2_title,
     p1_cbt, p2_cbt,
-    filename;
+    filename, landmasks;
     p1_min=false, p2_min=false,
     p1_set_min=nothing, p2_set_min=nothing,
     p1_set_max=nothing, p2_set_max=nothing,
     shared=false,
     color1=:balance, color2=:balance)
 
-    # Compute mins and maxes
+   # Compute mins and maxes
     pmins = [minimum(p) for p in (p1_xy,p2_xy)]
     pmaxs = [maximum(p) for p in (p1_xy,p2_xy)]
 
@@ -505,7 +299,7 @@ function plot_variables_two_panels_2x1_heatmap(
 
     # Limits & contour levels
     plims   = [(pmins[i], pmaxs[i]) .* 0.8 for i in 1:2]
-    levels  = [[range(plims[i][1], plims[i][2], length=40)...] for i in 1:2]
+    levels  = [[range(plims[i][1], plims[i][2], length=60)...] for i in 1:2]
 
     # scaled coords
     xs = [x1,x2] .|> x -> x .* 1e-3
@@ -515,59 +309,51 @@ function plot_variables_two_panels_2x1_heatmap(
     cb_titles = [p1_cbt, p2_cbt]
     colors = [color1, color2]
 
-    fig = Figure(resolution=(2000,1500))
-    plotgrid = fig[1,1] = GridLayout()
+    fig = Figure(resolution=(1500,1000))
 
     idx = 1
-    for r in 1:2
-        c = 1
-        ax = Axis(plotgrid[r, 2c-1],
-            title = titles[idx],
-            xlabel = (idx in (1,2) ? "x (km)" : ""),
-            ylabel = (c == 1 ? "y (km)" : ""),
-            aspect = 4,
-            titlesize = 22,
-            xlabelsize = 20,
-            ylabelsize = 20,
-            xticklabelsize = 20,
-            yticklabelsize = 20,
-            leftspinevisible = false,
-            rightspinevisible = false,
-            topspinevisible = false,
-            bottomspinevisible = false)
+    for r in 1:1
+        for c in 1:2
+            ax = Axis(fig[r, 2c-1],
+                title = titles[idx],
+                xlabel = (idx in (3,4) ? "x (km)" : ""),
+                ylabel = (c == 1 ? "y (km)" : ""),
+                aspect = 0.75,
+                titlesize = 28,
+                xlabelsize = 24,
+                ylabelsize = 24,
+                xticklabelsize = 24,
+                yticklabelsize = 24,
+                leftspinevisible = false,
+                rightspinevisible = false,
+                topspinevisible = false,
+                bottomspinevisible = false)
 
-        # smooth raster shading + contour overlay
-        masked_field = copy(ps[idx])
-        heatmap!(ax, xs[idx], ys[idx], ps[idx];
-            colormap = colors[idx],
-            nan_color = :gray50,
-            colorrange=plims[idx])
+            # smooth raster shading + contour overlay
+            masked_field = copy(ps[idx])
+            masked_field[landmasks[idx]] .= NaN
+            cont = contourf!(ax, xs[idx], ys[idx], masked_field,
+                    colormap=colors[idx],
+                    nan_color = :gray50,
+                    levels=levels[idx],
+                    colorscale=plims[idx])
 
-        contour!(ax, xs[idx], ys[idx], ps[idx];
-            levels=levels[idx],
-            color=:black,
-            nan_color = :gray50,
-            linewidth=0.01)
+            # Panel colorbar
+            Colorbar(fig[r, 2c];
+                colormap = to_colormap(colors[idx]),
+                limits = plims[idx],
+                label = cb_titles[idx],
+                labelsize = 24,
+                ticklabelsize = 20
+            )
 
-        plotgrid[r,2] = Spacer(width = 20)
-
-        # Panel colorbar
-        Colorbar(plotgrid[r, 3];
-            colormap = to_colormap(colors[idx]),
-            limits = plims[idx],
-            label = cb_titles[idx],
-            labelsize = 20,
-            ticklabelsize = 16
-            #tickformat = xs -> [@sprintf("%.2e", x) for x in xs],
-        )
-
-        idx += 1
+            idx += 1
+        end
     end
 
     save(filename, fig)
     return fig
 end
-=#
 
 function plot_variables_two_panels_2x1(
     p1_xy, p2_xy,
@@ -622,7 +408,7 @@ function plot_variables_two_panels_2x1(
 
     # Limits & contour levels
     plims   = [(pmins[i], pmaxs[i]) .* 0.8 for i in 1:2]
-    levels  = [[range(plims[i][1], plims[i][2], length=40)...] for i in 1:2]
+    levels  = [[range(plims[i][1], plims[i][2], length=60)...] for i in 1:2]
 
     # scaled coords
     xs = [x1,x2] .|> x -> x .* 1e-3
@@ -632,7 +418,7 @@ function plot_variables_two_panels_2x1(
     cb_titles = [p1_cbt, p2_cbt]
     colors = [color1, color2]
 
-    fig = Figure(resolution=(2000,1500))
+    fig = Figure(resolution=(2000,1200))
 
     idx = 1
     for r in 1:2
@@ -642,11 +428,11 @@ function plot_variables_two_panels_2x1(
             xlabel = (idx in (1,2) ? "x (km)" : ""),
             ylabel = (c == 1 ? "y (km)" : ""),
             aspect = 4,
-            titlesize = 22,
-            xlabelsize = 20,
-            ylabelsize = 20,
-            xticklabelsize = 20,
-            yticklabelsize = 20,
+            titlesize = 28,
+            xlabelsize = 24,
+            ylabelsize = 24,
+            xticklabelsize = 24,
+            yticklabelsize = 24,
             leftspinevisible = false,
             rightspinevisible = false,
             topspinevisible = false,
@@ -665,9 +451,8 @@ function plot_variables_two_panels_2x1(
             colormap = to_colormap(colors[idx]),
             limits = plims[idx],
             label = cb_titles[idx],
-            labelsize = 20,
-            ticklabelsize = 16
-            #tickformat = xs -> [@sprintf("%.2e", x) for x in xs],
+            labelsize = 24,
+            ticklabelsize = 20,
         )
 
         idx += 1
@@ -694,39 +479,40 @@ landmask_gradients = [landmask_center, landmask_v, landmask_center, landmask_cen
 landmask_velocities = [landmask_u, landmask_v, landmask_u, landmask_v, landmask_u, landmask_v]
 landmask_centers = [landmask_center, landmask_center, landmask_center, landmask_center, landmask_center, landmask_center]
 
-@show S_final[:,:,31]
-#=
-plot_variables_six_panels_3x2(du_wind_stress[:,:,1], dv_wind_stress[:,:,1], dT[:,:,31], dT[:,:,14], dkappaT_final[:,:,31], dkappaT_final[:,:,14], xc, yc, xv, yv, xc, yc, xc, yc, xc, yc, xc, yc,
-                          "(a) Zonal Wind Stress Sensitivity (x, y)", "(b) Meridional Wind Stress Sensitivity (x, y)", "(c) Initial Temperature Sensitivity (x, y, 15m)", "(d) Initial Temperature Sensitivity (x, y, 504m)", "(e) T Vertical Diffusivity Sensitivity (x, y, 15m)", "(f) T Vertical Diffusivity Sensitivity (x, y, 504m)",
-                          "Sv / m²s⁻²", "Sv / m²s⁻²", "Sv / °C", "Sv / °C", "Sv / m²s⁻¹", "Sv / m²s⁻¹",
-                          graph_directory * "gradients_oceananigans_xy.png", landmask_gradients)
-
-plot_variables_six_panels_3x2(u[:,:,31], v[:,:,31], u[:,:,14], v[:,:,14], u[:,:,4], v[:,:,4], xu, yu, xv, yv, xu, yu, xv, yv, xu, yu, xv, yv,
-                          "(a) u(x, y, z=15m)", "(b) v(x, y, z=15m)", "(c) u(x, y, z=504m)", "(d) v(x, y, z=504m)", "(e) u(x, y, z=1518m)", "(f) v(x, y, z=1518m)",
-                          "m s⁻¹", "m s⁻¹", "m s⁻¹", "m s⁻¹", "m s⁻¹", "m s⁻¹",
-                          graph_directory * "velocities_oceananigans_xy.png", landmask_velocities; shared = true)
-=#
-
 stacked_landmask = repeat(landmask, 1, 1, Nz)
 @show minimum(S_final[.!stacked_landmask]), maximum(S_final[.!stacked_landmask])
 
-plot_variables_six_panels_3x2_heatmap(T_final[:,:,31], S_final[:,:,31], T_final[:,:,14], S_final[:,:,14], T_final[:,:,4], S_final[:,:,4], xc, yc, xc, yc, xc, yc, xc, yc, xc, yc, xc, yc,
-                          "(a) T(x, y, z=15m)", "(b) S(x, y, z=15m)", "(c) T(x, y, z=504m)", "(d) S(x, y, z=504m)", "(e) T(x, y, z=1518m)", "(f) S(x, y, z=1518m)",
-                          "°C", "g / kg", "°C", "g / kg", "°C", "g / kg",
-                          graph_directory * "tracers_oceananigans_xy.png", landmask; color=:thermal, shared_left=true, shared_right=true,
-                          p1_min=true, p2_min=true, p3_min=true, p4_min=true, p5_min=true, p6_min=true)
+plot_variables_four_panels_2x2(dT[:,:,31], dT[:,:,14], dkappaT_final[:,:,31], dkappaT_final[:,:,14], xc, yc, xc, yc, xc, yc, xc, yc,
+                          "(a) ∂J/∂T(x, y, 15m)", "(b) ∂J/∂T(x, y, 504m)", "(c) ∂J/∂κₜ(x, y, 15m)", "(d) ∂J/∂κₜ(x, y, 504m)",
+                          "Sv / °C", "Sv / °C", "Sv / m²s⁻¹", "Sv / m²s⁻¹",
+                          graph_directory * "gradients_Tdiff_xy.png", landmask)
 
-plot_variables_four_panels_2x2_heatmap(T_final[:,:,31], T_final[:,:,14], T_final[:,:,4], ssh[:,:], xc, yc, xc, yc, xc, yc, xc, yc,
+plot_variables_four_panels_2x2(T_final[:,:,31], T_final[:,:,14], T_final[:,:,4], ssh[:,:], xc, yc, xc, yc, xc, yc, xc, yc,
                           "(a) T(x, y, z=15m)", "(b) T(x, y, z=504m)", "(c) T(x, y, z=1518m)", "(d) SSH(x, y)",
                           "°C", "°C", "°C", "m",
                           graph_directory * "tracers_oceananigans_xy.png", landmask;
                           color1=:thermal, color2=:thermal, color3=:thermal,
                           p1_min=true, p2_min=true, p3_min=true, p4_min=true,
-                          p4_set_max=2.0,
+                          p1_set_max=10.0, p2_set_max=8.0, p3_set_max=3.0, p4_set_max=2.0,
                           p1_set_min=-1.0, p2_set_min=-1.0, p3_set_min=-1.0, p4_set_min=-2.0)
 
 
 j′ = round(Int, grid.Ny / 2)
+
+landmask_gradients = [landmask_center, landmask_v]
+plot_variables_two_panels_1x2(du_wind_stress[:,:,1], dv_wind_stress[:,:,1], xu, yu, xv, yv,
+                          "(a) ∂J/∂τₓ(x, y)", "(b) ∂J/∂τᵧ(x, y)",
+                          "Sv / m²s⁻²", "Sv / m²s⁻²",
+                          graph_directory * "gradients_windstress_xy.png", landmask_gradients;
+                          p1_set_min=-600, p2_set_min=-600, p1_set_max=600, p2_set_max=600)
+
+z_thicknesses = zw[2:end] - zw[1:end-1]
+
+plot_variables_two_panels_2x1(dT[44, :, :] ./ z_thicknesses', dT[:,j′,:] ./ z_thicknesses', yc, zc, xc, zc,
+                          "(a) ∂J/∂T(x=550km, y, z)", "(b) ∂J/∂T(x, y=1000km, z)",
+                          "Sv / °C", "Sv / °C",
+                          graph_directory * "gradients_oceananigans_depth.png";
+                          p1_set_min=-7e-5, p2_set_min=-7e-5, p1_set_max=7e-5, p2_set_max=7e-5)
 
 plot_variables_two_panels_2x1(T_final[44, :, :], T_final[:,j′,:], yc, zc, xc, zc,
                           "(a) T(x=550km, y, z)", "(b) T(x, y=1000km, z)",
@@ -735,3 +521,15 @@ plot_variables_two_panels_2x1(T_final[44, :, :], T_final[:,j′,:], yc, zc, xc, 
                           color1=:thermal, color2=:thermal,
                           p1_min=true, p2_min=true,
                           p1_set_min=-1.0, p2_set_min=-1.0, p1_set_max=10.0, p2_set_max=6.0)
+
+plot_variables_two_panels_2x1(u[44, :, :], u[:,j′,:], yu, zu, xu, zu,
+                          "(a) u(x=550km, y, z)", "(b) u(x, y=1000km, z)",
+                          "ms⁻¹", "ms⁻¹",
+                          graph_directory * "u_depth.png";
+                          p1_set_min=-1.3, p2_set_min=-1.3, p1_set_max=1.3, p2_set_max=1.3)
+
+plot_variables_two_panels_2x1(v[44, :, :], v[:,j′,:], yv, zv, xv, zv,
+                          "(a) v(x=550km, y, z)", "(b) v(x, y=1000km, z)",
+                          "ms⁻¹", "ms⁻¹",
+                          graph_directory * "v_depth.png";
+                          p1_set_min=-1.0, p2_set_min=-1.0, p1_set_max=1.0, p2_set_max=1.0)

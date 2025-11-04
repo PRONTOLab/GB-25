@@ -18,10 +18,6 @@ using SeawaterPolynomials
 
 using ClimaOcean.Diagnostics: MixedLayerDepthField
 
-#using Oceananigans.Architectures: GPU
-#using CUDA
-#CUDA.device!(0)
-
 using Reactant
 using GordonBell25
 using Oceananigans.Architectures: ReactantState
@@ -29,41 +25,18 @@ using Oceananigans.Architectures: ReactantState
 
 using Enzyme
 
-#=
-# https://github.com/CliMA/Oceananigans.jl/blob/c29939097a8d2f42966e930f2f2605803bf5d44c/src/AbstractOperations/binary_operations.jl#L5
-Base.@nospecializeinfer function Reactant.traced_type_inner(
-    @nospecialize(OA::Type{Oceananigans.AbstractOperations.BinaryOperation{LX, LY, LZ, O, A, B, IA, IB, G, T}}),
-    seen,
-    mode::Reactant.TraceMode,
-    @nospecialize(track_numbers::Type),
-    @nospecialize(sharding),
-    @nospecialize(runtime)
-) where {LX, LY, LZ, O, A, B, IA, IB, G, T}
-    LX2 = Reactant.traced_type_inner(LX, seen, mode, track_numbers, sharding, runtime)
-    LY2 = Reactant.traced_type_inner(LY, seen, mode, track_numbers, sharding, runtime)
-    LZ2 = Reactant.traced_type_inner(LZ, seen, mode, track_numbers, sharding, runtime)
-
-    O2 = Reactant.traced_type_inner(O, seen, mode, track_numbers, sharding, runtime)
-
-    A2 = Reactant.traced_type_inner(A, seen, mode, track_numbers, sharding, runtime)
-    B2 = Reactant.traced_type_inner(B, seen, mode, track_numbers, sharding, runtime)
-    IA2 = Reactant.traced_type_inner(IA, seen, mode, track_numbers, sharding, runtime)
-    IB2 = Reactant.traced_type_inner(IB, seen, mode, track_numbers, sharding, runtime)
-    G2 = Reactant.traced_type_inner(G, seen, mode, track_numbers, sharding, runtime)
-
-    T2 = eltype(G2)
-    return Oceananigans.AbstractOperations.BinaryOperation{LX2, LY2, LZ2, O2, A2, B2, IA2, IB2, G2, T2}
-end
-=#
 Oceananigans.defaults.FloatType = Float64
+
+graph_directory = "run_abernathy_model_ad_spinup5000_8100steps/"
+#graph_directory = "run_abernathy_model_ad_spinup40000000_8100steps/"
 
 #
 # Model parameters to set first:
 #
 
 # number of grid points
-const Nx = 96  # LowRes: 48
-const Ny = 192 # LowRes: 96
+const Nx = 80  # LowRes: 48
+const Ny = 160 # LowRes: 96
 const Nz = 32
 
 const x_midpoint = Int(Nx / 2) + 1
@@ -137,10 +110,9 @@ function make_grid(architecture, Nx, Ny, Nz, z_faces)
 
     # Make into a ridge array:
     ridge = Field{Center, Center, Nothing}(underlying_grid)
-    smoothed_ridge = Field{Center, Center, Nothing}(underlying_grid)
     set!(ridge, wall_function)
 
-    grid = ImmersedBoundaryGrid(underlying_grid, PartialCellBottom(ridge))
+    grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(ridge))
     return grid
 end
 
@@ -191,15 +163,15 @@ function build_model(grid, Δt₀, parameters)
 
     # closure (moderately elevating scalar visc/diff)
 
-    κh = 5e-5 #0.5e-5 # [m²/s] horizontal diffusivity
-    νh = 500 #30.0   # [m²/s] horizontal viscocity
-    κz = 5e-5 #0.5e-5 # [m²/s] vertical diffusivity
-    νz = 3e-3 #3e-4   # [m²/s] vertical viscocity
+    κh = 5e-5 # [m²/s] horizontal diffusivity
+    νh = 500  # [m²/s] horizontal viscocity
+    κz = 5e-5 # [m²/s] vertical diffusivity
+    νz = 3e-3 # [m²/s] vertical viscocity
 
     κz_field = Field{Center, Center, Center}(grid)
     κz_array = zeros(Nx, Ny, Nz)
 
-    κz_add = 5e-5  # m2/s at surface
+    κz_add = 5e-5  # m² / s at surface
     decay_scale = 5   # layers
     for k in 1:Nz
         taper = exp(- (k-1) / decay_scale)
@@ -220,9 +192,9 @@ function build_model(grid, Δt₀, parameters)
     model = HydrostaticFreeSurfaceModel(
         grid = grid,
         free_surface = SplitExplicitFreeSurface(substeps=10),
-        momentum_advection = WENO(order=3), #Centered(order=4),
-        tracer_advection = WENO(order=3), #Centered(order=4),
-        buoyancy = SeawaterBuoyancy(equation_of_state=SeawaterPolynomials.TEOS10EquationOfState(Oceananigans.defaults.FloatType)),
+        momentum_advection = WENO(order=3),
+        tracer_advection = WENO(order=3),
+        buoyancy = SeawaterBuoyancy(equation_of_state=LinearEquationOfState(Oceananigans.defaults.FloatType)),
         coriolis = coriolis,
         closure = (horizontal_closure, vertical_closure, biharmonic_closure),
         tracers = (:T, :S, :e),
@@ -263,6 +235,7 @@ end
 
 # resting initial condition
 function temperature_salinity_init(grid, parameters)
+    # Adding some noise to temperature field:
     ε(σ) = σ * randn()
     Tᵢ_function(x, y, z) = parameters.ΔT * (exp(z / parameters.h) - exp(-Lz / parameters.h)) / (1 - exp(-Lz / parameters.h)) + ε(1e-8)
     Tᵢ = Field{Center, Center, Center}(grid)
@@ -308,7 +281,7 @@ end
 
 function loop!(model)
     Δt = model.clock.last_Δt
-    @trace mincut = true checkpointing = true track_numbers = false for i = 1:900
+    @trace mincut = true checkpointing = true track_numbers = false for i = 1:8100
         time_step!(model, Δt)
     end
     return nothing
@@ -337,11 +310,7 @@ function estimate_tracer_error(model, initial_temperature, initial_salinity, u_w
     
     Nx, Ny, Nz = size(model.grid)
 
-    # Compute the mean mixed layer depth:
-    #compute!(mld)
-    #avg_mld = sum(parent(mld)) / (Nx * Ny)
-
-    # Alternatively, compute the zonal transport:
+    # Compute the zonal transport:
     zonal_transport = (model.velocities.u[x_midpoint,1:Ny,1:Nz] .* model.grid.Δyᵃᶜᵃ) .* Δz
 
     return sum(zonal_transport) / 1e6 # Put it in Sverdrups
@@ -369,7 +338,7 @@ end
 #####
 
 # Architecture
-architecture = ReactantState() #GPU()
+architecture = ReactantState()
 
 # Timestep size:
 Δt₀ = 2.5minutes 
@@ -411,8 +380,7 @@ compile_toc = time() - tic
 
 using FileIO, JLD2
 
-graph_directory = "run_abernathy_model_ad_spinup5000_900steps_HiRes_noCATKE_halfTimeStep_moderateVisc_WENOOrder3_gridFittedBottom_wallRidge_biharmonic_scaledVerticalDiff/"
-filename        = graph_directory * "data_init.jld2"
+filename = graph_directory * "data_init.jld2"
 
 if !isdir(graph_directory) Base.Filesystem.mkdir(graph_directory) end
 
@@ -435,6 +403,7 @@ jldsave(filename; Nx, Ny, Nz,
                   bottom_height=convert(Array, interior(bottom_height)),
                   T_init=convert(Array, interior(model.tracers.T)),
                   S_init=convert(Array, interior(model.tracers.S)),
+                  ssh=convert(Array, interior(model.free_surface.η)),
                   e_init=convert(Array, interior(model.tracers.e)),
                   u_wind_stress=convert(Array, interior(u_wind_stress)),
                   v_wind_stress=convert(Array, interior(v_wind_stress)),
@@ -442,9 +411,10 @@ jldsave(filename; Nx, Ny, Nz,
                   dkappaS_init=convert(Array, interior(dmodel.closure[2].κ[2])),
                   T_flux=convert(Array, interior(T_flux)))
 
+
 tic = time()
 #output = restimate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux, Δz, mld)
-dedν, du_wind_stress, dTᵢ = rdifferentiate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux, Δz, mld, dmodel, dTᵢ, dSᵢ, du_wind_stress, dv_wind_stress, dT_flux, dΔz, dmld)
+dedν = rdifferentiate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux, Δz, mld, dmodel, dTᵢ, dSᵢ, du_wind_stress, dv_wind_stress, dT_flux, dΔz, dmld)
 run_toc = time() - tic
 
 @show run_toc
