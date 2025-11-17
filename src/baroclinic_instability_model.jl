@@ -31,7 +31,7 @@ function baroclinic_instability_model(arch, Nx, Ny, Nz; Δt,
     # closure = VerticalScalarDiffusivity(VerticallyImplicitTimeDiscretization(), κ=1e-5, ν=1e-4),
 
     # Coriolis forces for a rotating Earth
-    coriolis = nothing # HydrostaticSphericalCoriolis(),
+    coriolis = nothing, # HydrostaticSphericalCoriolis(),
 
     # Simple momentum advection schemes. May need to be reconsidered
     # due to Float32.
