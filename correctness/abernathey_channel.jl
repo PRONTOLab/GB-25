@@ -112,7 +112,7 @@ function make_grid(architecture, Nx, Ny, Nz, z_faces)
 
     # Make into a ridge array:
     ridge = Field{Center, Center, Nothing}(underlying_grid)
-    set!(ridge, wall_function)
+    @allowscalar set!(ridge, wall_function)
 
     grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(ridge))
     return grid
