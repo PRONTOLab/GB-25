@@ -27,8 +27,9 @@ using Enzyme
 
 Oceananigans.defaults.FloatType = Float64
 
-graph_directory = "run_abernathy_model_ad_spinup5000_8100steps/"
-#graph_directory = "run_abernathy_model_ad_spinup40000000_8100steps/"
+graph_directory = "run_abernathy_model_ad_spinup4000000_8100steps_noImmersedGrid/"
+#graph_directory = "run_abernathy_model_ad_spinup4000000_8100steps_zeroImmersedGrid/"
+
 
 #
 # Model parameters to set first:
@@ -92,9 +93,7 @@ function ridge_function(x, y)
 end
 
 function wall_function(x, y)
-    zonal = (x > 470kilometers) && (x < 530kilometers)
-    gap   = (y < 400kilometers) || (y > 1000kilometers)
-    return (Lz+1) * zonal * gap - Lz
+    return -Lz
 end
 
 
@@ -112,7 +111,7 @@ function make_grid(architecture, Nx, Ny, Nz, z_faces)
     ridge = Field{Center, Center, Nothing}(underlying_grid)
     set!(ridge, wall_function)
 
-    grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(ridge))
+    grid = underlying_grid #ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(ridge))
     return grid
 end
 
@@ -251,7 +250,7 @@ end
 
 function spinup_loop!(model)
     Δt = model.clock.last_Δt
-    @trace mincut = true track_numbers = false for i = 1:5000
+    @trace mincut = true track_numbers = false for i = 1:4000000
         time_step!(model, Δt)
     end
     return nothing
@@ -399,7 +398,7 @@ rspinup_reentrant_channel_model!(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress
 spinup_toc = time() - tic
 @show spinup_toc
 
-jldsave(filename; Nx, Ny, Nz,
+jldsave(filename, IOStream; Nx, Ny, Nz,
                   bottom_height=convert(Array, interior(bottom_height)),
                   T_init=convert(Array, interior(model.tracers.T)),
                   S_init=convert(Array, interior(model.tracers.S)),
@@ -424,7 +423,7 @@ run_toc = time() - tic
 
 filename = graph_directory * "data_final.jld2"
 
-jldsave(filename; Nx, Ny, Nz,
+jldsave(filename, IOStream; Nx, Ny, Nz,
                   T_final=convert(Array, interior(model.tracers.T)),
                   S_final=convert(Array, interior(model.tracers.S)),
                   e_final=convert(Array, interior(model.tracers.e)),

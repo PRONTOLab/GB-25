@@ -14,8 +14,8 @@ using Oceananigans.Grids: xnode, ynode, znode
 
 using GLMakie
 
-graph_directory = "run_abernathy_model_ad_spinup5000_8100steps/"
-#graph_directory = "run_abernathy_model_ad_spinup40000000_8100steps/"
+graph_directory = "run_abernathy_model_ad_spinup4000000_8100steps_noImmersedGrid/"
+#graph_directory = "run_abernathy_model_ad_spinup4000000_8100steps_zeroImmersedGrid/"
 
 #
 # First we gather the data and create a grid for plotting purposes:
