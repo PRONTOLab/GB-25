@@ -27,16 +27,18 @@ using Enzyme
 
 Oceananigans.defaults.FloatType = Float64
 
-graph_directory = "run_abernathy_model_ad_spinup5000_8100steps/"
+#graph_directory = "run_abernathy_model_ad_spinup5000_8100steps/"
 #graph_directory = "run_abernathy_model_ad_spinup40000000_8100steps/"
+
+graph_directory = "run_abernathy_model_ad_spinup400_100steps_ImplicitFreeSurface/"
 
 #
 # Model parameters to set first:
 #
 
 # number of grid points
-const Nx = 80  # LowRes: 48
-const Ny = 160 # LowRes: 96
+const Nx = 48 #80  # LowRes: 48
+const Ny = 96 #160 # LowRes: 96
 const Nz = 32
 
 const x_midpoint = Int(Nx / 2) + 1
@@ -191,7 +193,7 @@ function build_model(grid, Δt₀, parameters)
 
     @allowscalar model = HydrostaticFreeSurfaceModel(
         grid = grid,
-        free_surface = SplitExplicitFreeSurface(substeps=10),
+        free_surface = ImplicitFreeSurface(), #SplitExplicitFreeSurface(substeps=10),
         momentum_advection = WENO(order=3),
         tracer_advection = WENO(order=3),
         buoyancy = SeawaterBuoyancy(equation_of_state=LinearEquationOfState(Oceananigans.defaults.FloatType)),
@@ -251,7 +253,7 @@ end
 
 function spinup_loop!(model)
     Δt = model.clock.last_Δt
-    @trace mincut = true track_numbers = false for i = 1:5000
+    @trace mincut = true track_numbers = false for i = 1:400
         time_step!(model, Δt)
     end
     return nothing
@@ -281,7 +283,7 @@ end
 
 function loop!(model)
     Δt = model.clock.last_Δt
-    @trace mincut = true checkpointing = true track_numbers = false for i = 1:8100
+    @trace mincut = true checkpointing = true track_numbers = false for i = 1:100
         time_step!(model, Δt)
     end
     return nothing

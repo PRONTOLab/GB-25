@@ -14,8 +14,10 @@ using Oceananigans.Grids: xnode, ynode, znode
 
 using GLMakie
 
-graph_directory = "run_abernathy_model_ad_spinup5000_8100steps/"
+#graph_directory = "run_abernathy_model_ad_spinup5000_8100steps/"
 #graph_directory = "run_abernathy_model_ad_spinup40000000_8100steps/"
+
+graph_directory = "run_abernathy_model_ad_spinup4000000_8100steps_bottomViscosity/"
 
 #
 # First we gather the data and create a grid for plotting purposes:
@@ -67,13 +69,12 @@ end
 
 grid = make_grid(CPU(), Nx, Ny, Nz, z_faces)
 
-depth = grid.immersed_boundary.bottom_height[1:Nx,1:Ny,1]
-landmask = depth .> -1e-4
-
 bottom_height = data1["bottom_height"]
 T_init        = data1["T_init"]
 e_init        = data1["e_init"]
 wind_stress   = data1["u_wind_stress"]
+
+landmask = bottom_height .> -1e-4
 
 #dkappaT_init = data1["dkappaT_init"]
 #dkappaS_init = data1["dkappaS_init"]
@@ -129,7 +130,7 @@ function plot_variables_four_panels_2x2(
     x1, y1, x2, y2, x3, y3, x4, y4,
     p1_title, p2_title, p3_title, p4_title,
     p1_cbt, p2_cbt, p3_cbt, p4_cbt,
-    filename, landmask;
+    filename, landmasks;
     p1_min=false, p2_min=false, p3_min=false, p4_min=false,
     p1_set_min=nothing, p2_set_min=nothing, p3_set_min=nothing, p4_set_min=nothing,
     p1_set_max=nothing, p2_set_max=nothing, p3_set_max=nothing, p4_set_max=nothing,
@@ -137,8 +138,8 @@ function plot_variables_four_panels_2x2(
     color1=:balance, color2=:balance, color3=:balance, color4=:balance)
 
     # Compute mins and maxes
-    pmins = [minimum(p[.!landmask]) - 1e-12 for p in (p1_xy,p2_xy,p3_xy,p4_xy)]
-    pmaxs = [maximum(p[.!landmask]) + 1e-12 for p in (p1_xy,p2_xy,p3_xy,p4_xy)]
+    pmins = [minimum(p) - 1e-12 for p in (p1_xy,p2_xy,p3_xy,p4_xy)]
+    pmaxs = [maximum(p) + 1e-12 for p in (p1_xy,p2_xy,p3_xy,p4_xy)]
 
     @show pmins
     @show pmaxs
@@ -222,7 +223,7 @@ function plot_variables_four_panels_2x2(
 
             # smooth raster shading + contour overlay
             masked_field = copy(ps[idx])
-            masked_field[landmask] .= NaN
+            masked_field[landmasks[idx]] .= NaN
             cont = contourf!(ax, xs[idx], ys[idx], masked_field,
                     colormap=colors[idx],
                     nan_color = :gray50,
@@ -476,8 +477,8 @@ landmask_v[:, Ny+1] = landmask_center[:, Ny]
 @show size(dv_wind_stress)
 
 landmask_gradients = [landmask_center, landmask_v, landmask_center, landmask_center, landmask_center, landmask_center]
-landmask_velocities = [landmask_u, landmask_v, landmask_u, landmask_v, landmask_u, landmask_v]
-landmask_centers = [landmask_center, landmask_center, landmask_center, landmask_center, landmask_center, landmask_center]
+landmask_velocities = [landmask_u, landmask_u, landmask_v, landmask_v]
+landmask_centers = [landmask_center, landmask_center, landmask_center, landmask_center]
 
 stacked_landmask = repeat(landmask, 1, 1, Nz)
 @show minimum(S_final[.!stacked_landmask]), maximum(S_final[.!stacked_landmask])
@@ -485,12 +486,17 @@ stacked_landmask = repeat(landmask, 1, 1, Nz)
 plot_variables_four_panels_2x2(dT[:,:,31], dT[:,:,14], dkappaT_final[:,:,31], dkappaT_final[:,:,14], xc, yc, xc, yc, xc, yc, xc, yc,
                           "(a) ∂J/∂T(x, y, 15m)", "(b) ∂J/∂T(x, y, 504m)", "(c) ∂J/∂κₜ(x, y, 15m)", "(d) ∂J/∂κₜ(x, y, 504m)",
                           "Sv / °C", "Sv / °C", "Sv / m²s⁻¹", "Sv / m²s⁻¹",
-                          graph_directory * "gradients_Tdiff_xy.png", landmask)
+                          graph_directory * "gradients_Tdiff_xy.png", landmask_centers)
+
+plot_variables_four_panels_2x2(u[:,:,31], u[:,:,14], v[:,:,31], v[:,:,14], xu, yu, xu, yu, xv, yv, xv, yv,
+                          "(a) u(x, y, 15m)", "(b) u(x, y, 504m)", "(c) v(x, y, 15m)", "(d) v(x, y, 504m)",
+                          "m / s", "m / s", "m / s", "m / s",
+                          graph_directory * "velocity_xy.png", landmask_velocities)
 
 plot_variables_four_panels_2x2(T_final[:,:,31], T_final[:,:,14], T_final[:,:,4], ssh[:,:], xc, yc, xc, yc, xc, yc, xc, yc,
                           "(a) T(x, y, z=15m)", "(b) T(x, y, z=504m)", "(c) T(x, y, z=1518m)", "(d) SSH(x, y)",
                           "°C", "°C", "°C", "m",
-                          graph_directory * "tracers_oceananigans_xy.png", landmask;
+                          graph_directory * "tracers_oceananigans_xy.png", landmask_centers;
                           color1=:thermal, color2=:thermal, color3=:thermal,
                           p1_min=true, p2_min=true, p3_min=true, p4_min=true,
                           p1_set_max=10.0, p2_set_max=8.0, p3_set_max=3.0, p4_set_max=2.0,
