@@ -31,13 +31,13 @@ function first_time_step!(model)
         
     f = barotropic_velocities.U
     
-   grid = f.grid
-   fill_halo_regions!((f.data,),
-     	       (f.boundary_conditions,),
-                        Oceananigans.Grids.default_indices(3),
-     		 (Oceananigans.Fields.instantiated_location(f),),
-     		   grid)
-
+#     grid = f.grid
+#     fill_halo_regions!((f.data,),
+# 		       (f.boundary_conditions,),
+#                          Oceananigans.Grids.default_indices(3),
+# 			 (Oceananigans.Fields.instantiated_location(f),),
+# 			   grid)
+# 
 
     # ABOVE SHOULD BE MINIMIZED FROM THIS
     @show @which fill_halo_regions!((f, ))
