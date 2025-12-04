@@ -27,17 +27,15 @@ using Enzyme
 
 Oceananigans.defaults.FloatType = Float64
 
-graph_directory = "run_abernathy_model_ad_spinup4000000_8100steps_noImmersedGrid/"
-#graph_directory = "run_abernathy_model_ad_spinup4000000_8100steps_zeroImmersedGrid/"
-
+graph_directory = "run_abernathy_model_ad_spinup1000000_900steps_lowRes_noImmersedGrid_noRandomT_lowerVisc_v101p3/"
 
 #
 # Model parameters to set first:
 #
 
 # number of grid points
-const Nx = 80  # LowRes: 48
-const Ny = 160 # LowRes: 96
+const Nx = 48 #80  # LowRes: 48
+const Ny = 96 #160 # LowRes: 96
 const Nz = 32
 
 const x_midpoint = Int(Nx / 2) + 1
@@ -109,7 +107,7 @@ function make_grid(architecture, Nx, Ny, Nz, z_faces)
 
     # Make into a ridge array:
     ridge = Field{Center, Center, Nothing}(underlying_grid)
-    set!(ridge, wall_function)
+    @allowscalar set!(ridge, wall_function)
 
     grid = underlying_grid #ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(ridge))
     return grid
@@ -162,10 +160,10 @@ function build_model(grid, Δt₀, parameters)
 
     # closure (moderately elevating scalar visc/diff)
 
-    κh = 5e-5 # [m²/s] horizontal diffusivity
-    νh = 500  # [m²/s] horizontal viscocity
-    κz = 5e-5 # [m²/s] vertical diffusivity
-    νz = 3e-3 # [m²/s] vertical viscocity
+    κh = 1e-5 # [m²/s] horizontal diffusivity
+    νh = 100  # [m²/s] horizontal viscocity
+    κz = 1e-5 # [m²/s] vertical diffusivity
+    νz = 1e-3 # [m²/s] vertical viscocity
 
     κz_field = Field{Center, Center, Center}(grid)
     κz_array = zeros(Nx, Ny, Nz)
@@ -178,13 +176,13 @@ function build_model(grid, Δt₀, parameters)
     end
     @show κz_array[1:2,20,:]
 
-    set!(κz_field, κz_array)
+    set!(κz_field, κz)
 
     horizontal_closure = HorizontalScalarDiffusivity(ν = νh, κ = κh)
     vertical_closure = VerticalScalarDiffusivity(ν = νz, κ = κz_field)
 
     biharmonic_closure = ScalarBiharmonicDiffusivity(HorizontalFormulation(), Oceananigans.defaults.FloatType;
-                                                     ν = 1e11)
+                                                     ν = 1e10)
 
     @info "Building a model..."
 
@@ -235,8 +233,7 @@ end
 # resting initial condition
 function temperature_salinity_init(grid, parameters)
     # Adding some noise to temperature field:
-    ε(σ) = σ * randn()
-    Tᵢ_function(x, y, z) = parameters.ΔT * (exp(z / parameters.h) - exp(-Lz / parameters.h)) / (1 - exp(-Lz / parameters.h)) + ε(1e-8)
+    Tᵢ_function(x, y, z) = parameters.ΔT * (exp(z / parameters.h) - exp(-Lz / parameters.h)) / (1 - exp(-Lz / parameters.h))
     Tᵢ = Field{Center, Center, Center}(grid)
     Sᵢ = Field{Center, Center, Center}(grid)
     @allowscalar set!(Tᵢ, Tᵢ_function)
@@ -250,7 +247,7 @@ end
 
 function spinup_loop!(model)
     Δt = model.clock.last_Δt
-    @trace mincut = true track_numbers = false for i = 1:4000000
+    @trace mincut = true track_numbers = false for i = 1:1000000
         time_step!(model, Δt)
     end
     return nothing
@@ -280,7 +277,7 @@ end
 
 function loop!(model)
     Δt = model.clock.last_Δt
-    @trace mincut = true checkpointing = true track_numbers = false for i = 1:8100
+    @trace mincut = true checkpointing = true track_numbers = false for i = 1:900
         time_step!(model, Δt)
     end
     return nothing
@@ -340,7 +337,7 @@ end
 architecture = ReactantState()
 
 # Timestep size:
-Δt₀ = 2.5minutes 
+Δt₀ = 5minutes
 
 # Make the grid:
 grid          = make_grid(architecture, Nx, Ny, Nz, z_faces)
