@@ -14,17 +14,20 @@ using Oceananigans.Grids: xnode, ynode, znode
 
 using GLMakie
 
-graph_directory = "run_abernathy_model_ad_spinup4000000_8100steps_noImmersedGrid/"
-#graph_directory = "run_abernathy_model_ad_spinup4000000_8100steps_zeroImmersedGrid/"
+graph_directory1 = "run_abernathy_model_ad_spinup10000_100steps_lowRes_noImmersedGrid_noRandomT_lowerVisc_v101p3/"
+graph_directory2 = "run_abernathy_model_ad_spinup10000_100steps_lowRes_zeroImmersedGrid_noRandomT_lowerVisc_v101p3/"
+
+#graph_directory1 = "run_abernathy_model_ad_spinup4000000_8100steps_noImmersedBC/"
+#graph_directory2 = "run_abernathy_model_ad_spinup4000000_8100steps_zeroImmersedBC/"
 
 #
 # First we gather the data and create a grid for plotting purposes:
 #
-data1 = jldopen(graph_directory * "data_init.jld2", "r")
+data1init = jldopen(graph_directory1 * "data_init.jld2", "r")
 
-Nx = data1["Nx"]
-Ny = data1["Ny"]
-Nz = data1["Nz"]
+Nx = data1init["Nx"]
+Ny = data1init["Ny"]
+Nz = data1init["Nz"]
 
 # stretched grid
 k_center = collect(1:Nz)
@@ -67,29 +70,28 @@ end
 
 grid = make_grid(CPU(), Nx, Ny, Nz, z_faces)
 
-depth = grid.immersed_boundary.bottom_height[1:Nx,1:Ny,1]
-landmask = depth .> -1e-4
+bottom_height = data1init["bottom_height"]
+T_init        = data1init["T_init"]
+e_init        = data1init["e_init"]
+wind_stress   = data1init["u_wind_stress"]
 
-bottom_height = data1["bottom_height"]
-T_init        = data1["T_init"]
-e_init        = data1["e_init"]
-wind_stress   = data1["u_wind_stress"]
+landmask = bottom_height .> -1e-4
 
-#dkappaT_init = data1["dkappaT_init"]
-#dkappaS_init = data1["dkappaS_init"]
+#dkappaT_init = data1init["dkappaT_init"]
+#dkappaS_init = data1init["dkappaS_init"]
 
-data2 = jldopen(graph_directory * "data_final.jld2", "r")
+data1final = jldopen(graph_directory1 * "data_final.jld2", "r")
 
-T_final = data2["T_final"]
-S_final = data2["S_final"]
-e_final = data2["e_final"]
-ssh     = data2["ssh"]
+T_final = data1final["T_final"]
+S_final = data1final["S_final"]
+e_final = data1final["e_final"]
+ssh     = data1final["ssh"]
 
-u = data2["u"]
-v = data2["v"]
-w = data2["w"]
+u = data1final["u"]
+v = data1final["v"]
+w = data1final["w"]
 
-zonal_transport = data2["zonal_transport"]
+zonal_transport = data1final["zonal_transport"]
 
 @show zonal_transport
 
@@ -113,14 +115,14 @@ y′ = yζ[j′]
 @show zc
 @show zw
 
-du_wind_stress = data2["du_wind_stress"]
-dv_wind_stress = data2["dv_wind_stress"]
-dT             = data2["dT"]
-dS             = data2["dS"]
-dT_flux        = data2["dT_flux"]
-dkappaT_final  = data2["dkappaT_final"]
-dkappaS_final  = data2["dkappaS_final"]
-close(data2)
+du_wind_stress = data1final["du_wind_stress"]
+dv_wind_stress = data1final["dv_wind_stress"]
+dT             = data1final["dT"]
+dS             = data1final["dS"]
+dT_flux        = data1final["dT_flux"]
+dkappaT_final  = data1final["dkappaT_final"]
+dkappaS_final  = data1final["dkappaS_final"]
+close(data1final)
 
 using GLMakie
 
@@ -137,8 +139,8 @@ function plot_variables_four_panels_2x2(
     color1=:balance, color2=:balance, color3=:balance, color4=:balance)
 
     # Compute mins and maxes
-    pmins = [minimum(p[.!landmask]) - 1e-12 for p in (p1_xy,p2_xy,p3_xy,p4_xy)]
-    pmaxs = [maximum(p[.!landmask]) + 1e-12 for p in (p1_xy,p2_xy,p3_xy,p4_xy)]
+    pmins = [2 * min(0, minimum(p)) - 1e-12 for p in (p1_xy,p2_xy,p3_xy,p4_xy)]
+    pmaxs = [2 * max(0, maximum(p)) + 1e-12 for p in (p1_xy,p2_xy,p3_xy,p4_xy)]
 
     @show pmins
     @show pmaxs
@@ -222,7 +224,6 @@ function plot_variables_four_panels_2x2(
 
             # smooth raster shading + contour overlay
             masked_field = copy(ps[idx])
-            masked_field[landmask] .= NaN
             cont = contourf!(ax, xs[idx], ys[idx], masked_field,
                     colormap=colors[idx],
                     nan_color = :gray50,
@@ -259,8 +260,8 @@ function plot_variables_two_panels_1x2(
     color1=:balance, color2=:balance)
 
    # Compute mins and maxes
-    pmins = [minimum(p) for p in (p1_xy,p2_xy)]
-    pmaxs = [maximum(p) for p in (p1_xy,p2_xy)]
+    pmins = [2 * min(0, minimum(p)) - 1e-12 for p in (p1_xy,p2_xy)]
+    pmaxs = [2 * max(0, maximum(p)) + 1e-12 for p in (p1_xy,p2_xy)]
 
     @show pmins
     @show pmaxs
@@ -368,8 +369,8 @@ function plot_variables_two_panels_2x1(
     color1=:balance, color2=:balance)
 
     # Compute mins and maxes
-    pmins = [minimum(p) for p in (p1_xy,p2_xy)]
-    pmaxs = [maximum(p) for p in (p1_xy,p2_xy)]
+    pmins = [2 * min(0, minimum(p)) - 1e-12 for p in (p1_xy,p2_xy)]
+    pmaxs = [2 * max(0, maximum(p)) + 1e-12 for p in (p1_xy,p2_xy)]
 
     @show pmins
     @show pmaxs
@@ -485,16 +486,21 @@ stacked_landmask = repeat(landmask, 1, 1, Nz)
 plot_variables_four_panels_2x2(dT[:,:,31], dT[:,:,14], dkappaT_final[:,:,31], dkappaT_final[:,:,14], xc, yc, xc, yc, xc, yc, xc, yc,
                           "(a) ∂J/∂T(x, y, 15m)", "(b) ∂J/∂T(x, y, 504m)", "(c) ∂J/∂κₜ(x, y, 15m)", "(d) ∂J/∂κₜ(x, y, 504m)",
                           "Sv / °C", "Sv / °C", "Sv / m²s⁻¹", "Sv / m²s⁻¹",
-                          graph_directory * "gradients_Tdiff_xy.png", landmask)
+                          graph_directory1 * "gradients_Tdiff_xy.png", landmask)
 
 plot_variables_four_panels_2x2(T_final[:,:,31], T_final[:,:,14], T_final[:,:,4], ssh[:,:], xc, yc, xc, yc, xc, yc, xc, yc,
                           "(a) T(x, y, z=15m)", "(b) T(x, y, z=504m)", "(c) T(x, y, z=1518m)", "(d) SSH(x, y)",
                           "°C", "°C", "°C", "m",
-                          graph_directory * "tracers_oceananigans_xy.png", landmask;
+                          graph_directory1 * "tracers_oceananigans_xy.png", landmask;
                           color1=:thermal, color2=:thermal, color3=:thermal,
                           p1_min=true, p2_min=true, p3_min=true, p4_min=true,
-                          p1_set_max=10.0, p2_set_max=8.0, p3_set_max=3.0, p4_set_max=2.0,
-                          p1_set_min=-1.0, p2_set_min=-1.0, p3_set_min=-1.0, p4_set_min=-2.0)
+                          #p1_set_max=10.0, p2_set_max=8.0, p3_set_max=3.0, p4_set_max=2.0,
+                          p1_set_min=-1.0, p2_set_min=-1.0, p3_set_min=-1.0)
+
+plot_variables_four_panels_2x2(u[:,:,31], u[:,:,14], v[:,:,31], v[:,:,14], xu, yu, xu, yu, xv, yv, xv, yv,
+                          "(a) u(x, y, 15m)", "(b) u(x, y, 504m)", "(c) v(x, y, 15m)", "(d) v(x, y, 504m)",
+                          "m / s", "m / s", "m / s", "m / s",
+                          graph_directory1 * "velocities_xy.png", landmask)
 
 
 j′ = round(Int, grid.Ny / 2)
@@ -503,33 +509,142 @@ landmask_gradients = [landmask_center, landmask_v]
 plot_variables_two_panels_1x2(du_wind_stress[:,:,1], dv_wind_stress[:,:,1], xu, yu, xv, yv,
                           "(a) ∂J/∂τₓ(x, y)", "(b) ∂J/∂τᵧ(x, y)",
                           "Sv / m²s⁻²", "Sv / m²s⁻²",
-                          graph_directory * "gradients_windstress_xy.png", landmask_gradients;
-                          p1_set_min=-600, p2_set_min=-600, p1_set_max=600, p2_set_max=600)
+                          graph_directory1 * "gradients_windstress_xy.png", landmask_gradients)
+                          #p1_set_min=-600, p2_set_min=-600, p1_set_max=600, p2_set_max=600)
 
 z_thicknesses = zw[2:end] - zw[1:end-1]
 
 plot_variables_two_panels_2x1(dT[44, :, :] ./ z_thicknesses', dT[:,j′,:] ./ z_thicknesses', yc, zc, xc, zc,
                           "(a) ∂J/∂T(x=550km, y, z)", "(b) ∂J/∂T(x, y=1000km, z)",
                           "Sv / °C", "Sv / °C",
-                          graph_directory * "gradients_oceananigans_depth.png";
-                          p1_set_min=-7e-5, p2_set_min=-7e-5, p1_set_max=7e-5, p2_set_max=7e-5)
+                          graph_directory1 * "gradients_oceananigans_depth.png")
+                          #p1_set_min=-7e-5, p2_set_min=-7e-5, p1_set_max=7e-5, p2_set_max=7e-5)
 
 plot_variables_two_panels_2x1(T_final[44, :, :], T_final[:,j′,:], yc, zc, xc, zc,
                           "(a) T(x=550km, y, z)", "(b) T(x, y=1000km, z)",
                           "°C", "°C",
-                          graph_directory * "temperature_depth.png";
+                          graph_directory1 * "temperature_depth.png";
                           color1=:thermal, color2=:thermal,
-                          p1_min=true, p2_min=true,
-                          p1_set_min=-1.0, p2_set_min=-1.0, p1_set_max=10.0, p2_set_max=6.0)
+                          p1_min=true, p2_min=true)
+                          #p1_set_min=-1.0, p2_set_min=-1.0, p1_set_max=10.0, p2_set_max=6.0)
 
 plot_variables_two_panels_2x1(u[44, :, :], u[:,j′,:], yu, zu, xu, zu,
                           "(a) u(x=550km, y, z)", "(b) u(x, y=1000km, z)",
                           "ms⁻¹", "ms⁻¹",
-                          graph_directory * "u_depth.png";
-                          p1_set_min=-1.3, p2_set_min=-1.3, p1_set_max=1.3, p2_set_max=1.3)
+                          graph_directory1 * "u_depth.png")
+                          #p1_set_min=-1.3, p2_set_min=-1.3, p1_set_max=1.3, p2_set_max=1.3)
 
 plot_variables_two_panels_2x1(v[44, :, :], v[:,j′,:], yv, zv, xv, zv,
                           "(a) v(x=550km, y, z)", "(b) v(x, y=1000km, z)",
                           "ms⁻¹", "ms⁻¹",
-                          graph_directory * "v_depth.png";
-                          p1_set_min=-1.0, p2_set_min=-1.0, p1_set_max=1.0, p2_set_max=1.0)
+                          graph_directory1 * "v_depth.png")
+                          #p1_set_min=-1.0, p2_set_min=-1.0, p1_set_max=1.0, p2_set_max=1.0)
+
+data2final = jldopen(graph_directory2 * "data_final.jld2", "r")
+
+T_final2 = data2final["T_final"]
+S_final2 = data2final["S_final"]
+e_final2 = data2final["e_final"]
+ssh2     = data2final["ssh"]
+
+u2 = data2final["u"]
+v2 = data2final["v"]
+w2 = data2final["w"]
+
+zonal_transport = data2final["zonal_transport"]
+
+@show zonal_transport
+
+#
+# Then we set up the node points:
+#
+
+xζ, yζ, zζ = nodes(grid, Face(), Face(), Center())
+xc, yc, zc = nodes(grid, Center(), Center(), Center())
+xw, yw, zw = nodes(grid, Center(), Center(), Face())
+
+
+xu, yu, zu = nodes(grid, Face(), Center(), Center())
+xv, yv, zv = nodes(grid, Center(), Face(), Center())
+
+j′ = round(Int, grid.Ny / 2)
+y′ = yζ[j′]
+
+
+@show grid
+@show zc
+@show zw
+
+du_wind_stress2 = data2final["du_wind_stress"]
+dv_wind_stress2 = data2final["dv_wind_stress"]
+dT2             = data2final["dT"]
+dS2             = data2final["dS"]
+dT_flux2        = data2final["dT_flux"]
+dkappaT_final2  = data2final["dkappaT_final"]
+dkappaS_final2  = data2final["dkappaS_final"]
+close(data2final)
+
+dT_error = abs.(dT2 .- dT) ./ abs.(dT)
+dkappaT_final_error = abs.(dkappaT_final2 .- dkappaT_final) ./ abs.(dkappaT_final)
+
+plot_variables_four_panels_2x2(dT_error[:,:,31], dT_error[:,:,14], dkappaT_final_error[:,:,31], dkappaT_final_error[:,:,14], xc, yc, xc, yc, xc, yc, xc, yc,
+                          "(a) Error ∂J/∂T(x, y, 15m)", "(b) Error ∂J/∂T(x, y, 504m)", "(c) Error ∂J/∂κₜ(x, y, 15m)", "(d) Error ∂J/∂κₜ(x, y, 504m)",
+                          "Sv / °C", "Sv / °C", "Sv / m²s⁻¹", "Sv / m²s⁻¹",
+                          graph_directory2 * "error_gradients_Tdiff_xy.png", landmask)
+
+
+u_error = abs.(u2 .- u) ./ abs.(u .+ 1)
+v_error = abs.(v2 .- v) ./ abs.(v .+ 1)
+
+plot_variables_four_panels_2x2(u_error[:,:,31], u_error[:,:,14], v_error[:,:,31], v_error[:,:,14], xu, yu, xu, yu, xv, yv, xv, yv,
+                          "(a) Error u(x, y, 15m)", "(b) Error u(x, y, 504m)", "(c) Error v(x, y, 15m)", "(d) Error v(x, y, 504m)",
+                          "m / s", "m / s", "m / s", "m / s",
+                          graph_directory2 * "error_velocities_xy.png", landmask)
+
+
+T_final_error = abs.(T_final2 .- T_final) ./ abs.(T_final .+ 1)
+ssh_error = abs.(ssh2 .- ssh) ./ abs.(ssh .+ 1)
+
+plot_variables_four_panels_2x2(T_final_error[:,:,31], T_final_error[:,:,14], T_final_error[:,:,4], ssh_error[:,:], xc, yc, xc, yc, xc, yc, xc, yc,
+                          "(a) Error T(x, y, z=15m)", "(b) Error T(x, y, z=504m)", "(c) Error T(x, y, z=1518m)", "(d) Error SSH(x, y)",
+                          "°C", "°C", "°C", "m",
+                          graph_directory2 * "error_tracers_oceananigans_xy.png", landmask;
+                          color1=:thermal, color2=:thermal, color3=:thermal)
+
+plot_variables_two_panels_1x2(du_wind_stress[:,:,1], dv_wind_stress[:,:,1], xu, yu, xv, yv,
+                          "(a) J/∂τₓ(x, y)", "(b) ∂J/∂τᵧ(x, y)",
+                          "Sv / m²s⁻²", "Sv / m²s⁻²",
+                          graph_directory1 * "gradients_windstress_xy.png", landmask_gradients)
+
+
+
+plot_variables_two_panels_2x1(dT_error[44, :, :] ./ z_thicknesses', dT_error[:,j′,:] ./ z_thicknesses', yc, zc, xc, zc,
+                          "(a) Error ∂J/∂T(x=550km, y, z)", "(b) Error ∂J/∂T(x, y=1000km, z)",
+                          "Sv / °C", "Sv / °C",
+                          graph_directory2 * "error_gradients_oceananigans_depth.png")
+
+plot_variables_two_panels_2x1(T_final_error[44, :, :], T_final_error[:,j′,:], yc, zc, xc, zc,
+                          "(a) Error T(x=550km, y, z)", "(b) Error T(x, y=1000km, z)",
+                          "°C", "°C",
+                          graph_directory2 * "error_temperature_depth.png";
+                          color1=:thermal, color2=:thermal,
+                          p1_min=true, p2_min=true)
+
+plot_variables_two_panels_2x1(u_error[44, :, :], u_error[:,j′,:], yu, zu, xu, zu,
+                          "(a) Error u(x=550km, y, z)", "(b) Error u(x, y=1000km, z)",
+                          "ms⁻¹", "ms⁻¹",
+                          graph_directory2 * "error_u_depth.png")
+
+plot_variables_two_panels_2x1(v_error[44, :, :], v_error[:,j′,:], yv, zv, xv, zv,
+                          "(a) Error v(x=550km, y, z)", "(b) Error v(x, y=1000km, z)",
+                          "ms⁻¹", "ms⁻¹",
+                          graph_directory2 * "error_v_depth.png")
+
+
+du_wind_stress_error = abs.(du_wind_stress2 .- du_wind_stress) ./ abs.(du_wind_stress .+ 1)
+dv_wind_stress_error = abs.(dv_wind_stress2 .- dv_wind_stress) ./ abs.(dv_wind_stress .+ 1)
+
+plot_variables_two_panels_1x2(du_wind_stress_error[:,:,1], dv_wind_stress_error[:,:,1], xu, yu, xv, yv,
+                          "(a) Error ∂J/∂τₓ(x, y)", "(b) Error ∂J/∂τᵧ(x, y)",
+                          "Sv / m²s⁻²", "Sv / m²s⁻²",
+                          graph_directory2 * "error_gradients_windstress_xy.png", landmask_gradients)
