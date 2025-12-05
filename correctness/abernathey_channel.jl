@@ -16,10 +16,10 @@ using Oceananigans.TurbulenceClosures: CATKEVerticalDiffusivity, HorizontalFormu
 
 using SeawaterPolynomials
 
-using ClimaOcean.Diagnostics: MixedLayerDepthField
+using CUDA
 
 using Reactant
-using GordonBell25
+#using GordonBell25
 using Oceananigans.Architectures: ReactantState
 #Reactant.set_default_backend("cpu")
 
@@ -27,7 +27,7 @@ using Enzyme
 
 Oceananigans.defaults.FloatType = Float64
 
-graph_directory = "run_abernathy_model_ad_spinup10000_100steps_lowRes_noImmersedGrid_noRandomT_lowerVisc_v101p3/"
+graph_directory = "run_abernathy_model_ad_spinup1000_0steps_lowRes_zeroImmersedGrid_noRandomT_lowerVisc_v102p1/"
 
 #
 # Model parameters to set first:
@@ -109,7 +109,7 @@ function make_grid(architecture, Nx, Ny, Nz, z_faces)
     ridge = Field{Center, Center, Nothing}(underlying_grid)
     @allowscalar set!(ridge, wall_function)
 
-    grid = underlying_grid #ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(ridge))
+    grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(ridge))
     return grid
 end
 
@@ -277,7 +277,7 @@ end
 
 function loop!(model)
     Δt = model.clock.last_Δt
-    @trace mincut = true checkpointing = true track_numbers = false for i = 1:100
+    @trace mincut = true checkpointing = true track_numbers = false for i = 1:1000
         time_step!(model, Δt)
     end
     return nothing
@@ -346,7 +346,7 @@ T_flux        = T_flux_init(model.grid, parameters)
 u_wind_stress = u_wind_stress_init(model.grid, parameters)
 v_wind_stress = v_wind_stress_init(model.grid, parameters)
 Tᵢ, Sᵢ        = temperature_salinity_init(model.grid, parameters)
-mld           = MixedLayerDepthField(model.buoyancy, model.grid, model.tracers)
+mld           = Field{Center, Center, Center}(grid)
 Δz            = Reactant.ConcreteRArray(Δz)
 
 @info "Built $model."
@@ -357,17 +357,17 @@ dSᵢ            = Field{Center, Center, Center}(model.grid)
 du_wind_stress = Field{Face, Center, Nothing}(model.grid)
 dv_wind_stress = Field{Center, Face, Nothing}(model.grid)
 dT_flux        = Field{Center, Center, Nothing}(model.grid)
-dmld           = MixedLayerDepthField(dmodel.buoyancy, dmodel.grid, dmodel.tracers)
+dmld           = Field{Center, Center, Center}(grid)
 dΔz            = Enzyme.make_zero(Δz)
 
 # Trying zonal transport:
 
 @info "Compiling the model run..."
 tic = time()
-rspinup_reentrant_channel_model! = @compile raise_first=true raise=true sync=true  spinup_reentrant_channel_model!(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux)
-#restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux, Δz, mld)
-rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true  differentiate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux, Δz, mld,
-                                                                                                        dmodel, dTᵢ, dSᵢ, du_wind_stress, dv_wind_stress, dT_flux, dΔz, dmld)
+#rspinup_reentrant_channel_model! = @compile raise_first=true raise=true sync=true  spinup_reentrant_channel_model!(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux)
+restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux, Δz, mld)
+#rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true  differentiate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux, Δz, mld,
+#                                                                                                        dmodel, dTᵢ, dSᵢ, du_wind_stress, dv_wind_stress, dT_flux, dΔz, dmld)
 compile_toc = time() - tic
 
 @show compile_toc
@@ -389,9 +389,9 @@ end
 
 # Spinup the model for a sufficient amount of time, save the T and S from this state:
 tic = time()
-rspinup_reentrant_channel_model!(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux)
-@allowscalar set!(Tᵢ, model.tracers.T)
-@allowscalar set!(Sᵢ, model.tracers.S)
+#rspinup_reentrant_channel_model!(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux)
+#@allowscalar set!(Tᵢ, model.tracers.T)
+#@allowscalar set!(Sᵢ, model.tracers.S)
 spinup_toc = time() - tic
 @show spinup_toc
 
@@ -409,14 +409,14 @@ jldsave(filename, IOStream; Nx, Ny, Nz,
 
 
 tic = time()
-#output = restimate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux, Δz, mld)
-dedν = rdifferentiate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux, Δz, mld, dmodel, dTᵢ, dSᵢ, du_wind_stress, dv_wind_stress, dT_flux, dΔz, dmld)
+output = restimate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux, Δz, mld)
+#dedν = rdifferentiate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux, Δz, mld, dmodel, dTᵢ, dSᵢ, du_wind_stress, dv_wind_stress, dT_flux, dΔz, dmld)
 run_toc = time() - tic
 
 @show run_toc
-#@show output
+@show output
 
-@show dedν
+#@show dedν
 
 filename = graph_directory * "data_final.jld2"
 
@@ -429,8 +429,8 @@ jldsave(filename, IOStream; Nx, Ny, Nz,
                   v=convert(Array, interior(model.velocities.v)),
                   w=convert(Array, interior(model.velocities.w)),
                   mld=convert(Array, interior(mld)),
-                  #zonal_transport=convert(Float64, output),
-                  zonal_transport=convert(Float64, dedν[2]),
+                  zonal_transport=convert(Float64, output),
+                  #zonal_transport=convert(Float64, dedν[2]),
                   du_wind_stress=convert(Array, interior(du_wind_stress)),
                   dv_wind_stress=convert(Array, interior(dv_wind_stress)),
                   dT=convert(Array, interior(dTᵢ)),

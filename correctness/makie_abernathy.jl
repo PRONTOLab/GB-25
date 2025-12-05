@@ -14,8 +14,8 @@ using Oceananigans.Grids: xnode, ynode, znode
 
 using GLMakie
 
-graph_directory1 = "run_abernathy_model_ad_spinup10000_100steps_lowRes_noImmersedGrid_noRandomT_lowerVisc_v101p3/"
-graph_directory2 = "run_abernathy_model_ad_spinup10000_100steps_lowRes_zeroImmersedGrid_noRandomT_lowerVisc_v101p3/"
+graph_directory1 = "run_abernathy_model_ad_spinup1000_0steps_lowRes_noImmersedGrid_noRandomT_lowerVisc_v102p1/"
+graph_directory2 = "run_abernathy_model_ad_spinup1000_0steps_lowRes_zeroImmersedGrid_noRandomT_lowerVisc_v102p1/"
 
 #graph_directory1 = "run_abernathy_model_ad_spinup4000000_8100steps_noImmersedBC/"
 #graph_directory2 = "run_abernathy_model_ad_spinup4000000_8100steps_zeroImmersedBC/"
@@ -583,7 +583,7 @@ dT_flux2        = data2final["dT_flux"]
 dkappaT_final2  = data2final["dkappaT_final"]
 dkappaS_final2  = data2final["dkappaS_final"]
 close(data2final)
-
+#=
 dT_error = abs.(dT2 .- dT) ./ abs.(dT)
 dkappaT_final_error = abs.(dkappaT_final2 .- dkappaT_final) ./ abs.(dkappaT_final)
 
@@ -591,7 +591,7 @@ plot_variables_four_panels_2x2(dT_error[:,:,31], dT_error[:,:,14], dkappaT_final
                           "(a) Error ∂J/∂T(x, y, 15m)", "(b) Error ∂J/∂T(x, y, 504m)", "(c) Error ∂J/∂κₜ(x, y, 15m)", "(d) Error ∂J/∂κₜ(x, y, 504m)",
                           "Sv / °C", "Sv / °C", "Sv / m²s⁻¹", "Sv / m²s⁻¹",
                           graph_directory2 * "error_gradients_Tdiff_xy.png", landmask)
-
+=#
 
 u_error = abs.(u2 .- u) ./ abs.(u .+ 1)
 v_error = abs.(v2 .- v) ./ abs.(v .+ 1)
@@ -617,11 +617,13 @@ plot_variables_two_panels_1x2(du_wind_stress[:,:,1], dv_wind_stress[:,:,1], xu, 
                           graph_directory1 * "gradients_windstress_xy.png", landmask_gradients)
 
 
-
+#=
 plot_variables_two_panels_2x1(dT_error[44, :, :] ./ z_thicknesses', dT_error[:,j′,:] ./ z_thicknesses', yc, zc, xc, zc,
                           "(a) Error ∂J/∂T(x=550km, y, z)", "(b) Error ∂J/∂T(x, y=1000km, z)",
                           "Sv / °C", "Sv / °C",
                           graph_directory2 * "error_gradients_oceananigans_depth.png")
+=#
+
 
 plot_variables_two_panels_2x1(T_final_error[44, :, :], T_final_error[:,j′,:], yc, zc, xc, zc,
                           "(a) Error T(x=550km, y, z)", "(b) Error T(x, y=1000km, z)",
@@ -640,7 +642,7 @@ plot_variables_two_panels_2x1(v_error[44, :, :], v_error[:,j′,:], yv, zv, xv, 
                           "ms⁻¹", "ms⁻¹",
                           graph_directory2 * "error_v_depth.png")
 
-
+#=
 du_wind_stress_error = abs.(du_wind_stress2 .- du_wind_stress) ./ abs.(du_wind_stress .+ 1)
 dv_wind_stress_error = abs.(dv_wind_stress2 .- dv_wind_stress) ./ abs.(dv_wind_stress .+ 1)
 
@@ -648,3 +650,8 @@ plot_variables_two_panels_1x2(du_wind_stress_error[:,:,1], dv_wind_stress_error[
                           "(a) Error ∂J/∂τₓ(x, y)", "(b) Error ∂J/∂τᵧ(x, y)",
                           "Sv / m²s⁻²", "Sv / m²s⁻²",
                           graph_directory2 * "error_gradients_windstress_xy.png", landmask_gradients)
+=#
+
+@show z_faces
+@show -Lz
+@show grid
