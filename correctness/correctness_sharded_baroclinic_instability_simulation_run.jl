@@ -64,17 +64,41 @@ Oceananigans.Models.NonhydrostaticModels.update_hydrostatic_pressure!(
 @info "After updating hydrostatic pressure:"
 GordonBell25.compare_interior("pHY′", rmodel.pressure.pHY′, vmodel.pressure.pHY′)
 
-@jit Oceananigans.initialize!(rmodel)
-Oceananigans.initialize!(vmodel)
+#@jit Oceananigans.initialize!(rmodel)
+#Oceananigans.initialize!(vmodel)
+
+function my_initialize_free_surface!(sefs, grid, velocities)
+    barotropic_velocities = sefs.barotropic_velocities
+    u, v, w = velocities
+    @apply_regionally Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces.compute_barotropic_mode!(barotropic_velocities.U,
+                                               barotropic_velocities.V,
+                                               grid, u, v, sefs.η)
+
+    Oceananigans.Fields.tupled_fill_halo_regions!((barotropic_velocities.U, barotropic_velocities.V))
+
+    return nothing
+end
+
+@jit my_initialize_free_surface!(rmodel.free_surface, rmodel.grid, rmodel.velocities)
+my_initialize_free_surface!(vmodel.free_surface, vmodel.grid, vmodel.velocities)
+
+using InteractiveUtils
+
+@show @which Oceananigans.Fields.tupled_fill_halo_regions!((rmodel.free_surface.barotropic_velocities.U, rmodel.free_surface.barotropic_velocities.V))
+@show @which Oceananigans.Fields.tupled_fill_halo_regions!((vmodel.free_surface.barotropic_velocities.U, vmodel.free_surface.barotropic_velocities.V))
+
 
 @info "After initialization:"
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
+
+#=
 @jit Oceananigans.TimeSteppers.update_state!(rmodel)
 Oceananigans.TimeSteppers.update_state!(vmodel)
 
 @info "After update state:"
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
+=#
 
 #=
 GordonBell25.sync_states!(rmodel, vmodel)
