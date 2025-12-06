@@ -74,7 +74,25 @@ function my_initialize_free_surface!(sefs, grid, velocities)
                                                barotropic_velocities.V,
                                                grid, u, v, sefs.η)
 
-    Oceananigans.Fields.tupled_fill_halo_regions!((barotropic_velocities.U, barotropic_velocities.V))
+    my_tupled_fill_halo_regions!((barotropic_velocities.U, barotropic_velocities.V))
+
+    return nothing
+end
+
+function my_tupled_fill_halo_regions!(fields, args...; kwargs...)
+
+    my_fill_reduced_field_halos!(fields, args...; kwargs)
+
+    return nothing
+end
+
+# Helper function to create the tuple of ordinary fields:
+function my_fill_reduced_field_halos!(fields, args...; kwargs)
+
+    not_reduced_fields = Field[]
+    for f in fields
+        Oceananigans.BoundaryConditions.fill_halo_regions!(f, args...; kwargs...)
+    end
 
     return nothing
 end
@@ -84,9 +102,15 @@ my_initialize_free_surface!(vmodel.free_surface, vmodel.grid, vmodel.velocities)
 
 using InteractiveUtils
 
-@show @which Oceananigans.Fields.tupled_fill_halo_regions!((rmodel.free_surface.barotropic_velocities.U, rmodel.free_surface.barotropic_velocities.V))
-@show @which Oceananigans.Fields.tupled_fill_halo_regions!((vmodel.free_surface.barotropic_velocities.U, vmodel.free_surface.barotropic_velocities.V))
+#@show @which Oceananigans.Fields.fill_reduced_field_halos!((rmodel.free_surface.barotropic_velocities.U, rmodel.free_surface.barotropic_velocities.V))
+#@show @which Oceananigans.Fields.fill_reduced_field_halos!((vmodel.free_surface.barotropic_velocities.U, vmodel.free_surface.barotropic_velocities.V))
 
+
+@show @which Oceananigans.BoundaryConditions.fill_halo_regions!(rmodel.free_surface.barotropic_velocities.U)
+@show @which Oceananigans.BoundaryConditions.fill_halo_regions!(vmodel.free_surface.barotropic_velocities.U)
+
+@show @which Oceananigans.BoundaryConditions.fill_halo_regions!(rmodel.free_surface.barotropic_velocities.V)
+@show @which Oceananigans.BoundaryConditions.fill_halo_regions!(vmodel.free_surface.barotropic_velocities.V)
 
 @info "After initialization:"
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
