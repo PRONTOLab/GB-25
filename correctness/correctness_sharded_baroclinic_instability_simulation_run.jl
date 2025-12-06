@@ -35,6 +35,9 @@ Ny = Ty - 2H
 model_kw = (
     halo = (H, H, H),
     Δt = 1e-9,
+    coriolis = nothing,
+    momentum_advection = nothing,
+    tracer_advection = nothing,
 )
 
 varch = CPU()
