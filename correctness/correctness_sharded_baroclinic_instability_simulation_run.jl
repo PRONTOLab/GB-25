@@ -36,6 +36,7 @@ model_kw = (
     halo = (H, H, H),
     Δt = 1e-9,
     coriolis = nothing,
+    # buoyancy = SeawaterBuoyancy(equation_of_state=LinearEquationOfState()),
     momentum_advection = nothing,
     tracer_advection = nothing,
 )
@@ -55,15 +56,27 @@ GordonBell25.sync_states!(rmodel, vmodel)
 @info "At the beginning:"
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
+Oceananigans.Models.NonhydrostaticModels.update_hydrostatic_pressure!(
+    vmodel.pressure.pHY′, vmodel.architecture, vmodel.grid, vmodel.buoyancy, vmodel.tracers)
+@jit Oceananigans.Models.NonhydrostaticModels.update_hydrostatic_pressure!(
+    rmodel.pressure.pHY′, rmodel.architecture, rmodel.grid, rmodel.buoyancy, rmodel.tracers)
+
+@info "After updating hydrostatic pressure:"
+GordonBell25.compare_interior("pHY′", rmodel.pressure.pHY′, vmodel.pressure.pHY′)
+
 @jit Oceananigans.initialize!(rmodel)
 Oceananigans.initialize!(vmodel)
+
+@info "After initialization:"
+GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
 @jit Oceananigans.TimeSteppers.update_state!(rmodel)
 Oceananigans.TimeSteppers.update_state!(vmodel)
 
-@info "After initialization and update state:"
+@info "After update state:"
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
+#=
 GordonBell25.sync_states!(rmodel, vmodel)
 rfirst! = @compile sync=true raise=true GordonBell25.first_time_step!(rmodel)
 @showtime rfirst!(rmodel)
@@ -108,3 +121,4 @@ rloop! = @compile sync=true raise=true GordonBell25.loop!(rmodel, rNt)
 
 @info "After a loop of $(Nt) steps:"
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
+=#

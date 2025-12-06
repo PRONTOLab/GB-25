@@ -10,9 +10,9 @@ atol = 0
 model_kw = (
     halo = (8, 8, 8),
     Δt = 1e-9,
-    coriolis = nothing,
-    momentum_advection = nothing,
-    tracer_advection = nothing,
+    # coriolis = nothing,
+    # momentum_advection = nothing,
+    # tracer_advection = nothing,
 )
 
 Nx, Ny, Nz = 112, 112, 16
