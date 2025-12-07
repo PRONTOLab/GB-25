@@ -67,6 +67,8 @@ GordonBell25.compare_interior("pHY′", rmodel.pressure.pHY′, vmodel.pressure.
 #@jit Oceananigans.initialize!(rmodel)
 #Oceananigans.initialize!(vmodel)
 
+using InteractiveUtils
+
 function my_initialize_free_surface!(sefs, grid, velocities)
     barotropic_velocities = sefs.barotropic_velocities
     u, v, w = velocities
@@ -98,34 +100,17 @@ end
 function my_fill_halo_regions!(c, boundary_conditions, indices, loc, grid, args...;
                             fill_boundary_normal_velocities = true, kwargs...)
     arch = grid.architecture
+    bcs  = Oceananigans.BoundaryConditions.extract_bc(boundary_conditions, Val(:south_and_north))
 
-    fill_halos!, bcs = my_permute_boundary_conditions(boundary_conditions)
-    number_of_tasks  = length(fill_halos!)
-
-    @show number_of_tasks
-
-    # Fill halo in the three permuted directions (1, 2, and 3), making sure dependencies are fulfilled
-    for task = 1:number_of_tasks
-        Oceananigans.BoundaryConditions.fill_halo_event!(c, fill_halos![task], bcs[task], indices, loc, arch, grid, args...; kwargs...)
-    end
+    size   = :xz
+    offset = (0, 0)
+    Oceananigans.BoundaryConditions.fill_south_and_north_halo!(c, bcs..., size, offset, loc, arch, grid, args...; kwargs...)
 
     return nothing
 end
 
-function my_permute_boundary_conditions(boundary_conditions)
-
-    fill_halos! = [Oceananigans.BoundaryConditions.fill_south_and_north_halo!]
-    sides       = [:south_and_north]
-
-    boundary_conditions = Tuple(Oceananigans.BoundaryConditions.extract_bc(boundary_conditions, Val(side)) for side in sides)
-
-    return fill_halos!, boundary_conditions
-end
-
 @jit my_initialize_free_surface!(rmodel.free_surface, rmodel.grid, rmodel.velocities)
 my_initialize_free_surface!(vmodel.free_surface, vmodel.grid, vmodel.velocities)
-
-using InteractiveUtils
 
 #@show @which Oceananigans.Fields.fill_reduced_field_halos!((rmodel.free_surface.barotropic_velocities.U, rmodel.free_surface.barotropic_velocities.V))
 #@show @which Oceananigans.Fields.fill_reduced_field_halos!((vmodel.free_surface.barotropic_velocities.U, vmodel.free_surface.barotropic_velocities.V))
