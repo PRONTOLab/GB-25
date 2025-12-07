@@ -81,20 +81,45 @@ end
 
 function my_tupled_fill_halo_regions!(fields, args...; kwargs...)
 
-    my_fill_reduced_field_halos!(fields, args...; kwargs)
+    for field in fields
+        my_fill_halo_regions!(field.data,
+                                field.boundary_conditions,
+                                field.indices,
+                                Oceananigans.instantiated_location(field),
+                                field.grid,
+                                args...;
+                                reduced_dimensions = (3,),
+                                kwargs...)
+    end
 
     return nothing
 end
 
-# Helper function to create the tuple of ordinary fields:
-function my_fill_reduced_field_halos!(fields, args...; kwargs)
+function my_fill_halo_regions!(c, boundary_conditions, indices, loc, grid, args...;
+                            fill_boundary_normal_velocities = true, kwargs...)
+    arch = grid.architecture
 
-    not_reduced_fields = Field[]
-    for f in fields
-        Oceananigans.BoundaryConditions.fill_halo_regions!(f, args...; kwargs...)
+    fill_halos!, bcs = my_permute_boundary_conditions(boundary_conditions)
+    number_of_tasks  = length(fill_halos!)
+
+    @show number_of_tasks
+
+    # Fill halo in the three permuted directions (1, 2, and 3), making sure dependencies are fulfilled
+    for task = 1:number_of_tasks
+        Oceananigans.BoundaryConditions.fill_halo_event!(c, fill_halos![task], bcs[task], indices, loc, arch, grid, args...; kwargs...)
     end
 
     return nothing
+end
+
+function my_permute_boundary_conditions(boundary_conditions)
+
+    fill_halos! = [Oceananigans.BoundaryConditions.fill_south_and_north_halo!]
+    sides       = [:south_and_north]
+
+    boundary_conditions = Tuple(Oceananigans.BoundaryConditions.extract_bc(boundary_conditions, Val(side)) for side in sides)
+
+    return fill_halos!, boundary_conditions
 end
 
 @jit my_initialize_free_surface!(rmodel.free_surface, rmodel.grid, rmodel.velocities)
@@ -105,12 +130,17 @@ using InteractiveUtils
 #@show @which Oceananigans.Fields.fill_reduced_field_halos!((rmodel.free_surface.barotropic_velocities.U, rmodel.free_surface.barotropic_velocities.V))
 #@show @which Oceananigans.Fields.fill_reduced_field_halos!((vmodel.free_surface.barotropic_velocities.U, vmodel.free_surface.barotropic_velocities.V))
 
+field = rmodel.free_surface.barotropic_velocities.U
+@show @which Oceananigans.BoundaryConditions.fill_halo_regions!(field.data, field.boundary_conditions, field.indices, Oceananigans.instantiated_location(field), field.grid; reduced_dimensions = (3,))
 
-@show @which Oceananigans.BoundaryConditions.fill_halo_regions!(rmodel.free_surface.barotropic_velocities.U)
-@show @which Oceananigans.BoundaryConditions.fill_halo_regions!(vmodel.free_surface.barotropic_velocities.U)
+field = vmodel.free_surface.barotropic_velocities.U
+@show @which Oceananigans.BoundaryConditions.fill_halo_regions!(field.data, field.boundary_conditions, field.indices, Oceananigans.instantiated_location(field), field.grid; reduced_dimensions = (3,))
 
-@show @which Oceananigans.BoundaryConditions.fill_halo_regions!(rmodel.free_surface.barotropic_velocities.V)
-@show @which Oceananigans.BoundaryConditions.fill_halo_regions!(vmodel.free_surface.barotropic_velocities.V)
+field = rmodel.free_surface.barotropic_velocities.V
+@show @which Oceananigans.BoundaryConditions.fill_halo_regions!(field.data, field.boundary_conditions, field.indices, Oceananigans.instantiated_location(field), field.grid; reduced_dimensions = (3,))
+
+field = vmodel.free_surface.barotropic_velocities.V
+@show @which Oceananigans.BoundaryConditions.fill_halo_regions!(field.data, field.boundary_conditions, field.indices, Oceananigans.instantiated_location(field), field.grid; reduced_dimensions = (3,))
 
 @info "After initialization:"
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
