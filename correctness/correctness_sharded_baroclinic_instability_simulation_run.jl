@@ -68,9 +68,11 @@ GordonBell25.compare_interior("pHY′", rmodel.pressure.pHY′, vmodel.pressure.
 #Oceananigans.initialize!(vmodel)
 
 using InteractiveUtils
+using KernelAbstractions
 using KernelAbstractions: @kernel, @index
-using Oceananigans.Utils: launch!, KernelParameters
+using Oceananigans.Utils: launch!, _launch!, KernelParameters, configure_kernel, interior_work_layout, work_layout, mapped_kernel
 using Oceananigans.BoundaryConditions: BoundaryCondition, getbc, Flux, Open, _fill_south_and_north_halo!, _fill_south_halo!, _fill_north_halo!, _fill_flux_north_halo!
+using Oceananigans.DistributedComputations: child_architecture
 
 function my_initialize_free_surface!(sefs, grid, velocities)
     barotropic_velocities = sefs.barotropic_velocities
@@ -104,10 +106,18 @@ function my_fill_halo_regions!(c, boundary_conditions, indices, loc, grid, args.
                             fill_boundary_normal_velocities = true, kwargs...)
 
     arch   = grid.architecture
+    arch   = child_architecture(arch)
     size   = :xz
     offset = (0, 0)
 
-    launch!(arch, grid, KernelParameters(size, offset), _my_fill_south_and_north_halo!, c, boundary_conditions.north, grid; kwargs...)
+    workgroup = KernelAbstractions.NDIteration.StaticSize{(16, 16)}()
+    worksize  = Oceananigans.Utils.OffsetStaticSize{(1:112, 1:1)}()
+
+    dev  = Oceananigans.Architectures.device(arch)
+    loop! = _my_fill_south_and_north_halo!(dev, workgroup, worksize)
+
+    # Don't launch kernels with no size
+    loop!(c, boundary_conditions.north, grid)
 
     return nothing
 end
@@ -117,7 +127,7 @@ end
     _my_fill_north_halo!(i, k, grid, c, north_bc)
 end
 
-@inline _my_fill_north_halo!(i, k, grid, c, ::BoundaryCondition{<:Flux})        = @inbounds c[i, grid.Ny+1, k] = c[i, grid.Ny, k]
+@inline _my_fill_north_halo!(i, k, grid, c, ::BoundaryCondition{<:Flux})   = @inbounds c[i, grid.Ny+1, k] = c[i, grid.Ny, k]
 @inline _my_fill_north_halo!(i, k, grid, c, bc::BoundaryCondition{<:Open}) = @inbounds c[i, grid.Ny+1, k] = 0.0
 
 
