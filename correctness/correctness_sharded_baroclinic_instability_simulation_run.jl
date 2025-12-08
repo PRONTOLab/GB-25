@@ -70,7 +70,7 @@ GordonBell25.compare_interior("pHY′", rmodel.pressure.pHY′, vmodel.pressure.
 using InteractiveUtils
 using KernelAbstractions: @kernel, @index
 using Oceananigans.Utils: launch!, KernelParameters
-using Oceananigans.BoundaryConditions: _fill_south_and_north_halo!, _fill_south_halo!, _fill_north_halo!
+using Oceananigans.BoundaryConditions: BoundaryCondition, getbc, Flux, Open, _fill_south_and_north_halo!, _fill_south_halo!, _fill_north_halo!, _fill_flux_north_halo!
 
 function my_initialize_free_surface!(sefs, grid, velocities)
     barotropic_velocities = sefs.barotropic_velocities
@@ -107,17 +107,19 @@ function my_fill_halo_regions!(c, boundary_conditions, indices, loc, grid, args.
     size   = :xz
     offset = (0, 0)
 
-    @show @which _fill_north_halo!(1, 1, grid, c, boundary_conditions.north, loc, args...)
-
-    launch!(arch, grid, KernelParameters(size, offset), _my_fill_south_and_north_halo!, c, boundary_conditions.north, loc, grid, Tuple(args); kwargs...)
+    launch!(arch, grid, KernelParameters(size, offset), _my_fill_south_and_north_halo!, c, boundary_conditions.north, grid; kwargs...)
 
     return nothing
 end
 
-@kernel function _my_fill_south_and_north_halo!(c, north_bc, loc, grid, args)
+@kernel function _my_fill_south_and_north_halo!(c, north_bc, grid)
     i, k = @index(Global, NTuple)
-    _fill_north_halo!(i, k, grid, c, north_bc, loc, args...)
+    _my_fill_north_halo!(i, k, grid, c, north_bc)
 end
+
+@inline _my_fill_north_halo!(i, k, grid, c, ::BoundaryCondition{<:Flux})        = @inbounds c[i, grid.Ny+1, k] = c[i, grid.Ny, k]
+@inline _my_fill_north_halo!(i, k, grid, c, bc::BoundaryCondition{<:Open}) = @inbounds c[i, grid.Ny+1, k] = 0.0
+
 
 @show "Reactant:"
 @jit my_initialize_free_surface!(rmodel.free_surface, rmodel.grid, rmodel.velocities)
