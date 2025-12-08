@@ -68,6 +68,9 @@ GordonBell25.compare_interior("pHY′", rmodel.pressure.pHY′, vmodel.pressure.
 #Oceananigans.initialize!(vmodel)
 
 using InteractiveUtils
+using KernelAbstractions: @kernel, @index
+using Oceananigans.Utils: launch!, KernelParameters
+using Oceananigans.BoundaryConditions: _fill_south_and_north_halo!, _fill_south_halo!, _fill_north_halo!
 
 function my_initialize_free_surface!(sefs, grid, velocities)
     barotropic_velocities = sefs.barotropic_velocities
@@ -99,37 +102,31 @@ end
 
 function my_fill_halo_regions!(c, boundary_conditions, indices, loc, grid, args...;
                             fill_boundary_normal_velocities = true, kwargs...)
-    arch = grid.architecture
-    bcs  = Oceananigans.BoundaryConditions.extract_bc(boundary_conditions, Val(:south_and_north))
 
+    arch   = grid.architecture
     size   = :xz
     offset = (0, 0)
-    Oceananigans.BoundaryConditions.fill_south_and_north_halo!(c, bcs..., size, offset, loc, arch, grid, args...; kwargs...)
+
+    @show @which _fill_north_halo!(1, 1, grid, c, boundary_conditions.north, loc, args...)
+
+    launch!(arch, grid, KernelParameters(size, offset), _my_fill_south_and_north_halo!, c, boundary_conditions.north, loc, grid, Tuple(args); kwargs...)
 
     return nothing
 end
 
+@kernel function _my_fill_south_and_north_halo!(c, north_bc, loc, grid, args)
+    i, k = @index(Global, NTuple)
+    _fill_north_halo!(i, k, grid, c, north_bc, loc, args...)
+end
+
+@show "Reactant:"
 @jit my_initialize_free_surface!(rmodel.free_surface, rmodel.grid, rmodel.velocities)
+@show "Vanilla:"
 my_initialize_free_surface!(vmodel.free_surface, vmodel.grid, vmodel.velocities)
 
-#@show @which Oceananigans.Fields.fill_reduced_field_halos!((rmodel.free_surface.barotropic_velocities.U, rmodel.free_surface.barotropic_velocities.V))
-#@show @which Oceananigans.Fields.fill_reduced_field_halos!((vmodel.free_surface.barotropic_velocities.U, vmodel.free_surface.barotropic_velocities.V))
-
-field = rmodel.free_surface.barotropic_velocities.U
-@show @which Oceananigans.BoundaryConditions.fill_halo_regions!(field.data, field.boundary_conditions, field.indices, Oceananigans.instantiated_location(field), field.grid; reduced_dimensions = (3,))
-
-field = vmodel.free_surface.barotropic_velocities.U
-@show @which Oceananigans.BoundaryConditions.fill_halo_regions!(field.data, field.boundary_conditions, field.indices, Oceananigans.instantiated_location(field), field.grid; reduced_dimensions = (3,))
-
-field = rmodel.free_surface.barotropic_velocities.V
-@show @which Oceananigans.BoundaryConditions.fill_halo_regions!(field.data, field.boundary_conditions, field.indices, Oceananigans.instantiated_location(field), field.grid; reduced_dimensions = (3,))
-
-field = vmodel.free_surface.barotropic_velocities.V
-@show @which Oceananigans.BoundaryConditions.fill_halo_regions!(field.data, field.boundary_conditions, field.indices, Oceananigans.instantiated_location(field), field.grid; reduced_dimensions = (3,))
 
 @info "After initialization:"
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
-
 
 #=
 @jit Oceananigans.TimeSteppers.update_state!(rmodel)
