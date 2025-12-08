@@ -82,56 +82,20 @@ function my_initialize_free_surface!(sefs, grid, velocities)
     barotropic_velocities = sefs.barotropic_velocities
     u, v, w = velocities
 
-    my_compute_barotropic_mode!(barotropic_velocities.U,
-                                               barotropic_velocities.V,
-                                               grid, u, v, sefs.η)
+    launch!(architecture(grid), grid, :xy, _my_compute_barotropic_mode!, barotropic_velocities.U, grid, u)
 
-    for field in (barotropic_velocities.U, barotropic_velocities.V)
-        my_fill_halo_regions!(field.data,
-                                field.boundary_conditions,
-                                field.grid)
-    end
+    my_fill_halo_regions!(barotropic_velocities.U.data, barotropic_velocities.U.grid)
 
     return nothing
 end
 
-# Note: this function is also used during initialization
-function my_compute_barotropic_mode!(U̅, V̅, grid, u, v, η)
-    active_cells_map = get_active_column_map(grid) # may be nothing
+@kernel function _my_compute_barotropic_mode!(U̅, grid, u)
+    i, j = @index(Global, NTuple)
 
-    launch!(architecture(grid), grid, :xy,
-            _my_compute_barotropic_mode!,
-            U̅, V̅, grid, u, v, η; active_cells_map)
-
-    return nothing
+    @inbounds U̅[i, j, 1] = 1000 * u[i, j, 1]
 end
 
-@kernel function _my_compute_barotropic_mode!(U̅, V̅, grid, u, v, η)
-    i, j  = @index(Global, NTuple)
-    k_top  = size(grid, 3) + 1
-
-    hᶠᶜ = static_column_depthᶠᶜᵃ(i, j, grid)
-    hᶜᶠ = static_column_depthᶜᶠᵃ(i, j, grid)
-
-    Hᶠᶜ = column_depthᶠᶜᵃ(i, j, k_top, grid, η)
-    Hᶜᶠ = column_depthᶜᶠᵃ(i, j, k_top, grid, η)
-
-    # If the static depths are zero (i.e. the column is immersed),
-    # we set the grid scaling factor to 1
-    # (There is no free surface on an immersed column (η == 0))
-    σᶠᶜ = ifelse(hᶠᶜ == 0, one(grid), Hᶠᶜ / hᶠᶜ)
-    σᶜᶠ = ifelse(hᶜᶠ == 0, one(grid), Hᶜᶠ / hᶜᶠ)
-
-    @inbounds U̅[i, j, 1] = Δrᶠᶜᶜ(i, j, 1, grid) * u[i, j, 1] * σᶠᶜ
-    @inbounds V̅[i, j, 1] = Δrᶜᶠᶜ(i, j, 1, grid) * v[i, j, 1] * σᶜᶠ
-
-    for k in 2:grid.Nz
-        @inbounds U̅[i, j, 1] += Δrᶠᶜᶜ(i, j, k, grid) * u[i, j, k] * σᶠᶜ
-        @inbounds V̅[i, j, 1] += Δrᶜᶠᶜ(i, j, k, grid) * v[i, j, k] * σᶜᶠ
-    end
-end
-
-function my_fill_halo_regions!(c, boundary_conditions, grid)
+function my_fill_halo_regions!(c, grid)
 
     arch = child_architecture(grid.architecture)
 
@@ -142,18 +106,15 @@ function my_fill_halo_regions!(c, boundary_conditions, grid)
     loop! = _my_fill_south_and_north_halo!(dev, workgroup, worksize)
 
     # Don't launch kernels with no size
-    loop!(c, boundary_conditions.north, grid)
+    loop!(c, grid)
 
     return nothing
 end
 
-@kernel function _my_fill_south_and_north_halo!(c, north_bc, grid)
+@kernel function _my_fill_south_and_north_halo!(c, grid)
     i, k = @index(Global, NTuple)
-    _my_fill_north_halo!(i, k, grid, c, north_bc)
+    @inbounds c[i, grid.Ny+1, k] = c[i, grid.Ny, k]
 end
-
-@inline _my_fill_north_halo!(i, k, grid, c, ::BoundaryCondition{<:Flux})   = @inbounds c[i, grid.Ny+1, k] = c[i, grid.Ny, k]
-@inline _my_fill_north_halo!(i, k, grid, c, bc::BoundaryCondition{<:Open}) = @inbounds c[i, grid.Ny+1, k] = 0.0
 
 
 @show "Reactant:"
