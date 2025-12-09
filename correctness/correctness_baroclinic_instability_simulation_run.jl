@@ -1,3 +1,4 @@
+using NPZ # for exporting to jax
 using GordonBell25
 using Oceananigans
 using Reactant
@@ -23,6 +24,8 @@ vmodel = GordonBell25.baroclinic_instability_model(varch, Nx, Ny, Nz; model_kw..
 @show vmodel
 @show rmodel
 
+exported_jax_file_dir = joinpath(@__DIR__, "exported_jax_files")
+
 ui = 1e-3 .* rand(size(vmodel.velocities.u)...)
 vi = 1e-3 .* rand(size(vmodel.velocities.v)...)
 set!(vmodel, u=ui, v=vi)
@@ -42,6 +45,14 @@ GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, at
 
 GordonBell25.sync_states!(rmodel, vmodel)
 rfirst! = @compile sync=true raise=true GordonBell25.first_time_step!(rmodel)
+
+Reactant.Serialization.export_to_enzymejax(
+    GordonBell25.first_time_step!,
+    rmodel;
+    output_dir=exported_jax_file_dir,
+    compile_options=CompileOptions(raise=true),
+)
+
 @showtime rfirst!(rmodel)
 @showtime GordonBell25.first_time_step!(vmodel)
 
@@ -49,6 +60,13 @@ rfirst! = @compile sync=true raise=true GordonBell25.first_time_step!(rmodel)
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
 rstep! = @compile sync=true raise=true GordonBell25.time_step!(rmodel)
+
+Reactant.Serialization.export_to_enzymejax(
+    GordonBell25.time_step!,
+    rmodel;
+    output_dir=exported_jax_file_dir,
+    compile_options=CompileOptions(raise=true),
+)
 
 @info "Warm up:"
 @showtime rstep!(rmodel)
@@ -79,6 +97,14 @@ GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, at
 Nt = 100
 rNt = ConcreteRNumber(Nt)
 rloop! = @compile sync=true raise=true GordonBell25.loop!(rmodel, rNt)
+
+Reactant.Serialization.export_to_enzymejax(
+    GordonBell25.loop!,
+    rmodel;
+    output_dir=exported_jax_file_dir,
+    compile_options=CompileOptions(raise=true),
+)
+
 @showtime rloop!(rmodel, rNt)
 @showtime GordonBell25.loop!(vmodel, Nt)
 
