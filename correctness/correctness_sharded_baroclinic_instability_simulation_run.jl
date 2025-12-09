@@ -88,23 +88,36 @@ const ReactantKernelAbstractionsExt = Base.get_extension(
 rdev = ReactantKernelAbstractionsExt.ReactantBackend()
 vdev = KernelAbstractions.CPU()
 
+
 u   = zeros(Float64, 128, 128, 32)
 vu  = OffsetArray(u, -7:120, -7:120, -7:24)
 vu .= vmodel.velocities.u.data
 ru  = deepcopy(rmodel.velocities.u.data) #Reactant.to_rarray(vu) # This doesn't work
 
+
+vu2  = zeros(Float64, 128, 128, 32)
+vu2 .= OffsetArrays.no_offset_view(vmodel.velocities.u.data)
+ru2  = Reactant.to_rarray(vu2)
+vu2  = OffsetArray(vu2, -7:120, -7:120, -7:24)
+ru2  = OffsetArray(ru2, -7:120, -7:120, -7:24)
+
+ru3 = Reactant.to_rarray(vu)
+
 U  = zeros(Float64, 128, 128, 1)
 vU = OffsetArray(U, -7:120, -7:120, 1:1)
 rU = Reactant.to_rarray(vU)
+rU2 = Reactant.to_rarray(vU)
+rU3 = Reactant.to_rarray(vU)
 
-@show maximum(abs.(parent(vu)))
-@show maximum(abs.(convert(Array, parent(ru))))
-@show maximum(abs.(convert(Array, parent(ru)) - parent(vu)))
-
+@info "Differences between ru, ru2, and ru3:"
 @show maximum(abs.(convert(Array, parent(ru)) - convert(Array, parent(rmodel.velocities.u.data))))
+@show maximum(abs.(convert(Array, parent(ru2)) - convert(Array, parent(rmodel.velocities.u.data))))
+@show maximum(abs.(convert(Array, parent(ru3)) - convert(Array, parent(rmodel.velocities.u.data))))
 
-@show typeof(ru)
 @show typeof(rmodel.velocities.u.data)
+@show typeof(ru)
+@show typeof(ru2)
+@show typeof(ru3)
 
 @show size(ru)
 @show size(rmodel.velocities.u.data)
@@ -158,25 +171,30 @@ end
     @inbounds c[i, Ny+1, k] = c[i, Ny, k]
 end
 
-@show Oceananigans.Architectures.device(rmodel.grid.architecture)
-@show @which Oceananigans.Architectures.device(child_architecture(rmodel.grid.architecture))
+@info "ru before initialization:"
+@show maximum(abs.(convert(Array, parent(ru)) - parent(vu)))
+@show maximum(abs.(convert(Array, parent(ru2)) - parent(vu)))
+@show maximum(abs.(convert(Array, parent(ru3)) - parent(vu)))
 
 @show "Reactant:"
 @jit my_initialize_free_surface!(rU, rdev, Ny, ru)
+@jit my_initialize_free_surface!(rU2, rdev, Ny, ru2)
+@jit my_initialize_free_surface!(rU3, rdev, Ny, ru3)
 @show "Vanilla:"
 my_initialize_free_surface!(vU, vdev, Ny, vu)
 
-@show typeof(rmodel.velocities.u.data)
-@show typeof(vmodel.velocities.u.data)
+@info "What happens to ru after initialization:"
+@show maximum(abs.(convert(Array, parent(ru)) - parent(vu)))
+@show maximum(abs.(convert(Array, parent(ru2)) - parent(vu)))
+@show maximum(abs.(convert(Array, parent(ru3)) - parent(vu)))
 
-@show size(rmodel.velocities.u.data)
-@show size(vmodel.velocities.u.data)
 
 @info "After initialization (should be 0, or at most maybe machine precision, but there's a bug):"
-rU = convert(Array, parent(rU))
-vU = parent(vU)
-
-@show typeof(rU)
-@show typeof(vU)
+rU  = convert(Array, parent(rU))
+rU2 = convert(Array, parent(rU2))
+rU3 = convert(Array, parent(rU3))
+vU  = parent(vU)
 
 @show maximum(abs.(rU - vU))
+@show maximum(abs.(rU2 - vU))
+@show maximum(abs.(rU3 - vU))
