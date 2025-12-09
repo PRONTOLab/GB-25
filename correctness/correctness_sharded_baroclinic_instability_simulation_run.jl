@@ -63,6 +63,7 @@ Oceananigans.Models.NonhydrostaticModels.update_hydrostatic_pressure!(
 
 @info "After updating hydrostatic pressure:"
 GordonBell25.compare_interior("pHY′", rmodel.pressure.pHY′, vmodel.pressure.pHY′)
+GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
 #@jit Oceananigans.initialize!(rmodel)
 #Oceananigans.initialize!(vmodel)
@@ -78,13 +79,26 @@ using Oceananigans.DistributedComputations: child_architecture
 using Oceananigans.Grids: get_active_column_map, static_column_depthᶠᶜᵃ, static_column_depthᶜᶠᵃ, column_depthᶠᶜᵃ, column_depthᶜᶠᵃ
 using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: _compute_barotropic_mode!
 
-function my_initialize_free_surface!(sefs, grid, velocities)
-    barotropic_velocities = sefs.barotropic_velocities
-    u, v, w = velocities
+using OffsetArrays
 
-    launch!(architecture(grid), grid, :xy, _my_compute_barotropic_mode!, barotropic_velocities.U, grid, u)
+u   = zeros(Float64, 128, 128, 32)
+vu  = OffsetArray(u, -7:120, -7:120, -7:24)
+vu .= 0.005
+ru = Reactant.to_rarray(vu)
 
-    my_fill_halo_regions!(barotropic_velocities.U.data, barotropic_velocities.U.grid)
+U = zeros(Float64, 128, 128, 1)
+vU  = OffsetArray(U, -7:120, -7:120, 1:1)
+rU = Reactant.to_rarray(vU)
+
+#vU .= vmodel.free_surface.barotropic_velocities.U.data
+#@allowscalar rU .= rmodel.free_surface.barotropic_velocities.U.data
+
+
+function my_initialize_free_surface!(U, grid, u)
+
+    launch!(grid.architecture, grid, :xy, _my_compute_barotropic_mode!, U, grid, u)
+
+    my_fill_halo_regions!(U, grid)
 
     return nothing
 end
@@ -97,7 +111,7 @@ end
 
 function my_fill_halo_regions!(c, grid)
 
-    arch = child_architecture(grid.architecture)
+    arch = grid.architecture
 
     workgroup = KernelAbstractions.NDIteration.StaticSize{(16, 16)}()
     worksize  = Oceananigans.Utils.OffsetStaticSize{(1:112, 1:1)}()
@@ -116,67 +130,48 @@ end
     @inbounds c[i, grid.Ny+1, k] = c[i, grid.Ny, k]
 end
 
+#@allowscalar @show rmodel.free_surface.barotropic_velocities.U
+#@allowscalar @show rmodel.velocities.u
+
+@show vmodel.free_surface.barotropic_velocities.U
+@show vmodel.velocities.u
+
 
 @show "Reactant:"
-@jit my_initialize_free_surface!(rmodel.free_surface, rmodel.grid, rmodel.velocities)
+@jit my_initialize_free_surface!(rU, rmodel.grid, rmodel.velocities.u.data)
 @show "Vanilla:"
-my_initialize_free_surface!(vmodel.free_surface, vmodel.grid, vmodel.velocities)
+my_initialize_free_surface!(vU, vmodel.grid, vmodel.velocities.u.data)
 
+@show typeof(rmodel.free_surface.barotropic_velocities.U.data)
+@show typeof(rmodel.velocities.u.data)
+
+@show typeof(vmodel.free_surface.barotropic_velocities.U.data)
+@show typeof(vmodel.velocities.u.data)
+
+@show size(rmodel.free_surface.barotropic_velocities.U.data)
+@show size(rmodel.velocities.u.data)
+
+@show size(vmodel.free_surface.barotropic_velocities.U.data)
+@show size(vmodel.velocities.u.data)
+
+@show typeof(rU)
+@show typeof(vU)
+@show size(rU)
+@show size(vU)
+
+#@allowscalar @show rmodel.free_surface.barotropic_velocities.U
+#@allowscalar @show rmodel.velocities.u
+
+@show vmodel.free_surface.barotropic_velocities.U
+@show vmodel.velocities.u
 
 @info "After initialization:"
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
-#=
-@jit Oceananigans.TimeSteppers.update_state!(rmodel)
-Oceananigans.TimeSteppers.update_state!(vmodel)
+rU = convert(Array, parent(rU))
+vU = parent(vU)
 
-@info "After update state:"
-GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
-=#
+@show typeof(rU)
+@show typeof(vU)
 
-#=
-GordonBell25.sync_states!(rmodel, vmodel)
-rfirst! = @compile sync=true raise=true GordonBell25.first_time_step!(rmodel)
-@showtime rfirst!(rmodel)
-@showtime GordonBell25.first_time_step!(vmodel)
-
-@info "After first time step:"
-GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
-
-rstep! = @compile sync=true raise=true GordonBell25.time_step!(rmodel)
-
-@info "Warm up:"
-@showtime rstep!(rmodel)
-@showtime rstep!(rmodel)
-@showtime GordonBell25.time_step!(vmodel)
-@showtime GordonBell25.time_step!(vmodel)
-
-Nt = 10
-@info "Time step with Reactant:"
-for _ in 1:Nt
-    @showtime rstep!(rmodel)
-end
-
-@info "Time step vanilla:"
-for _ in 1:Nt
-    @showtime GordonBell25.time_step!(vmodel)
-end
-
-@info "After $(Nt) steps:"
-GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
-
-GordonBell25.sync_states!(rmodel, vmodel)
-@jit Oceananigans.TimeSteppers.update_state!(rmodel)
-
-@info "After syncing and updating state again:"
-GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
-
-Nt = 100
-rNt = ConcreteRNumber(Nt)
-rloop! = @compile sync=true raise=true GordonBell25.loop!(rmodel, rNt)
-@showtime rloop!(rmodel, rNt)
-@showtime GordonBell25.loop!(vmodel, Nt)
-
-@info "After a loop of $(Nt) steps:"
-GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
-=#
+@show maximum(abs.(rU - vU))
