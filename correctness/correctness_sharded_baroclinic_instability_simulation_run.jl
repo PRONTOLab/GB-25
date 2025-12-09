@@ -81,93 +81,98 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces
 
 using OffsetArrays
 
+const ReactantKernelAbstractionsExt = Base.get_extension(
+    Reactant, :ReactantKernelAbstractionsExt
+)
+
+rdev = ReactantKernelAbstractionsExt.ReactantBackend()
+vdev = KernelAbstractions.CPU()
+
 u   = zeros(Float64, 128, 128, 32)
 vu  = OffsetArray(u, -7:120, -7:120, -7:24)
-vu .= 0.005
-ru = Reactant.to_rarray(vu)
+vu .= vmodel.velocities.u.data
+ru  = deepcopy(rmodel.velocities.u.data) #Reactant.to_rarray(vu) # This doesn't work
 
-U = zeros(Float64, 128, 128, 1)
-vU  = OffsetArray(U, -7:120, -7:120, 1:1)
+U  = zeros(Float64, 128, 128, 1)
+vU = OffsetArray(U, -7:120, -7:120, 1:1)
 rU = Reactant.to_rarray(vU)
+
+@show maximum(abs.(parent(vu)))
+@show maximum(abs.(convert(Array, parent(ru))))
+@show maximum(abs.(convert(Array, parent(ru)) - parent(vu)))
+
+@show maximum(abs.(convert(Array, parent(ru)) - convert(Array, parent(rmodel.velocities.u.data))))
+
+@show typeof(ru)
+@show typeof(rmodel.velocities.u.data)
+
+@show size(ru)
+@show size(rmodel.velocities.u.data)
 
 #vU .= vmodel.free_surface.barotropic_velocities.U.data
 #@allowscalar rU .= rmodel.free_surface.barotropic_velocities.U.data
 
 
-function my_initialize_free_surface!(U, grid, u)
+function my_initialize_free_surface!(U, dev, Ny, u)
 
-    launch!(grid.architecture, grid, :xy, _my_compute_barotropic_mode!, U, grid, u)
-
-    my_fill_halo_regions!(U, grid)
+    my_compute_barotropic_mode!(U, dev, u)
+    my_fill_halo_regions!(U, dev, Ny)
 
     return nothing
 end
 
-@kernel function _my_compute_barotropic_mode!(U̅, grid, u)
+function my_compute_barotropic_mode!(U, dev, u)
+
+    workgroup = KernelAbstractions.NDIteration.StaticSize{(16, 16)}()
+    worksize  = KernelAbstractions.NDIteration.StaticSize{(112, 112)}()
+
+    loop! = _my_compute_barotropic_mode!(dev, workgroup, worksize)
+
+    # Don't launch kernels with no size
+    loop!(U, u)
+
+    return nothing
+end
+
+@kernel function _my_compute_barotropic_mode!(U̅, u)
     i, j = @index(Global, NTuple)
 
     @inbounds U̅[i, j, 1] = 1000 * u[i, j, 1]
 end
 
-function my_fill_halo_regions!(c, grid)
-
-    arch = grid.architecture
+function my_fill_halo_regions!(c, dev, Ny)
 
     workgroup = KernelAbstractions.NDIteration.StaticSize{(16, 16)}()
-    worksize  = Oceananigans.Utils.OffsetStaticSize{(1:112, 1:1)}()
+    worksize  = KernelAbstractions.NDIteration.StaticSize{(112, 1)}()
 
-    dev   = Oceananigans.Architectures.device(arch)
     loop! = _my_fill_south_and_north_halo!(dev, workgroup, worksize)
 
     # Don't launch kernels with no size
-    loop!(c, grid)
+    loop!(c, Ny)
 
     return nothing
 end
 
-@kernel function _my_fill_south_and_north_halo!(c, grid)
+@kernel function _my_fill_south_and_north_halo!(c, Ny)
     i, k = @index(Global, NTuple)
-    @inbounds c[i, grid.Ny+1, k] = c[i, grid.Ny, k]
+    @inbounds c[i, Ny+1, k] = c[i, Ny, k]
 end
 
-#@allowscalar @show rmodel.free_surface.barotropic_velocities.U
-#@allowscalar @show rmodel.velocities.u
-
-@show vmodel.free_surface.barotropic_velocities.U
-@show vmodel.velocities.u
-
+@show Oceananigans.Architectures.device(rmodel.grid.architecture)
+@show @which Oceananigans.Architectures.device(child_architecture(rmodel.grid.architecture))
 
 @show "Reactant:"
-@jit my_initialize_free_surface!(rU, rmodel.grid, rmodel.velocities.u.data)
+@jit my_initialize_free_surface!(rU, rdev, Ny, ru)
 @show "Vanilla:"
-my_initialize_free_surface!(vU, vmodel.grid, vmodel.velocities.u.data)
+my_initialize_free_surface!(vU, vdev, Ny, vu)
 
-@show typeof(rmodel.free_surface.barotropic_velocities.U.data)
 @show typeof(rmodel.velocities.u.data)
-
-@show typeof(vmodel.free_surface.barotropic_velocities.U.data)
 @show typeof(vmodel.velocities.u.data)
 
-@show size(rmodel.free_surface.barotropic_velocities.U.data)
 @show size(rmodel.velocities.u.data)
-
-@show size(vmodel.free_surface.barotropic_velocities.U.data)
 @show size(vmodel.velocities.u.data)
 
-@show typeof(rU)
-@show typeof(vU)
-@show size(rU)
-@show size(vU)
-
-#@allowscalar @show rmodel.free_surface.barotropic_velocities.U
-#@allowscalar @show rmodel.velocities.u
-
-@show vmodel.free_surface.barotropic_velocities.U
-@show vmodel.velocities.u
-
-@info "After initialization:"
-GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
-
+@info "After initialization (should be 0, or at most maybe machine precision, but there's a bug):"
 rU = convert(Array, parent(rU))
 vU = parent(vU)
 
