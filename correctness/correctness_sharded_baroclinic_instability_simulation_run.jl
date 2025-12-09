@@ -1,3 +1,4 @@
+using NPZ
 using GordonBell25
 using Oceananigans
 using Reactant
@@ -48,6 +49,8 @@ vmodel = GordonBell25.baroclinic_instability_model(varch, Nx, Ny, Nz; model_kw..
 @show rmodel
 @assert rmodel.architecture isa Distributed
 
+exported_jax_file_dir = joinpath(@__DIR__, "exported_jax_files")
+
 ui = 1e-3 .* rand(size(vmodel.velocities.u)...)
 vi = 1e-3 .* rand(size(vmodel.velocities.v)...)
 set!(vmodel, u=ui, v=vi)
@@ -55,6 +58,13 @@ GordonBell25.sync_states!(rmodel, vmodel)
 
 @info "At the beginning:"
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
+
+Reactant.Serialization.export_to_enzymejax(
+    Oceananigans.Models.NonhydrostaticModels.update_hydrostatic_pressure!,
+    rmodel.pressure.pHY′, rmodel.architecture, rmodel.grid, rmodel.buoyancy, rmodel.tracers;
+    output_dir=exported_jax_file_dir,
+    compile_options=CompileOptions(raise=true),
+)
 
 Oceananigans.Models.NonhydrostaticModels.update_hydrostatic_pressure!(
     vmodel.pressure.pHY′, vmodel.architecture, vmodel.grid, vmodel.buoyancy, vmodel.tracers)
@@ -175,6 +185,13 @@ end
 @show maximum(abs.(convert(Array, parent(ru)) - parent(vu)))
 @show maximum(abs.(convert(Array, parent(ru2)) - parent(vu)))
 @show maximum(abs.(convert(Array, parent(ru3)) - parent(vu)))
+
+Reactant.Serialization.export_to_enzymejax(
+    my_initialize_free_surface!,
+    rU, rdev, Ny, ru;
+    output_dir=exported_jax_file_dir,
+    compile_options=CompileOptions(raise=true),
+)
 
 @show "Reactant:"
 @jit my_initialize_free_surface!(rU, rdev, Ny, ru)
