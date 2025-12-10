@@ -52,11 +52,18 @@ GordonBell25.sync_states!(rmodel, vmodel)
 @info "At the beginning:"
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
-@jit Oceananigans.initialize!(rmodel)
-Oceananigans.initialize!(vmodel)
+@jit Oceananigans.initialize!(rmodel, rmodel.grid)
+Oceananigans.initialize!(vmodel, vmodel.grid)
 
-@jit Oceananigans.TimeSteppers.update_state!(rmodel)
-Oceananigans.TimeSteppers.update_state!(vmodel)
+using InteractiveUtils
+
+
+
+@show @which Oceananigans.TimeSteppers.compute_tendencies!(rmodel, [])
+@show @which Oceananigans.TimeSteppers.compute_tendencies!(vmodel, [])
+
+@jit Oceananigans.TimeSteppers.compute_tendencies!(rmodel, [])
+Oceananigans.TimeSteppers.compute_tendencies!(vmodel, [])
 
 @info "After initialization and update state:"
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
