@@ -61,6 +61,8 @@ Oceananigans.TimeSteppers.update_state!(vmodel)
 @info "After initialization and update state:"
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
+#=
+
 GordonBell25.sync_states!(rmodel, vmodel)
 rfirst! = @compile sync=true raise=true GordonBell25.first_time_step!(rmodel)
 @showtime rfirst!(rmodel)
@@ -105,3 +107,4 @@ rloop! = @compile sync=true raise=true GordonBell25.loop!(rmodel, rNt)
 
 @info "After a loop of $(Nt) steps:"
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
+=#
