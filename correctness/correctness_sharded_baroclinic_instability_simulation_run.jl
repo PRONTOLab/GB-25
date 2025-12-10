@@ -99,13 +99,13 @@ rdev = ReactantKernelAbstractionsExt.ReactantBackend()
 vdev = KernelAbstractions.CPU()
 
 
-u   = zeros(Float64, 128, 128, 32)
+u   = ones(Float64, 128, 128, 32)
 vu  = OffsetArray(u, -7:120, -7:120, -7:24)
 vu .= vmodel.velocities.u.data
 ru  = deepcopy(rmodel.velocities.u.data) #Reactant.to_rarray(vu) # This doesn't work
 
 
-vu2  = zeros(Float64, 128, 128, 32)
+vu2  = ones(Float64, 128, 128, 32)
 vu2 .= OffsetArrays.no_offset_view(vmodel.velocities.u.data)
 ru2  = Reactant.to_rarray(vu2)
 vu2  = OffsetArray(vu2, -7:120, -7:120, -7:24)
@@ -132,35 +132,12 @@ rU3 = Reactant.to_rarray(vU)
 @show size(ru)
 @show size(rmodel.velocities.u.data)
 
-#vU .= vmodel.free_surface.barotropic_velocities.U.data
-#@allowscalar rU .= rmodel.free_surface.barotropic_velocities.U.data
-
-
 function my_initialize_free_surface!(U, dev, Ny, u)
+    copyto!(@view(U[1:112, 1:112, 1]), u[1:112, 1:112, 1])
 
-    my_compute_barotropic_mode!(U, dev, u)
     my_fill_halo_regions!(U, dev, Ny)
 
     return nothing
-end
-
-function my_compute_barotropic_mode!(U, dev, u)
-
-    workgroup = KernelAbstractions.NDIteration.StaticSize{(16, 16)}()
-    worksize  = KernelAbstractions.NDIteration.StaticSize{(112, 112)}()
-
-    loop! = _my_compute_barotropic_mode!(dev, workgroup, worksize)
-
-    # Don't launch kernels with no size
-    loop!(U, u)
-
-    return nothing
-end
-
-@kernel function _my_compute_barotropic_mode!(U̅, u)
-    i, j = @index(Global, NTuple)
-
-    @inbounds U̅[i, j, 1] = 1000 * u[i, j, 1]
 end
 
 function my_fill_halo_regions!(c, dev, Ny)
@@ -194,6 +171,9 @@ Reactant.Serialization.export_to_enzymejax(
 )
 
 @show "Reactant:"
+
+@show @code_hlo my_initialize_free_surface!(rU, rdev, Ny, ru)
+
 @jit my_initialize_free_surface!(rU, rdev, Ny, ru)
 @jit my_initialize_free_surface!(rU2, rdev, Ny, ru2)
 @jit my_initialize_free_surface!(rU3, rdev, Ny, ru3)
