@@ -57,20 +57,24 @@ Oceananigans.initialize!(vmodel, vmodel.grid)
 
 using InteractiveUtils
 
-using Oceananigans.Models.HydrostaticFreeSurfaceModels: compute_hydrostatic_free_surface_tendency_contributions!
+using Oceananigans.Models.HydrostaticFreeSurfaceModels: compute_hydrostatic_free_surface_tendency_contributions!, compute_hydrostatic_momentum_tendencies!
 
 
 
 
 
-@show @which Oceananigans.TimeSteppers.compute_tendencies!(rmodel, [])
-@show @which Oceananigans.TimeSteppers.compute_tendencies!(vmodel, [])
+#@show @which Oceananigans.TimeSteppers.compute_tendencies!(rmodel, [])
+#@show @which Oceananigans.TimeSteppers.compute_tendencies!(vmodel, [])
 
-@show @which compute_hydrostatic_free_surface_tendency_contributions!(rmodel, :xyz)
-@show @which compute_hydrostatic_free_surface_tendency_contributions!(vmodel, :xyz)
+#@show @which compute_hydrostatic_free_surface_tendency_contributions!(rmodel, :xyz)
+#@show @which compute_hydrostatic_free_surface_tendency_contributions!(vmodel, :xyz)
 
-@jit compute_hydrostatic_free_surface_tendency_contributions!(rmodel, :xyz)
-compute_hydrostatic_free_surface_tendency_contributions!(vmodel, :xyz)
+@show @which compute_hydrostatic_momentum_tendencies!(rmodel, rmodel.velocities, :xyz)
+@show @which compute_hydrostatic_momentum_tendencies!(vmodel, vmodel.velocities, :xyz)
+
+
+@jit compute_hydrostatic_momentum_tendencies!(rmodel, rmodel.velocities, :xyz)
+compute_hydrostatic_momentum_tendencies!(vmodel, vmodel.velocities, :xyz)
 
 @info "After initialization and update state:"
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
