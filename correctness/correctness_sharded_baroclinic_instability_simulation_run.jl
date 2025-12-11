@@ -55,26 +55,60 @@ GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, at
 @jit Oceananigans.initialize!(rmodel, rmodel.grid)
 Oceananigans.initialize!(vmodel, vmodel.grid)
 
+
+
+
+
 using InteractiveUtils
 
-using Oceananigans.Models.HydrostaticFreeSurfaceModels: compute_hydrostatic_free_surface_tendency_contributions!, compute_hydrostatic_momentum_tendencies!
+using Oceananigans.Utils: launch!
+using Oceananigans.Models.HydrostaticFreeSurfaceModels: compute_hydrostatic_free_surface_tendency_contributions!, compute_hydrostatic_momentum_tendencies!, compute_hydrostatic_free_surface_Gu!
+using Oceananigans.Architectures: architecture
+using Oceananigans.Fields: immersed_boundary_condition
 
 
 
 
 
-#@show @which Oceananigans.TimeSteppers.compute_tendencies!(rmodel, [])
-#@show @which Oceananigans.TimeSteppers.compute_tendencies!(vmodel, [])
-
-#@show @which compute_hydrostatic_free_surface_tendency_contributions!(rmodel, :xyz)
-#@show @which compute_hydrostatic_free_surface_tendency_contributions!(vmodel, :xyz)
-
-@show @which compute_hydrostatic_momentum_tendencies!(rmodel, rmodel.velocities, :xyz)
-@show @which compute_hydrostatic_momentum_tendencies!(vmodel, vmodel.velocities, :xyz)
 
 
-@jit compute_hydrostatic_momentum_tendencies!(rmodel, rmodel.velocities, :xyz)
-compute_hydrostatic_momentum_tendencies!(vmodel, vmodel.velocities, :xyz)
+
+
+""" Calculate momentum tendencies if momentum is not prescribed."""
+function my_compute_hydrostatic_momentum_tendencies!(model, velocities, kernel_parameters; active_cells_map=nothing)
+
+    grid = model.grid
+    arch = architecture(grid)
+
+    u_immersed_bc = immersed_boundary_condition(velocities.u)
+    u_forcing     = model.forcing.u
+
+    start_momentum_kernel_args = (model.advection.momentum,
+                                  model.coriolis,
+                                  model.closure)
+
+    end_momentum_kernel_args = (velocities,
+                                model.free_surface,
+                                model.tracers,
+                                model.buoyancy,
+                                model.diffusivity_fields,
+                                model.pressure.pHY′,
+                                model.auxiliary_fields,
+                                model.vertical_coordinate,
+                                model.clock)
+
+    u_kernel_args = tuple(start_momentum_kernel_args..., u_immersed_bc, end_momentum_kernel_args..., u_forcing)
+
+    launch!(arch, grid, kernel_parameters,
+            compute_hydrostatic_free_surface_Gu!, model.timestepper.Gⁿ.u, grid,
+            u_kernel_args; active_cells_map)
+
+    return nothing
+end
+
+
+@jit my_compute_hydrostatic_momentum_tendencies!(rmodel, rmodel.velocities, :xyz)
+my_compute_hydrostatic_momentum_tendencies!(vmodel, vmodel.velocities, :xyz)
 
 @info "After initialization and update state:"
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
