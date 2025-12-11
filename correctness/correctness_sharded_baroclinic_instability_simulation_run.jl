@@ -63,6 +63,8 @@ using InteractiveUtils
 using KernelAbstractions
 using KernelAbstractions: @kernel, @index
 
+using OffsetArrays
+
 const ReactantKernelAbstractionsExt = Base.get_extension(
     Reactant, :ReactantKernelAbstractionsExt
 )
@@ -128,68 +130,22 @@ end
     return ifelse(mask, 0.0, 100.0)
 end
 
-@show typeof(rmodel.timestepper.Gⁿ.u.data)
-@show size(rmodel.timestepper.Gⁿ.u.data)
+#@show typeof(rmodel.timestepper.Gⁿ.u.data)
+#@show size(rmodel.timestepper.Gⁿ.u.data)
 
 @show vmodel.timestepper.Gⁿ.u
-@show typeof(vmodel.timestepper.Gⁿ.u.data)
-@show size(vmodel.timestepper.Gⁿ.u.data)
+#@show typeof(vmodel.timestepper.Gⁿ.u.data)
+#@show size(vmodel.timestepper.Gⁿ.u.data)
 
+U  = zeros(Float64, 128, 128, 32)
+vU = OffsetArray(U, -7:120, -7:120, -7:24)
+rU = deepcopy(rmodel.timestepper.Gⁿ.u.data) #Reactant.to_rarray(vU)
 
-@jit my_compute_hydrostatic_momentum_tendencies!(rmodel.timestepper.Gⁿ.u.data, ReactantKernelAbstractionsExt.ReactantBackend(), Ny, Nz)
-my_compute_hydrostatic_momentum_tendencies!(vmodel.timestepper.Gⁿ.u.data, KernelAbstractions.CPU(), Ny, Nz)
+@jit my_compute_hydrostatic_momentum_tendencies!(rU, ReactantKernelAbstractionsExt.ReactantBackend(), Ny, Nz)
+my_compute_hydrostatic_momentum_tendencies!(vU, KernelAbstractions.CPU(), Ny, Nz)
 
-@info "After initialization and update state:"
-GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
+@info "After initialization and update state (should be 0, or at most maybe machine precision, but there's a bug):"
+rU  = convert(Array, parent(rU))
+vU  = parent(vU)
 
-
-
-
-
-#=
-
-GordonBell25.sync_states!(rmodel, vmodel)
-rfirst! = @compile sync=true raise=true GordonBell25.first_time_step!(rmodel)
-@showtime rfirst!(rmodel)
-@showtime GordonBell25.first_time_step!(vmodel)
-
-@info "After first time step:"
-GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
-
-rstep! = @compile sync=true raise=true GordonBell25.time_step!(rmodel)
-
-@info "Warm up:"
-@showtime rstep!(rmodel)
-@showtime rstep!(rmodel)
-@showtime GordonBell25.time_step!(vmodel)
-@showtime GordonBell25.time_step!(vmodel)
-
-Nt = 10
-@info "Time step with Reactant:"
-for _ in 1:Nt
-    @showtime rstep!(rmodel)
-end
-
-@info "Time step vanilla:"
-for _ in 1:Nt
-    @showtime GordonBell25.time_step!(vmodel)
-end
-
-@info "After $(Nt) steps:"
-GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
-
-GordonBell25.sync_states!(rmodel, vmodel)
-@jit Oceananigans.TimeSteppers.update_state!(rmodel)
-
-@info "After syncing and updating state again:"
-GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
-
-Nt = 100
-rNt = ConcreteRNumber(Nt)
-rloop! = @compile sync=true raise=true GordonBell25.loop!(rmodel, rNt)
-@showtime rloop!(rmodel, rNt)
-@showtime GordonBell25.loop!(vmodel, Nt)
-
-@info "After a loop of $(Nt) steps:"
-GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
-=#
+@show maximum(abs.(rU - vU))
