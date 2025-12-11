@@ -55,8 +55,45 @@ GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, at
 @jit Oceananigans.initialize!(rmodel)
 Oceananigans.initialize!(vmodel)
 
-@jit Oceananigans.TimeSteppers.update_state!(rmodel)
-Oceananigans.TimeSteppers.update_state!(vmodel)
+
+
+using InteractiveUtils
+
+using Oceananigans: fields, prognostic_fields, boundary_conditions, instantiated_location
+using Oceananigans.Fields: tupled_fill_halo_regions!, fill_reduced_field_halos!, default_indices, data
+import Oceananigans.BoundaryConditions: fill_halo_regions!
+
+
+@show @which prognostic_fields(rmodel)
+@show @which prognostic_fields(vmodel)
+
+@show @which fields(rmodel)
+@show @which fields(vmodel)
+
+function my_tupled_fill_halo_regions!(fields, grid, args...; kwargs...)
+
+    not_reduced_fields = fill_reduced_field_halos!(fields, args...; kwargs)
+    
+    if !isempty(not_reduced_fields) # ie not reduced, and with default_indices
+
+        @show @which fill_halo_regions!(map(data, not_reduced_fields),
+                           map(boundary_conditions, not_reduced_fields),
+                           default_indices(3),
+                           map(instantiated_location, not_reduced_fields),
+                           grid, args...; kwargs...)
+
+        fill_halo_regions!(map(data, not_reduced_fields),
+                           map(boundary_conditions, not_reduced_fields),
+                           default_indices(3),
+                           map(instantiated_location, not_reduced_fields),
+                           grid, args...; kwargs...)
+    end
+    
+    return nothing
+end
+
+@jit my_tupled_fill_halo_regions!(prognostic_fields(rmodel), rmodel.grid, rmodel.clock, fields(rmodel), async=true)
+my_tupled_fill_halo_regions!(prognostic_fields(vmodel), vmodel.grid, vmodel.clock, fields(vmodel), async=true)
 
 @info "After initialization and update state:"
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
