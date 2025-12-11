@@ -72,7 +72,7 @@ using Oceananigans.Coriolis: x_f_cross_U, fᶠᶠᵃ
 using Oceananigans.Architectures: architecture
 using Oceananigans.Fields: immersed_boundary_condition
 using Oceananigans.Advection: div_Uc, U_dot_∇u, U_dot_∇v
-using Oceananigans.Operators: ∂xᶠᶜᶜ, ℑyᵃᶜᵃ, ℑxyᶠᶜᵃ, Δx_qᶜᶠᶜ, Δx⁻¹ᶠᶜᶜ, active_weighted_ℑxyᶠᶜᶜ, not_peripheral_node
+using Oceananigans.Operators: ∂xᶠᶜᶜ, ℑxᶠᵃᵃ, ℑyᵃᶜᵃ, ℑxyᶠᶜᵃ, Δx_qᶜᶠᶜ, Δx⁻¹ᶠᶜᶜ, active_weighted_ℑxyᶠᶜᶜ, not_peripheral_node
 using Oceananigans.TurbulenceClosures: ∂ⱼ_τ₁ⱼ
 using Oceananigans.TurbulenceClosures: immersed_∂ⱼ_τ₁ⱼ
 
@@ -84,34 +84,35 @@ using Oceananigans.TurbulenceClosures: immersed_∂ⱼ_τ₁ⱼ
 
 
 """ Calculate momentum tendencies if momentum is not prescribed."""
-function my_compute_hydrostatic_momentum_tendencies!(model, velocities, kernel_parameters; active_cells_map=nothing)
+function my_compute_hydrostatic_momentum_tendencies!(model; active_cells_map=nothing)
 
     grid = model.grid
     arch = architecture(grid)
 
-    @show @which active_weighted_ℑxyᶠᶜᶜ(1, 1, 1, grid, Δx_qᶜᶠᶜ, velocities[2])
+    @show @which ℑxᶠᵃᵃ(1, 1, 1, grid, not_peripheral_node, Center(), Face(), Center())
 
-    launch!(arch, grid, kernel_parameters,
-            my_compute_hydrostatic_free_surface_Gu!, model.timestepper.Gⁿ.u, grid,
-            model.coriolis, velocities; active_cells_map)
+    launch!(arch, grid, :xyz,
+            my_compute_hydrostatic_free_surface_Gu!, model.timestepper.Gⁿ.u, grid; active_cells_map)
 
     return nothing
 end
 
-@kernel function my_compute_hydrostatic_free_surface_Gu!(Gu, grid, coriolis, velocities)
+@kernel function my_compute_hydrostatic_free_surface_Gu!(Gu, grid)
     i, j, k = @index(Global, NTuple)
-    @inbounds Gu[i, j, k] = -my_active_weighted_ℑxyᶠᶜᶜ(i, j, k, grid, Δx_qᶜᶠᶜ, velocities[2])
+    @inbounds Gu[i, j, k] = -my_active_weighted_ℑxyᶠᶜᶜ(i, j, k, grid)
 end
 
-@inline function my_active_weighted_ℑxyᶠᶜᶜ(i, j, k, grid, q, args...)
-    active_nodes = ℑxyᶠᶜᵃ(i, j, k, grid, not_peripheral_node, Center(), Face(), Center())
+@inline function my_active_weighted_ℑxyᶠᶜᶜ(i, j, k, grid)
+    active_nodes = (not_peripheral_node(i-1, j, k, grid, Center(), Face(), Center())
+                  + not_peripheral_node(i,   j, k, grid, Center(), Face(), Center())
+                  + not_peripheral_node(i-1, j+1, k, grid, Center(), Face(), Center()))
+
     mask = active_nodes == 0
-    return ifelse(mask, zero(grid), ℑxyᶠᶜᵃ(i, j, k, grid, q, args...) / active_nodes)
+    return ifelse(mask, zero(grid), 100.0)
 end
 
-
-@jit my_compute_hydrostatic_momentum_tendencies!(rmodel, rmodel.velocities, :xyz)
-my_compute_hydrostatic_momentum_tendencies!(vmodel, vmodel.velocities, :xyz)
+@jit my_compute_hydrostatic_momentum_tendencies!(rmodel)
+my_compute_hydrostatic_momentum_tendencies!(vmodel)
 
 @info "After initialization and update state:"
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
