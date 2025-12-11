@@ -75,6 +75,7 @@ using Oceananigans.Advection: div_Uc, U_dot_∇u, U_dot_∇v
 using Oceananigans.Operators: ∂xᶠᶜᶜ, ℑxᶠᵃᵃ, ℑyᵃᶜᵃ, ℑxyᶠᶜᵃ, Δx_qᶜᶠᶜ, Δx⁻¹ᶠᶜᶜ, active_weighted_ℑxyᶠᶜᶜ, not_peripheral_node
 using Oceananigans.TurbulenceClosures: ∂ⱼ_τ₁ⱼ
 using Oceananigans.TurbulenceClosures: immersed_∂ⱼ_τ₁ⱼ
+using Oceananigans.Grids: peripheral_node, inactive_cell
 
 
 
@@ -89,7 +90,7 @@ function my_compute_hydrostatic_momentum_tendencies!(model; active_cells_map=not
     grid = model.grid
     arch = architecture(grid)
 
-    @show @which ℑxᶠᵃᵃ(1, 1, 1, grid, not_peripheral_node, Center(), Face(), Center())
+    @show @which inactive_cell(3, 3, 3, grid)
 
     launch!(arch, grid, :xyz,
             my_compute_hydrostatic_free_surface_Gu!, model.timestepper.Gⁿ.u, grid; active_cells_map)
@@ -103,9 +104,8 @@ end
 end
 
 @inline function my_active_weighted_ℑxyᶠᶜᶜ(i, j, k, grid)
-    active_nodes = (not_peripheral_node(i-1, j, k, grid, Center(), Face(), Center())
-                  + not_peripheral_node(i,   j, k, grid, Center(), Face(), Center())
-                  + not_peripheral_node(i-1, j+1, k, grid, Center(), Face(), Center()))
+    active_nodes = (!((j < 1) | (j > grid.Ny)| (j-1 < 1) | (j-1 > grid.Ny) | (k < 1) | (k > grid.Nz))
+                  + !((j+1 < 1) | (j+1 > grid.Ny) | (j < 1) | (j > grid.Ny) | (k < 1) | (k > grid.Nz)))
 
     mask = active_nodes == 0
     return ifelse(mask, zero(grid), 100.0)
