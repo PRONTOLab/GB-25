@@ -68,11 +68,11 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels: compute_hydrostatic_free
                                                         compute_hydrostatic_free_surface_Gu!, hydrostatic_free_surface_u_velocity_tendency, explicit_barotropic_pressure_x_gradient,
 							grid_slope_contribution_x, hydrostatic_fields
 
-using Oceananigans.Coriolis: x_f_cross_U
+using Oceananigans.Coriolis: x_f_cross_U, fᶠᶠᵃ
 using Oceananigans.Architectures: architecture
 using Oceananigans.Fields: immersed_boundary_condition
 using Oceananigans.Advection: div_Uc, U_dot_∇u, U_dot_∇v
-using Oceananigans.Operators: ∂xᶠᶜᶜ
+using Oceananigans.Operators: ∂xᶠᶜᶜ, ℑyᵃᶜᵃ, Δx_qᶜᶠᶜ, Δx⁻¹ᶠᶜᶜ, active_weighted_ℑxyᶠᶜᶜ
 using Oceananigans.TurbulenceClosures: ∂ⱼ_τ₁ⱼ
 using Oceananigans.TurbulenceClosures: immersed_∂ⱼ_τ₁ⱼ
 
@@ -110,12 +110,10 @@ end
                                                               velocities)
 
 
-    return(- x_f_cross_U(i, j, k, grid, coriolis, velocities))
-
+    return(- my_x_f_cross_U(i, j, k, grid, coriolis, velocities))
 end
 
-
-
+@inline my_x_f_cross_U(i, j, k, grid, coriolis, U) = @inbounds active_weighted_ℑxyᶠᶜᶜ(i, j, k, grid, Δx_qᶜᶠᶜ, U[2])
 
 
 @jit my_compute_hydrostatic_momentum_tendencies!(rmodel, rmodel.velocities, :xyz)
