@@ -72,7 +72,7 @@ using Oceananigans.Coriolis: x_f_cross_U, fᶠᶠᵃ
 using Oceananigans.Architectures: architecture
 using Oceananigans.Fields: immersed_boundary_condition
 using Oceananigans.Advection: div_Uc, U_dot_∇u, U_dot_∇v
-using Oceananigans.Operators: ∂xᶠᶜᶜ, ℑyᵃᶜᵃ, Δx_qᶜᶠᶜ, Δx⁻¹ᶠᶜᶜ, active_weighted_ℑxyᶠᶜᶜ
+using Oceananigans.Operators: ∂xᶠᶜᶜ, ℑyᵃᶜᵃ, ℑxyᶠᶜᵃ, Δx_qᶜᶠᶜ, Δx⁻¹ᶠᶜᶜ, active_weighted_ℑxyᶠᶜᶜ, not_peripheral_node
 using Oceananigans.TurbulenceClosures: ∂ⱼ_τ₁ⱼ
 using Oceananigans.TurbulenceClosures: immersed_∂ⱼ_τ₁ⱼ
 
@@ -89,31 +89,25 @@ function my_compute_hydrostatic_momentum_tendencies!(model, velocities, kernel_p
     grid = model.grid
     arch = architecture(grid)
 
-    u_kernel_args = (model.coriolis, velocities)
-
-    @show @which x_f_cross_U(1, 1, 1, grid, model.coriolis, velocities)
+    @show @which active_weighted_ℑxyᶠᶜᶜ(1, 1, 1, grid, Δx_qᶜᶠᶜ, velocities[2])
 
     launch!(arch, grid, kernel_parameters,
             my_compute_hydrostatic_free_surface_Gu!, model.timestepper.Gⁿ.u, grid,
-            u_kernel_args; active_cells_map)
+            model.coriolis, velocities; active_cells_map)
 
     return nothing
 end
 
-@kernel function my_compute_hydrostatic_free_surface_Gu!(Gu, grid, args)
+@kernel function my_compute_hydrostatic_free_surface_Gu!(Gu, grid, coriolis, velocities)
     i, j, k = @index(Global, NTuple)
-    @inbounds Gu[i, j, k] = my_hydrostatic_free_surface_u_velocity_tendency(i, j, k, grid, args...)
+    @inbounds Gu[i, j, k] = -my_active_weighted_ℑxyᶠᶜᶜ(i, j, k, grid, Δx_qᶜᶠᶜ, velocities[2])
 end
 
-@inline function my_hydrostatic_free_surface_u_velocity_tendency(i, j, k, grid,
-                                                              coriolis,
-                                                              velocities)
-
-
-    return(- my_x_f_cross_U(i, j, k, grid, coriolis, velocities))
+@inline function my_active_weighted_ℑxyᶠᶜᶜ(i, j, k, grid, q, args...)
+    active_nodes = ℑxyᶠᶜᵃ(i, j, k, grid, not_peripheral_node, Center(), Face(), Center())
+    mask = active_nodes == 0
+    return ifelse(mask, zero(grid), ℑxyᶠᶜᵃ(i, j, k, grid, q, args...) / active_nodes)
 end
-
-@inline my_x_f_cross_U(i, j, k, grid, coriolis, U) = @inbounds active_weighted_ℑxyᶠᶜᶜ(i, j, k, grid, Δx_qᶜᶠᶜ, U[2])
 
 
 @jit my_compute_hydrostatic_momentum_tendencies!(rmodel, rmodel.velocities, :xyz)
