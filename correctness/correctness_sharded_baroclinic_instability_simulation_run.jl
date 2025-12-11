@@ -60,10 +60,14 @@ Oceananigans.initialize!(vmodel, vmodel.grid)
 
 
 using InteractiveUtils
-
+using KernelAbstractions
 using KernelAbstractions: @kernel, @index
 
-using Oceananigans.Utils: launch!
+const ReactantKernelAbstractionsExt = Base.get_extension(
+    Reactant, :ReactantKernelAbstractionsExt
+)
+
+using Oceananigans.Utils: launch!, _launch!, configure_kernel, work_layout
 using Oceananigans.Models.HydrostaticFreeSurfaceModels: compute_hydrostatic_free_surface_tendency_contributions!, compute_hydrostatic_momentum_tendencies!,
                                                         compute_hydrostatic_free_surface_Gu!, hydrostatic_free_surface_u_velocity_tendency, explicit_barotropic_pressure_x_gradient,
 							grid_slope_contribution_x, hydrostatic_fields
@@ -76,7 +80,7 @@ using Oceananigans.Operators: ∂xᶠᶜᶜ, ℑxᶠᵃᵃ, ℑyᵃᶜᵃ, ℑxy
 using Oceananigans.TurbulenceClosures: ∂ⱼ_τ₁ⱼ
 using Oceananigans.TurbulenceClosures: immersed_∂ⱼ_τ₁ⱼ
 using Oceananigans.Grids: peripheral_node, inactive_cell
-
+using Oceananigans.DistributedComputations: child_architecture
 
 
 
@@ -85,34 +89,55 @@ using Oceananigans.Grids: peripheral_node, inactive_cell
 
 
 """ Calculate momentum tendencies if momentum is not prescribed."""
-function my_compute_hydrostatic_momentum_tendencies!(model; active_cells_map=nothing)
+function my_compute_hydrostatic_momentum_tendencies!(u, dev, Ny, Nz)
 
-    grid = model.grid
-    arch = architecture(grid)
-
-    @show @which inactive_cell(3, 3, 3, grid)
-
-    launch!(arch, grid, :xyz,
-            my_compute_hydrostatic_free_surface_Gu!, model.timestepper.Gⁿ.u, grid; active_cells_map)
+    _my_launch!(dev, my_compute_hydrostatic_free_surface_Gu!, u, Ny, Nz)
 
     return nothing
 end
 
-@kernel function my_compute_hydrostatic_free_surface_Gu!(Gu, grid)
-    i, j, k = @index(Global, NTuple)
-    @inbounds Gu[i, j, k] = -my_active_weighted_ℑxyᶠᶜᶜ(i, j, k, grid)
+@inline function _my_launch!(dev, kernel!, first_kernel_arg, other_kernel_args...)
+
+    loop!, worksize = my_configure_kernel(dev, kernel!)
+
+    loop!(first_kernel_arg, other_kernel_args...)
+
+    return nothing
 end
 
-@inline function my_active_weighted_ℑxyᶠᶜᶜ(i, j, k, grid)
-    active_nodes = (!((j < 1) | (j > grid.Ny)| (j-1 < 1) | (j-1 > grid.Ny) | (k < 1) | (k > grid.Nz))
-                  + !((j+1 < 1) | (j+1 > grid.Ny) | (j < 1) | (j > grid.Ny) | (k < 1) | (k > grid.Nz)))
+@inline function my_configure_kernel(dev, kernel!)
+
+    workgroup = (16, 16)
+    worksize = (112, 112, 16)
+
+    loop = kernel!(dev, workgroup, worksize)
+
+    return loop, worksize
+end
+
+@kernel function my_compute_hydrostatic_free_surface_Gu!(Gu, Ny, Nz)
+    i, j, k = @index(Global, NTuple)
+    @inbounds Gu[i, j, k] = -my_active_weighted_ℑxyᶠᶜᶜ(i, j, k, Ny, Nz)
+end
+
+@inline function my_active_weighted_ℑxyᶠᶜᶜ(i, j, k, Ny, Nz)
+    active_nodes = (!((j < 1) | (j > Ny)| (j-1 < 1) | (j-1 > Ny) | (k < 1) | (k > Nz))
+                  + !((j+1 < 1) | (j+1 > Ny) | (j < 1) | (j > Ny) | (k < 1) | (k > Nz)))
 
     mask = active_nodes == 0
-    return ifelse(mask, zero(grid), 100.0)
+    return ifelse(mask, 0.0, 100.0)
 end
 
-@jit my_compute_hydrostatic_momentum_tendencies!(rmodel)
-my_compute_hydrostatic_momentum_tendencies!(vmodel)
+@show typeof(rmodel.timestepper.Gⁿ.u.data)
+@show size(rmodel.timestepper.Gⁿ.u.data)
+
+@show vmodel.timestepper.Gⁿ.u
+@show typeof(vmodel.timestepper.Gⁿ.u.data)
+@show size(vmodel.timestepper.Gⁿ.u.data)
+
+
+@jit my_compute_hydrostatic_momentum_tendencies!(rmodel.timestepper.Gⁿ.u.data, ReactantKernelAbstractionsExt.ReactantBackend(), Ny, Nz)
+my_compute_hydrostatic_momentum_tendencies!(vmodel.timestepper.Gⁿ.u.data, KernelAbstractions.CPU(), Ny, Nz)
 
 @info "After initialization and update state:"
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
