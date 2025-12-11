@@ -61,11 +61,20 @@ Oceananigans.initialize!(vmodel, vmodel.grid)
 
 using InteractiveUtils
 
+using KernelAbstractions: @kernel, @index
+
 using Oceananigans.Utils: launch!
-using Oceananigans.Models.HydrostaticFreeSurfaceModels: compute_hydrostatic_free_surface_tendency_contributions!, compute_hydrostatic_momentum_tendencies!, compute_hydrostatic_free_surface_Gu!
+using Oceananigans.Models.HydrostaticFreeSurfaceModels: compute_hydrostatic_free_surface_tendency_contributions!, compute_hydrostatic_momentum_tendencies!,
+                                                        compute_hydrostatic_free_surface_Gu!, hydrostatic_free_surface_u_velocity_tendency, explicit_barotropic_pressure_x_gradient,
+							grid_slope_contribution_x, hydrostatic_fields
+
+using Oceananigans.Coriolis: x_f_cross_U
 using Oceananigans.Architectures: architecture
 using Oceananigans.Fields: immersed_boundary_condition
-
+using Oceananigans.Advection: div_Uc, U_dot_∇u, U_dot_∇v
+using Oceananigans.Operators: ∂xᶠᶜᶜ
+using Oceananigans.TurbulenceClosures: ∂ⱼ_τ₁ⱼ
+using Oceananigans.TurbulenceClosures: immersed_∂ⱼ_τ₁ⱼ
 
 
 
@@ -100,11 +109,46 @@ function my_compute_hydrostatic_momentum_tendencies!(model, velocities, kernel_p
     u_kernel_args = tuple(start_momentum_kernel_args..., u_immersed_bc, end_momentum_kernel_args..., u_forcing)
 
     launch!(arch, grid, kernel_parameters,
-            compute_hydrostatic_free_surface_Gu!, model.timestepper.Gⁿ.u, grid,
+            my_compute_hydrostatic_free_surface_Gu!, model.timestepper.Gⁿ.u, grid,
             u_kernel_args; active_cells_map)
 
     return nothing
 end
+
+@kernel function my_compute_hydrostatic_free_surface_Gu!(Gu, grid, args)
+    i, j, k = @index(Global, NTuple)
+    @inbounds Gu[i, j, k] = my_hydrostatic_free_surface_u_velocity_tendency(i, j, k, grid, args...)
+end
+
+@inline function my_hydrostatic_free_surface_u_velocity_tendency(i, j, k, grid,
+                                                              advection,
+                                                              coriolis,
+                                                              closure,
+                                                              u_immersed_bc,
+                                                              velocities,
+                                                              free_surface,
+                                                              tracers,
+                                                              buoyancy,
+                                                              diffusivities,
+                                                              hydrostatic_pressure_anomaly,
+                                                              auxiliary_fields,
+                                                              ztype,
+                                                              clock,
+                                                              forcing)
+
+    model_fields = merge(hydrostatic_fields(velocities, free_surface, tracers), auxiliary_fields)
+
+    return ( - U_dot_∇u(i, j, k, grid, advection, velocities)
+             - explicit_barotropic_pressure_x_gradient(i, j, k, grid, free_surface)
+             - x_f_cross_U(i, j, k, grid, coriolis, velocities)
+             - ∂xᶠᶜᶜ(i, j, k, grid, hydrostatic_pressure_anomaly)
+             - grid_slope_contribution_x(i, j, k, grid, buoyancy, ztype, model_fields)
+             - ∂ⱼ_τ₁ⱼ(i, j, k, grid, closure, diffusivities, clock, model_fields, buoyancy)
+             - immersed_∂ⱼ_τ₁ⱼ(i, j, k, grid, velocities, u_immersed_bc, closure, diffusivities, clock, model_fields))
+end
+
+
+
 
 
 @jit my_compute_hydrostatic_momentum_tendencies!(rmodel, rmodel.velocities, :xyz)
@@ -112,6 +156,10 @@ my_compute_hydrostatic_momentum_tendencies!(vmodel, vmodel.velocities, :xyz)
 
 @info "After initialization and update state:"
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
+
+
+
+
 
 #=
 
