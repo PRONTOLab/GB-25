@@ -15,8 +15,31 @@ model_kw = (
 Nx, Ny, Nz = 112, 112, 16
 rarch = Oceananigans.Architectures.ReactantState()
 varch = CPU()
+
 rmodel = GordonBell25.baroclinic_instability_model(rarch, Nx, Ny, Nz; model_kw...)
 vmodel = GordonBell25.baroclinic_instability_model(varch, Nx, Ny, Nz; model_kw...)
+
+@kernel function _fill_bounded_halo!(c, Nz)
+    i, j = @index(Global, NTuple)
+    c[i, j, 0] = c[i, j, 1]
+    c[i, j, Nz+1] = c[i, j, Nz]
+end
+
+rc = on_architecture(rarch, OffsetArray(Nx, Ny, Nz, -1, -1, -1))
+vc = on_architecture(varch, OffsetArray(Nx, Ny, Nz, -1, -1, -1))
+
+rdev = Oceananigans.Architectures.device(rarch)
+vdev = Oceananigans.Architectures.device(varch)
+
+fill_bounded_halo! = _fill_bounded_halo!(vdev, (16, 16), (Nx, Ny))
+fill_bounded_halo!(vc, Nz)
+
+@jit begin
+    fill_bounded_halo! = _fill_bounded_halo!(rdev, (16, 16), (Nx, Ny))
+    fill_bounded_halo!(rc, Nz)
+end
+
+#=
 @show vmodel
 @show rmodel
 
@@ -81,3 +104,4 @@ rloop! = @compile sync=true raise=true GordonBell25.loop!(rmodel, rNt)
 
 @info "After a loop of $(Nt) steps:"
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
+=#
