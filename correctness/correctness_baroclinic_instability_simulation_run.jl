@@ -1,6 +1,7 @@
 using GordonBell25
 using Oceananigans
 using Reactant
+using KernelAbstractions: @kernel, @index
 
 throw_error = true
 include_halos = true
