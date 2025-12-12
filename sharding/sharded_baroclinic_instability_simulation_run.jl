@@ -77,7 +77,6 @@ Nz = parsed_args["grid-z"]
 Nx = Tx - 2H
 Ny = Ty - 2H
 
-
 @info "[$rank] Generating model..." now(UTC)
 model = GordonBell25.baroclinic_instability_model(arch, Nx, Ny, Nz; halo=(H, H, H), Δt=1)
 @info "[$rank] allocations" GordonBell25.allocatorstats()
