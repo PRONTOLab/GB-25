@@ -26,8 +26,8 @@ vmodel = GordonBell25.baroclinic_instability_model(varch, Nx, Ny, Nz; model_kw..
     c[i, j, Nz+1] = c[i, j, Nz]
 end
 
-rc = on_architecture(rarch, OffsetArray(Nx, Ny, Nz, -1, -1, -1))
-vc = on_architecture(varch, OffsetArray(Nx, Ny, Nz, -1, -1, -1))
+rc = Oceananigans.Architectures.on_architecture(rarch, OffsetArray(Nx, Ny, Nz, -1, -1, -1))
+vc = Oceananigans.Architectures.on_architecture(varch, OffsetArray(Nx, Ny, Nz, -1, -1, -1))
 
 rdev = Oceananigans.Architectures.device(rarch)
 vdev = Oceananigans.Architectures.device(varch)
