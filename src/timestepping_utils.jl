@@ -23,6 +23,12 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces
 using InteractiveUtils
 function first_time_step!(model)
 
+	
+    fill_halo_regions!(prognostic_fields(model), model.grid, model.clock, fields(model))
+    
+	@show @which fill_halo_regions!(prognostic_fields(model), model.grid, model.clock, fields(model))
+
+	if false
     sefs = model.free_surface
     barotropic_velocities = sefs.barotropic_velocities
 
@@ -53,6 +59,9 @@ function first_time_step!(model)
 #    Δt = model.clock.last_Δt
 #    @show @which Oceananigans.TimeSteppers.initialize!(model)
 #    Oceananigans.TimeSteppers.initialize!(model)
+		
+	end
+	
     return nothing
 end
 
