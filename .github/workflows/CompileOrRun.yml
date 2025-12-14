@@ -51,7 +51,7 @@ jobs:
     strategy:
       fail-fast: false
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - name: Install earlyoom
         if: ${{ startsWith(inputs.os, 'ubuntu') }}
         run: |
@@ -89,7 +89,7 @@ jobs:
           # ])
           Pkg.instantiate()
       - name: Upload project environment
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         timeout-minutes: 10
         if: ${{ always() }}
         with:
@@ -149,7 +149,7 @@ jobs:
               exit 1
           fi
       - name: Upload MLIR and XLA modules
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         timeout-minutes: 10
         if: ${{ always() }}
         with:
@@ -160,7 +160,7 @@ jobs:
           retention-days: 90
           overwrite: false
       - name: Upload Julia profiler traces
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         timeout-minutes: 10
         if: ${{ always() && inputs.compile_or_run == 'compile' }}
         with:
@@ -171,7 +171,7 @@ jobs:
           retention-days: 90
           overwrite: false
       - name: Upload XLA dump
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         timeout-minutes: 10
         if: ${{ always() && inputs.compile_or_run == 'run' }}
         with:
@@ -180,7 +180,7 @@ jobs:
           retention-days: 90
           overwrite: false
       - name: Upload XLA profiler traces
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         timeout-minutes: 10
         if: ${{ always() && inputs.compile_or_run == 'run' }}
         with:
