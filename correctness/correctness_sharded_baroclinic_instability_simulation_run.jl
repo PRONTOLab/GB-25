@@ -59,9 +59,12 @@ Oceananigans.initialize!(vmodel)
 
 using InteractiveUtils
 
+using Oceananigans.Architectures: architecture
 using Oceananigans: fields, prognostic_fields, boundary_conditions, instantiated_location
 using Oceananigans.Fields: tupled_fill_halo_regions!, fill_reduced_field_halos!, default_indices, data
-import Oceananigans.BoundaryConditions: fill_halo_regions!
+using Oceananigans.BoundaryConditions: fill_halo_regions!, permute_boundary_conditions, fill_halo_event!,
+                                       extract_bc, extract_west_bc, extract_south_bc, extract_bottom_bc,
+                                       fill_west_and_east_halo!, fill_south_and_north_halo!, fill_bottom_and_top_halo!
 
 
 @show @which prognostic_fields(rmodel)
@@ -73,16 +76,12 @@ import Oceananigans.BoundaryConditions: fill_halo_regions!
 function my_tupled_fill_halo_regions!(fields, grid, args...; kwargs...)
 
     not_reduced_fields = fill_reduced_field_halos!(fields, args...; kwargs)
+
+    @show @which fill_reduced_field_halos!(fields, args...; kwargs)
     
     if !isempty(not_reduced_fields) # ie not reduced, and with default_indices
 
-        @show @which fill_halo_regions!(map(data, not_reduced_fields),
-                           map(boundary_conditions, not_reduced_fields),
-                           default_indices(3),
-                           map(instantiated_location, not_reduced_fields),
-                           grid, args...; kwargs...)
-
-        fill_halo_regions!(map(data, not_reduced_fields),
+        my_fill_halo_regions!(map(data, not_reduced_fields),
                            map(boundary_conditions, not_reduced_fields),
                            default_indices(3),
                            map(instantiated_location, not_reduced_fields),
@@ -92,8 +91,42 @@ function my_tupled_fill_halo_regions!(fields, grid, args...; kwargs...)
     return nothing
 end
 
-@jit my_tupled_fill_halo_regions!(prognostic_fields(rmodel), rmodel.grid, rmodel.clock, fields(rmodel), async=true)
+"Fill halo regions in ``x``, ``y``, and ``z`` for a given field's data."
+function my_fill_halo_regions!(c, boundary_conditions, indices, loc, grid, args...;
+                            fill_boundary_normal_velocities = true, kwargs...)
+    arch = architecture(grid)
+
+    #if fill_boundary_normal_velocities
+    #    fill_open_boundary_regions!(c, boundary_conditions, indices, loc, grid, args...; kwargs...)
+    #end
+
+    fill_halos!, bcs = my_permute_boundary_conditions(boundary_conditions)
+    number_of_tasks  = length(fill_halos!)
+
+    # Fill halo in the three permuted directions (1, 2, and 3), making sure dependencies are fulfilled
+    for task = 1:number_of_tasks
+        fill_halo_event!(c, fill_halos![task], bcs[task], indices, loc, arch, grid, args...; kwargs...)
+    end
+
+    return nothing
+end
+
+function my_permute_boundary_conditions(boundary_conditions)
+
+    west_bc  = extract_west_bc(boundary_conditions)
+    south_bc = extract_south_bc(boundary_conditions)
+
+    fill_halos! = [fill_west_and_east_halo!, fill_south_and_north_halo!, fill_bottom_and_top_halo!]
+    sides       = [:west_and_east, :south_and_north, :bottom_and_top]
+    bcs_array   = [west_bc, south_bc, extract_bottom_bc(boundary_conditions)]
+
+    boundary_conditions = Tuple(extract_bc(boundary_conditions, Val(side)) for side in sides)
+
+    return fill_halos!, boundary_conditions
+end
+
 my_tupled_fill_halo_regions!(prognostic_fields(vmodel), vmodel.grid, vmodel.clock, fields(vmodel), async=true)
+@jit my_tupled_fill_halo_regions!(prognostic_fields(rmodel), rmodel.grid, rmodel.clock, fields(rmodel), async=true)
 
 @info "After initialization and update state:"
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
