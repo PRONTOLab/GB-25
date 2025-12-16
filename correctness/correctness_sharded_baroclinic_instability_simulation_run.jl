@@ -59,12 +59,14 @@ Oceananigans.initialize!(vmodel)
 
 using InteractiveUtils
 
+using Oceananigans.Utils: KernelParameters, launch!
 using Oceananigans.Architectures: architecture
 using Oceananigans: fields, prognostic_fields, boundary_conditions, instantiated_location
 using Oceananigans.Fields: tupled_fill_halo_regions!, fill_reduced_field_halos!, default_indices, data
 using Oceananigans.BoundaryConditions: fill_halo_regions!, permute_boundary_conditions, fill_halo_event!,
                                        extract_bc, extract_west_bc, extract_south_bc, extract_bottom_bc,
-                                       fill_west_and_east_halo!, fill_south_and_north_halo!, fill_bottom_and_top_halo!
+                                       fill_west_and_east_halo!, fill_south_and_north_halo!, fill_bottom_and_top_halo!,
+                                       fill_halo_size, fill_halo_offset, parent_size_and_offset, fill_periodic_west_and_east_halo!
 
 
 @show @which prognostic_fields(rmodel)
@@ -96,33 +98,36 @@ function my_fill_halo_regions!(c, boundary_conditions, indices, loc, grid, args.
                             fill_boundary_normal_velocities = true, kwargs...)
     arch = architecture(grid)
 
-    #if fill_boundary_normal_velocities
-    #    fill_open_boundary_regions!(c, boundary_conditions, indices, loc, grid, args...; kwargs...)
-    #end
+    fill_halos! = fill_west_and_east_halo!
+    sides       = [:west_and_east]
+    bcs         = extract_bc(boundary_conditions, Val(sides[1]))
 
-    fill_halos!, bcs = my_permute_boundary_conditions(boundary_conditions)
-    number_of_tasks  = length(fill_halos!)
-
-    # Fill halo in the three permuted directions (1, 2, and 3), making sure dependencies are fulfilled
-    for task = 1:number_of_tasks
-        fill_halo_event!(c, fill_halos![task], bcs[task], indices, loc, arch, grid, args...; kwargs...)
-    end
+    my_fill_halo_event!(c, bcs, indices, loc, arch, grid, args...; kwargs...)
 
     return nothing
 end
 
-function my_permute_boundary_conditions(boundary_conditions)
+function my_fill_halo_event!(c, bcs, indices, loc, arch, grid, args...;
+                          async = false, # This kwargs is specific to DistributedGrids, here is does nothing
+                          kwargs...)
 
-    west_bc  = extract_west_bc(boundary_conditions)
-    south_bc = extract_south_bc(boundary_conditions)
+    # Calculate size and offset of the fill_halo kernel
+    # We assume that the kernel size is the same for west and east boundaries,
+    # south and north boundaries, and bottom and top boundaries
+    size   = :yz
+    offset = (0, 0)
 
-    fill_halos! = [fill_west_and_east_halo!, fill_south_and_north_halo!, fill_bottom_and_top_halo!]
-    sides       = [:west_and_east, :south_and_north, :bottom_and_top]
-    bcs_array   = [west_bc, south_bc, extract_bottom_bc(boundary_conditions)]
+    @show @which fill_west_and_east_halo!(c, bcs..., size, offset, loc, arch, grid, args...; kwargs...)
 
-    boundary_conditions = Tuple(extract_bc(boundary_conditions, Val(side)) for side in sides)
+    my_fill_west_and_east_halo!(c, size, offset, loc, arch, grid, args...; kwargs...)
 
-    return fill_halos!, boundary_conditions
+    return nothing
+end
+
+function my_fill_west_and_east_halo!(c, size, offset, loc, arch, grid, args...; only_local_halos = false, kw...)
+    c_parent, yz_size, offset = parent_size_and_offset(c, 2, 3, size, offset)
+    launch!(arch, grid, KernelParameters(yz_size, offset), fill_periodic_west_and_east_halo!, c_parent, Val(grid.Hx), grid.Nx; kw...)
+    return nothing
 end
 
 my_tupled_fill_halo_regions!(prognostic_fields(vmodel), vmodel.grid, vmodel.clock, fields(vmodel), async=true)
