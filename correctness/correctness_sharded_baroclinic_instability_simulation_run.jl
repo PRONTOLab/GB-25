@@ -1,3 +1,4 @@
+using NPZ
 using GordonBell25
 using Oceananigans
 using Reactant
@@ -35,6 +36,10 @@ Ny = Ty - 2H
 model_kw = (
     halo = (H, H, H),
     Δt = 1e-9,
+    coriolis = nothing,
+    # buoyancy = SeawaterBuoyancy(equation_of_state=LinearEquationOfState()),
+    momentum_advection = nothing,
+    tracer_advection = nothing,
 )
 
 varch = CPU()
@@ -44,6 +49,8 @@ vmodel = GordonBell25.baroclinic_instability_model(varch, Nx, Ny, Nz; model_kw..
 @show rmodel
 @assert rmodel.architecture isa Distributed
 
+exported_jax_file_dir = joinpath(@__DIR__, "exported_jax_files")
+
 ui = 1e-3 .* rand(size(vmodel.velocities.u)...)
 vi = 1e-3 .* rand(size(vmodel.velocities.v)...)
 set!(vmodel, u=ui, v=vi)
@@ -52,56 +59,139 @@ GordonBell25.sync_states!(rmodel, vmodel)
 @info "At the beginning:"
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
-@jit Oceananigans.initialize!(rmodel)
-Oceananigans.initialize!(vmodel)
+Reactant.Serialization.export_to_enzymejax(
+    Oceananigans.Models.NonhydrostaticModels.update_hydrostatic_pressure!,
+    rmodel.pressure.pHY′, rmodel.architecture, rmodel.grid, rmodel.buoyancy, rmodel.tracers;
+    output_dir=exported_jax_file_dir,
+    compile_options=CompileOptions(raise=true),
+)
 
-@jit Oceananigans.TimeSteppers.update_state!(rmodel)
-Oceananigans.TimeSteppers.update_state!(vmodel)
+Oceananigans.Models.NonhydrostaticModels.update_hydrostatic_pressure!(
+    vmodel.pressure.pHY′, vmodel.architecture, vmodel.grid, vmodel.buoyancy, vmodel.tracers)
+@jit Oceananigans.Models.NonhydrostaticModels.update_hydrostatic_pressure!(
+    rmodel.pressure.pHY′, rmodel.architecture, rmodel.grid, rmodel.buoyancy, rmodel.tracers)
 
-@info "After initialization and update state:"
+@info "After updating hydrostatic pressure:"
+GordonBell25.compare_interior("pHY′", rmodel.pressure.pHY′, vmodel.pressure.pHY′)
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
-GordonBell25.sync_states!(rmodel, vmodel)
-rfirst! = @compile sync=true raise=true GordonBell25.first_time_step!(rmodel)
-@showtime rfirst!(rmodel)
-@showtime GordonBell25.first_time_step!(vmodel)
+#@jit Oceananigans.initialize!(rmodel)
+#Oceananigans.initialize!(vmodel)
 
-@info "After first time step:"
-GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
+using InteractiveUtils
+using KernelAbstractions
+using KernelAbstractions: @kernel, @index
+using Oceananigans.Architectures: architecture
+using Oceananigans.Operators: Δrᶜᶜᶜ, Δrᶜᶜᶠ, Δrᶜᶠᶜ, Δrᶜᶠᶠ, Δrᶠᶜᶜ, Δrᶠᶜᶠ, Δrᶠᶠᶜ, Δrᶠᶠᶠ
+using Oceananigans.Utils: launch!, _launch!, KernelParameters, configure_kernel, interior_work_layout, work_layout, mapped_kernel
+using Oceananigans.BoundaryConditions: BoundaryCondition, getbc, Flux, Open, _fill_south_and_north_halo!, _fill_south_halo!, _fill_north_halo!, _fill_flux_north_halo!
+using Oceananigans.DistributedComputations: child_architecture
+using Oceananigans.Grids: get_active_column_map, static_column_depthᶠᶜᵃ, static_column_depthᶜᶠᵃ, column_depthᶠᶜᵃ, column_depthᶜᶠᵃ
+using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: _compute_barotropic_mode!
 
-rstep! = @compile sync=true raise=true GordonBell25.time_step!(rmodel)
+using OffsetArrays
 
-@info "Warm up:"
-@showtime rstep!(rmodel)
-@showtime rstep!(rmodel)
-@showtime GordonBell25.time_step!(vmodel)
-@showtime GordonBell25.time_step!(vmodel)
+const ReactantKernelAbstractionsExt = Base.get_extension(
+    Reactant, :ReactantKernelAbstractionsExt
+)
 
-Nt = 10
-@info "Time step with Reactant:"
-for _ in 1:Nt
-    @showtime rstep!(rmodel)
+rdev = ReactantKernelAbstractionsExt.ReactantBackend()
+vdev = KernelAbstractions.CPU()
+
+
+u   = ones(Float64, 128, 128, 32)
+vu  = OffsetArray(u, -7:120, -7:120, -7:24)
+vu .= vmodel.velocities.u.data
+ru  = deepcopy(rmodel.velocities.u.data) #Reactant.to_rarray(vu) # This doesn't work
+
+
+vu2  = ones(Float64, 128, 128, 32)
+vu2 .= OffsetArrays.no_offset_view(vmodel.velocities.u.data)
+ru2  = Reactant.to_rarray(vu2)
+vu2  = OffsetArray(vu2, -7:120, -7:120, -7:24)
+ru2  = OffsetArray(ru2, -7:120, -7:120, -7:24)
+
+ru3 = Reactant.to_rarray(vu)
+
+U  = zeros(Float64, 128, 128, 1)
+vU = OffsetArray(U, -7:120, -7:120, 1:1)
+rU = Reactant.to_rarray(vU)
+rU2 = Reactant.to_rarray(vU)
+rU3 = Reactant.to_rarray(vU)
+
+@info "Differences between ru, ru2, and ru3:"
+@show maximum(abs.(convert(Array, parent(ru)) - convert(Array, parent(rmodel.velocities.u.data))))
+@show maximum(abs.(convert(Array, parent(ru2)) - convert(Array, parent(rmodel.velocities.u.data))))
+@show maximum(abs.(convert(Array, parent(ru3)) - convert(Array, parent(rmodel.velocities.u.data))))
+
+@show typeof(rmodel.velocities.u.data)
+@show typeof(ru)
+@show typeof(ru2)
+@show typeof(ru3)
+
+@show size(ru)
+@show size(rmodel.velocities.u.data)
+
+function my_initialize_free_surface!(U, dev, Ny, u)
+    copyto!(@view(U[1:112, 1:112, 1]), u[1:112, 1:112, 1])
+
+    my_fill_halo_regions!(U, dev, Ny)
+
+    return nothing
 end
 
-@info "Time step vanilla:"
-for _ in 1:Nt
-    @showtime GordonBell25.time_step!(vmodel)
+function my_fill_halo_regions!(c, dev, Ny)
+
+    workgroup = KernelAbstractions.NDIteration.StaticSize{(16, 16)}()
+    worksize  = KernelAbstractions.NDIteration.StaticSize{(112, 1)}()
+
+    loop! = _my_fill_south_and_north_halo!(dev, workgroup, worksize)
+
+    # Don't launch kernels with no size
+    loop!(c, Ny)
+
+    return nothing
 end
 
-@info "After $(Nt) steps:"
-GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
+@kernel function _my_fill_south_and_north_halo!(c, Ny)
+    i, k = @index(Global, NTuple)
+    @inbounds c[i, Ny+1, k] = c[i, Ny, k]
+end
 
-GordonBell25.sync_states!(rmodel, vmodel)
-@jit Oceananigans.TimeSteppers.update_state!(rmodel)
+@info "ru before initialization:"
+@show maximum(abs.(convert(Array, parent(ru)) - parent(vu)))
+@show maximum(abs.(convert(Array, parent(ru2)) - parent(vu)))
+@show maximum(abs.(convert(Array, parent(ru3)) - parent(vu)))
 
-@info "After syncing and updating state again:"
-GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
+Reactant.Serialization.export_to_enzymejax(
+    my_initialize_free_surface!,
+    rU, rdev, Ny, ru;
+    output_dir=exported_jax_file_dir,
+    compile_options=CompileOptions(raise=true),
+)
 
-Nt = 100
-rNt = ConcreteRNumber(Nt)
-rloop! = @compile sync=true raise=true GordonBell25.loop!(rmodel, rNt)
-@showtime rloop!(rmodel, rNt)
-@showtime GordonBell25.loop!(vmodel, Nt)
+@show "Reactant:"
 
-@info "After a loop of $(Nt) steps:"
-GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
+@show @code_hlo my_initialize_free_surface!(rU, rdev, Ny, ru)
+
+@jit my_initialize_free_surface!(rU, rdev, Ny, ru)
+@jit my_initialize_free_surface!(rU2, rdev, Ny, ru2)
+@jit my_initialize_free_surface!(rU3, rdev, Ny, ru3)
+@show "Vanilla:"
+my_initialize_free_surface!(vU, vdev, Ny, vu)
+
+@info "What happens to ru after initialization:"
+@show maximum(abs.(convert(Array, parent(ru)) - parent(vu)))
+@show maximum(abs.(convert(Array, parent(ru2)) - parent(vu)))
+@show maximum(abs.(convert(Array, parent(ru3)) - parent(vu)))
+
+
+@info "After initialization (should be 0, or at most maybe machine precision, but there's a bug):"
+rU  = convert(Array, parent(rU))
+rU2 = convert(Array, parent(rU2))
+rU3 = convert(Array, parent(rU3))
+vU  = parent(vU)
+
+@show maximum(abs.(rU - vU))
+@show maximum(abs.(rU2 - vU))
+@show maximum(abs.(rU3 - vU))
