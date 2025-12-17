@@ -62,30 +62,22 @@ using InteractiveUtils
 using Oceananigans.Utils: KernelParameters, launch!
 using Oceananigans.Architectures: architecture
 using Oceananigans: fields, prognostic_fields, boundary_conditions, instantiated_location
-using Oceananigans.Fields: tupled_fill_halo_regions!, fill_reduced_field_halos!, default_indices, data
+using Oceananigans.Fields: tupled_fill_halo_regions!, fill_reduced_field_halos!, default_indices, data, ReducedField, FullField
 using Oceananigans.BoundaryConditions: fill_halo_regions!, permute_boundary_conditions, fill_halo_event!,
                                        extract_bc, extract_west_bc, extract_south_bc, extract_bottom_bc,
                                        fill_west_and_east_halo!, fill_south_and_north_halo!, fill_bottom_and_top_halo!,
                                        fill_halo_size, fill_halo_offset, parent_size_and_offset, fill_periodic_west_and_east_halo!
-
-
-@show @which prognostic_fields(rmodel)
-@show @which prognostic_fields(vmodel)
 
 @show @which fields(rmodel)
 @show @which fields(vmodel)
 
 function my_tupled_fill_halo_regions!(fields, grid, args...; kwargs...)
 
-    not_reduced_fields = fill_reduced_field_halos!(fields, args...; kwargs)
-
-    @show @which fill_reduced_field_halos!(fields, args...; kwargs)
+    not_reduced_fields = my_fill_reduced_field_halos!(fields, args...; kwargs)
     
     if !isempty(not_reduced_fields) # ie not reduced, and with default_indices
 
         my_fill_halo_regions!(map(data, not_reduced_fields),
-                           map(boundary_conditions, not_reduced_fields),
-                           default_indices(3),
                            map(instantiated_location, not_reduced_fields),
                            grid, args...; kwargs...)
     end
@@ -93,21 +85,39 @@ function my_tupled_fill_halo_regions!(fields, grid, args...; kwargs...)
     return nothing
 end
 
+function my_fill_reduced_field_halos!(fields, args...; kwargs)
+
+    @show fields
+
+    not_reduced_fields = Field[]
+    for f in fields
+        bcs = boundary_conditions(f)
+        if !isnothing(bcs)
+            if f isa ReducedField || !(f isa FullField)
+                # Windowed and reduced fields
+                #fill_halo_regions!(f, args...; kwargs...)
+                @info "We got a ReducedField"
+            else
+                push!(not_reduced_fields, f)
+                @info "We did NOT get a ReducedField"
+            end
+        end
+    end
+
+    return tuple(not_reduced_fields...)
+end
+
 "Fill halo regions in ``x``, ``y``, and ``z`` for a given field's data."
-function my_fill_halo_regions!(c, boundary_conditions, indices, loc, grid, args...;
+function my_fill_halo_regions!(c, loc, grid, args...;
                             fill_boundary_normal_velocities = true, kwargs...)
     arch = architecture(grid)
 
-    fill_halos! = fill_west_and_east_halo!
-    sides       = [:west_and_east]
-    bcs         = extract_bc(boundary_conditions, Val(sides[1]))
-
-    my_fill_halo_event!(c, bcs, indices, loc, arch, grid, args...; kwargs...)
+    my_fill_halo_event!(c, loc, arch, grid, args...; kwargs...)
 
     return nothing
 end
 
-function my_fill_halo_event!(c, bcs, indices, loc, arch, grid, args...;
+function my_fill_halo_event!(c, loc, arch, grid, args...;
                           async = false, # This kwargs is specific to DistributedGrids, here is does nothing
                           kwargs...)
 
@@ -117,21 +127,25 @@ function my_fill_halo_event!(c, bcs, indices, loc, arch, grid, args...;
     size   = :yz
     offset = (0, 0)
 
-    @show @which fill_west_and_east_halo!(c, bcs..., size, offset, loc, arch, grid, args...; kwargs...)
-
-    my_fill_west_and_east_halo!(c, size, offset, loc, arch, grid, args...; kwargs...)
+    my_fill_west_and_east_halo!(c, offset, loc, arch, grid, args...; kwargs...)
 
     return nothing
 end
 
-function my_fill_west_and_east_halo!(c, size, offset, loc, arch, grid, args...; only_local_halos = false, kw...)
-    c_parent, yz_size, offset = parent_size_and_offset(c, 2, 3, size, offset)
+function my_fill_west_and_east_halo!(c, offset, loc, arch, grid, args...; only_local_halos = false, kw...)
+
+    c_parent = parent.(c)
+    yz_size  = (minimum([size(t, 2) for t in c_parent]), minimum([size(t, 3) for t in c_parent]))
+    offset   = (0, 0)
+
     launch!(arch, grid, KernelParameters(yz_size, offset), fill_periodic_west_and_east_halo!, c_parent, Val(grid.Hx), grid.Nx; kw...)
     return nothing
 end
 
-my_tupled_fill_halo_regions!(prognostic_fields(vmodel), vmodel.grid, vmodel.clock, fields(vmodel), async=true)
-@jit my_tupled_fill_halo_regions!(prognostic_fields(rmodel), rmodel.grid, rmodel.clock, fields(rmodel), async=true)
+@inline my_prognostic_fields(model) = (u=model.velocities.u, v=model.velocities.v, T=model.tracers.T, S=model.tracers.S)
+
+my_tupled_fill_halo_regions!(my_prognostic_fields(vmodel), vmodel.grid, vmodel.clock, fields(vmodel), async=true)
+@jit my_tupled_fill_halo_regions!(my_prognostic_fields(rmodel), rmodel.grid, rmodel.clock, fields(rmodel), async=true)
 
 @info "After initialization and update state:"
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
