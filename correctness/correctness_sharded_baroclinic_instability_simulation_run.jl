@@ -60,6 +60,8 @@ Oceananigans.initialize!(vmodel)
 using InteractiveUtils
 
 using KernelAbstractions
+using KernelAbstractions: @kernel, @index
+using KernelAbstractions.Extras.LoopInfo: @unroll
 using OffsetArrays
 
 using Oceananigans.Utils: KernelParameters, launch!, _launch!, configure_kernel, OffsetStaticSize, interior_work_layout, work_layout, mapped_kernel
@@ -72,53 +74,21 @@ using Oceananigans.BoundaryConditions: fill_halo_regions!, permute_boundary_cond
                                        fill_halo_size, fill_halo_offset, parent_size_and_offset, fill_periodic_west_and_east_halo!
 
 
-"Fill halo regions in ``x``, ``y``, and ``z`` for a given field's data."
-function my_fill_halo_regions!(c, grid;
-                            fill_boundary_normal_velocities = true, kwargs...)
-    arch = architecture(grid)
-
-    my_fill_halo_event!(c, arch, grid; kwargs...)
-
-    return nothing
-end
-
-function my_fill_halo_event!(c, arch, grid;
-                          async = false, # This kwargs is specific to DistributedGrids, here is does nothing
-                          kwargs...)
-
-    # Calculate size and offset of the fill_halo kernel
-    # We assume that the kernel size is the same for west and east boundaries,
-    # south and north boundaries, and bottom and top boundaries
-    size   = :yz
-    offset = (0, 0)
-
-    my_fill_west_and_east_halo!(c, offset, arch, grid; kwargs...)
-
-    return nothing
-end
-
-function my_fill_west_and_east_halo!(c, offset, arch, grid; only_local_halos = false, kw...)
+function my_fill_west_and_east_halo!(c, arch, grid)
 
     c_parent = parent.(c)
-    yz_size  = (minimum([size(t, 2) for t in c_parent]), minimum([size(t, 3) for t in c_parent]))
-    offset   = (0, 0)
 
-    _my_launch!(child_architecture(arch), grid, KernelParameters(yz_size, offset), fill_periodic_west_and_east_halo!, c_parent, Val(grid.Hx), grid.Nx; kw...)
+    _my_launch!(child_architecture(arch), my_fill_periodic_west_and_east_halo!, c_parent, Val(grid.Hx), grid.Nx)
     return nothing
 end
 
-@inline function _my_launch!(arch, grid, workspec, kernel!, first_kernel_arg, other_kernel_args...;
-                          exclude_periphery = false,
-                          reduced_dimensions = (),
-                          active_cells_map = nothing)
+@inline function _my_launch!(arch, kernel!, first_kernel_arg, other_kernel_args...)
 
-    location = (Nothing, Nothing, Nothing)
+    workgroup = KernelAbstractions.NDIteration.StaticSize{(16, 16)}()
+    worksize = OffsetStaticSize{(1:128, 1:32)}()
 
-    loop!, worksize = my_configure_kernel(arch, grid, workspec, kernel!;
-                                       location,
-                                       exclude_periphery,
-                                       reduced_dimensions,
-                                       active_cells_map)
+    dev  = Oceananigans.Architectures.device(arch)
+    loop! = kernel!(dev, workgroup, worksize)
 
     # Don't launch kernels with no size
     loop!(first_kernel_arg, other_kernel_args...)
@@ -126,25 +96,23 @@ end
     return nothing
 end
 
-@inline function my_configure_kernel(arch, grid, workspec, kernel!;
-                                  exclude_periphery = false,
-                                  reduced_dimensions = (),
-                                  location = nothing,
-                                  active_cells_map = nothing)
-
-    workgroup = KernelAbstractions.NDIteration.StaticSize{(16, 16)}()
-    worksize = OffsetStaticSize{(1:128, 1:32)}()
-
-    dev  = Oceananigans.Architectures.device(arch)
-    loop = kernel!(dev, workgroup, worksize)
-
-    return loop, worksize
+@kernel function my_fill_periodic_west_and_east_halo!(c, ::Val{H}, N) where {H}
+    j, k = @index(Global, NTuple)
+    ntuple(Val(length(c))) do n
+        Base.@_inline_meta
+        @unroll for i = 1:H
+            @inbounds begin
+                  c[n][i, j, k]     = c[n][N+i, j, k] # west
+                  c[n][N+H+i, j, k] = c[n][H+i, j, k] # east
+            end
+        end
+    end
 end
 
 @inline my_prognostic_fields(model) = (model.velocities.u.data, model.velocities.v.data, model.tracers.T.data, model.tracers.S.data)
 
-my_fill_halo_regions!(my_prognostic_fields(vmodel), vmodel.grid, async=true)
-@jit my_fill_halo_regions!(my_prognostic_fields(rmodel), rmodel.grid, async=true)
+my_fill_west_and_east_halo!(my_prognostic_fields(vmodel), architecture(vmodel.grid), vmodel.grid)
+@jit my_fill_west_and_east_halo!(my_prognostic_fields(rmodel), architecture(rmodel.grid), rmodel.grid)
 
 @info "After initialization and update state:"
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
