@@ -59,8 +59,11 @@ Oceananigans.initialize!(vmodel)
 
 using InteractiveUtils
 
-using Oceananigans.Utils: KernelParameters, launch!
-using Oceananigans.Architectures: architecture
+using KernelAbstractions
+using OffsetArrays
+
+using Oceananigans.Utils: KernelParameters, launch!, _launch!, configure_kernel, OffsetStaticSize, interior_work_layout, work_layout, mapped_kernel
+using Oceananigans.Architectures: architecture, child_architecture
 using Oceananigans: fields, prognostic_fields, boundary_conditions, instantiated_location
 using Oceananigans.Fields: tupled_fill_halo_regions!, fill_reduced_field_halos!, default_indices, data, ReducedField, FullField
 using Oceananigans.BoundaryConditions: fill_halo_regions!, permute_boundary_conditions, fill_halo_event!,
@@ -100,8 +103,42 @@ function my_fill_west_and_east_halo!(c, offset, arch, grid; only_local_halos = f
     yz_size  = (minimum([size(t, 2) for t in c_parent]), minimum([size(t, 3) for t in c_parent]))
     offset   = (0, 0)
 
-    launch!(arch, grid, KernelParameters(yz_size, offset), fill_periodic_west_and_east_halo!, c_parent, Val(grid.Hx), grid.Nx; kw...)
+    _my_launch!(child_architecture(arch), grid, KernelParameters(yz_size, offset), fill_periodic_west_and_east_halo!, c_parent, Val(grid.Hx), grid.Nx; kw...)
     return nothing
+end
+
+@inline function _my_launch!(arch, grid, workspec, kernel!, first_kernel_arg, other_kernel_args...;
+                          exclude_periphery = false,
+                          reduced_dimensions = (),
+                          active_cells_map = nothing)
+
+    location = (Nothing, Nothing, Nothing)
+
+    loop!, worksize = my_configure_kernel(arch, grid, workspec, kernel!;
+                                       location,
+                                       exclude_periphery,
+                                       reduced_dimensions,
+                                       active_cells_map)
+
+    # Don't launch kernels with no size
+    loop!(first_kernel_arg, other_kernel_args...)
+
+    return nothing
+end
+
+@inline function my_configure_kernel(arch, grid, workspec, kernel!;
+                                  exclude_periphery = false,
+                                  reduced_dimensions = (),
+                                  location = nothing,
+                                  active_cells_map = nothing)
+
+    workgroup = KernelAbstractions.NDIteration.StaticSize{(16, 16)}()
+    worksize = OffsetStaticSize{(1:128, 1:32)}()
+
+    dev  = Oceananigans.Architectures.device(arch)
+    loop = kernel!(dev, workgroup, worksize)
+
+    return loop, worksize
 end
 
 @inline my_prognostic_fields(model) = (model.velocities.u.data, model.velocities.v.data, model.tracers.T.data, model.tracers.S.data)
