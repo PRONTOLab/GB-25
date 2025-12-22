@@ -44,18 +44,6 @@ vmodel = GordonBell25.baroclinic_instability_model(varch, Nx, Ny, Nz; model_kw..
 @show rmodel
 @assert rmodel.architecture isa Distributed
 
-ui = 1e-3 .* rand(size(vmodel.velocities.u)...)
-vi = 1e-3 .* rand(size(vmodel.velocities.v)...)
-set!(vmodel, u=ui, v=vi)
-GordonBell25.sync_states!(rmodel, vmodel)
-
-@info "At the beginning:"
-GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
-
-@jit Oceananigans.initialize!(rmodel)
-Oceananigans.initialize!(vmodel)
-
-
 
 using InteractiveUtils
 
@@ -63,6 +51,10 @@ using KernelAbstractions
 using KernelAbstractions: @kernel, @index
 using KernelAbstractions.Extras.LoopInfo: @unroll
 using OffsetArrays
+
+const ReactantKernelAbstractionsExt = Base.get_extension(
+    Reactant, :ReactantKernelAbstractionsExt
+)
 
 using Oceananigans.Utils: KernelParameters, launch!, _launch!, configure_kernel, OffsetStaticSize, interior_work_layout, work_layout, mapped_kernel
 using Oceananigans.Architectures: architecture, child_architecture
@@ -74,20 +66,19 @@ using Oceananigans.BoundaryConditions: fill_halo_regions!, permute_boundary_cond
                                        fill_halo_size, fill_halo_offset, parent_size_and_offset, fill_periodic_west_and_east_halo!
 
 
-function my_fill_west_and_east_halo!(c, arch, grid)
+function my_fill_west_and_east_halo!(c, dev, Hx, Nx)
 
     c_parent = parent.(c)
 
-    _my_launch!(child_architecture(arch), my_fill_periodic_west_and_east_halo!, c_parent, Val(grid.Hx), grid.Nx)
+    _my_launch!(dev, my_fill_periodic_west_and_east_halo!, c_parent, Val(Hx), Nx)
     return nothing
 end
 
-@inline function _my_launch!(arch, kernel!, first_kernel_arg, other_kernel_args...)
+@inline function _my_launch!(dev, kernel!, first_kernel_arg, other_kernel_args...)
 
     workgroup = KernelAbstractions.NDIteration.StaticSize{(16, 16)}()
     worksize = OffsetStaticSize{(1:128, 1:32)}()
 
-    dev  = Oceananigans.Architectures.device(arch)
     loop! = kernel!(dev, workgroup, worksize)
 
     # Don't launch kernels with no size
@@ -109,10 +100,29 @@ end
     end
 end
 
-@inline my_prognostic_fields(model) = (model.velocities.u.data, model.velocities.v.data, model.tracers.T.data, model.tracers.S.data)
+Hx = vmodel.grid.Hx
 
-my_fill_west_and_east_halo!(my_prognostic_fields(vmodel), architecture(vmodel.grid), vmodel.grid)
-@jit my_fill_west_and_east_halo!(my_prognostic_fields(rmodel), architecture(rmodel.grid), rmodel.grid)
+rdev = ReactantKernelAbstractionsExt.ReactantBackend()
+vdev = KernelAbstractions.CPU()
 
-@info "After initialization and update state:"
-GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
+@show typeof(vmodel.velocities.u.data), size(vmodel.velocities.u.data)
+@show typeof(rmodel.velocities.u.data), size(rmodel.velocities.u.data)
+
+u = zeros(128, 128, 32)
+vu = OffsetArray(u, -7:120, -7:120, -7:24)
+ru = Reactant.to_rarray(vu)
+
+@inline my_prognostic_fields(model) = (model.velocities.u.data,)
+
+vfields = (vu,)
+rfields = (ru,)
+
+@show typeof(vu), size(vu)
+@show typeof(ru), size(ru)
+
+opts = Reactant.CompileOptions(; max_constant_threshold=1000, raise=true)
+#@show @code_hlo compile_options = opts my_fill_west_and_east_halo!(my_prognostic_fields(rmodel), rdev, Hx, Nx)
+
+my_fill_west_and_east_halo!(my_prognostic_fields(vmodel), vdev, Hx, Nx)
+@jit my_fill_west_and_east_halo!(my_prognostic_fields(rmodel), rdev, Hx, Nx)
+
