@@ -1,70 +1,112 @@
-using GordonBell25
-using Oceananigans
 using Reactant
-
-if !GordonBell25.is_distributed_env_present()
-    using MPI
-    MPI.Init()
-end
-
-throw_error = true
-include_halos = true
-rtol = sqrt(eps(Float64))
-atol = 0
-
-GordonBell25.initialize(; single_gpu_per_process=false)
-@show Ndev = length(Reactant.devices())
-
-Rx, Ry = GordonBell25.factors(Ndev)
-
-rarch = Oceananigans.Distributed(
-    Oceananigans.ReactantState();
-    partition = Partition(Rx, Ry, 1)
-)
-
-rank = Reactant.Distributed.local_rank()
-
-H = 8
-Tx = 64 * Rx
-Ty = 64 * Ry
-Nz = 16
-
-Nx = Tx - 2H
-Ny = Ty - 2H
-
-model_kw = (
-    halo = (H, H, H),
-    Δt = 1e-9,
-)
-
-varch = CPU()
-rmodel = GordonBell25.baroclinic_instability_model(rarch, Nx, Ny, Nz; model_kw...)
-vmodel = GordonBell25.baroclinic_instability_model(varch, Nx, Ny, Nz; model_kw...)
-@show vmodel
-@show rmodel
-@assert rmodel.architecture isa Distributed
 
 
 using InteractiveUtils
 
 using KernelAbstractions
-using KernelAbstractions: @kernel, @index
+using KernelAbstractions: @kernel, @index, Kernel
 using KernelAbstractions.Extras.LoopInfo: @unroll
 using OffsetArrays
+using Base: @pure
 
 const ReactantKernelAbstractionsExt = Base.get_extension(
     Reactant, :ReactantKernelAbstractionsExt
 )
 
-using Oceananigans.Utils: KernelParameters, launch!, _launch!, configure_kernel, OffsetStaticSize, interior_work_layout, work_layout, mapped_kernel
-using Oceananigans.Architectures: architecture, child_architecture
-using Oceananigans: fields, prognostic_fields, boundary_conditions, instantiated_location
-using Oceananigans.Fields: tupled_fill_halo_regions!, fill_reduced_field_halos!, default_indices, data, ReducedField, FullField
-using Oceananigans.BoundaryConditions: fill_halo_regions!, permute_boundary_conditions, fill_halo_event!,
-                                       extract_bc, extract_west_bc, extract_south_bc, extract_bottom_bc,
-                                       fill_west_and_east_halo!, fill_south_and_north_halo!, fill_bottom_and_top_halo!,
-                                       fill_halo_size, fill_halo_offset, parent_size_and_offset, fill_periodic_west_and_east_halo!
+using Oceananigans.Utils: OffsetStaticSize
 
+#=
+using CUDA: @device_override, blockIdx, threadIdx
+using KernelAbstractions.NDIteration: _Size, StaticSize
+using KernelAbstractions.NDIteration: NDRange
+
+using KernelAbstractions.NDIteration
+using KernelAbstractions: ndrange, workgroupsize
+
+using KernelAbstractions: __iterspace, __groupindex, __dynamic_checkbounds
+using KernelAbstractions: CompilerMetadata
+
+import KernelAbstractions: partition
+import KernelAbstractions: __ndrange, __groupsize
+import KernelAbstractions: __validindex
+
+struct OffsetStaticSize{S} <: _Size
+    function OffsetStaticSize{S}() where S
+        new{S::Tuple{Vararg}}()
+    end
+end
+
+# Some @pure convenience functions for `OffsetStaticSize` (following `StaticSize` in KA)
+@pure get(::Type{OffsetStaticSize{S}}) where {S} = S
+@pure get(::OffsetStaticSize{S}) where {S} = S
+@pure Base.getindex(::OffsetStaticSize{S}, i::Int) where {S} = i <= length(S) ? S[i] : 1
+@pure Base.ndims(::OffsetStaticSize{S}) where {S}  = length(S)
+@pure Base.length(::OffsetStaticSize{S}) where {S} = prod(map(worksize, S))
+
+@inline getrange(::OffsetStaticSize{S}) where {S} = worksize(S), offsets(S)
+@inline getrange(::Type{OffsetStaticSize{S}}) where {S} = worksize(S), offsets(S)
+
+@inline offsets(ranges::NTuple{N, UnitRange}) where N = Tuple(r.start - 1 for r in ranges)::NTuple{N}
+
+@inline worksize(t::Tuple) = map(worksize, t)
+@inline worksize(sz::Int) = sz
+@inline worksize(r::AbstractUnitRange) = length(r)
+
+const OffsetNDRange{N, S} = NDRange{N, <:StaticSize, <:StaticSize, <:Any, <:OffsetStaticSize{S}} where {N, S}
+
+# NDRange has been modified to have offsets in place of workitems: Remember, dynamic offset kernels are not possible with this extension!!
+# TODO: maybe don't do this
+@inline function expand(ndrange::OffsetNDRange{N, S}, groupidx::CartesianIndex{N}, idx::CartesianIndex{N}) where {N, S}
+    nI = ntuple(Val(N)) do I
+        Base.@_inline_meta
+        offsets = workitems(ndrange)
+        stride = size(offsets, I)
+        gidx = groupidx.I[I]
+        (gidx - 1) * stride + idx.I[I] + S[I]
+    end
+    return CartesianIndex(nI)
+end
+
+@inline __ndrange(::CompilerMetadata{NDRange}) where {NDRange<:OffsetStaticSize}  = CartesianIndices(get(NDRange))
+@inline __groupsize(cm::CompilerMetadata{NDRange}) where {NDRange<:OffsetStaticSize} = size(__ndrange(cm))
+
+# Kernel{<:Any, <:StaticSize, <:StaticSize} and Kernel{<:Any, <:StaticSize, <:OffsetStaticSize} are the only kernels used by Oceananigans
+const OffsetKernel = Kernel{<:Any, <:StaticSize, <:OffsetStaticSize}
+
+# Extending the partition function to include offsets in NDRange: note that in this case the
+# offsets take the place of the DynamicWorkitems which we assume is not needed in static kernels
+function partition(kernel::OffsetKernel, inrange, ingroupsize)
+    static_ndrange = ndrange(kernel)
+    static_workgroupsize = workgroupsize(kernel)
+
+    if inrange !== nothing && inrange != get(static_ndrange)
+        error("Static NDRange ($static_ndrange) and launch NDRange ($inrange) differ")
+    end
+
+    range, offsets = getrange(static_ndrange)
+
+    if static_workgroupsize <: StaticSize
+        if ingroupsize !== nothing && ingroupsize != get(static_workgroupsize)
+            error("Static WorkgroupSize ($static_workgroupsize) and launch WorkgroupSize $(ingroupsize) differ")
+        end
+        groupsize = get(static_workgroupsize)
+    end
+
+    @assert groupsize !== nothing
+    @assert range !== nothing
+    blocks, groupsize, dynamic = NDIteration.partition(range, groupsize)
+
+    static_blocks = StaticSize{blocks}
+    static_workgroupsize = StaticSize{groupsize} # we might have padded workgroupsize
+
+    iterspace = NDRange{length(range), static_blocks, static_workgroupsize}(blocks, OffsetStaticSize(offsets))
+
+    return iterspace, dynamic
+end
+=#
+#
+# End of needed utilities for OffsetStaticSize
+#
 
 function my_fill_west_and_east_halo!(c, dev, Hx, Nx)
 
@@ -77,6 +119,8 @@ end
 @inline function _my_launch!(dev, kernel!, first_kernel_arg, other_kernel_args...)
 
     workgroup = KernelAbstractions.NDIteration.StaticSize{(16, 16)}()
+
+    #@show @which OffsetStaticSize{(1:128, 1:32)}()
     worksize = OffsetStaticSize{(1:128, 1:32)}()
 
     loop! = kernel!(dev, workgroup, worksize)
@@ -100,19 +144,15 @@ end
     end
 end
 
-Hx = vmodel.grid.Hx
+Hx = 8
+Nx = 112
 
 rdev = ReactantKernelAbstractionsExt.ReactantBackend()
 vdev = KernelAbstractions.CPU()
 
-@show typeof(vmodel.velocities.u.data), size(vmodel.velocities.u.data)
-@show typeof(rmodel.velocities.u.data), size(rmodel.velocities.u.data)
-
 u = zeros(128, 128, 32)
 vu = OffsetArray(u, -7:120, -7:120, -7:24)
 ru = Reactant.to_rarray(vu)
-
-@inline my_prognostic_fields(model) = (model.velocities.u.data,)
 
 vfields = (vu,)
 rfields = (ru,)
@@ -123,6 +163,6 @@ rfields = (ru,)
 opts = Reactant.CompileOptions(; max_constant_threshold=1000, raise=true)
 #@show @code_hlo compile_options = opts my_fill_west_and_east_halo!(my_prognostic_fields(rmodel), rdev, Hx, Nx)
 
-my_fill_west_and_east_halo!(my_prognostic_fields(vmodel), vdev, Hx, Nx)
-@jit my_fill_west_and_east_halo!(my_prognostic_fields(rmodel), rdev, Hx, Nx)
+my_fill_west_and_east_halo!(vfields, vdev, Hx, Nx)
+@jit compile_options = opts my_fill_west_and_east_halo!(rfields, rdev, Hx, Nx)
 
