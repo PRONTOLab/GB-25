@@ -9,13 +9,12 @@ using KernelAbstractions.Extras.LoopInfo: @unroll
 using OffsetArrays
 using Base: @pure
 
+import KernelAbstractions: get
+
 const ReactantKernelAbstractionsExt = Base.get_extension(
     Reactant, :ReactantKernelAbstractionsExt
 )
 
-using Oceananigans.Utils: OffsetStaticSize
-
-#=
 using CUDA: @device_override, blockIdx, threadIdx
 using KernelAbstractions.NDIteration: _Size, StaticSize
 using KernelAbstractions.NDIteration: NDRange
@@ -35,6 +34,11 @@ struct OffsetStaticSize{S} <: _Size
         new{S::Tuple{Vararg}}()
     end
 end
+
+@pure OffsetStaticSize(s::Tuple{Vararg{Int}}) = OffsetStaticSize{s}()
+@pure OffsetStaticSize(s::Int...) = OffsetStaticSize{s}()
+@pure OffsetStaticSize(s::Type{<:Tuple}) = OffsetStaticSize{tuple(s.parameters...)}()
+@pure OffsetStaticSize(s::Tuple{Vararg{UnitRange{Int}}}) = OffsetStaticSize{s}()
 
 # Some @pure convenience functions for `OffsetStaticSize` (following `StaticSize` in KA)
 @pure get(::Type{OffsetStaticSize{S}}) where {S} = S
@@ -103,7 +107,7 @@ function partition(kernel::OffsetKernel, inrange, ingroupsize)
 
     return iterspace, dynamic
 end
-=#
+
 #
 # End of needed utilities for OffsetStaticSize
 #
