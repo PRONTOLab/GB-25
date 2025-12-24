@@ -32,7 +32,7 @@ function generate_and_submit(submit_job_writer, cfg::JobConfig; caller_file::Str
     exe_path = Base.ARGS[1]
     input_file = joinpath(@__DIR__, exe_path)
     if !isfile(input_file)
-        error("File $(run_file) does not exist")
+        error("File $(input_file) does not exist")
     end
     # Some filesystems don't like colons in directory names
     timestamp = replace(string(now(UTC)), ':' => '-')
