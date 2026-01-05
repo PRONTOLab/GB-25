@@ -18,23 +18,64 @@ function try_compile_code(f)
     end
 end
 
+using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: compute_barotropic_mode!
+
+using InteractiveUtils
 function first_time_step!(model)
-    Δt = model.clock.last_Δt
-    Oceananigans.TimeSteppers.first_time_step!(model, Δt)
+
+	
+    fill_halo_regions!(prognostic_fields(model), model.grid, model.clock, fields(model))
+    
+	@show @which fill_halo_regions!(prognostic_fields(model), model.grid, model.clock, fields(model))
+
+	if false
+    sefs = model.free_surface
+    barotropic_velocities = sefs.barotropic_velocities
+
+    
+    not_reduced_fields = (barotropic_velocities.U,)
+        
+    f = barotropic_velocities.U
+    
+#     grid = f.grid
+#     fill_halo_regions!((f.data,),
+# 		       (f.boundary_conditions,),
+#                          Oceananigans.Grids.default_indices(3),
+# 			 (Oceananigans.Fields.instantiated_location(f),),
+# 			   grid)
+# 
+
+    # ABOVE SHOULD BE MINIMIZED FROM THIS
+    @show @which fill_halo_regions!((f, ))
+    fill_halo_regions!((f, ))
+
+    ## OLD
+    #
+    # @show @which fill_halo_regions!((barotropic_velocities.U, barotropic_velocities.V))
+    # fill_halo_regions!((barotropic_velocities.U, barotropic_velocities.V))
+
+	# Oceananigans.Models.HydrostaticFreeSurfaceModels.initialize_free_surface!(model.free_surface, model.grid, model.velocities)
+
+#    Δt = model.clock.last_Δt
+#    @show @which Oceananigans.TimeSteppers.initialize!(model)
+#    Oceananigans.TimeSteppers.initialize!(model)
+		
+	end
+	
     return nothing
 end
 
 function time_step!(model)
-    Δt = model.clock.last_Δt + 0
-    Oceananigans.TimeSteppers.time_step!(model, Δt)
+    #Δt = model.clock.last_Δt + 0
+    #Oceananigans.TimeSteppers.time_step!(model, Δt)
     return nothing
 end
 
 function loop!(model, Ninner)
-    Δt = model.clock.last_Δt + 0
-    @trace track_numbers=false for _ = 1:Ninner
-        Oceananigans.TimeSteppers.time_step!(model, Δt)
-    end
+    #Δt = model.clock.last_Δt + 0
+    #@trace track_numbers=false for _ = 1:Ninner
+    #    Oceananigans.TimeSteppers.time_step!(model, Δt)
+    #end
     return nothing
 end
 
