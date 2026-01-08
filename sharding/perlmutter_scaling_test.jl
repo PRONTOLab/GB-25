@@ -1,6 +1,7 @@
 include("common_submission_generator.jl")
 
 account = "m4672"
+# account = "m5096"
 out_dir = joinpath(ENV["SCRATCH"], "GB25")
 
 # run params
@@ -8,6 +9,11 @@ submit   = true
 run_name = "r_react_"
 time     = "01:00:00"
 Ngpus    = [4, 8, 16, 32, 64]
+#Ngpus    = [64]
+
+#Ngpus    = [4, 8, 16, 32]
+Ngpus = [32]
+
 # Ngpus    = [128, 256, 512, 1024, 2048]
 type     = "weak"
 
@@ -58,6 +64,8 @@ export FI_CXI_SAFE_DEVMEM_COPY_THRESHOLD=16777216
 # export MPICH_GPU_SUPPORT_ENABLED=0
 export NCCL_BUFFSIZE=33554432
 export JULIA_CUDA_USE_COMPAT=false
+# export OLD_XLA_FLAGS="--xla_dump_hlo_pass_re=.* --xla_dump_to=$(job_dir)/%j.xla_vdump"
+export XLA_FLAGS="--xla_gpu_first_collective_call_warn_stuck_timeout_seconds=40 --xla_gpu_first_collective_call_terminate_timeout_seconds=80"
 
 
 srun -n $(Nnodes) -c 32 -G $(Ngpu) --cpu-bind=verbose,cores $(job_dir)/launcher.sh julia --project=$(project_path) --compiled-modules=strict -O0 $(run_file) 
