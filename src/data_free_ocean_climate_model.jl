@@ -23,7 +23,7 @@ function data_free_ocean_climate_model_init(
     # visualize the results of this run.
     Δt = 30seconds
     free_surface = SplitExplicitFreeSurface(substeps=30)
-    ocean = @gbprofile "ocean_simulation" ocean_simulation(grid; free_surface, Δt)
+    @allowscalar ocean = @gbprofile "ocean_simulation" ocean_simulation(grid; free_surface, Δt)
     @gbprofile "set_ocean_model" set!(ocean.model, T=Tᵢ, S=Sᵢ)
 
     # Set up an atmosphere
