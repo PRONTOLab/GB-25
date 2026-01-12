@@ -19,19 +19,22 @@ model = baroclinic_instability_model(arch, resolution=8, Δt=60, Nz=10)
 
 GC.gc(true); GC.gc(false); GC.gc(true)
 
-@info "Compiling..."
-rfirst! = @compile raise=true sync=true first_time_step!(model)
-rstep! = @compile raise=true sync=true time_step!(model)
-rloop! = @compile raise=true sync=true loop!(model, Ninner)
+using InteractiveUtils
 
-@info "Running..."
-Reactant.with_profiler("./") do
-    rfirst!(model)
+using Oceananigans: initialize!
+using Oceananigans.TimeSteppers: update_state!, time_step!
+
+
+Δt = model.clock.last_Δt
+
+function my_first_time_step!(model, Δt)
+    #initialize!(model)
+    update_state!(model)
+    #time_step!(model, Δt, euler=true)
+    return nothing
 end
-Reactant.with_profiler("./") do
-    rstep!(model)
-end
-Reactant.with_profiler("./") do
-    rloop!(model, Ninner)
-end
-@info "Done!"
+
+@show @which my_first_time_step!(model, Δt)
+
+@info "Compiling..."
+rfirst! = @compile raise=true sync=true my_first_time_step!(model, Δt)
