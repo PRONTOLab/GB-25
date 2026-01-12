@@ -53,37 +53,35 @@ function my_compute_hydrostatic_free_surface_tendency_contributions!(model, kern
     arch = model.architecture
     grid = model.grid
 
-    compute_hydrostatic_momentum_tendencies!(model, model.velocities, kernel_parameters; active_cells_map)
+    tracer_index = 1
+    tracer_name = :T
 
-    for (tracer_index, tracer_name) in enumerate(propertynames(model.tracers))
+    @inbounds c_tendency    = model.timestepper.Gⁿ[tracer_name]
+    @inbounds c_advection   = model.advection[tracer_name]
+    @inbounds c_forcing     = model.forcing[tracer_name]
+    @inbounds c_immersed_bc = immersed_boundary_condition(model.tracers[tracer_name])
 
-        @inbounds c_tendency    = model.timestepper.Gⁿ[tracer_name]
-        @inbounds c_advection   = model.advection[tracer_name]
-        @inbounds c_forcing     = model.forcing[tracer_name]
-        @inbounds c_immersed_bc = immersed_boundary_condition(model.tracers[tracer_name])
+    args = tuple(Val(tracer_index),
+                    Val(tracer_name),
+                    c_advection,
+                    model.closure,
+                    c_immersed_bc,
+                    model.buoyancy,
+                    model.biogeochemistry,
+                    model.velocities,
+                    model.free_surface,
+                    model.tracers,
+                    model.diffusivity_fields,
+                    model.auxiliary_fields,
+                    model.clock,
+                    c_forcing)
 
-        args = tuple(Val(tracer_index),
-                     Val(tracer_name),
-                     c_advection,
-                     model.closure,
-                     c_immersed_bc,
-                     model.buoyancy,
-                     model.biogeochemistry,
-                     model.velocities,
-                     model.free_surface,
-                     model.tracers,
-                     model.diffusivity_fields,
-                     model.auxiliary_fields,
-                     model.clock,
-                     c_forcing)
-
-        launch!(arch, grid, kernel_parameters,
-                compute_hydrostatic_free_surface_Gc!,
-                c_tendency,
-                grid,
-                args;
-                active_cells_map)
-    end
+    launch!(arch, grid, kernel_parameters,
+            compute_hydrostatic_free_surface_Gc!,
+            c_tendency,
+            grid,
+            args;
+            active_cells_map)
 
     return nothing
 end
