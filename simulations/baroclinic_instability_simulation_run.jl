@@ -22,19 +22,71 @@ GC.gc(true); GC.gc(false); GC.gc(true)
 using InteractiveUtils
 
 using Oceananigans: initialize!
-using Oceananigans.TimeSteppers: update_state!, time_step!
+using Oceananigans.Utils: launch!
+using Oceananigans.Architectures: architecture
+using Oceananigans.TimeSteppers: update_state!, time_step!, compute_tendencies!
+using Oceananigans.Fields: immersed_boundary_condition
 
+using Oceananigans.ImmersedBoundaries: get_active_cells_map
+using Oceananigans.Models: interior_tendency_kernel_parameters
+using Oceananigans.Models.HydrostaticFreeSurfaceModels: compute_hydrostatic_free_surface_tendency_contributions!, compute_hydrostatic_momentum_tendencies!,
+                                                        compute_hydrostatic_free_surface_Gc!
 
-Δt = model.clock.last_Δt
+function my_compute_tendencies!(model)
 
-function my_first_time_step!(model, Δt)
-    #initialize!(model)
-    update_state!(model)
-    #time_step!(model, Δt, euler=true)
+    grid = model.grid
+    arch = architecture(grid)
+
+    # Calculate contributions to momentum and tracer tendencies from fluxes and volume terms in the
+    # interior of the domain. The active cells map restricts the computation to the active cells in the
+    # interior if the grid is _immersed_ and the `active_cells_map` kwarg is active
+    active_cells_map = get_active_cells_map(model.grid, Val(:interior))
+    kernel_parameters = interior_tendency_kernel_parameters(arch, grid)
+
+    my_compute_hydrostatic_free_surface_tendency_contributions!(model, kernel_parameters; active_cells_map)
+
     return nothing
 end
 
-@show @which my_first_time_step!(model, Δt)
+function my_compute_hydrostatic_free_surface_tendency_contributions!(model, kernel_parameters; active_cells_map=nothing)
+
+    arch = model.architecture
+    grid = model.grid
+
+    compute_hydrostatic_momentum_tendencies!(model, model.velocities, kernel_parameters; active_cells_map)
+
+    for (tracer_index, tracer_name) in enumerate(propertynames(model.tracers))
+
+        @inbounds c_tendency    = model.timestepper.Gⁿ[tracer_name]
+        @inbounds c_advection   = model.advection[tracer_name]
+        @inbounds c_forcing     = model.forcing[tracer_name]
+        @inbounds c_immersed_bc = immersed_boundary_condition(model.tracers[tracer_name])
+
+        args = tuple(Val(tracer_index),
+                     Val(tracer_name),
+                     c_advection,
+                     model.closure,
+                     c_immersed_bc,
+                     model.buoyancy,
+                     model.biogeochemistry,
+                     model.velocities,
+                     model.free_surface,
+                     model.tracers,
+                     model.diffusivity_fields,
+                     model.auxiliary_fields,
+                     model.clock,
+                     c_forcing)
+
+        launch!(arch, grid, kernel_parameters,
+                compute_hydrostatic_free_surface_Gc!,
+                c_tendency,
+                grid,
+                args;
+                active_cells_map)
+    end
+
+    return nothing
+end
 
 @info "Compiling..."
-rfirst! = @compile raise=true sync=true my_first_time_step!(model, Δt)
+rfirst! = @compile raise=true sync=true my_compute_tendencies!(model)
