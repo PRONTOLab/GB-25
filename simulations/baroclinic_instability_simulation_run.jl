@@ -22,7 +22,7 @@ GC.gc(true); GC.gc(false); GC.gc(true)
 using InteractiveUtils
 
 using Oceananigans: initialize!
-using Oceananigans.Utils: launch!
+using Oceananigans.Utils: launch!, _launch!, configure_kernel
 using Oceananigans.Architectures: architecture
 using Oceananigans.TimeSteppers: update_state!, time_step!, compute_tendencies!
 using Oceananigans.Fields: immersed_boundary_condition
@@ -76,12 +76,35 @@ function my_compute_hydrostatic_free_surface_tendency_contributions!(model, kern
                     model.clock,
                     c_forcing)
 
-    launch!(arch, grid, kernel_parameters,
+    _my_launch!(arch, grid, kernel_parameters,
             compute_hydrostatic_free_surface_Gc!,
             c_tendency,
             grid,
             args;
             active_cells_map)
+
+    return nothing
+end
+
+@inline function _my_launch!(arch, grid, workspec, kernel!, first_kernel_arg, other_kernel_args...;
+                          exclude_periphery = false,
+                          reduced_dimensions = (),
+                          active_cells_map = nothing)
+
+    location = Oceananigans.location(first_kernel_arg)
+
+    loop!, worksize = configure_kernel(arch, grid, workspec, kernel!;
+                                       location,
+                                       exclude_periphery,
+                                       reduced_dimensions,
+                                       active_cells_map)
+
+    # Don't launch kernels with no size
+    haswork = true
+
+    if haswork
+        loop!(first_kernel_arg, other_kernel_args...)
+    end
 
     return nothing
 end
