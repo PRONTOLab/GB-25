@@ -22,7 +22,7 @@ GC.gc(true); GC.gc(false); GC.gc(true)
 using InteractiveUtils
 
 using Oceananigans: initialize!
-using Oceananigans.Utils: launch!, _launch!, configure_kernel
+using Oceananigans.Utils: launch!, _launch!, configure_kernel, work_layout, mapped_kernel
 using Oceananigans.Architectures: architecture
 using Oceananigans.TimeSteppers: update_state!, time_step!, compute_tendencies!
 using Oceananigans.Fields: immersed_boundary_condition
@@ -37,13 +37,7 @@ function my_compute_tendencies!(model)
     grid = model.grid
     arch = architecture(grid)
 
-    # Calculate contributions to momentum and tracer tendencies from fluxes and volume terms in the
-    # interior of the domain. The active cells map restricts the computation to the active cells in the
-    # interior if the grid is _immersed_ and the `active_cells_map` kwarg is active
-    active_cells_map = get_active_cells_map(model.grid, Val(:interior))
-    kernel_parameters = interior_tendency_kernel_parameters(arch, grid)
-
-    my_compute_hydrostatic_free_surface_tendency_contributions!(model, kernel_parameters; active_cells_map)
+    my_compute_hydrostatic_free_surface_tendency_contributions!(model, :xyz; active_cells_map=nothing)
 
     return nothing
 end
@@ -80,24 +74,16 @@ function my_compute_hydrostatic_free_surface_tendency_contributions!(model, kern
             compute_hydrostatic_free_surface_Gc!,
             c_tendency,
             grid,
-            args;
-            active_cells_map)
+            args)
 
     return nothing
 end
 
-@inline function _my_launch!(arch, grid, workspec, kernel!, first_kernel_arg, other_kernel_args...;
-                          exclude_periphery = false,
-                          reduced_dimensions = (),
-                          active_cells_map = nothing)
+@inline function _my_launch!(arch, grid, workspec, kernel!, first_kernel_arg, other_kernel_args...)
 
     location = Oceananigans.location(first_kernel_arg)
 
-    loop!, worksize = configure_kernel(arch, grid, workspec, kernel!;
-                                       location,
-                                       exclude_periphery,
-                                       reduced_dimensions,
-                                       active_cells_map)
+    loop!, worksize = my_configure_kernel(arch, grid, workspec, kernel!)
 
     # Don't launch kernels with no size
     haswork = true
@@ -107,6 +93,17 @@ end
     end
 
     return nothing
+end
+
+@inline function my_configure_kernel(arch, grid, workspec, kernel!)
+
+    workgroup = (16, 16)
+    worksize  = (48, 24, 10)
+
+    dev  = Oceananigans.Architectures.device(arch)
+    loop = kernel!(dev, workgroup, worksize)
+
+    return loop, worksize
 end
 
 @info "Compiling..."
