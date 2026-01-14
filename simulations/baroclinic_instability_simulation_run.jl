@@ -47,6 +47,8 @@ using Oceananigans.TurbulenceClosures: shear_production, buoyancy_flux, dissipat
 using Oceananigans.Utils: sum_of_velocities
 using KernelAbstractions: @private
 
+using Oceananigans.Advection: _advective_tracer_flux_x, _advective_tracer_flux_y, _advective_tracer_flux_z
+
 import Oceananigans.TurbulenceClosures: hydrostatic_turbulent_kinetic_energy_tendency
 
 function my_compute_tendencies!(model)
@@ -75,17 +77,8 @@ function my_compute_hydrostatic_free_surface_tendency_contributions!(model, kern
     args = tuple(Val(tracer_index),
                     Val(tracer_name),
                     c_advection,
-                    model.closure,
-                    c_immersed_bc,
-                    model.buoyancy,
-                    model.biogeochemistry,
                     model.velocities,
-                    model.free_surface,
-                    model.tracers,
-                    model.diffusivity_fields,
-                    model.auxiliary_fields,
-                    model.clock,
-                    c_forcing)
+                    model.tracers)
 
     _my_launch!(arch, grid, kernel_parameters,
             my_compute_hydrostatic_free_surface_Gc!,
@@ -116,44 +109,23 @@ end
     @inbounds Gc[i, j, k] = my_hydrostatic_free_surface_tracer_tendency(i, j, k, grid, args...)
 end
 
-@inline free_surface_fields(free_surface) = (; η=free_surface.η)
-@inline hydrostatic_fields(velocities, free_surface, tracers) =
-    merge((u=velocities.u, v=velocities.v, w=velocities.w),
-          tracers,
-          free_surface_fields(free_surface))
-
 @inline function my_hydrostatic_free_surface_tracer_tendency(i, j, k, grid,
                                                           val_tracer_index::Val{tracer_index},
                                                           val_tracer_name,
                                                           advection,
-                                                          closure,
-                                                          c_immersed_bc,
-                                                          buoyancy,
-                                                          biogeochemistry,
                                                           velocities,
-                                                          free_surface,
-                                                          tracers,
-                                                          diffusivities,
-                                                          auxiliary_fields,
-                                                          clock,
-                                                          forcing) where tracer_index
+                                                          tracers) where tracer_index
 
     @inbounds c = tracers[tracer_index]
-    model_fields = merge(hydrostatic_fields(velocities, free_surface, tracers),
-                         auxiliary_fields,
-                         biogeochemical_auxiliary_fields(biogeochemistry))
 
-    biogeochemical_velocities = biogeochemical_drift_velocity(biogeochemistry, val_tracer_name)
-    closure_velocities = closure_turbulent_velocity(closure, diffusivities, val_tracer_name)
+    return ( - my_div_Uc(i, j, k, grid, advection, velocities, c))
 
-    total_velocities = sum_of_velocities(velocities, biogeochemical_velocities, closure_velocities)
-    total_velocities = with_advective_forcing(forcing, total_velocities)
+end
 
-    return ( - div_Uc(i, j, k, grid, advection, total_velocities, c)
-             - ∇_dot_qᶜ(i, j, k, grid, closure, diffusivities, val_tracer_index, c, clock, model_fields, buoyancy)
-             - immersed_∇_dot_qᶜ(i, j, k, grid, c, c_immersed_bc, closure, diffusivities, val_tracer_index, clock, model_fields)
-             + biogeochemical_transition(i, j, k, grid, biogeochemistry, val_tracer_name, clock, model_fields)
-             + forcing(i, j, k, grid, clock, model_fields))
+@inline function my_div_Uc(i, j, k, grid, advection, U, c)
+    return V⁻¹ᶜᶜᶜ(i, j, k, grid) * (δxᶜᵃᵃ(i, j, k, grid, _advective_tracer_flux_x, advection, U.u, c) +
+                                    δyᵃᶜᵃ(i, j, k, grid, _advective_tracer_flux_y, advection, U.v, c) +
+                                    δzᵃᵃᶜ(i, j, k, grid, _advective_tracer_flux_z, advection, U.w, c))
 end
 
 @info "Compiling..."
