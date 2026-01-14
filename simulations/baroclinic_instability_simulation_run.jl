@@ -48,7 +48,8 @@ using Oceananigans.Utils: sum_of_velocities
 using KernelAbstractions: @private
 
 using Oceananigans.Advection: _advective_tracer_flux_x, _advective_tracer_flux_y, _advective_tracer_flux_z,
-                              advective_tracer_flux_z, bias, _biased_interpolate_zᵃᵃᶠ
+                              advective_tracer_flux_z, bias, _biased_interpolate_zᵃᵃᶠ, outside_biased_halo_zᶠ,
+                              biased_interpolate_zᵃᵃᶠ, _____biased_interpolate_zᵃᵃᶠ
 
 import Oceananigans.TurbulenceClosures: hydrostatic_turbulent_kinetic_energy_tendency
 
@@ -106,6 +107,29 @@ end
     i, j, k = @index(Global, NTuple)
     @inbounds Gc[i, j, k] = _biased_interpolate_zᵃᵃᶠ(i, j, k, grid, scheme, Oceananigans.Advection.RightBias(), c)
 end
+
+
+@inline function _my_biased_interpolate_zᵃᵃᶠ(i, j, k, grid, scheme, bias, c)
+
+    return ifelse(outside_biased_halo_zᶠ(k, topology(grid, 3), grid.Nz, scheme),
+                    100.0,
+                    3.0)
+end
+
+#=
+_biased_interpolate_zᵃᵃᶠ(i, j, k, grid, scheme, Oceananigans.Advection.RightBias(), c)
+
+= ifelse(outside_biased_halo_zᶠ(i, topology(grid, 1), grid.Nx, scheme),
+         biased_interpolate_zᵃᵃᶠ(i, j, k, grid, scheme, Oceananigans.Advection.RightBias(), c),
+         _____biased_interpolate_zᵃᵃᶠ(i, j, k, grid, scheme.buffer_scheme, Oceananigans.Advection.RightBias(), c))
+
+@eval begin
+    @inline $alt1_interp(i, j, k, grid::AGZ, scheme::HOADV, args...) =
+        ifelse($outside_buffer(k, topology(grid, 3), grid.Nz, scheme),
+               $interp(i, j, k, grid, scheme, args...),
+               $alt2_interp(i, j, k, grid, scheme.buffer_scheme, args...))
+end
+=#
 
 @info "Compiling..."
 rfirst! = @compile raise=true sync=true my_compute_tendencies!(model)
