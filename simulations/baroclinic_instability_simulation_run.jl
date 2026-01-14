@@ -54,41 +54,21 @@ using Oceananigans.Advection: _advective_tracer_flux_x, _advective_tracer_flux_y
 import Oceananigans.TurbulenceClosures: hydrostatic_turbulent_kinetic_energy_tendency
 using Oceananigans.Grids: topology, required_halo_size_z
 
-function my_compute_tendencies!(model)
+function my_compute_tendencies!(c_tendency, dev, Nz)
 
-    grid = model.grid
-    arch = architecture(grid)
-
-    my_compute_hydrostatic_free_surface_tendency_contributions!(model, :xyz; active_cells_map=nothing)
-
-    return nothing
-end
-
-function my_compute_hydrostatic_free_surface_tendency_contributions!(model, kernel_parameters; active_cells_map=nothing)
-
-    arch = model.architecture
-    grid = model.grid
-
-    tracer_name = :T
-
-    @inbounds c_tendency    = model.timestepper.Gⁿ[tracer_name]
-    @inbounds c_advection   = model.advection[tracer_name]
-
-    _my_launch!(arch, grid, kernel_parameters,
+    _my_launch!(dev,
             my_compute_hydrostatic_free_surface_Gc!,
             c_tendency,
-            grid,
-            c_advection)
+            Nz)
 
     return nothing
 end
 
-@inline function _my_launch!(arch, grid, workspec, kernel!, first_kernel_arg, other_kernel_args...)
+@inline function _my_launch!(dev, kernel!, first_kernel_arg, other_kernel_args...)
 
     workgroup = (16, 16)
     worksize  = (48, 24, 10)
 
-    dev  = Oceananigans.Architectures.device(arch)
     loop! = kernel!(dev, workgroup, worksize)
 
     # Don't launch kernels with no size
@@ -98,24 +78,23 @@ end
 end
 
 """ Calculate the right-hand-side of the tracer advection-diffusion equation. """
-@kernel function my_compute_hydrostatic_free_surface_Gc!(Gc, grid, scheme)
+@kernel function my_compute_hydrostatic_free_surface_Gc!(Gc, Nz)
     i, j, k = @index(Global, NTuple)
-    @inbounds Gc[i, j, k] = _my_biased_interpolate_zᵃᵃᶠ(i, j, k, grid, scheme)
+    @inbounds Gc[i, j, k] = ifelse(my_outside_biased_halo_zᶠ(k, Nz), 100.0, 3.0)
 end
 
-
-@inline function _my_biased_interpolate_zᵃᵃᶠ(i, j, k, grid, scheme)
-
-    return ifelse(my_outside_biased_halo_zᶠ(k, grid.Nz, scheme),
-                    100.0,
-                    3.0)
-end
-
-@inline my_outside_biased_halo_zᶠ(i, N, adv) = (i >= 3 + 1) & (i <= N + 1 - (3 - 1)) &  # Left bias
-                                               (i >= 3)     & (i <= N + 1 - 3)          # Right bias
+@inline my_outside_biased_halo_zᶠ(i, N) = (i >= 3 + 1) & (i <= N + 1 - (3 - 1)) &  # Left bias
+                                          (i >= 3)     & (i <= N + 1 - 3)          # Right bias
 
 @info "Compiling..."
 
-rfirst! = @compile raise=true sync=true my_compute_tendencies!(model)
+const ReactantKernelAbstractionsExt = Base.get_extension(
+    Reactant, :ReactantKernelAbstractionsExt
+)
+
+dev = ReactantKernelAbstractionsExt.ReactantBackend()
+Nz  = 10
+
+rfirst! = @compile raise=true sync=true my_compute_tendencies!(model.timestepper.Gⁿ.T, dev, Nz)
 
 #my_compute_tendencies!(model)
