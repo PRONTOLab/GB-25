@@ -81,8 +81,9 @@ function my_compute_hydrostatic_free_surface_tendency_contributions!(model, kern
                     model.velocities,
                     model.tracers)
 
-    @show @which advective_tracer_flux_z(1, 1, 1, grid, c_advection, model.velocities.w, model.tracers[tracer_index])
+    #@show @which _biased_interpolate_zᵃᵃᶠ(1, 1, 1, grid, c_advection, bias(model.velocities.w[1,1,1]), model.tracers[tracer_index])
 
+    #@show bias(model.velocities.w[1,1,1])
 
     _my_launch!(arch, grid, kernel_parameters,
             my_compute_hydrostatic_free_surface_Gc!,
@@ -133,10 +134,11 @@ end
 @inline function my_advective_tracer_flux_z(i, j, k, grid, scheme, W, c)
 
     @inbounds w̃ = W[i, j, k]
-    cᴿ = _biased_interpolate_zᵃᵃᶠ(i, j, k, grid, scheme, bias(w̃), c)
 
-    return Azᶜᶜᶠ(i, j, k, grid) * w̃ * cᴿ
+    return _biased_interpolate_zᵃᵃᶠ(i, j, k, grid, scheme, Oceananigans.Advection.RightBias(), c)
 end
 
 @info "Compiling..."
 rfirst! = @compile raise=true sync=true my_compute_tendencies!(model)
+
+#my_compute_tendencies!(model)
