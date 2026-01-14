@@ -52,6 +52,7 @@ using Oceananigans.Advection: _advective_tracer_flux_x, _advective_tracer_flux_y
                               biased_interpolate_zᵃᵃᶠ, _____biased_interpolate_zᵃᵃᶠ
 
 import Oceananigans.TurbulenceClosures: hydrostatic_turbulent_kinetic_energy_tendency
+using Oceananigans.Grids: topology
 
 function my_compute_tendencies!(model)
 
@@ -105,15 +106,15 @@ end
 """ Calculate the right-hand-side of the tracer advection-diffusion equation. """
 @kernel function my_compute_hydrostatic_free_surface_Gc!(Gc, grid, scheme, c)
     i, j, k = @index(Global, NTuple)
-    @inbounds Gc[i, j, k] = _biased_interpolate_zᵃᵃᶠ(i, j, k, grid, scheme, Oceananigans.Advection.RightBias(), c)
+    @inbounds Gc[i, j, k] = _my_biased_interpolate_zᵃᵃᶠ(i, j, k, grid, scheme, Oceananigans.Advection.RightBias(), c)
 end
 
 
 @inline function _my_biased_interpolate_zᵃᵃᶠ(i, j, k, grid, scheme, bias, c)
 
     return ifelse(outside_biased_halo_zᶠ(k, topology(grid, 3), grid.Nz, scheme),
-                    100.0,
-                    3.0)
+                    biased_interpolate_zᵃᵃᶠ(i, j, k, grid, scheme, bias, c),
+                    _____biased_interpolate_zᵃᵃᶠ(i, j, k, grid, scheme.buffer_scheme, bias, c))
 end
 
 #=
