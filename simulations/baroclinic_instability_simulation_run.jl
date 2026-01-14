@@ -47,7 +47,8 @@ using Oceananigans.TurbulenceClosures: shear_production, buoyancy_flux, dissipat
 using Oceananigans.Utils: sum_of_velocities
 using KernelAbstractions: @private
 
-using Oceananigans.Advection: _advective_tracer_flux_x, _advective_tracer_flux_y, _advective_tracer_flux_z
+using Oceananigans.Advection: _advective_tracer_flux_x, _advective_tracer_flux_y, _advective_tracer_flux_z,
+                              advective_tracer_flux_z, bias, _biased_interpolate_zᵃᵃᶠ
 
 import Oceananigans.TurbulenceClosures: hydrostatic_turbulent_kinetic_energy_tendency
 
@@ -79,6 +80,9 @@ function my_compute_hydrostatic_free_surface_tendency_contributions!(model, kern
                     c_advection,
                     model.velocities,
                     model.tracers)
+
+    @show @which advective_tracer_flux_z(1, 1, 1, grid, c_advection, model.velocities.w, model.tracers[tracer_index])
+
 
     _my_launch!(arch, grid, kernel_parameters,
             my_compute_hydrostatic_free_surface_Gc!,
@@ -123,9 +127,15 @@ end
 end
 
 @inline function my_div_Uc(i, j, k, grid, advection, U, c)
-    return V⁻¹ᶜᶜᶜ(i, j, k, grid) * (δxᶜᵃᵃ(i, j, k, grid, _advective_tracer_flux_x, advection, U.u, c) +
-                                    δyᵃᶜᵃ(i, j, k, grid, _advective_tracer_flux_y, advection, U.v, c) +
-                                    δzᵃᵃᶜ(i, j, k, grid, _advective_tracer_flux_z, advection, U.w, c))
+    return my_advective_tracer_flux_z(i, j, k+1, grid, advection, U.w, c) - my_advective_tracer_flux_z(i, j, k, grid, advection, U.w, c)
+end
+
+@inline function my_advective_tracer_flux_z(i, j, k, grid, scheme, W, c)
+
+    @inbounds w̃ = W[i, j, k]
+    cᴿ = _biased_interpolate_zᵃᵃᶠ(i, j, k, grid, scheme, bias(w̃), c)
+
+    return Azᶜᶜᶠ(i, j, k, grid) * w̃ * cᴿ
 end
 
 @info "Compiling..."
