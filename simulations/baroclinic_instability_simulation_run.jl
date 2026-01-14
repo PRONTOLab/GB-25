@@ -52,7 +52,7 @@ using Oceananigans.Advection: _advective_tracer_flux_x, _advective_tracer_flux_y
                               biased_interpolate_zᵃᵃᶠ, _____biased_interpolate_zᵃᵃᶠ
 
 import Oceananigans.TurbulenceClosures: hydrostatic_turbulent_kinetic_energy_tendency
-using Oceananigans.Grids: topology
+using Oceananigans.Grids: topology, required_halo_size_z
 
 function my_compute_tendencies!(model)
 
@@ -69,22 +69,16 @@ function my_compute_hydrostatic_free_surface_tendency_contributions!(model, kern
     arch = model.architecture
     grid = model.grid
 
-    tracer_index = 1
     tracer_name = :T
 
     @inbounds c_tendency    = model.timestepper.Gⁿ[tracer_name]
     @inbounds c_advection   = model.advection[tracer_name]
 
-    #@show @which _biased_interpolate_zᵃᵃᶠ(1, 1, 1, grid, c_advection, bias(model.velocities.w[1,1,1]), model.tracers[tracer_index])
-
-    #@show bias(model.velocities.w[1,1,1])
-
     _my_launch!(arch, grid, kernel_parameters,
             my_compute_hydrostatic_free_surface_Gc!,
             c_tendency,
             grid,
-            c_advection,
-            model.tracers[tracer_name])
+            c_advection)
 
     return nothing
 end
@@ -104,35 +98,24 @@ end
 end
 
 """ Calculate the right-hand-side of the tracer advection-diffusion equation. """
-@kernel function my_compute_hydrostatic_free_surface_Gc!(Gc, grid, scheme, c)
+@kernel function my_compute_hydrostatic_free_surface_Gc!(Gc, grid, scheme)
     i, j, k = @index(Global, NTuple)
-    @inbounds Gc[i, j, k] = _my_biased_interpolate_zᵃᵃᶠ(i, j, k, grid, scheme, Oceananigans.Advection.RightBias(), c)
+    @inbounds Gc[i, j, k] = _my_biased_interpolate_zᵃᵃᶠ(i, j, k, grid, scheme)
 end
 
 
-@inline function _my_biased_interpolate_zᵃᵃᶠ(i, j, k, grid, scheme, bias, c)
+@inline function _my_biased_interpolate_zᵃᵃᶠ(i, j, k, grid, scheme)
 
-    return ifelse(outside_biased_halo_zᶠ(k, topology(grid, 3), grid.Nz, scheme),
-                    biased_interpolate_zᵃᵃᶠ(i, j, k, grid, scheme, bias, c),
-                    _____biased_interpolate_zᵃᵃᶠ(i, j, k, grid, scheme.buffer_scheme, bias, c))
+    return ifelse(my_outside_biased_halo_zᶠ(k, grid.Nz, scheme),
+                    100.0,
+                    3.0)
 end
 
-#=
-_biased_interpolate_zᵃᵃᶠ(i, j, k, grid, scheme, Oceananigans.Advection.RightBias(), c)
-
-= ifelse(outside_biased_halo_zᶠ(i, topology(grid, 1), grid.Nx, scheme),
-         biased_interpolate_zᵃᵃᶠ(i, j, k, grid, scheme, Oceananigans.Advection.RightBias(), c),
-         _____biased_interpolate_zᵃᵃᶠ(i, j, k, grid, scheme.buffer_scheme, Oceananigans.Advection.RightBias(), c))
-
-@eval begin
-    @inline $alt1_interp(i, j, k, grid::AGZ, scheme::HOADV, args...) =
-        ifelse($outside_buffer(k, topology(grid, 3), grid.Nz, scheme),
-               $interp(i, j, k, grid, scheme, args...),
-               $alt2_interp(i, j, k, grid, scheme.buffer_scheme, args...))
-end
-=#
+@inline my_outside_biased_halo_zᶠ(i, N, adv) = (i >= 3 + 1) & (i <= N + 1 - (3 - 1)) &  # Left bias
+                                               (i >= 3)     & (i <= N + 1 - 3)          # Right bias
 
 @info "Compiling..."
+
 rfirst! = @compile raise=true sync=true my_compute_tendencies!(model)
 
 #my_compute_tendencies!(model)
