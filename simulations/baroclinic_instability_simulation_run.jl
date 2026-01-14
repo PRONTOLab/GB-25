@@ -72,14 +72,6 @@ function my_compute_hydrostatic_free_surface_tendency_contributions!(model, kern
 
     @inbounds c_tendency    = model.timestepper.Gⁿ[tracer_name]
     @inbounds c_advection   = model.advection[tracer_name]
-    @inbounds c_forcing     = model.forcing[tracer_name]
-    @inbounds c_immersed_bc = immersed_boundary_condition(model.tracers[tracer_name])
-
-    args = tuple(Val(tracer_index),
-                    Val(tracer_name),
-                    c_advection,
-                    model.velocities,
-                    model.tracers)
 
     #@show @which _biased_interpolate_zᵃᵃᶠ(1, 1, 1, grid, c_advection, bias(model.velocities.w[1,1,1]), model.tracers[tracer_index])
 
@@ -89,7 +81,8 @@ function my_compute_hydrostatic_free_surface_tendency_contributions!(model, kern
             my_compute_hydrostatic_free_surface_Gc!,
             c_tendency,
             grid,
-            args)
+            c_advection,
+            model.tracers[tracer_name])
 
     return nothing
 end
@@ -109,33 +102,9 @@ end
 end
 
 """ Calculate the right-hand-side of the tracer advection-diffusion equation. """
-@kernel function my_compute_hydrostatic_free_surface_Gc!(Gc, grid, args)
+@kernel function my_compute_hydrostatic_free_surface_Gc!(Gc, grid, scheme, c)
     i, j, k = @index(Global, NTuple)
-    @inbounds Gc[i, j, k] = my_hydrostatic_free_surface_tracer_tendency(i, j, k, grid, args...)
-end
-
-@inline function my_hydrostatic_free_surface_tracer_tendency(i, j, k, grid,
-                                                          val_tracer_index::Val{tracer_index},
-                                                          val_tracer_name,
-                                                          advection,
-                                                          velocities,
-                                                          tracers) where tracer_index
-
-    @inbounds c = tracers[tracer_index]
-
-    return ( - my_div_Uc(i, j, k, grid, advection, velocities, c))
-
-end
-
-@inline function my_div_Uc(i, j, k, grid, advection, U, c)
-    return my_advective_tracer_flux_z(i, j, k+1, grid, advection, U.w, c) - my_advective_tracer_flux_z(i, j, k, grid, advection, U.w, c)
-end
-
-@inline function my_advective_tracer_flux_z(i, j, k, grid, scheme, W, c)
-
-    @inbounds w̃ = W[i, j, k]
-
-    return _biased_interpolate_zᵃᵃᶠ(i, j, k, grid, scheme, Oceananigans.Advection.RightBias(), c)
+    @inbounds Gc[i, j, k] = _biased_interpolate_zᵃᵃᶠ(i, j, k, grid, scheme, Oceananigans.Advection.RightBias(), c)
 end
 
 @info "Compiling..."
