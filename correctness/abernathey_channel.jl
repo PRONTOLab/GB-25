@@ -27,7 +27,7 @@ using Enzyme
 
 Oceananigans.defaults.FloatType = Float64
 
-graph_directory = "run_abernathy_model_ad_spinup5000_8100steps/"
+graph_directory = "run_abernathy_model_ad_spinup400000_8100steps/"
 #graph_directory = "run_abernathy_model_ad_spinup40000000_8100steps/"
 
 #
@@ -251,7 +251,7 @@ end
 
 function spinup_loop!(model)
     Δt = model.clock.last_Δt
-    @trace mincut = true track_numbers = false for i = 1:5000
+    @trace mincut = true track_numbers = false for i = 1:400000
         time_step!(model, Δt)
     end
     return nothing
@@ -369,7 +369,7 @@ dΔz            = Enzyme.make_zero(Δz)
 @info "Compiling the model run..."
 tic = time()
 rspinup_reentrant_channel_model! = @compile raise_first=true raise=true sync=true  spinup_reentrant_channel_model!(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux)
-#restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux, Δz, mld)
+restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux, Δz, mld)
 rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true  differentiate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux, Δz, mld,
                                                                                                         dmodel, dTᵢ, dSᵢ, du_wind_stress, dv_wind_stress, dT_flux, dΔz, dmld)
 compile_toc = time() - tic
@@ -443,7 +443,7 @@ jldsave(filename; Nx, Ny, Nz,
                   dkappaS_final=convert(Array, interior(dmodel.closure[2].κ[2])),
                   dT_flux=convert(Array, interior(dT_flux)))
 
-#=
+
 @allowscalar @show argmax(abs.(dTᵢ))
 
 #
@@ -452,7 +452,7 @@ jldsave(filename; Nx, Ny, Nz,
 i_range = [21, 22, 23, 24, 25, 26, 27, 28]
 j_range = [45, 46, 47, 48, 49, 50, 51, 52]
 
-epsilon_range = [1e-2, 1e-4, 1e-6]
+epsilon_range = [1e-1, 1e-2, 1e-3]
 
 for i = 21:28
     for j = 45:52
@@ -468,8 +468,11 @@ for i = 21:28
             Tᵢ_fd, Sᵢ_fd = temperature_salinity_init(model_fd.grid, parameters)
 
             # Permute the model field at i,j,1
-            @allowscalar Tᵢ_fd[i, j, 1] = Tᵢ_fd[i, j, 1] + eps
+            rspinup_reentrant_channel_model!(model_fd, Tᵢ_fd, Sᵢ_fd, u_wind_stress, v_wind_stress, T_flux)
+            @allowscalar set!(Tᵢ_fd, model_fd.tracers.T)
+            @allowscalar set!(Sᵢ_fd, model_fd.tracers.S)
 
+            @allowscalar Tᵢ_fd[i, j, 1] = Tᵢ_fd[i, j, 1] + eps
             outputP = restimate_tracer_error(model_fd, Tᵢ_fd, Sᵢ_fd, u_wind_stress, v_wind_stress, T_flux, Δz, mld)
 
             # Reset everything to 0:
@@ -479,8 +482,11 @@ for i = 21:28
             Tᵢ_fd, Sᵢ_fd = temperature_salinity_init(model_fd.grid, parameters)
 
             # Permute the model field at i,j,1
-            @allowscalar Tᵢ_fd[i, j, 1] = Tᵢ_fd[i, j, 1] - eps
+            rspinup_reentrant_channel_model!(model_fd, Tᵢ_fd, Sᵢ_fd, u_wind_stress, v_wind_stress, T_flux)
+            @allowscalar set!(Tᵢ_fd, model_fd.tracers.T)
+            @allowscalar set!(Sᵢ_fd, model_fd.tracers.S)
 
+            @allowscalar Tᵢ_fd[i, j, 1] = Tᵢ_fd[i, j, 1] - eps
             outputM = restimate_tracer_error(model_fd, Tᵢ_fd, Sᵢ_fd, u_wind_stress, v_wind_stress, T_flux, Δz, mld)
 
             dT_fd = (outputP - outputM) / (2eps)
@@ -493,5 +499,5 @@ for i = 21:28
         end
     end
 end
-=#
+
             
