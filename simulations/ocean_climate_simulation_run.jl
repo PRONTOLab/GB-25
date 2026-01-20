@@ -17,7 +17,7 @@ default_planet_rotation_rate = Oceananigans.defaults.planet_rotation_rate
 using Oceananigans.Fields: tracernames
 using Oceananigans.BoundaryConditions: DefaultBoundaryCondition, FieldBoundaryConditions, regularize_field_boundary_conditions
 using Oceananigans.Models: extract_boundary_conditions
-using Oceananigans.Models.HydrostaticFreeSurfaceModels: constructor_field_names, hydrostatic_velocity_fields
+using Oceananigans.Models.HydrostaticFreeSurfaceModels: constructor_field_names, hydrostatic_velocity_fields, materialize_free_surface
 using Oceananigans.TurbulenceClosures: add_closure_specific_boundary_conditions
 using Oceananigans.TimeSteppers: Clock
 
@@ -39,7 +39,6 @@ function my_data_free_ocean_climate_model_init(
     free_surface = SplitExplicitFreeSurface(substeps=30)
     tracers = (:T, :S)
 
-    #=
     # We need boundary_conditions:
     embedded_boundary_conditions = merge(extract_boundary_conditions(nothing),
                                          extract_boundary_conditions(tracers),
@@ -52,7 +51,7 @@ function my_data_free_ocean_climate_model_init(
 
     # Then we merge specified, embedded, and default boundary conditions. Specified boundary conditions
     # have precedence, followed by embedded, followed by default.
-    boundary_conditions = merge(default_boundary_conditions, embedded_boundary_conditions, nothing)
+    boundary_conditions = merge(default_boundary_conditions, embedded_boundary_conditions)
     boundary_conditions = regularize_field_boundary_conditions(boundary_conditions, grid, field_names)
 
     # Finally, we ensure that closure-specific boundary conditions, such as
@@ -67,12 +66,11 @@ function my_data_free_ocean_climate_model_init(
     velocities = hydrostatic_velocity_fields(nothing, grid, Clock(grid), boundary_conditions)
 
     # Problem line:
-    free_surface = materialize_free_surface(free_surface, velocities, grid)
+    @allowscalar free_surface = materialize_free_surface(free_surface, velocities, grid)
 
-    =#
-    @allowscalar ocean = HydrostaticFreeSurfaceModel(; grid,
-                                                        tracers,
-                                                        free_surface)
+    #@allowscalar ocean = HydrostaticFreeSurfaceModel(; grid,
+    #                                                    tracers,
+    #                                                    free_surface)
 
     return ocean
 end
