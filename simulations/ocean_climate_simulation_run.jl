@@ -16,7 +16,7 @@ using ClimaOcean.Oceans: default_ocean_closure, TwoColorRadiation, default_or_ov
 default_gravitational_acceleration = Oceananigans.defaults.gravitational_acceleration
 default_planet_rotation_rate = Oceananigans.defaults.planet_rotation_rate
 
-using Oceananigans.Fields: tracernames, set_to_field!
+using Oceananigans.Fields: tracernames, set_to_field!, location
 using Oceananigans.BoundaryConditions: DefaultBoundaryCondition, FieldBoundaryConditions, regularize_field_boundary_conditions, fill_halo_regions!
 using Oceananigans.Models: extract_boundary_conditions
 using Oceananigans.Models.HydrostaticFreeSurfaceModels: constructor_field_names, hydrostatic_velocity_fields, materialize_free_surface
@@ -28,6 +28,8 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces
 using Oceananigans.Grids: topology, halo_size, LeftConnected, RightConnected, FullyConnected, with_halo
 
 using Oceananigans.ImmersedBoundaries: has_active_cells_map, has_active_z_columns, materialize_immersed_boundary, compute_numerical_bottom_height!, GridFittedBottom
+
+using Oceananigans.DistributedComputations: child_architecture
 
 # Reactant.Compiler.SROA_ATTRIBUTOR[] = false
 
@@ -73,20 +75,57 @@ end
 function my_materialize_immersed_boundary(grid, ib)
     bottom_field = Field{Center, Center, Nothing}(grid)
 
-    @show @which parent(bottom_field.data)
-    @show typeof(parent(bottom_field.data))
-    @show size(parent(bottom_field.data))
-    @show typeof(bottom_field.data)
-    @show size(bottom_field.data)
+    @show @which interior(bottom_field)
+    #@show typeof(interior(bottom_field))
+    #@show size(interior(bottom_field))
+    #@show typeof(bottom_field)
+    #@show size(bottom_field)
+    @show @which interior(bottom_field.data, location(bottom_field), bottom_field.grid, bottom_field.indices)
+    @show @which interior(bottom_field.data, location(bottom_field), topology(bottom_field.grid), size(bottom_field.grid), halo_size(bottom_field.grid), bottom_field.indices)
 
-    @show @which parent(ib.bottom_height.data)
-    @show typeof(parent(ib.bottom_height.data))
-    @show size(parent(ib.bottom_height.data))
-    @show typeof(ib.bottom_height.data)
-    @show size(ib.bottom_height.data)
+    @show @which interior(ib.bottom_height)
+    #@show typeof(interior(ib.bottom_height))
+    #@show size(interior(ib.bottom_height))
+    #@show typeof(ib.bottom_height)
+    #@show size(ib.bottom_height)
+    @show @which interior(ib.bottom_height.data, location(ib.bottom_height), ib.bottom_height.grid, ib.bottom_height.indices)
+    @show @which interior(ib.bottom_height.data, location(ib.bottom_height), topology(ib.bottom_height.grid), size(ib.bottom_height.grid), halo_size(ib.bottom_height.grid), ib.bottom_height.indices)
 
-    parent(bottom_field.data) .= parent(ib.bottom_height.data)
-    return new_ib
+    #my_set_to_field!(bottom_field, ib.bottom_height)
+
+    interior(bottom_field.data, location(bottom_field), topology(bottom_field.grid), size(bottom_field.grid), halo_size(bottom_field.grid), bottom_field.indices) .= interior(ib.bottom_height.data, location(ib.bottom_height), topology(ib.bottom_height.grid), size(ib.bottom_height.grid), halo_size(ib.bottom_height.grid), ib.bottom_height.indices)
+    return bottom_field
+end
+
+
+function my_set_to_field!(u, v)
+    # We implement some niceities in here that attempt to copy halo data,
+    # and revert to copying just interior points if that fails.
+
+    if child_architecture(u) === child_architecture(v)
+        # Note: we could try to copy first halo point even when halo
+        # regions are a different size. That's a bit more complicated than
+        # the below so we leave it for the future.
+
+        try # to copy halo regions along with interior data
+            parent(u) .= parent(v)
+        catch # this could fail if the halo regions are different sizes?
+            # copy just the interior data
+            @info "Halo regions are different sizes, got here"
+            interior(u) .= interior(v)
+        end
+    else
+        v_data = on_architecture(child_architecture(u), v.data)
+
+        # As above, we permit ourselves a little ambition and try to copy halo data:
+        try
+            parent(u) .= parent(v_data)
+        catch
+            interior(u) .= interior(v_data, location(v), v.grid, v.indices)
+        end
+    end
+
+    return u
 end
 
 @info "Generating model..."
@@ -95,3 +134,5 @@ grid = my_data_free_ocean_climate_model_init(ReactantState())
 @allowscalar underlying_grid = my_materialize_free_surface(grid)
 
 materialized_ib = my_materialize_immersed_boundary(underlying_grid, grid.immersed_boundary)
+
+@info "Done!"
