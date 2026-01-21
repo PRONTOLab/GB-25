@@ -27,6 +27,8 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces
 
 using Oceananigans.Grids: topology, halo_size, LeftConnected, RightConnected, FullyConnected, with_halo
 
+using Oceananigans.ImmersedBoundaries: has_active_cells_map, has_active_z_columns, materialize_immersed_boundary
+
 # Reactant.Compiler.SROA_ATTRIBUTOR[] = false
 
 preamble()
@@ -44,56 +46,30 @@ function my_data_free_ocean_climate_model_init(
     )
 
     grid = gaussian_islands_tripolar_grid(arch, resolution, Nz)
-    free_surface = SplitExplicitFreeSurface(substeps=30)
-    tracers = (:T, :S)
-
-    # Next, we form a list of default boundary conditions:
-    field_names = constructor_field_names(nothing, tracers, free_surface, NamedTuple(), nothing, grid)
-    boundary_conditions = NamedTuple{field_names}(FieldBoundaryConditions() for name in field_names)
-
-    # Then we merge specified, embedded, and default boundary conditions. Specified boundary conditions
-    # have precedence, followed by embedded, followed by default.
-    @show @which regularize_field_boundary_conditions(boundary_conditions, grid, field_names)
-    boundary_conditions = regularize_field_boundary_conditions(boundary_conditions, grid, field_names)
-
-    @show boundary_conditions
-
-    # We need velocities:
-    @show @which hydrostatic_velocity_fields(nothing, grid, Clock(grid), boundary_conditions)
-    velocities = hydrostatic_velocity_fields(nothing, grid, Clock(grid), boundary_conditions)
 
     # Problem line:
-    @show @which materialize_free_surface(free_surface, velocities, grid)
-    @allowscalar free_surface = my_materialize_free_surface(free_surface, velocities, grid)
+    @allowscalar free_surface = my_materialize_free_surface(grid)
 
     return ocean
 end
 
-function my_materialize_free_surface(free_surface, velocities, grid)
-
-    TX, TY, _   = topology(grid)
-    substepping = free_surface.substepping
-
-    @show @which maybe_extend_halos(TX, TY, grid, substepping)
-    maybe_extended_grid = my_maybe_extend_halos(TX, TY, grid, substepping)
-
-end
-
-function my_maybe_extend_halos(TX, TY, grid, substepping)
+function my_materialize_free_surface(grid)
 
     old_halos = halo_size(grid)
-    Nsubsteps = length(substepping.averaging_weights)
 
-    Hx = TX() isa ConnectedTopology ? max(Nsubsteps+2, old_halos[1]) : old_halos[1]
-    Hy = TY() isa ConnectedTopology ? max(Nsubsteps+2, old_halos[2]) : old_halos[2]
+    Hx = 8
+    Hy = 23
 
     new_halos = (Hx, Hy, old_halos[3])
 
-    if new_halos == old_halos
-        return grid
-    else
-        return with_halo(new_halos, grid)
-    end
+    my_with_halo(new_halos, grid)
+end
+
+function my_with_halo(halo, ibg)
+    underlying_grid = with_halo(halo, ibg.underlying_grid)
+
+    @show @which materialize_immersed_boundary(underlying_grid, ibg.immersed_boundary)
+    materialized_ib = materialize_immersed_boundary(underlying_grid, ibg.immersed_boundary)
 end
 
 @info "Generating model..."
