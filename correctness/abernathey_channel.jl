@@ -27,7 +27,7 @@ using Enzyme
 
 Oceananigans.defaults.FloatType = Float64
 
-graph_directory = "run_abernathy_model_ad_spinup400000_8100steps/"
+graph_directory = "run_abernathy_model_ad_spinup1000_100steps/"
 #graph_directory = "run_abernathy_model_ad_spinup40000000_8100steps/"
 
 #
@@ -251,7 +251,7 @@ end
 
 function spinup_loop!(model)
     Δt = model.clock.last_Δt
-    @trace mincut = true track_numbers = false for i = 1:400000
+    @trace mincut = true track_numbers = false for i = 1:1000
         time_step!(model, Δt)
     end
     return nothing
@@ -281,7 +281,7 @@ end
 
 function loop!(model)
     Δt = model.clock.last_Δt
-    @trace mincut = true checkpointing = true track_numbers = false for i = 1:8100
+    @trace mincut = true checkpointing = true track_numbers = false for i = 1:100
         time_step!(model, Δt)
     end
     return nothing
@@ -454,40 +454,35 @@ j_range = [45, 46, 47, 48, 49, 50, 51, 52]
 
 epsilon_range = [1e-1, 1e-2, 1e-3]
 
-for i = 21:28
-    for j = 45:52
+model_fd = build_model(grid, Δt₀, parameters)
+Tᵢ_fd, Sᵢ_fd = temperature_salinity_init(model_fd.grid, parameters)
+rspinup_reentrant_channel_model!(model_fd, Tᵢ_fd, Sᵢ_fd, u_wind_stress, v_wind_stress, T_flux)
+@allowscalar set!(Tᵢ_fd, model_fd.tracers.T)
+@allowscalar set!(Sᵢ_fd, model_fd.tracers.S)
 
-        @show i, j
-        @allowscalar @show dTᵢ[i, j, 1]
+for i = 21:23
+    for j = 45:47
+
+        k = 4
+        @show i, j, k
+        @allowscalar @show dTᵢ[i, j, k]
 
         for eps in epsilon_range
-            # Reset everything to 0:
-            model_fd = build_model(grid, Δt₀, parameters)
-            
-            # Set new T and S init fields for FD:
-            Tᵢ_fd, Sᵢ_fd = temperature_salinity_init(model_fd.grid, parameters)
+            # Copy the model after spinup state:
+            model_fdp = deepcopy(model_fd)
+            @allowscalar set!(Tᵢ_fd, model_fdp.tracers.T)
 
-            # Permute the model field at i,j,1
-            rspinup_reentrant_channel_model!(model_fd, Tᵢ_fd, Sᵢ_fd, u_wind_stress, v_wind_stress, T_flux)
-            @allowscalar set!(Tᵢ_fd, model_fd.tracers.T)
-            @allowscalar set!(Sᵢ_fd, model_fd.tracers.S)
+            # Permute positive:
+            @allowscalar Tᵢ_fd[i, j, k] = Tᵢ_fd[i, j, k] + eps
+            outputP = restimate_tracer_error(model_fdp, Tᵢ_fd, Sᵢ_fd, u_wind_stress, v_wind_stress, T_flux, Δz, mld)
 
-            @allowscalar Tᵢ_fd[i, j, 1] = Tᵢ_fd[i, j, 1] + eps
-            outputP = restimate_tracer_error(model_fd, Tᵢ_fd, Sᵢ_fd, u_wind_stress, v_wind_stress, T_flux, Δz, mld)
+            # Copy the model after spinup state:
+            model_fdm = deepcopy(model_fd)
+            @allowscalar set!(Tᵢ_fd, model_fdm.tracers.T)
 
-            # Reset everything to 0:
-            model_fd = build_model(grid, Δt₀, parameters)
-            
-            # Set new T and S init fields for FD:
-            Tᵢ_fd, Sᵢ_fd = temperature_salinity_init(model_fd.grid, parameters)
-
-            # Permute the model field at i,j,1
-            rspinup_reentrant_channel_model!(model_fd, Tᵢ_fd, Sᵢ_fd, u_wind_stress, v_wind_stress, T_flux)
-            @allowscalar set!(Tᵢ_fd, model_fd.tracers.T)
-            @allowscalar set!(Sᵢ_fd, model_fd.tracers.S)
-
-            @allowscalar Tᵢ_fd[i, j, 1] = Tᵢ_fd[i, j, 1] - eps
-            outputM = restimate_tracer_error(model_fd, Tᵢ_fd, Sᵢ_fd, u_wind_stress, v_wind_stress, T_flux, Δz, mld)
+            # Permute negative:
+            @allowscalar Tᵢ_fd[i, j, k] = Tᵢ_fd[i, j, k] - eps
+            outputM = restimate_tracer_error(model_fdm, Tᵢ_fd, Sᵢ_fd, u_wind_stress, v_wind_stress, T_flux, Δz, mld)
 
             dT_fd = (outputP - outputM) / (2eps)
 
