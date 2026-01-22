@@ -1,115 +1,22 @@
-using GordonBell25: first_time_step!, time_step!, loop!, preamble
-using GordonBell25: data_free_ocean_climate_model_init, gaussian_islands_tripolar_grid
-using Oceananigans.Architectures: ReactantState
 using Reactant
+using OffsetArrays
 
-using InteractiveUtils
+function comparison_of_views(a, b)
 
-using ClimaOcean: ocean_simulation
-
-using Oceananigans
-
-using SeawaterPolynomials.TEOS10: TEOS10EquationOfState
-
-using ClimaOcean.Oceans: default_ocean_closure, TwoColorRadiation, default_or_override, BarotropicPotentialForcing, XDirection, YDirection
-
-default_gravitational_acceleration = Oceananigans.defaults.gravitational_acceleration
-default_planet_rotation_rate = Oceananigans.defaults.planet_rotation_rate
-
-using Oceananigans.Fields: tracernames, set_to_field!, location, instantiate, interior_view_indices
-using Oceananigans.BoundaryConditions: DefaultBoundaryCondition, FieldBoundaryConditions, regularize_field_boundary_conditions, fill_halo_regions!
-using Oceananigans.Models: extract_boundary_conditions
-using Oceananigans.Models.HydrostaticFreeSurfaceModels: constructor_field_names, hydrostatic_velocity_fields, materialize_free_surface
-using Oceananigans.TurbulenceClosures: add_closure_specific_boundary_conditions
-using Oceananigans.TimeSteppers: Clock
-
-using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: maybe_extend_halos
-
-using Oceananigans.Grids: topology, halo_size, LeftConnected, RightConnected, FullyConnected, with_halo, interior_parent_indices
-
-using Oceananigans.ImmersedBoundaries: has_active_cells_map, has_active_z_columns, materialize_immersed_boundary, compute_numerical_bottom_height!, GridFittedBottom
-
-using Oceananigans.DistributedComputations: child_architecture
-
-# Reactant.Compiler.SROA_ATTRIBUTOR[] = false
-
-preamble()
-
-Ninner = ConcreteRNumber(3)
-
-const ConnectedTopology = Union{LeftConnected, RightConnected, FullyConnected}
-
-function my_data_free_ocean_climate_model_init(arch;
-    # Horizontal resolution
-    resolution::Real = 2, # 1/4 for quarter degree
-    # Vertical resolution
-    Nz::Int = 20, # eventually we want to increase this to between 100-600
-    )
-
-    grid = gaussian_islands_tripolar_grid(arch, resolution, Nz)
-
-    # Problem line:
-    #@allowscalar free_surface = my_materialize_free_surface(grid)
-
-    return grid
+    view(parent(a), 1:1, 1:1, 1:1) .= view(parent(b), 1:1, 1:1, 1:1)
+    return a
 end
 
-function my_materialize_free_surface(grid)
+a = zeros(208, 142, 1)
+a = OffsetArray(a, -7:200, -22:119, 1:1)
 
-    old_halos = halo_size(grid)
+b = zeros(208, 112, 1)
+b = OffsetArray(b, -7:200, -7:104, 1:1)
 
-    Hx = 8
-    Hy = 23
+# Making these Reactant arrays (where things break)
+a = Reactant.to_rarray(a)
+b = Reactant.to_rarray(b)
 
-    new_halos = (Hx, Hy, old_halos[3])
-
-    my_with_halo(new_halos, grid)
-end
-
-function my_with_halo(halo, ibg)
-    underlying_grid = with_halo(halo, ibg.underlying_grid)
-
-    return underlying_grid
-end
-
-function my_materialize_immersed_boundary(grid, ib)
-    bottom_field = Field{Center, Center, Nothing}(grid)
-
-    my_interior(bottom_field.data, location(bottom_field), topology(bottom_field.grid), size(bottom_field.grid), halo_size(bottom_field.grid), bottom_field.indices) .= my_interior(ib.bottom_height.data, location(ib.bottom_height), topology(ib.bottom_height.grid), size(ib.bottom_height.grid), halo_size(ib.bottom_height.grid), ib.bottom_height.indices)
-    return bottom_field
-end
-
-function my_interior(a,
-                  Loc::Tuple,
-                  Topo::Tuple,
-                  sz::NTuple{N, Int},
-                  halo_sz::NTuple{N, Int},
-                  ind::Tuple=default_indices(3)) where N
-
-    ℓx, ℓy, ℓz = instantiate(Loc)
-    𝓉x, 𝓉y, 𝓉z = instantiate(Topo)
-    Nx, Ny, Nz = sz
-    Hx, Hy, Hz = halo_sz
-    i = interior_parent_indices(ℓx, 𝓉x, Nx, Hx)
-    j = interior_parent_indices(ℓy, 𝓉y, Ny, Hy)
-    k = interior_parent_indices(ℓz, 𝓉z, Nz, Hz)
-
-    @show i, j, k
-
-    iv = @inbounds interior_view_indices(ind[1], i)
-    jv = @inbounds interior_view_indices(ind[2], j)
-    kv = @inbounds interior_view_indices(ind[3], k)
-
-    @show iv, jv, kv
-
-    return view(parent(a), iv, jv, kv)
-end
-
-@info "Generating model..."
-grid = my_data_free_ocean_climate_model_init(ReactantState())
-
-@allowscalar underlying_grid = my_materialize_free_surface(grid)
-
-materialized_ib = my_materialize_immersed_boundary(underlying_grid, grid.immersed_boundary)
+c = comparison_of_views(a, b)
 
 @info "Done!"
