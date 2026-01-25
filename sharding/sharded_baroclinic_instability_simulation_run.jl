@@ -45,6 +45,7 @@ using Libdl: dllist
 @show filter(contains("nccl"), dllist())
 
 Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
+Reactant.Compiler.DUMP_LLVMIR[] = true
 Reactant.MLIR.IR.DUMP_MLIR_DIR[] = joinpath(@__DIR__, "mlir_dumps", jobid_procid)
 Reactant.Compiler.DEBUG_DISABLE_RESHARDING[] = true
 # Reactant.Compiler.DEBUG_PRINT_CODEGEN[] = true
@@ -85,35 +86,6 @@ model = GordonBell25.baroclinic_instability_model(arch, Nx, Ny, Nz; halo=(H, H, 
 
 Ninner = ConcreteRNumber(256; sharding=Sharding.NamedSharding(arch.connectivity, ()))
 
-@info "[$rank] Compiling first_time_step!..." now(UTC)
-rfirst! = @compile sync=true raise=true first_time_step!(model)
-@info "[$rank] allocations" GordonBell25.allocatorstats()
-@info "[$rank] Compiling loop..." now(UTC)
 compiled_loop! = @compile sync=true raise=true loop!(model, Ninner)
-@info "[$rank] allocations" GordonBell25.allocatorstats()
 
-profile_dir = joinpath(@__DIR__, "profiling", jobid_procid)
-mkpath(joinpath(profile_dir, "first_time_step"))
-@info "[$rank] allocations" GordonBell25.allocatorstats()
-@info "[$rank] Running first_time_step!..." now(UTC)
-Reactant.with_profiler(joinpath(profile_dir, "first_time_step")) do
-    @time "[$rank] first time step" rfirst!(model)
-end
-@info "[$rank] allocations" GordonBell25.allocatorstats()
-
-mkpath(joinpath(profile_dir, "loop"))
-@info "[$rank] allocations" GordonBell25.allocatorstats()
-@info "[$rank] running loop" now(UTC)
-Reactant.with_profiler(joinpath(profile_dir, "loop")) do
-    @time "[$rank] loop" compiled_loop!(model, Ninner)
-end
-
-mkpath(joinpath(profile_dir, "loop 2"))
-@info "[$rank] allocations" GordonBell25.allocatorstats()
-@info "[$rank] running second loop" now(UTC)
-Reactant.with_profiler(joinpath(profile_dir, "loop")) do
-    @time "[$rank] second loop" compiled_loop!(model, Ninner)
-end
-@info "[$rank] allocations" GordonBell25.allocatorstats()
-
-@info "Done!" now(UTC)
+# println(@code_hlo optimize=:before_raise raise=true loop!(model, Ninner))

@@ -63,13 +63,63 @@ import Oceananigans.TimeSteppers: update_state!
 
 using Oceananigans.Biogeochemistry: update_tendencies!
 
+using Oceananigans.Utils
+
+using Oceananigans.Models.HydrostaticFreeSurfaceModels
+
+using Oceananigans.Advection
+
+@inline function myhydrostatic_free_surface_u_velocity_tendency(i, j, k, grid,
+                                                              advection,
+                                                              coriolis,
+                                                              closure,
+                                                              u_immersed_bc,
+                                                              velocities,
+                                                              free_surface,
+                                                              tracers,
+                                                              buoyancy,
+                                                              diffusivities,
+                                                              hydrostatic_pressure_anomaly,
+                                                              auxiliary_fields,
+                                                              ztype,
+                                                              clock,
+                                                              forcing)
+
+    model_fields = merge(Oceananigans.Models.HydrostaticFreeSurfaceModels.hydrostatic_fields(velocities, free_surface, tracers), auxiliary_fields)
+
+    scheme = advection
+    U = velocities
+
+    u = U.u
+    v = U.v
+
+#    return - Oceananigans.Advection.ℑyᵃᶜᵃ(i, j, k, grid, Oceananigans.Advection.ζ₃ᶠᶠᶜ, u, v) * Oceananigans.Advection.ℑxᶠᵃᵃ(i, j, k, grid, Oceananigans.Advection.ℑyᵃᶜᵃ, Oceananigans.Advection.Δx_qᶜᶠᶜ, v) * Oceananigans.Advection.Δx⁻¹ᶠᶜᶜ(i, j, k, grid)
+
+#    return Oceananigans.Advection.ℑyᵃᶜᵃ(i, j, k, grid, Oceananigans.Advection.ζ_ℑx_vᶠᶠᵃ, u, v)
+    
+# return myhorizontal_advection_U(i, j, k, grid, scheme, U.u, U.v)
+
+    return Oceananigans.Advection.horizontal_advection_U(i, j, k, grid, scheme, U.u, U.v)
+
+end
+
+
+""" Calculate the right-hand-side of the u-velocity equation. """
+@kernel function mycompute_hydrostatic_free_surface_Gu!(Gu, grid, args)
+    i, j, k = @index(Global, NTuple)
+    @inbounds Gu[i, j, k] = myhydrostatic_free_surface_u_velocity_tendency(i, j, k, grid, args...)
+end
+
 function myupdate!(model)
     grid = model.grid
+  
+    @show typeof(model.grid)
     
-    @show @which tupled_fill_halo_regions!(prognostic_fields(model), grid, model.clock, fields(model), async=true)
     tupled_fill_halo_regions!(prognostic_fields(model), grid, model.clock, fields(model), async=true)
 
-    # @apply_regionally 
+    if true
+    
+# @apply_regionally 
     arch = architecture(grid)
 
     # Calculate contributions to momentum and tracer tendencies from fluxes and volume terms in the
@@ -78,22 +128,50 @@ function myupdate!(model)
     active_cells_map = get_active_cells_map(model.grid, Val(:interior))
     kernel_parameters = interior_tendency_kernel_parameters(arch, grid)
 
-    Oceananigans.Models.HydrostaticFreeSurfaceModels.compute_hydrostatic_free_surface_tendency_contributions!(model, kernel_parameters; active_cells_map)
+    # @show @which Oceananigans.Models.HydrostaticFreeSurfaceModels.compute_hydrostatic_free_surface_tendency_contributions!(model, kernel_parameters; active_cells_map)
+    # Oceananigans.Models.HydrostaticFreeSurfaceModels.compute_hydrostatic_free_surface_tendency_contributions!(model, kernel_parameters; active_cells_map)
+  
+    velocities = model.velocities
+
+        grid = model.grid
+    arch = architecture(grid)
+
+    u_immersed_bc = immersed_boundary_condition(velocities.u)
+    v_immersed_bc = immersed_boundary_condition(velocities.v)
+
+    u_forcing = model.forcing.u
+    v_forcing = model.forcing.v
+
+    start_momentum_kernel_args = (model.advection.momentum,
+                                  model.coriolis,
+                                  model.closure)
+
+    end_momentum_kernel_args = (velocities,
+                                model.free_surface,
+                                model.tracers,
+                                model.buoyancy,
+                                model.diffusivity_fields,
+                                model.pressure.pHY′,
+                                model.auxiliary_fields,
+                                model.vertical_coordinate,
+                                model.clock)
+
+    u_kernel_args = tuple(start_momentum_kernel_args..., u_immersed_bc, end_momentum_kernel_args..., u_forcing)
+    v_kernel_args = tuple(start_momentum_kernel_args..., v_immersed_bc, end_momentum_kernel_args..., v_forcing)
+
+    launch!(arch, grid, kernel_parameters,
+            mycompute_hydrostatic_free_surface_Gu!, model.timestepper.Gⁿ.u, grid,
+            u_kernel_args; active_cells_map)
+
+#    launch!(arch, grid, kernel_parameters,
+#            Oceananigans.Models.HydrostaticFreeSurfaceModels.compute_hydrostatic_free_surface_Gv!, model.timestepper.Gⁿ.v, grid,
+#            v_kernel_args; active_cells_map)
+
+    # Oceananigans.Models.complete_communication_and_compute_buffer!(model, grid, arch)
+
+
+    end
     
-    Oceananigans.Models.complete_communication_and_compute_buffer!(model, grid, arch)
-
-    # Calculate contributions to momentum and tracer tendencies from user-prescribed fluxes across the
-    # boundaries of the domain
-    Oceananigans.Models.HydrostaticFreeSurfaceModels.compute_hydrostatic_boundary_tendency_contributions!(model.timestepper.Gⁿ,
-                                                         model.architecture,
-                                                         model.velocities,
-                                                         model.tracers,
-                                                         model.clock,
-                                                         fields(model),
-                                                         model.closure,
-                                                         model.buoyancy)
-
-    update_tendencies!(model.biogeochemistry, model)
 
 end
 
