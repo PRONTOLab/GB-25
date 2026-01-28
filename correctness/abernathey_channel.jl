@@ -27,7 +27,7 @@ using Enzyme
 
 Oceananigans.defaults.FloatType = Float64
 
-graph_directory = "run_abernathy_model_ad_spinup5000_8100steps/"
+graph_directory = "run_abernathy_model_ad_8100steps/"
 #graph_directory = "run_abernathy_model_ad_spinup40000000_8100steps/"
 
 #
@@ -55,6 +55,8 @@ z_faces[Nz+1] = 0
 Δz = z_faces[2:end] - z_faces[1:end-1]
 
 Δz = reshape(Δz, 1, :)
+
+vΔz = deepcopy(Δz)
 
 # Coriolis variables:
 const f = -1e-4
@@ -246,42 +248,12 @@ function temperature_salinity_init(grid, parameters)
 end
 
 #####
-##### Spin up (because step cound is hardcoded we need separate functions for each loop...)
-#####
-
-function spinup_loop!(model)
-    Δt = model.clock.last_Δt
-    @trace mincut = true track_numbers = false for i = 1:5000
-        time_step!(model, Δt)
-    end
-    return nothing
-end
-
-function spinup_reentrant_channel_model!(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, temp_flux)
-    # setting IC's and BC's:
-    set!(model.velocities.u.boundary_conditions.top.condition, u_wind_stress)
-    set!(model.velocities.v.boundary_conditions.top.condition, v_wind_stress)
-    set!(model.tracers.T, Tᵢ)
-    set!(model.tracers.S, Sᵢ)
-    set!(model.tracers.T.boundary_conditions.top.condition, temp_flux)
-
-    # Initialize the model
-    model.clock.iteration = 0
-    model.clock.time = 0
-
-    # Step it forward
-    spinup_loop!(model)
-
-    return nothing
-end
-
-#####
 ##### Forward simulation (not actually using the Simulation struct)
 #####
 
 function loop!(model)
     Δt = model.clock.last_Δt
-    @trace mincut = true checkpointing = true track_numbers = false for i = 1:8100
+    @trace mincut = true checkpointing = true track_numbers = false for i = 1:10000
         time_step!(model, Δt)
     end
     return nothing
@@ -368,8 +340,7 @@ dΔz            = Enzyme.make_zero(Δz)
 
 @info "Compiling the model run..."
 tic = time()
-rspinup_reentrant_channel_model! = @compile raise_first=true raise=true sync=true  spinup_reentrant_channel_model!(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux)
-#restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux, Δz, mld)
+restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux, Δz, mld)
 rdifferentiate_tracer_error = @compile raise_first=true raise=true sync=true  differentiate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux, Δz, mld,
                                                                                                         dmodel, dTᵢ, dSᵢ, du_wind_stress, dv_wind_stress, dT_flux, dΔz, dmld)
 compile_toc = time() - tic
@@ -378,120 +349,38 @@ compile_toc = time() - tic
 
 @info "Running the simulation..."
 
-using FileIO, JLD2
-
-filename = graph_directory * "data_init.jld2"
-
-if !isdir(graph_directory) Base.Filesystem.mkdir(graph_directory) end
-
-if isa(model.grid, ImmersedBoundaryGrid)
-    bottom_height = model.grid.immersed_boundary.bottom_height
-else
-    bottom_height = Field{Center, Center, Nothing}(model.grid)
-    set!(bottom_height, -Lz)
-end
-
-# Spinup the model for a sufficient amount of time, save the T and S from this state:
-tic = time()
-rspinup_reentrant_channel_model!(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux)
-@allowscalar set!(Tᵢ, model.tracers.T)
-@allowscalar set!(Sᵢ, model.tracers.S)
-spinup_toc = time() - tic
-@show spinup_toc
-
-jldsave(filename; Nx, Ny, Nz,
-                  bottom_height=convert(Array, interior(bottom_height)),
-                  T_init=convert(Array, interior(model.tracers.T)),
-                  S_init=convert(Array, interior(model.tracers.S)),
-                  ssh=convert(Array, interior(model.free_surface.η)),
-                  e_init=convert(Array, interior(model.tracers.e)),
-                  u_wind_stress=convert(Array, interior(u_wind_stress)),
-                  v_wind_stress=convert(Array, interior(v_wind_stress)),
-                  dkappaT_init=convert(Array, interior(dmodel.closure[2].κ[1])),
-                  dkappaS_init=convert(Array, interior(dmodel.closure[2].κ[2])),
-                  T_flux=convert(Array, interior(T_flux)))
-
+@info "For 8100 timesteps:"
 
 tic = time()
-#output = restimate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux, Δz, mld)
-dedν = rdifferentiate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux, Δz, mld, dmodel, dTᵢ, dSᵢ, du_wind_stress, dv_wind_stress, dT_flux, dΔz, dmld)
+output = restimate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux, Δz, mld)
 run_toc = time() - tic
 
+tic = time()
+dedν = rdifferentiate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux, Δz, mld, dmodel, dTᵢ, dSᵢ, du_wind_stress, dv_wind_stress, dT_flux, dΔz, dmld)
+ad_toc = time() - tic
+
+@info "Time to run forward code 10000 steps with Reactant, GPU:"
 @show run_toc
-#@show output
 
-@show dedν
+@info "Time to run AD for 10000 steps with Reactant, GPU:"
+@show ad_toc
 
-filename = graph_directory * "data_final.jld2"
 
-jldsave(filename; Nx, Ny, Nz,
-                  T_final=convert(Array, interior(model.tracers.T)),
-                  S_final=convert(Array, interior(model.tracers.S)),
-                  e_final=convert(Array, interior(model.tracers.e)),
-                  ssh=convert(Array, interior(model.free_surface.η)),
-                  u=convert(Array, interior(model.velocities.u)),
-                  v=convert(Array, interior(model.velocities.v)),
-                  w=convert(Array, interior(model.velocities.w)),
-                  mld=convert(Array, interior(mld)),
-                  #zonal_transport=convert(Float64, output),
-                  zonal_transport=convert(Float64, dedν[2]),
-                  du_wind_stress=convert(Array, interior(du_wind_stress)),
-                  dv_wind_stress=convert(Array, interior(dv_wind_stress)),
-                  dT=convert(Array, interior(dTᵢ)),
-                  dS=convert(Array, interior(dSᵢ)),
-                  dkappaT_final=convert(Array, interior(dmodel.closure[2].κ[1])),
-                  dkappaS_final=convert(Array, interior(dmodel.closure[2].κ[2])),
-                  dT_flux=convert(Array, interior(dT_flux)))
+@info "Now we'll do vanilla GPU for a comparison:"
+architecture = GPU()
 
-#=
-@allowscalar @show argmax(abs.(dTᵢ))
+grid          = make_grid(architecture, Nx, Ny, Nz, z_faces)
+model         = build_model(grid, Δt₀, parameters)
+T_flux        = T_flux_init(model.grid, parameters)
+u_wind_stress = u_wind_stress_init(model.grid, parameters)
+v_wind_stress = v_wind_stress_init(model.grid, parameters)
+Tᵢ, Sᵢ        = temperature_salinity_init(model.grid, parameters)
+mld           = MixedLayerDepthField(model.buoyancy, model.grid, model.tracers)
+Δz            = vΔz
 
-#
-# Loop of FD results for comparison:
-#
-i_range = [21, 22, 23, 24, 25, 26, 27, 28]
-j_range = [45, 46, 47, 48, 49, 50, 51, 52]
+tic = time()
+output = estimate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux, Δz, mld)
+vanillaGPU_toc = time() - tic
 
-epsilon_range = [1e-2, 1e-4, 1e-6]
-
-for i = 21:28
-    for j = 45:52
-
-        @show i, j
-        @allowscalar @show dTᵢ[i, j, 1]
-
-        for eps in epsilon_range
-            # Reset everything to 0:
-            model_fd = build_model(grid, Δt₀, parameters)
-            
-            # Set new T and S init fields for FD:
-            Tᵢ_fd, Sᵢ_fd = temperature_salinity_init(model_fd.grid, parameters)
-
-            # Permute the model field at i,j,1
-            @allowscalar Tᵢ_fd[i, j, 1] = Tᵢ_fd[i, j, 1] + eps
-
-            outputP = restimate_tracer_error(model_fd, Tᵢ_fd, Sᵢ_fd, u_wind_stress, v_wind_stress, T_flux, Δz, mld)
-
-            # Reset everything to 0:
-            model_fd = build_model(grid, Δt₀, parameters)
-            
-            # Set new T and S init fields for FD:
-            Tᵢ_fd, Sᵢ_fd = temperature_salinity_init(model_fd.grid, parameters)
-
-            # Permute the model field at i,j,1
-            @allowscalar Tᵢ_fd[i, j, 1] = Tᵢ_fd[i, j, 1] - eps
-
-            outputM = restimate_tracer_error(model_fd, Tᵢ_fd, Sᵢ_fd, u_wind_stress, v_wind_stress, T_flux, Δz, mld)
-
-            dT_fd = (outputP - outputM) / (2eps)
-
-            @show eps, dT_fd
-
-            if i == 21
-                @show outputP, outputM
-            end
-        end
-    end
-end
-=#
-            
+@info "Time to run forward code 10000 steps on a GPU (no Reactant):"
+@show vanillaGPU_toc
