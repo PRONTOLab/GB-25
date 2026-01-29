@@ -14,11 +14,13 @@ using ClimaOcean.Oceans: default_ocean_closure, TwoColorRadiation, default_or_ov
 default_gravitational_acceleration = Oceananigans.defaults.gravitational_acceleration
 default_planet_rotation_rate = Oceananigans.defaults.planet_rotation_rate
 
+using InteractiveUtils
+
 using Oceananigans.BoundaryConditions: DefaultBoundaryCondition
 
 using Oceananigans.Models: initialization_update_state!
 
-using Oceananigans.TimeSteppers: update_state!
+using Oceananigans.TimeSteppers: update_state!, Clock
 
 using Oceananigans: UpdateStateCallsite
 using Oceananigans.Biogeochemistry: update_biogeochemical_state!
@@ -32,6 +34,8 @@ using Oceananigans.TurbulenceClosures: compute_diffusivities!
 using Oceananigans.Utils: KernelParameters
 
 using Oceananigans.Models.HydrostaticFreeSurfaceModels: mask_immersed_model_fields!, diffusivity_kernel_parameters
+
+using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: time_step_catke_equation!
 
 # Reactant.Compiler.SROA_ATTRIBUTOR[] = false
 
@@ -74,38 +78,33 @@ function my_ocean_simulation(grid;
 end
 
 @info "Generating model..."
-model = my_data_free_ocean_climate_model_init(ReactantState())
+vmodel = my_data_free_ocean_climate_model_init(CPU())
+rmodel = my_data_free_ocean_climate_model_init(ReactantState())
 
 function my_update_state!(model, grid, callbacks)
 
-    arch = grid.architecture
-
-    @apply_regionally begin
-        mask_immersed_model_fields!(model)
-        update_model_field_time_series!(model, model.clock)
-        update_boundary_conditions!(fields(model), model)
-    end
-
-    u = model.velocities.u
-    v = model.velocities.v
-    tracers = model.tracers
-
-    # Fill the halos of the prognostic fields. Note that the halos of the
-    # free-surface variables are filled after the barotropic step.
-    fill_halo_regions!((u, v),  model.clock, fields(model); async=true)
-    fill_halo_regions!(tracers, model.clock, fields(model); async=true)
-
-    # Compute diagnostic quantities
-    @apply_regionally begin
-        surface_params = surface_kernel_parameters(grid)
-        volume_params = volume_kernel_parameters(grid)
-        κ_params = diffusivity_kernel_parameters(grid)
-        compute_buoyancy_gradients!(model.buoyancy, grid, tracers, parameters=volume_params)
-        update_hydrostatic_pressure!(model.pressure.pHY′, arch, grid, model.buoyancy, model.tracers, parameters=surface_params)
-        compute_diffusivities!(model.closure_fields, model.closure, model, parameters=κ_params)
-    end
+    @show @which time_step_catke_equation!(model, model.timestepper)
+    time_step_catke_equation!(model, model.timestepper)
 
     return nothing
 end
 
-my_update_state!(model, model.grid, [])
+#time_step_catke_equation!(model, model.timestepper)
+@show @which Clock(vmodel.grid)
+@show Clock(vmodel.grid)
+@show vmodel.clock
+@show vmodel.timestepper
+@show vmodel.clock.stage
+@show vmodel.timestepper.β
+
+
+@show @which Clock(rmodel.grid)
+@show Clock(rmodel.grid)
+@show rmodel.clock
+@show rmodel.timestepper
+@show rmodel.clock.stage
+@show rmodel.timestepper.β
+
+@show vmodel.timestepper.β[vmodel.clock.stage]
+
+@show rmodel.timestepper.β[rmodel.clock.stage]
