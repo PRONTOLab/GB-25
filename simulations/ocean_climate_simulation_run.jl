@@ -24,14 +24,13 @@ using Oceananigans.Grids: φnode
 using KernelAbstractions
 using KernelAbstractions: @kernel, @index
 
+using OffsetArrays
+
 # Reactant.Compiler.SROA_ATTRIBUTOR[] = false
 
 preamble()
 
-Ninner = ConcreteRNumber(3)
-
 @info "Generating model..."
-coupled_model = data_free_ocean_climate_model_init(ReactantState(); resolution=4, Nz=10)
 
 GC.gc(true); GC.gc(false); GC.gc(true)
 
@@ -117,23 +116,12 @@ end
 
 @info "Compiling..."
 
-atmosphere = coupled_model.atmosphere
-exchanger  = coupled_model.interfaces.exchanger
-grid       = exchanger.grid
-
-@show @which rotation_angle(1, 1, grid.underlying_grid)
-@allowscalar @show rotation_angle(1, 1, grid.underlying_grid)
-
-
-@show @which φnode(2, 2, grid.underlying_grid, Face(), Face())
-
-@allowscalar @show grid.underlying_grid.φᶠᶠᵃ
-@allowscalar @show typeof(grid.underlying_grid.φᶠᶠᵃ)
-@allowscalar @show size(grid.underlying_grid.φᶠᶠᵃ)
-
 arch = ReactantState()
 
+A = Float64.(reshape(1:(112*64), 112, 64))
+OA = OffsetArray(A, -7:104, -7:56)
+ROA = Reactant.to_rarray(OA)
 
-rfirst! = @compile raise=true sync=true my_interpolate_state!(arch, grid.underlying_grid.φᶠᶠᵃ)
+rfirst! = @compile raise=true sync=true my_interpolate_state!(arch, ROA)
 
 @info "Done!"
