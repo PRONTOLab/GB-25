@@ -1,30 +1,19 @@
 using GordonBell25: first_time_step!, time_step!, loop!, preamble
 using GordonBell25: data_free_ocean_climate_model_init
-using Oceananigans.Architectures: ReactantState
 using Reactant
 
 using InteractiveUtils
 
 using Oceananigans
 
-using Oceananigans: initialize!
-using Oceananigans.TimeSteppers: update_state!, time_step!
-
-using ClimaOcean.OceanSeaIceModels: interpolate_state!
-using ClimaOcean.Atmospheres: _interpolate_primary_atmospheric_state!, get_fractional_index, interp_atmos_time_series
-using ClimaOcean.OceanSeaIceModels.InterfaceComputations: interface_kernel_parameters
-
-using Oceananigans.OutputReaders: TimeInterpolator
-using Oceananigans.Fields: FractionalIndices
-using Oceananigans.Utils: launch!, _launch!, configure_kernel, offset_work_layout
-using Oceananigans.Operators: intrinsic_vector, getvalue, rotation_angle, Δyᶠᶜᶜ, Δxᶜᶠᶜ
-
-using Oceananigans.Grids: φnode
-
 using KernelAbstractions
 using KernelAbstractions: @kernel, @index
 
 using OffsetArrays
+
+const ReactantKernelAbstractionsExt = Base.get_extension(
+    Reactant, :ReactantKernelAbstractionsExt
+)
 
 # Reactant.Compiler.SROA_ATTRIBUTOR[] = false
 
@@ -36,25 +25,19 @@ GC.gc(true); GC.gc(false); GC.gc(true)
 
 function my_interpolate_state!(arch, φᶠᶠᵃ)
 
-    kernel_parameters = Oceananigans.Utils.KernelParameters{(98, 50), (-1, -1)}()
-
-    _my_launch!(arch, kernel_parameters,
+    _my_launch!(arch,
             _my_interpolate_primary_atmospheric_state!,
             φᶠᶠᵃ)
 
 end
 
 # Inner interface
-@inline function _my_launch!(arch, workspec, kernel!, first_kernel_arg, other_kernel_args...;
+@inline function _my_launch!(dev, kernel!, first_kernel_arg, other_kernel_args...;
                           exclude_periphery = false,
                           reduced_dimensions = (),
                           active_cells_map = nothing)
 
-    location = Oceananigans.location(first_kernel_arg)
-
-    loop!, worksize = my_configure_kernel(arch, workspec, kernel!, active_cells_map, Val(exclude_periphery);
-                                       location,
-                                       reduced_dimensions)
+    loop!, worksize = my_configure_kernel(dev, kernel!, active_cells_map, Val(exclude_periphery))
 
     # Don't launch kernels with no size
     if length(worksize) > 0
@@ -65,13 +48,12 @@ end
 end
 
 # When there are KernelParameters, we use the `offset_work_layout` function
-@inline function my_configure_kernel(arch, workspec, kernel!, thing, args...;
-        reduced_dimensions = (), kwargs...)
+@inline function my_configure_kernel(dev, kernel!, thing, args...)
 
     workgroup = KernelAbstractions.NDIteration.StaticSize{(16, 16)}()
     worksize = Oceananigans.Utils.OffsetStaticSize{(0:97, 0:49)}()
+    
 
-    dev  = Oceananigans.Architectures.device(arch)
     loop = kernel!(dev, workgroup, worksize)
 
     return loop, worksize
@@ -116,12 +98,12 @@ end
 
 @info "Compiling..."
 
-arch = ReactantState()
+dev = ReactantKernelAbstractionsExt.ReactantBackend()
 
 A = Float64.(reshape(1:(112*64), 112, 64))
 OA = OffsetArray(A, -7:104, -7:56)
 ROA = Reactant.to_rarray(OA)
 
-rfirst! = @compile raise=true sync=true my_interpolate_state!(arch, ROA)
+rfirst! = @compile raise=true sync=true my_interpolate_state!(dev, ROA)
 
 @info "Done!"
