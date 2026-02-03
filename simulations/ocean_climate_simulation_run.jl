@@ -16,9 +16,12 @@ using ClimaOcean.OceanSeaIceModels.InterfaceComputations: interface_kernel_param
 
 using Oceananigans.OutputReaders: TimeInterpolator
 using Oceananigans.Fields: FractionalIndices
-using Oceananigans.Utils: launch!, _launch!
-using Oceananigans.Operators: intrinsic_vector, getvalue, rotation_angle
+using Oceananigans.Utils: launch!, _launch!, configure_kernel, offset_work_layout
+using Oceananigans.Operators: intrinsic_vector, getvalue, rotation_angle, Δyᶠᶜᶜ, Δxᶜᶠᶜ
 
+using Oceananigans.Grids: φnode
+
+using KernelAbstractions
 using KernelAbstractions: @kernel, @index
 
 # Reactant.Compiler.SROA_ATTRIBUTOR[] = false
@@ -29,47 +32,86 @@ Ninner = ConcreteRNumber(3)
 
 @info "Generating model..."
 coupled_model = data_free_ocean_climate_model_init(ReactantState(); resolution=4, Nz=10)
-Ninner = ConcreteRNumber(2)
 
 GC.gc(true); GC.gc(false); GC.gc(true)
 
-function my_interpolate_state!(exchanger, grid, atmosphere, clock)
-    atmosphere_grid = atmosphere.grid
+function my_interpolate_state!(arch, φᶠᶠᵃ)
 
-    # Basic model properties
-    arch = grid.architecture
+    kernel_parameters = Oceananigans.Utils.KernelParameters{(98, 50), (-1, -1)}()
 
-    kernel_parameters = interface_kernel_parameters(grid)
-
-    _launch!(arch, grid, kernel_parameters,
+    _my_launch!(arch, kernel_parameters,
             _my_interpolate_primary_atmospheric_state!,
-            grid)
+            φᶠᶠᵃ)
 
 end
 
-@kernel function _my_interpolate_primary_atmospheric_state!(exchange_grid)
+# Inner interface
+@inline function _my_launch!(arch, workspec, kernel!, first_kernel_arg, other_kernel_args...;
+                          exclude_periphery = false,
+                          reduced_dimensions = (),
+                          active_cells_map = nothing)
+
+    location = Oceananigans.location(first_kernel_arg)
+
+    loop!, worksize = my_configure_kernel(arch, workspec, kernel!, active_cells_map, Val(exclude_periphery);
+                                       location,
+                                       reduced_dimensions)
+
+    # Don't launch kernels with no size
+    if length(worksize) > 0
+        loop!(first_kernel_arg, other_kernel_args...)
+    end
+
+    return nothing
+end
+
+# When there are KernelParameters, we use the `offset_work_layout` function
+@inline function my_configure_kernel(arch, workspec, kernel!, thing, args...;
+        reduced_dimensions = (), kwargs...)
+
+    workgroup = KernelAbstractions.NDIteration.StaticSize{(16, 16)}()
+    worksize = Oceananigans.Utils.OffsetStaticSize{(0:97, 0:49)}()
+
+    dev  = Oceananigans.Architectures.device(arch)
+    loop = kernel!(dev, workgroup, worksize)
+
+    return loop, worksize
+end
+
+@kernel function _my_interpolate_primary_atmospheric_state!(grid)
 
     i, j = @index(Global, NTuple)
 
-    # Convert atmosphere velocities (usually defined on a latitude-longitude grid) to
-    # the frame of reference of the native grid
-    kᴺ = size(exchange_grid, 3) # index of the top ocean cell
-    uₐ, vₐ = my_intrinsic_vector(i, j, kᴺ, exchange_grid.underlying_grid, 0.0, 0.0)
+    θ_degrees = my_rotation_angle(i, j, grid)
+    sinθ = sind(θ_degrees)
 end
 
-@inline function my_intrinsic_vector(i, j, k, grid, uₑ, vₑ)
+@inline function my_rotation_angle(i, j, φᶠᶠᵃ)
 
-    u = getvalue(uₑ, i, j, k, grid)
-    v = getvalue(vₑ, i, j, k, grid)
+    φᶠᶠᵃ⁺⁺ = φᶠᶠᵃ[i+1, j+1]
+    φᶠᶠᵃ⁺⁻ = φᶠᶠᵃ[i+1, j]
+    φᶠᶠᵃ⁻⁺ = φᶠᶠᵃ[i, j+1]
+    φᶠᶠᵃ⁻⁻ = φᶠᶠᵃ[i, j]
 
-    θ_degrees = rotation_angle(i, j, grid)
-    sinθ = sind(θ_degrees)
-    cosθ = cosd(θ_degrees)
+    Δyᶠᶜᵃ⁺ = 2000.0
+    Δyᶠᶜᵃ⁻ = 2000.0
+    Δxᶜᶠᵃ⁺ = 1000.0
+    Δxᶜᶠᵃ⁻ = 1000.0
 
-    uᵢ = u * cosθ - v * sinθ
-    vᵢ = u * sinθ + v * cosθ
+    Rcosθ₁ = ifelse(Δyᶠᶜᵃ⁺ == 0, 0.0, deg2rad(φᶠᶠᵃ⁺⁺ - φᶠᶠᵃ⁺⁻) / Δyᶠᶜᵃ⁺)
+    Rcosθ₂ = ifelse(Δyᶠᶜᵃ⁻ == 0, 0.0, deg2rad(φᶠᶠᵃ⁻⁺ - φᶠᶠᵃ⁻⁻) / Δyᶠᶜᵃ⁻)
 
-    return uᵢ, vᵢ
+    # θ is the rotation angle between intrinsic and extrinsic reference frame
+    Rcosθ =   (Rcosθ₁ + Rcosθ₂) / 2
+    Rsinθ = - (deg2rad(φᶠᶠᵃ⁺⁺ - φᶠᶠᵃ⁻⁺) / Δxᶜᶠᵃ⁺ + deg2rad(φᶠᶠᵃ⁺⁻ - φᶠᶠᵃ⁻⁻) / Δxᶜᶠᵃ⁻) / 2
+
+    # Normalization for the rotation angles
+    R = sqrt(Rcosθ^2 + Rsinθ^2)
+
+    cosθ, sinθ = Rcosθ / R, Rsinθ / R
+
+    θ_degrees = atand(sinθ / cosθ)
+    return θ_degrees
 end
 
 
@@ -79,8 +121,19 @@ atmosphere = coupled_model.atmosphere
 exchanger  = coupled_model.interfaces.exchanger
 grid       = exchanger.grid
 
-@show @which intrinsic_vector(1, 1, size(grid, 3), grid.underlying_grid, 0.0, 0.0)
+@show @which rotation_angle(1, 1, grid.underlying_grid)
+@allowscalar @show rotation_angle(1, 1, grid.underlying_grid)
 
-rfirst! = @compile raise=true sync=true my_interpolate_state!(exchanger.atmosphere, grid, atmosphere, coupled_model.clock)
+
+@show @which φnode(2, 2, grid.underlying_grid, Face(), Face())
+
+@allowscalar @show grid.underlying_grid.φᶠᶠᵃ
+@allowscalar @show typeof(grid.underlying_grid.φᶠᶠᵃ)
+@allowscalar @show size(grid.underlying_grid.φᶠᶠᵃ)
+
+arch = ReactantState()
+
+
+rfirst! = @compile raise=true sync=true my_interpolate_state!(arch, grid.underlying_grid.φᶠᶠᵃ)
 
 @info "Done!"
