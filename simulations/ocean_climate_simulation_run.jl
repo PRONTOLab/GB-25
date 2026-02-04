@@ -10,113 +10,12 @@ using KernelAbstractions.NDIteration: NDIteration, NDRange, blocks, workitems, _
 using KernelAbstractions: Kernel,
                           ndrange, workgroupsize,
                           __iterspace, __groupindex, __dynamic_checkbounds,
-                          CompilerMetadata
-
-using Base: @pure
+                          CompilerMetadata,
+                          StaticSize
 
 const ReactantKernelAbstractionsExt = Base.get_extension(
     Reactant, :ReactantKernelAbstractionsExt
 )
-
-
-#
-# Preliminary stuff for offsetstaticsize:
-# TODO: when offsets are implemented in KA so that we can call `kernel(dev, group, size, offsets)`, remove all of this
-
-import KernelAbstractions: partition
-import KernelAbstractions: __ndrange, __groupsize
-import KernelAbstractions: __validindex
-import KernelAbstractions: get, expand, StaticSize
-
-struct OffsetStaticSize{S} <: _Size
-    function OffsetStaticSize{S}() where S
-        new{S::Tuple{Vararg}}()
-    end
-end
-
-@pure OffsetStaticSize(s::Tuple{Vararg{Int}}) = OffsetStaticSize{s}()
-@pure OffsetStaticSize(s::Int...) = OffsetStaticSize{s}()
-@pure OffsetStaticSize(s::Type{<:Tuple}) = OffsetStaticSize{tuple(s.parameters...)}()
-@pure OffsetStaticSize(s::Tuple{Vararg{UnitRange{Int}}}) = OffsetStaticSize{s}()
-
-# Some @pure convenience functions for `OffsetStaticSize` (following `StaticSize` in KA)
-@pure get(::Type{OffsetStaticSize{S}}) where {S} = S
-@pure get(::OffsetStaticSize{S}) where {S} = S
-@pure Base.getindex(::OffsetStaticSize{S}, i::Int) where {S} = i <= length(S) ? S[i] : 1
-@pure Base.ndims(::OffsetStaticSize{S}) where {S}  = length(S)
-@pure Base.length(::OffsetStaticSize{S}) where {S} = prod(map(worksize, S))
-
-@inline getrange(::OffsetStaticSize{S}) where {S} = worksize(S), offsets(S)
-@inline getrange(::Type{OffsetStaticSize{S}}) where {S} = worksize(S), offsets(S)
-
-# Makes sense to explicitly define the offsets for up to 3 dimensions,
-# since Oceananigans typically runs kernels with up to 3 dimensions.
-@inline offsets(ranges::NTuple{1, UnitRange}) = @inbounds (ranges[1].start - 1, )
-@inline offsets(ranges::NTuple{2, UnitRange}) = @inbounds (ranges[1].start - 1, ranges[2].start - 1)
-@inline offsets(ranges::NTuple{3, UnitRange}) = @inbounds (ranges[1].start - 1, ranges[2].start - 1, ranges[3].start - 1)
-
-# Generic case for any number of dimensions
-@inline offsets(ranges::NTuple{N, UnitRange}) where N = @inbounds Tuple(ranges[t].start - 1 for t in 1:N)
-
-@inline worksize(t::Tuple) = map(worksize, t)
-@inline worksize(sz::Int) = sz
-@inline worksize(r::AbstractUnitRange) = length(r)
-
-const OffsetNDRange{N, S} = NDRange{N, <:StaticSize, <:StaticSize, <:Any, <:OffsetStaticSize{S}} where {N, S}
-
-# NDRange has been modified to have offsets in place of workitems: Remember, dynamic offset kernels are not possible with this extension!!
-# TODO: maybe don't do this
-@inline function expand(ndrange::OffsetNDRange{N, S}, groupidx::CartesianIndex{N}, idx::CartesianIndex{N}) where {N, S}
-    nI = ntuple(Val(N)) do I
-        Base.@_inline_meta
-        offsets = workitems(ndrange)
-        stride = size(offsets, I)
-        gidx = groupidx.I[I]
-        (gidx - 1) * stride + idx.I[I] + S[I]
-    end
-    return CartesianIndex(nI)
-end
-
-@inline __ndrange(::CompilerMetadata{NDRange}) where {NDRange<:OffsetStaticSize}  = CartesianIndices(get(NDRange))
-@inline __groupsize(cm::CompilerMetadata{NDRange}) where {NDRange<:OffsetStaticSize} = size(__ndrange(cm))
-
-# Kernel{<:Any, <:StaticSize, <:StaticSize} and Kernel{<:Any, <:StaticSize, <:OffsetStaticSize} are the only kernels used by Oceananigans
-const OffsetKernel = Kernel{<:Any, <:StaticSize, <:OffsetStaticSize}
-
-# Extending the partition function to include offsets in NDRange: note that in this case the
-# offsets take the place of the DynamicWorkitems which we assume is not needed in static kernels
-function partition(kernel::OffsetKernel, inrange, ingroupsize)
-    static_ndrange = ndrange(kernel)
-    static_workgroupsize = workgroupsize(kernel)
-
-    if inrange !== nothing && inrange != get(static_ndrange)
-        error("Static NDRange ($static_ndrange) and launch NDRange ($inrange) differ")
-    end
-
-    range, offsets = getrange(static_ndrange)
-
-    if static_workgroupsize <: StaticSize
-        if ingroupsize !== nothing && ingroupsize != get(static_workgroupsize)
-            error("Static WorkgroupSize ($static_workgroupsize) and launch WorkgroupSize $(ingroupsize) differ")
-        end
-        groupsize = get(static_workgroupsize)
-    end
-
-    @assert groupsize !== nothing
-    @assert range !== nothing
-    blocks, groupsize, dynamic = NDIteration.partition(range, groupsize)
-
-    static_blocks = StaticSize{blocks}
-    static_workgroupsize = StaticSize{groupsize} # we might have padded workgroupsize
-
-    iterspace = NDRange{length(range), static_blocks, static_workgroupsize}(blocks, OffsetStaticSize(offsets))
-
-    return iterspace, dynamic
-end
-
-#
-#
-#
 
 function my_interpolate_state!(arch, φᶠᶠᵃ)
 
@@ -146,7 +45,7 @@ end
 @inline function my_configure_kernel(dev, kernel!, thing, args...)
 
     workgroup = KernelAbstractions.NDIteration.StaticSize{(16, 16)}()
-    worksize = OffsetStaticSize{(1:98, 1:50)}()
+    worksize = StaticSize{(98, 50)}()
     
 
     loop = kernel!(dev, workgroup, worksize)
