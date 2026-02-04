@@ -14,8 +14,6 @@ using KernelAbstractions: Kernel,
 
 using Base: @pure
 
-using OffsetArrays
-
 const ReactantKernelAbstractionsExt = Base.get_extension(
     Reactant, :ReactantKernelAbstractionsExt
 )
@@ -148,7 +146,7 @@ end
 @inline function my_configure_kernel(dev, kernel!, thing, args...)
 
     workgroup = KernelAbstractions.NDIteration.StaticSize{(16, 16)}()
-    worksize = OffsetStaticSize{(0:97, 0:49)}()
+    worksize = OffsetStaticSize{(1:98, 1:50)}()
     
 
     loop = kernel!(dev, workgroup, worksize)
@@ -197,10 +195,13 @@ end
 
 dev = ReactantKernelAbstractionsExt.ReactantBackend()
 
-A = Float64.(reshape(1:(112*64), 112, 64))
-OA = OffsetArray(A, -7:104, -7:56)
-ROA = Reactant.to_rarray(OA)
+#A = Float64.(reshape(1:(112*64), 112, 64))
+#OA = OffsetArray(A, -7:104, -7:56)
+#ROA = Reactant.to_rarray(OA)
 
-rfirst! = @compile raise=true sync=true my_interpolate_state!(dev, ROA)
+B  = Float64.(reshape(1:(98*50), 98, 50))
+RB = Reactant.to_rarray(B)
+
+rfirst! = @compile raise=true sync=true my_interpolate_state!(dev, RB)
 
 @info "Done!"
