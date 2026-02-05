@@ -235,9 +235,7 @@ end
 
 # resting initial condition
 function temperature_salinity_init(grid, parameters)
-    # Adding some noise to temperature field:
-    ε(σ) = σ * randn()
-    Tᵢ_function(x, y, z) = parameters.ΔT * (exp(z / parameters.h) - exp(-Lz / parameters.h)) / (1 - exp(-Lz / parameters.h)) + ε(1e-8)
+    Tᵢ_function(x, y, z) = parameters.ΔT * (exp(z / parameters.h) - exp(-Lz / parameters.h)) / (1 - exp(-Lz / parameters.h))
     Tᵢ = Field{Center, Center, Center}(grid)
     Sᵢ = Field{Center, Center, Center}(grid)
     @allowscalar set!(Tᵢ, Tᵢ_function)
@@ -399,7 +397,7 @@ rspinup_reentrant_channel_model!(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress
 spinup_toc = time() - tic
 @show spinup_toc
 
-jldsave(filename; Nx, Ny, Nz,
+jldsave(filename, IOStream; Nx, Ny, Nz,
                   bottom_height=convert(Array, interior(bottom_height)),
                   T_init=convert(Array, interior(model.tracers.T)),
                   S_init=convert(Array, interior(model.tracers.S)),
@@ -424,7 +422,7 @@ run_toc = time() - tic
 
 filename = graph_directory * "data_final.jld2"
 
-jldsave(filename; Nx, Ny, Nz,
+jldsave(filename, IOStream; Nx, Ny, Nz,
                   T_final=convert(Array, interior(model.tracers.T)),
                   S_final=convert(Array, interior(model.tracers.S)),
                   e_final=convert(Array, interior(model.tracers.e)),
@@ -452,7 +450,7 @@ jldsave(filename; Nx, Ny, Nz,
 i_range = [21, 22, 23, 24, 25, 26, 27, 28]
 j_range = [45, 46, 47, 48, 49, 50, 51, 52]
 
-epsilon_range = [1e-1, 1e-2, 1e-3]
+epsilon_range = [1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6]
 
 model_fd         = build_model(grid, Δt₀, parameters)
 Tᵢ_fd, Sᵢ_fd     = temperature_salinity_init(model_fd.grid, parameters)
