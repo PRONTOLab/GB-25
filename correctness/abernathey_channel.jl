@@ -27,7 +27,7 @@ using Enzyme
 
 Oceananigans.defaults.FloatType = Float64
 
-graph_directory = "run_abernathy_model_ad_spinup400000_8100steps/"
+graph_directory = "run_abernathy_model_ad_spinup4000000_8100steps_fdcheck/"
 #graph_directory = "run_abernathy_model_ad_spinup40000000_8100steps/"
 
 #
@@ -177,7 +177,6 @@ function build_model(grid, Δt₀, parameters)
         taper = exp(- (k-1) / decay_scale)
         κz_array[:,:,k] .= κz + κz_add * taper
     end
-    @show κz_array[1:2,20,:]
 
     set!(κz_field, κz_array)
 
@@ -249,7 +248,7 @@ end
 
 function spinup_loop!(model)
     Δt = model.clock.last_Δt
-    @trace mincut = true track_numbers = false for i = 1:400000
+    @trace mincut = true track_numbers = false for i = 1:4000000
         time_step!(model, Δt)
     end
     return nothing
@@ -460,46 +459,99 @@ rspinup_reentrant_channel_model!(model_fd, Tᵢ_fd, Sᵢ_fd, u_wind_stress_fd, v
 @allowscalar set!(Tᵢ_fd, model_fd.tracers.T)
 @allowscalar set!(Sᵢ_fd, model_fd.tracers.S)
 
-for i = 35:38
-    for j = 79:81
+wind_stress_ad_zonal      = zeros(Nx)
+wind_stress_ad_meridional = zeros(Ny)
 
-        k = 4
-        @show i, j #, k
-        #@allowscalar @show dTᵢ[i, j, k]
-        @allowscalar @show du_wind_stress[i, j, 1]
+wind_stress_differences_zonal      = zeros(Nx, length(epsilon_range))
+wind_stress_differences_meridional = zeros(Ny, length(epsilon_range))
+fixed_i = 36
+fixed_j = 75
 
-        for eps in epsilon_range
-            # Copy the model after spinup state:
-            model_fdp = deepcopy(model_fd)
-            #@allowscalar set!(Tᵢ_fd, model_fdp.tracers.T)
-            u_wind_stress_fd = u_wind_stress_init(model_fdp.grid, parameters)
+for i = 1:Nz
+    j = fixed_j
+    k = 4
+    @show i, j #, k
+    #@allowscalar @show dTᵢ[i, j, k]
+    @allowscalar @show du_wind_stress[i, j, 1]
 
-            # Permute positive:
-            #@allowscalar Tᵢ_fd[i, j, k] = Tᵢ_fd[i, j, k] + eps
-            @allowscalar u_wind_stress_fd[i, j, 1] = u_wind_stress_fd[i, j, 1] + eps
-            outputP = restimate_tracer_error(model_fdp, Tᵢ_fd, Sᵢ_fd, u_wind_stress_fd, v_wind_stress, T_flux, Δz, mld)
+    @allowscalar wind_stress_ad_zonal[i] = du_wind_stress[i, j, 1]
 
-            # Copy the model after spinup state:
-            model_fdm = deepcopy(model_fd)
-            #@allowscalar set!(Tᵢ_fd, model_fdm.tracers.T)
-            u_wind_stress_fd = u_wind_stress_init(model_fdp.grid, parameters)
+    for (eps_index, eps) in zip(1:length(epsilon_range), epsilon_range)
+        # Copy the model after spinup state:
+        model_fdp = deepcopy(model_fd)
+        #@allowscalar set!(Tᵢ_fd, model_fdp.tracers.T)
+        u_wind_stress_fd = u_wind_stress_init(model_fdp.grid, parameters)
 
-            # Permute negative:
-            #@allowscalar Tᵢ_fd[i, j, k] = Tᵢ_fd[i, j, k] - eps
-            @allowscalar u_wind_stress_fd[i, j, 1] = u_wind_stress_fd[i, j, 1] - eps
-            outputM = restimate_tracer_error(model_fdm, Tᵢ_fd, Sᵢ_fd, u_wind_stress_fd, v_wind_stress, T_flux, Δz, mld)
+        # Permute positive:
+        #@allowscalar Tᵢ_fd[i, j, k] = Tᵢ_fd[i, j, k] + eps
+        @allowscalar u_wind_stress_fd[i, j, 1] = u_wind_stress_fd[i, j, 1] + eps
+        outputP = restimate_tracer_error(model_fdp, Tᵢ_fd, Sᵢ_fd, u_wind_stress_fd, v_wind_stress, T_flux, Δz, mld)
 
-            #dT_fd = (outputP - outputM) / (2eps)
-            duwind_stress_fd = (outputP - outputM) / (2eps)
+        # Copy the model after spinup state:
+        model_fdm = deepcopy(model_fd)
+        #@allowscalar set!(Tᵢ_fd, model_fdm.tracers.T)
+        u_wind_stress_fd = u_wind_stress_init(model_fdp.grid, parameters)
 
-            #@show eps, dT_fd
-            @show eps, duwind_stress_fd
+        # Permute negative:
+        #@allowscalar Tᵢ_fd[i, j, k] = Tᵢ_fd[i, j, k] - eps
+        @allowscalar u_wind_stress_fd[i, j, 1] = u_wind_stress_fd[i, j, 1] - eps
+        outputM = restimate_tracer_error(model_fdm, Tᵢ_fd, Sᵢ_fd, u_wind_stress_fd, v_wind_stress, T_flux, Δz, mld)
 
-            if i == 21
-                @show outputP, outputM
-            end
-        end
+        #dT_fd = (outputP - outputM) / (2eps)
+        duwind_stress_fd = (outputP - outputM) / (2eps)
+
+        #@show eps, dT_fd
+        @show eps, duwind_stress_fd
+
+        wind_stress_differences_zonal[i, eps_index] = duwind_stress_fd
     end
 end
 
-            
+for j = 1:Ny
+    i = fixed_i
+    k = 4
+    @show i, j #, k
+    #@allowscalar @show dTᵢ[i, j, k]
+    @allowscalar @show du_wind_stress[i, j, 1]
+
+    @allowscalar wind_stress_ad_meridional[j] = du_wind_stress[i, j, 1]
+
+    for (eps_index, eps) in zip(1:length(epsilon_range), epsilon_range)
+        # Copy the model after spinup state:
+        model_fdp = deepcopy(model_fd)
+        #@allowscalar set!(Tᵢ_fd, model_fdp.tracers.T)
+        u_wind_stress_fd = u_wind_stress_init(model_fdp.grid, parameters)
+
+        # Permute positive:
+        #@allowscalar Tᵢ_fd[i, j, k] = Tᵢ_fd[i, j, k] + eps
+        @allowscalar u_wind_stress_fd[i, j, 1] = u_wind_stress_fd[i, j, 1] + eps
+        outputP = restimate_tracer_error(model_fdp, Tᵢ_fd, Sᵢ_fd, u_wind_stress_fd, v_wind_stress, T_flux, Δz, mld)
+
+        # Copy the model after spinup state:
+        model_fdm = deepcopy(model_fd)
+        #@allowscalar set!(Tᵢ_fd, model_fdm.tracers.T)
+        u_wind_stress_fd = u_wind_stress_init(model_fdp.grid, parameters)
+
+        # Permute negative:
+        #@allowscalar Tᵢ_fd[i, j, k] = Tᵢ_fd[i, j, k] - eps
+        @allowscalar u_wind_stress_fd[i, j, 1] = u_wind_stress_fd[i, j, 1] - eps
+        outputM = restimate_tracer_error(model_fdm, Tᵢ_fd, Sᵢ_fd, u_wind_stress_fd, v_wind_stress, T_flux, Δz, mld)
+
+        #dT_fd = (outputP - outputM) / (2eps)
+        duwind_stress_fd = (outputP - outputM) / (2eps)
+
+        #@show eps, dT_fd
+        @show eps, duwind_stress_fd
+
+        wind_stress_differences_meridional[j, eps_index] = duwind_stress_fd
+    end
+end
+
+filename = graph_directory * "data_differences.jld2"
+
+jldsave(filename, IOStream; Nx, Ny, Nz, fixed_j, fixed_i,
+        epsilon_range,
+        wind_stress_ad_zonal,
+        wind_stress_ad_meridional,
+        wind_stress_differences_zonal,
+        wind_stress_differences_meridional)
