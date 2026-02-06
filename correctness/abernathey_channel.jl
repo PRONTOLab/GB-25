@@ -467,7 +467,7 @@ wind_stress_differences_meridional = zeros(Ny, length(epsilon_range))
 fixed_i = 36
 fixed_j = 75
 
-for i = 1:Nz
+for i = 1:2:Nx
     j = fixed_j
     k = 4
     @show i, j #, k
@@ -507,7 +507,7 @@ for i = 1:Nz
     end
 end
 
-for j = 1:Ny
+for j = 1:2:Ny
     i = fixed_i
     k = 4
     @show i, j #, k
