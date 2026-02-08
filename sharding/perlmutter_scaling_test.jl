@@ -1,14 +1,18 @@
 include("common_submission_generator.jl")
 
 account = "m4672"
+account = "m5096"
+account = "m5176"
+
+queue = "regular"
 out_dir = joinpath(ENV["SCRATCH"], "GB25")
 
 # run params
 submit   = true
 run_name = "r_react_"
 time     = "01:00:00"
-Ngpus    = [4, 8, 16, 32, 64]
-# Ngpus    = [128, 256, 512, 1024, 2048]
+Ngpus    = [4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048]
+Ngpus    = [4]
 type     = "weak"
 
 gpus_per_node = 4
@@ -20,11 +24,12 @@ perlmutter_config = JobConfig(; username, account, out_dir, time, cpus_per_task,
 function perlmutter_submit_job_writer(cfg::JobConfig, job_name, Nnodes, job_dir, Ngpu,
                                       resolution_fraction, project_path, run_file)
 
+#SBATCH -q premium
                 """
 #!/bin/bash -l
 
 #SBATCH -C gpu
-#SBATCH -q premium
+#SBATCH -q $(queue)
 #SBATCH --gpu-bind=none
 #SBATCH --job-name="$(job_name)"
 #SBATCH --time=$(cfg.time)
@@ -58,8 +63,6 @@ export FI_CXI_SAFE_DEVMEM_COPY_THRESHOLD=16777216
 # export MPICH_GPU_SUPPORT_ENABLED=0
 export NCCL_BUFFSIZE=33554432
 export JULIA_CUDA_USE_COMPAT=false
-
-
 srun -n $(Nnodes) -c 32 -G $(Ngpu) --cpu-bind=verbose,cores $(job_dir)/launcher.sh julia --project=$(project_path) --compiled-modules=strict -O0 $(run_file) 
 """
 end
