@@ -88,7 +88,7 @@ tracers = (:T, :S, :e)
 equation_of_state = TEOS10EquationOfState()
 buoyancy = SeawaterBuoyancy(; equation_of_state)
 closure = Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity()
-model = HydrostaticFreeSurfaceModel(; grid, tracers, free_surface,
+model = HydrostaticFreeSurfaceModel(grid; tracers, free_surface,
                                     momentum_advection, tracer_advection,
                                     buoyancy, closure)
 
