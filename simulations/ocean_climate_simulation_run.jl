@@ -53,12 +53,14 @@ end
     return loop, worksize
 end
 
+@inline hack_sind(φ) = sin(π * φ / 180)
+
 @kernel function _my_interpolate_primary_atmospheric_state!(grid)
 
     i, j = @index(Global, NTuple)
 
     θ_degrees = my_rotation_angle(i, j, grid)
-    sinθ = sind(θ_degrees)
+    sinθ = hack_sind(θ_degrees)
 end
 
 @inline function my_rotation_angle(i, j, φᶠᶠᵃ)
@@ -85,7 +87,7 @@ end
 
     cosθ, sinθ = Rcosθ / R, Rsinθ / R
 
-    θ_degrees = atand(sinθ / cosθ)
+    θ_degrees = rad2deg(atan(sinθ / cosθ))
     return θ_degrees
 end
 
