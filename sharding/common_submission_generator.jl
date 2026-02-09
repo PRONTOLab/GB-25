@@ -32,7 +32,7 @@ function generate_and_submit(submit_job_writer, cfg::JobConfig; caller_file::Str
     exe_path = Base.ARGS[1]
     input_file = joinpath(@__DIR__, exe_path)
     if !isfile(input_file)
-        error("File $(run_file) does not exist")
+        error("File $(input_file) does not exist")
     end
     # Some filesystems don't like colons in directory names
     timestamp = replace(string(now(UTC)), ':' => '-')
@@ -98,6 +98,8 @@ export resolution_fraction=$(resolution_fraction)
 export JULIA_DEBUG="Reactant,Reactant_jll"
 export JULIA_DEPOT_PATH=$(join(Base.DEPOT_PATH, ':'))
 # export TF_CPP_MAX_VLOG_LEVEL=3
+#
+export XLA_FLAGS="--xla_gpu_first_collective_call_warn_stuck_timeout_seconds=40 --xla_gpu_first_collective_call_terminate_timeout_seconds=80 \${XLA_FLAGS}"
 export XLA_FLAGS="--xla_disable_hlo_passes=host-offload-legalize,hlo_constant_splitter \${XLA_FLAGS}"
 # export XLA_FLAGS="--xla_dump_to=$(job_dir)/xla_dump \${XLA_FLAGS}"
 # export XLA_FLAGS="--xla_dump_hlo_pass_re=.* \${XLA_FLAGS}"
