@@ -49,7 +49,7 @@ function compare_states(m1, m2; rtol=1e-8, atol=sqrt(eps(eltype(m1.grid))),
     end
 
     if m1.free_surface isa Oceananigans.SplitExplicitFreeSurface
-        names = (:U, :V, :η)
+        names = (:U̅, :V̅, :Ũ, :Ṽ, :η̅)
         Φ1 = NamedTuple(name => getproperty(m1.free_surface.filtered_state, name) for name in names)
         Φ2 = NamedTuple(name => getproperty(m2.free_surface.filtered_state, name) for name in names)
         for name in keys(Φ1)
