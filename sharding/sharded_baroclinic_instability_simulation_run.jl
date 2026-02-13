@@ -86,10 +86,11 @@ model = GordonBell25.baroclinic_instability_model(arch, Nx, Ny, Nz; halo=(H, H, 
 Ninner = ConcreteRNumber(256; sharding=Sharding.NamedSharding(arch.connectivity, ()))
 
 @info "[$rank] Compiling first_time_step!..." now(UTC)
-rfirst! = @compile sync=true raise=true first_time_step!(model)
+compile_options = CompileOptions(; sync=true, raise=true, strip_llvm_debuginfo=true, strip=["enzymexla.kernel_call", "(::Reactant.Compiler.LLVMFunc", "ka_with_reactant", "(::KernelAbstractions.Kernel", "var\"#_launch!;_launch!"])
+rfirst! = @compile compile_options=compile_options first_time_step!(model)
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 @info "[$rank] Compiling loop..." now(UTC)
-compiled_loop! = @compile sync=true raise=true loop!(model, Ninner)
+compiled_loop! = @compile compile_options=compile_options loop!(model, Ninner)
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 
 profile_dir = joinpath(@__DIR__, "profiling", jobid_procid)
