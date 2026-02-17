@@ -94,11 +94,26 @@ function sync_states!(m1, m2)
     Ψ2 = Oceananigans.fields(m2)
     for name in keys(Ψ1)
         ψ1 = parent(Ψ1[name])
-        x, y, z = size(ψ1)
+        Nx, Ny, Nz = size(ψ1)
         ψ2 = parent(Ψ2[name])
-        ψ2 = view(ψ2, 1:x, 1:y, 1:z)
+        ψ2 = view(ψ2, 1:Nx, 1:Ny, 1:Nz)
         copyto!(ψ1, Array(ψ2))
+
+        if !(name ∈ (:w, :η))
+            Gⁿ1 = parent(m1.timestepper.Gⁿ[name])
+            Gⁿ2 = parent(m2.timestepper.Gⁿ[name])
+            Nx, Ny, Nz = size(Gⁿ1)
+            Gⁿ2 = view(Gⁿ2, 1:Nx, 1:Ny, 1:Nz)
+            copyto!(Gⁿ1, Array(Gⁿ2))
+
+            G⁻1 = parent(m1.timestepper.G⁻[name])
+            G⁻2 = parent(m2.timestepper.G⁻[name])
+            Nx, Ny, Nz = size(G⁻1)
+            G⁻2 = view(G⁻2, 1:Nx, 1:Ny, 1:Nz)
+            copyto!(G⁻1, Array(G⁻2))
+        end
     end
+
     return nothing
 end
 
