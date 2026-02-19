@@ -54,18 +54,35 @@ Reactant.Compiler.WHILE_CONCAT[] = true
 # Reactant.Compiler.AGGRESSIVE_SUM_TO_CONV[] = true
 
 GordonBell25.initialize(; single_gpu_per_process=false)
-@show Ndev = length(Reactant.devices())
+
+devarch = Oceananigans.GPU()
+devarch = Oceananigans.ReactantState()
+
+arch = devarch
+
+Ndev = if arch isa Oceananigans.ReactantState
+   length(Reactant.devices())
+else
+   comm = MPI.COMM_WORLD
+   MPI.Comm_size(comm)
+end
+
+@show Ndev
 
 Rx, Ry = factors(Ndev)
 if Ndev == 1
     rank = 0
-    arch = Oceananigans.ReactantState()
 else
     arch = Oceananigans.Distributed(
-        Oceananigans.ReactantState();
+	arch;
         partition = Partition(Rx, Ry, 1)
     )
-    rank = Reactant.Distributed.local_rank()
+    rank = if devarch isa Oceananigans.ReactantState
+	Reactant.Distributed.local_rank()
+    else
+       comm = MPI.COMM_WORLD
+       MPI.Comm_rank(comm)
+    end
 end
 
 @info "[$rank] allocations" GordonBell25.allocatorstats()
@@ -77,20 +94,39 @@ Nz = parsed_args["grid-z"]
 Nx = Tx - 2H
 Ny = Ty - 2H
 
-@info "[$rank] Generating model..." now(UTC)
+@info "[$rank] Generating model (Nx=$Nx, Ny=$Ny)..." now(UTC)
 model = GordonBell25.baroclinic_instability_model(arch, Nx, Ny, Nz; halo=(H, H, H), Δt=1)
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 
 @show model
 
-Ninner = ConcreteRNumber(256; sharding=Sharding.NamedSharding(arch.connectivity, ()))
+Ninner = 256
+
+if devarch isa Oceananigans.ReactantState
+   Ninner = if Ndev == 1
+	 ConcreteRNumber(Ninner)
+   else
+   	ConcreteRNumber(Ninner; sharding=Sharding.NamedSharding(arch.connectivity, ()))
+   end
+end
 
 @info "[$rank] Compiling first_time_step!..." now(UTC)
 compile_options = CompileOptions(; sync=true, raise=true, strip_llvm_debuginfo=true, strip=["enzymexla.kernel_call", "(::Reactant.Compiler.LLVMFunc", "ka_with_reactant", "(::KernelAbstractions.Kernel", "var\"#_launch!;_launch!"])
-rfirst! = @compile compile_options=compile_options first_time_step!(model)
+rfirst! = if devarch isa Oceananigans.ReactantState
+     @compile compile_options=compile_options first_time_step!(model)
+else
+     first_time_step!     
+end
+
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 @info "[$rank] Compiling loop..." now(UTC)
-compiled_loop! = @compile compile_options=compile_options loop!(model, Ninner)
+
+compiled_loop! = if devarch isa Oceananigans.ReactantState
+     @compile compile_options=compile_options loop!(model, Ninner)
+else
+     loop!
+end
+
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 
 profile_dir = joinpath(@__DIR__, "profiling", jobid_procid)
