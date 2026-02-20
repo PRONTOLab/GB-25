@@ -55,7 +55,7 @@ Reactant.Compiler.WHILE_CONCAT[] = true
 
 GordonBell25.initialize(; single_gpu_per_process=false)
 
-devarch = Oceananigans.GPU()
+# devarch = Oceananigans.GPU()
 devarch = Oceananigans.ReactantState()
 
 arch = devarch
