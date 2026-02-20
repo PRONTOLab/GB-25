@@ -43,3 +43,13 @@ julia leonardo_scaling_test.jl simple_sharding_problem.jl
 julia perlmutter_scaling_test.jl simple_sharding_problem.jl
 ```
 You'll need to tweak the content of the scaling test scripts to what you need, e.g. change `submit` to `true` to actuallt run the jobs, `time` to the walltime requested for the job, `Ngpus` for the number of GPUs you want to run on (note that that's number of GPUs , not nodes!), etc., have a look at the script for your system.
+
+> [!NOTE]
+> Note that on Alps @ CSCS one needs to first load the Julia uenv
+> ```
+> uenv start --view=juliaup,modules julia/25.5:v1
+> ```
+> and set the following if precompilation fails because of `/usr/lib64/libcrypto.so.3: version `OPENSSL_3.3.0' not found`:
+> ```
+> export LD_PRELOAD=/capstor/scratch/cscs/lraess/.julia/gh200/juliaup/depot/artifacts/152ab7c1cf7e3e69c2fa76110b9e01affcbb1f36/lib/libcrypto.so.3
+> ```

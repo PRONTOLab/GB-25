@@ -2,12 +2,17 @@ include("common_submission_generator.jl")
 
 out_dir = @__DIR__
 
+# julia "module" on ALPS
+# uenv start --view=juliaup,modules julia/25.5:v1
+# may be needed on ALPS with Julia 1.11
+# export LD_PRELOAD=/capstor/scratch/cscs/lraess/.julia/gh200/juliaup/depot/artifacts/152ab7c1cf7e3e69c2fa76110b9e01affcbb1f36/lib/libcrypto.so.3
+
 # run params
-account  = "g191"
-submit   = true
+account  = "c44"
+submit   = true #false
 run_name = "reactant_"
 time     = "00:30:00"
-Ngpus    = [4, 8] #[4, 8, 12, 16]
+Ngpus    = [4, 8, 12, 16]
 type     = "weak"
 
 gpus_per_node = 4
@@ -32,7 +37,7 @@ function alps_submit_job_writer(cfg::JobConfig, job_name, Nnodes, job_dir, Ngpu,
 #SBATCH --gpu-bind=per_task:$(gpus_per_node)
 #SBATCH --constraint=gpu
 #SBATCH --account=$(account)
-#SBATCH --reservation=$(account)
+# #SBATCH --reservation=$(account)
 #SBATCH --exclusive
 
 export MPICH_GPU_SUPPORT_ENABLED=0
@@ -44,9 +49,7 @@ ulimit -s unlimited
 # Setting `--cpu_bind` is explicitly discouraged:
 # <https://eth-cscs.github.io/cscs-docs/guides/gb2025/#slurm>.
 # We only set it to `verbose` to record what's going on.
-srun --uenv=prgenv-gnu --preserve-env --cpu_bind=verbose \
-    --export=ALL,LD_PRELOAD="/user-environment/linux-sles15-neoverse_v2/gcc-13.3.0/nccl-2.22.3-1-4j6h3ffzysukqpqbvriorrzk2lm762dd/lib/libnccl.so.2" \
-    $(job_dir)/launcher.sh $(Base.julia_cmd()[1]) --project=$(project_path) --startup-file=no --threads=16 --compiled-modules=strict -O0 $(run_file)
+srun $(job_dir)/launcher.sh $(Base.julia_cmd()[1]) --project=$(project_path) --startup-file=no --threads=16 --compiled-modules=strict -O0 $(run_file)
 """
 end
 
