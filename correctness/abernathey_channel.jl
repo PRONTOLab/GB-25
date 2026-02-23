@@ -139,7 +139,7 @@ function build_model(grid, Δt₀, parameters)
 
     model = HydrostaticFreeSurfaceModel(
         grid = grid,
-        free_surface = SplitExplicitFreeSurface(substeps=10),
+        free_surface = nothing, #SplitExplicitFreeSurface(substeps=10),
         momentum_advection = WENO(order=3),
         tracer_advection = WENO(order=3),
         buoyancy = nothing, #SeawaterBuoyancy(equation_of_state=LinearEquationOfState(Oceananigans.defaults.FloatType)),
