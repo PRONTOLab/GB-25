@@ -28,6 +28,13 @@ using Oceananigans.Architectures: ReactantState
 using Enzyme
 
 using Oceananigans.TimeSteppers: update_state!, compute_tendencies!
+using Oceananigans.ImmersedBoundaries: get_active_cells_map
+using Oceananigans.Utils: work_layout, KernelParameters
+using Oceananigans.Biogeochemistry: update_tendencies!
+using Oceananigans.Models: interior_tendency_kernel_parameters, complete_communication_and_compute_buffer!
+
+using Oceananigans.Models.HydrostaticFreeSurfaceModels: compute_hydrostatic_free_surface_tendency_contributions!
+
 
 const Ntimesteps = 25
 
@@ -152,8 +159,7 @@ function loop!(model)
     Δt = model.clock.last_Δt
     @trace mincut = true checkpointing = true track_numbers = false for i = 1:Ntimesteps
         time_step!(model, Δt)
-        #update_state!(model, model.grid, []; compute_tendencies=true)
-        compute_tendencies!(model, [])
+        my_compute_tendencies!(model, [])
     end
     return nothing
 end
@@ -188,6 +194,25 @@ function differentiate_tracer_error(model, dmodel)
                     Duplicated(model, dmodel))
 
     return dedν
+end
+
+function my_compute_tendencies!(model, callbacks)
+
+    grid = model.grid
+    arch = grid.architecture
+
+    # Calculate contributions to momentum and tracer tendencies from fluxes and volume terms in the
+    # interior of the domain. The active cells map restricts the computation to the active cells in the
+    # interior if the grid is _immersed_ and the `active_cells_map` kwarg is active
+    active_cells_map = get_active_cells_map(model.grid, Val(:interior))
+    kernel_parameters = interior_tendency_kernel_parameters(arch, grid)
+
+    compute_hydrostatic_free_surface_tendency_contributions!(model, kernel_parameters; active_cells_map)
+    complete_communication_and_compute_buffer!(model, grid, arch)
+
+    update_tendencies!(model.biogeochemistry, model)
+
+    return nothing
 end
 
 #####
@@ -242,6 +267,5 @@ run_toc_second = time() - tic
 @show run_toc_second
 
 
-@show @which update_state!(model, model.grid, []; compute_tendencies=true)
 @show @which compute_tendencies!(model, [])
             
