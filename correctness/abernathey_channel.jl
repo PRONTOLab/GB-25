@@ -27,7 +27,7 @@ using Oceananigans.Architectures: ReactantState
 
 using Enzyme
 
-using Oceananigans.TimeSteppers: update_state!
+using Oceananigans.TimeSteppers: update_state!, compute_tendencies!
 
 const Ntimesteps = 25
 
@@ -152,7 +152,8 @@ function loop!(model)
     Δt = model.clock.last_Δt
     @trace mincut = true checkpointing = true track_numbers = false for i = 1:Ntimesteps
         time_step!(model, Δt)
-        update_state!(model, model.grid, []; compute_tendencies=true)
+        #update_state!(model, model.grid, []; compute_tendencies=true)
+        compute_tendencies!(model, [])
     end
     return nothing
 end
@@ -242,4 +243,5 @@ run_toc_second = time() - tic
 
 
 @show @which update_state!(model, model.grid, []; compute_tendencies=true)
+@show @which compute_tendencies!(model, [])
             
