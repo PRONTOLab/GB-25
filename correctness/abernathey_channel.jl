@@ -142,7 +142,7 @@ function build_model(grid, Δt₀, parameters)
         free_surface = SplitExplicitFreeSurface(substeps=10),
         momentum_advection = WENO(order=3),
         tracer_advection = WENO(order=3),
-        buoyancy = SeawaterBuoyancy(equation_of_state=LinearEquationOfState(Oceananigans.defaults.FloatType)),
+        buoyancy = nothing, #SeawaterBuoyancy(equation_of_state=LinearEquationOfState(Oceananigans.defaults.FloatType)),
         tracers = (:T, :S, :e)
     )
 
@@ -204,13 +204,10 @@ function my_compute_tendencies!(model, callbacks)
     # Calculate contributions to momentum and tracer tendencies from fluxes and volume terms in the
     # interior of the domain. The active cells map restricts the computation to the active cells in the
     # interior if the grid is _immersed_ and the `active_cells_map` kwarg is active
-    active_cells_map = get_active_cells_map(model.grid, Val(:interior))
-    kernel_parameters = interior_tendency_kernel_parameters(arch, grid)
+    #active_cells_map = get_active_cells_map(model.grid, Val(:interior))
+    #kernel_parameters = interior_tendency_kernel_parameters(arch, grid)
 
-    compute_hydrostatic_free_surface_tendency_contributions!(model, kernel_parameters; active_cells_map)
-    complete_communication_and_compute_buffer!(model, grid, arch)
-
-    update_tendencies!(model.biogeochemistry, model)
+    #compute_hydrostatic_free_surface_tendency_contributions!(model, kernel_parameters; active_cells_map)
 
     return nothing
 end
