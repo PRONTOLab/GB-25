@@ -152,6 +152,7 @@ function loop!(model)
     Δt = model.clock.last_Δt
     @trace mincut = true checkpointing = true track_numbers = false for i = 1:Ntimesteps
         time_step!(model, Δt)
+        update_state!(model, model.grid, []; compute_tendencies=true)
     end
     return nothing
 end
@@ -230,17 +231,15 @@ spinup_toc_second = time() - tic
 @show spinup_toc_second
 
 tic = time()
-#output = restimate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux, Δz, mld)
 dedν = rdifferentiate_tracer_error(model, dmodel)
 run_toc_first = time() - tic
 @show run_toc_first
 
 tic = time()
-#output = restimate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux, Δz, mld)
 dedν = rdifferentiate_tracer_error(model, dmodel)
 run_toc_second = time() - tic
 @show run_toc_second
 
 
-@show @which time_step!(model, 2.5minutes)
+@show @which update_state!(model, model.grid, []; compute_tendencies=true)
             
