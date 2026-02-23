@@ -2,7 +2,7 @@
 
 julia_version = "1.11.9"
 manifest_format = "2.0"
-project_hash = "c50003723ad249bc434a1bbbd593621b01462b50"
+project_hash = "eeecfd03449a66a6b057f33b7bc0bc5fe1d04f53"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -1656,7 +1656,7 @@ version = "0.5.5"
 
 [[deps.Oceananigans]]
 deps = ["Adapt", "Crayons", "CubedSphere", "Dates", "Distances", "DocStringExtensions", "FFTW", "GPUArrays", "GPUArraysCore", "Glob", "InteractiveUtils", "JLD2", "KernelAbstractions", "Krylov", "KrylovPreconditioners", "LinearAlgebra", "Logging", "MPI", "MuladdMacro", "OffsetArrays", "OrderedCollections", "Pkg", "Printf", "Random", "ReactantCore", "Rotations", "SeawaterPolynomials", "SparseArrays", "StaticArrays", "Statistics", "StructArrays"]
-path = "/Users/jkump/.julia/dev/Oceananigans"
+git-tree-sha1 = "0b4e7bbd1cdf8dec20401159598dc76c7c4d40fe"
 uuid = "9e8cae18-63c1-5223-a75c-80ca9d6e9a09"
 version = "0.99.2"
 
@@ -1923,15 +1923,15 @@ uuid = "92933f4c-e287-5a05-a399-4b506db050ca"
 version = "1.11.0"
 
 [[deps.ProtoBuf]]
-deps = ["BufferedStreams", "Dates", "EnumX", "TOML"]
-git-tree-sha1 = "736e283b036b58f5cecd855f18489ac9d2bd2a87"
+deps = ["BufferedStreams", "EnumX", "TOML"]
+git-tree-sha1 = "b3313ac3ba06758d9fbd11d09d2fe59cc527ff4a"
 uuid = "3349acd9-ac6a-5e09-bcdb-63829b23a429"
-version = "1.2.1"
+version = "1.2.2"
 
 [[deps.PtrArrays]]
-git-tree-sha1 = "1d36ef11a9aaf1e8b74dacc6a731dd1de8fd493d"
+git-tree-sha1 = "4fbbafbc6251b883f4d2705356f3641f3652a7fe"
 uuid = "43287f4e-b6f4-7ad1-bb20-aadabca52c3d"
-version = "1.3.0"
+version = "1.4.0"
 
 [[deps.QOI]]
 deps = ["ColorTypes", "FileIO", "FixedPointNumbers"]
@@ -2018,9 +2018,11 @@ weakdeps = ["FixedPointNumbers"]
 
 [[deps.Reactant]]
 deps = ["Adapt", "CEnum", "Crayons", "Downloads", "EnumX", "Enzyme", "EnzymeCore", "Functors", "GPUArraysCore", "GPUCompiler", "HTTP", "JSON", "LLVM", "LLVMOpenMP_jll", "Libdl", "LinearAlgebra", "OrderedCollections", "PrecompileTools", "Preferences", "PrettyTables", "ProtoBuf", "Random", "ReactantCore", "Reactant_jll", "ScopedValues", "Scratch", "Serialization", "Setfield", "Sockets", "StableRNGs", "StructUtils", "UUIDs", "p7zip_jll"]
-path = "/Users/jkump/.julia/dev/Reactant"
+git-tree-sha1 = "1fa8ce785411098ed78c7f40fb1cc5ed444d1a2e"
+repo-rev = "main"
+repo-url = "https://github.com/EnzymeAD/Reactant.jl.git"
 uuid = "3c362404-f566-11ee-1572-e11a4b42c853"
-version = "0.2.224"
+version = "0.2.226"
 
     [deps.Reactant.extensions]
     ReactantAbstractFFTsExt = "AbstractFFTs"
@@ -2081,9 +2083,9 @@ version = "0.1.16"
 
 [[deps.Reactant_jll]]
 deps = ["Artifacts", "CompilerSupportLibraries_jll", "JLLWrappers", "LazyArtifacts", "Libdl", "TOML"]
-git-tree-sha1 = "83484f16fdf19c01986b98c6ea2118f95dcad981"
+git-tree-sha1 = "cbf6cd7d32d006e9edc712ff74de274c7453c461"
 uuid = "0192cb87-2b54-54ad-80e0-3be72ad8a3c0"
-version = "0.0.337+0"
+version = "0.0.340+0"
 
 [[deps.RealDot]]
 deps = ["LinearAlgebra"]
@@ -2140,9 +2142,9 @@ version = "0.4.6"
 
 [[deps.Roots]]
 deps = ["Accessors", "CommonSolve", "Printf"]
-git-tree-sha1 = "9faa358d71b66e876b796f39b301af89519577f7"
+git-tree-sha1 = "24a107726fb5c14f93985ca4e1066b891e09ec67"
 uuid = "f2b01f46-fcfa-551c-844a-d8ac1e96c665"
-version = "2.2.11"
+version = "2.2.12"
 
     [deps.Roots.extensions]
     RootsChainRulesCoreExt = "ChainRulesCore"
