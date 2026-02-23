@@ -36,7 +36,7 @@ using Oceananigans.Models: interior_tendency_kernel_parameters, complete_communi
 using Oceananigans.Models.HydrostaticFreeSurfaceModels: compute_hydrostatic_free_surface_tendency_contributions!
 
 
-const Ntimesteps = 25
+const Ntimesteps = 400
 
 Oceananigans.defaults.FloatType = Float64
 
@@ -139,10 +139,10 @@ function build_model(grid, Δt₀, parameters)
 
     model = HydrostaticFreeSurfaceModel(
         grid = grid,
-        free_surface = nothing, #SplitExplicitFreeSurface(substeps=10),
+        free_surface = nothing,
         momentum_advection = WENO(order=3),
         tracer_advection = WENO(order=3),
-        buoyancy = nothing, #SeawaterBuoyancy(equation_of_state=LinearEquationOfState(Oceananigans.defaults.FloatType)),
+        buoyancy = nothing,
         tracers = (:T, :S, :e)
     )
 
