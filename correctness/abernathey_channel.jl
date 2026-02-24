@@ -7,8 +7,6 @@ using Statistics
 
 using InteractiveUtils
 
-using SeawaterPolynomials
-
 using Reactant
 using CUDA
 #Reactant.set_default_backend("cpu")
