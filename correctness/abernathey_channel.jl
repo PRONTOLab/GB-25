@@ -33,7 +33,10 @@ using Oceananigans.Utils: work_layout, KernelParameters
 using Oceananigans.Biogeochemistry: update_tendencies!
 using Oceananigans.Models: interior_tendency_kernel_parameters, complete_communication_and_compute_buffer!
 
-using Oceananigans.Models.HydrostaticFreeSurfaceModels: compute_hydrostatic_free_surface_tendency_contributions!
+using Oceananigans.Models.HydrostaticFreeSurfaceModels: compute_hydrostatic_free_surface_tendency_contributions!,
+                                                        hydrostatic_velocity_fields
+
+using Oceananigans.BoundaryConditions: regularize_field_boundary_conditions
 
 
 const Ntimesteps = 400
@@ -99,14 +102,30 @@ function build_model(grid)
         tracers = nothing
     )
 
-    model = HydrostaticFreeSurfaceModel(
-        grid = grid,
-        free_surface = nothing,
-        momentum_advection = nothing,
-        tracer_advection = nothing,
-        buoyancy = nothing,
-        tracers = nothing
-    )
+    model = my_HydrostaticFreeSurfaceModel(grid = grid)
+
+    return model
+end
+
+function my_HydrostaticFreeSurfaceModel(; grid,
+                                     clock = Clock(grid))
+
+    # Next, we form a list of default boundary conditions:
+    field_names = (:u, :v, :w)
+
+    boundary_conditions = NamedTuple{field_names}(Tuple(FieldBoundaryConditions()
+                                                          for name in field_names))
+
+    boundary_conditions = regularize_field_boundary_conditions(boundary_conditions, grid, field_names)
+
+    # Either check grid-correctness, or construct tuples of fields
+    velocities         = hydrostatic_velocity_fields(nothing, grid, clock, boundary_conditions)
+
+    arch = grid.architecture
+
+    model = HydrostaticFreeSurfaceModel(arch, grid, clock, nothing, nothing, nothing,
+                                        nothing, nothing, nothing, nothing, nothing, velocities, nothing,
+                                        nothing, nothing, nothing, nothing, nothing)
 
     return model
 end
