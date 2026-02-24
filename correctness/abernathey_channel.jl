@@ -69,7 +69,7 @@ z_faces[Nz+1] = 0
 
 Δz = reshape(Δz, 1, :)
 
-halo_size = 4 #3 for non-immersed grid
+const halo_size = 4 #3 for non-immersed grid
 
 
 function make_grid(architecture, Nx, Ny, Nz, z_faces)
@@ -89,24 +89,51 @@ end
 ##### Model construction:
 #####
 
-function build_model(grid)
+function my_hydrostatic_velocity_fields()
 
-    # Next, we form a list of default boundary conditions:
-    field_names = (:u, :v, :w)
+    total_size = (Nx+2*halo_size) * (Ny+2*halo_size) * (Nz+2*halo_size)
 
-    clock = Clock(grid)
+    u = Float64.(reshape(1:total_size, Nx+2*halo_size, Ny+2*halo_size, Nz+2*halo_size))
+    v = Float64.(reshape(1:total_size, Nx+2*halo_size, Ny+2*halo_size, Nz+2*halo_size))
+    w = Float64.(reshape(1:total_size, Nx+2*halo_size, Ny+2*halo_size, Nz+2*halo_size))
 
-    boundary_conditions = NamedTuple{field_names}(Tuple(FieldBoundaryConditions()
-                                                          for name in field_names))
+    u = Reactant.to_rarray(u)
+    v = Reactant.to_rarray(v)
+    w = Reactant.to_rarray(w)
 
-    boundary_conditions = regularize_field_boundary_conditions(boundary_conditions, grid, field_names)
+    return (u=u, v=v, w=w)
+end
 
-    # Either check grid-correctness, or construct tuples of fields
-    velocities         = hydrostatic_velocity_fields(nothing, grid, clock, boundary_conditions)
+function Clock_helper(; time,
+               last_Δt = Inf,
+               last_stage_Δt = Inf,
+               iteration = 0,
+               stage = 1)
 
-    arch = grid.architecture
+    TT = typeof(time)
+    DT = typeof(last_Δt)
+    IT = typeof(iteration)
+    last_stage_Δt = convert(DT, last_Δt)
+    return Clock{TT, DT, IT, typeof(stage)}(time, last_Δt, last_stage_Δt, iteration, stage)
+end
+
+function my_Clock()
+    FT = Oceananigans.defaults.FloatType
+    t = ConcreteRNumber(zero(FT))
+    iter = ConcreteRNumber(0)
+    stage = 0
+    last_Δt = convert(FT, Inf)
+    last_stage_Δt = convert(FT, Inf)
+    return Clock_helper(; time=t, iteration=iter, stage, last_Δt, last_stage_Δt)
+end
+
+function build_model()
+
+    clock = my_Clock()
+
+    velocities = my_hydrostatic_velocity_fields()
     
-    model = MyModel(arch, grid, clock, velocities)
+    model = MyModel(clock, velocities)
 
     return model
 end
@@ -131,9 +158,7 @@ function differentiate_tracer_error(model, dmodel)
     return dedν
 end
 
-mutable struct MyModel{A, G, T, U}
-    architecture::A
-    grid::G  
+mutable struct MyModel{T, U}
     clock::Clock{T}
     velocities::U
 end
@@ -146,12 +171,8 @@ end
 architecture = ReactantState()
 
 # Make the grid:
-grid   = make_grid(architecture, Nx, Ny, Nz, z_faces)
-model  = build_model(grid)
+model  = build_model()
 dmodel = Enzyme.make_zero(model)
-
-#mymodel = MyModel(model.grid, model.clock)
-#dmymodel = Enzyme.make_zero(mymodel)
 
 @info "Compiling the model run..."
 tic = time()
