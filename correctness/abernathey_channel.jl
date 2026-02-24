@@ -91,27 +91,10 @@ end
 
 function build_model(grid)
 
-    @info "Building a model..."
-
-    @show @which HydrostaticFreeSurfaceModel(
-        grid = grid,
-        free_surface = nothing,
-        momentum_advection = nothing,
-        tracer_advection = nothing,
-        buoyancy = nothing,
-        tracers = nothing
-    )
-
-    model = my_HydrostaticFreeSurfaceModel(grid = grid)
-
-    return model
-end
-
-function my_HydrostaticFreeSurfaceModel(; grid,
-                                     clock = Clock(grid))
-
     # Next, we form a list of default boundary conditions:
     field_names = (:u, :v, :w)
+
+    clock = Clock(grid)
 
     boundary_conditions = NamedTuple{field_names}(Tuple(FieldBoundaryConditions()
                                                           for name in field_names))
@@ -122,10 +105,8 @@ function my_HydrostaticFreeSurfaceModel(; grid,
     velocities         = hydrostatic_velocity_fields(nothing, grid, clock, boundary_conditions)
 
     arch = grid.architecture
-
-    model = HydrostaticFreeSurfaceModel(arch, grid, clock, nothing, nothing, nothing,
-                                        nothing, nothing, nothing, nothing, nothing, velocities, nothing,
-                                        nothing, nothing, nothing, nothing, nothing)
+    
+    model = MyModel(arch, grid, clock, velocities)
 
     return model
 end
@@ -150,9 +131,11 @@ function differentiate_tracer_error(model, dmodel)
     return dedν
 end
 
-mutable struct MyModel{G, T}
+mutable struct MyModel{A, G, T, U}
+    architecture::A
     grid::G  
     clock::Clock{T}
+    velocities::U
 end
 
 #####
@@ -167,8 +150,8 @@ grid   = make_grid(architecture, Nx, Ny, Nz, z_faces)
 model  = build_model(grid)
 dmodel = Enzyme.make_zero(model)
 
-mymodel = MyModel(model.grid, model.clock)
-dmymodel = Enzyme.make_zero(mymodel)
+#mymodel = MyModel(model.grid, model.clock)
+#dmymodel = Enzyme.make_zero(mymodel)
 
 @info "Compiling the model run..."
 tic = time()
