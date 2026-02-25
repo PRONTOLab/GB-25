@@ -36,7 +36,10 @@ using Oceananigans.Models: interior_tendency_kernel_parameters, complete_communi
 using Oceananigans.Models.HydrostaticFreeSurfaceModels: compute_hydrostatic_free_surface_tendency_contributions!
 
 
-const Ntimesteps = 400
+const Ntimesteps = 100
+
+# Architecture
+arch = ReactantState()
 
 Oceananigans.defaults.FloatType = Float64
 
@@ -216,14 +219,11 @@ end
 ##### Actually creating our model and using these functions to run it:
 #####
 
-# Architecture
-architecture = ReactantState()
-
 # Timestep size:
 Δt₀ = 2.5minutes 
 
 # Make the grid:
-grid          = make_grid(architecture, Nx, Ny, Nz, z_faces)
+grid          = make_grid(arch, Nx, Ny, Nz, z_faces)
 model         = build_model(grid, Δt₀, parameters)
 
 @info "Built $model."
