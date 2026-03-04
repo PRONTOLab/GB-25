@@ -21,14 +21,18 @@ using ClimaOcean.Diagnostics: MixedLayerDepthField
 using Reactant
 using GordonBell25
 using Oceananigans.Architectures: ReactantState
+
+@info "To specify architecture uncomment line 'Reactant.set_default_backend(\"cpu\")' "
 #Reactant.set_default_backend("cpu")
 
 using Enzyme
 
 Oceananigans.defaults.FloatType = Float64
 
-graph_directory = "run_abernathy_model_ad_spinup5000_8100steps/"
-#graph_directory = "run_abernathy_model_ad_spinup40000000_8100steps/"
+const Ntimesteps = 8100        # Number of timesteps in zonal transport computed / AD'ed part
+const Nspinup    = 5000        # Number of timesteps that the model is spun up
+
+graph_directory = "run_abernathy_model_ad_spinup" * string(Nspinup) * "_" * string(Ntimesteps) * "steps/"
 
 #
 # Model parameters to set first:
@@ -177,7 +181,6 @@ function build_model(grid, Δt₀, parameters)
         taper = exp(- (k-1) / decay_scale)
         κz_array[:,:,k] .= κz + κz_add * taper
     end
-    @show κz_array[1:2,20,:]
 
     set!(κz_field, κz_array)
 
@@ -251,7 +254,7 @@ end
 
 function spinup_loop!(model)
     Δt = model.clock.last_Δt
-    @trace mincut = true track_numbers = false for i = 1:5000
+    @trace mincut = true track_numbers = false for i = 1:Nspinup
         time_step!(model, Δt)
     end
     return nothing
@@ -281,7 +284,7 @@ end
 
 function loop!(model)
     Δt = model.clock.last_Δt
-    @trace mincut = true checkpointing = true track_numbers = false for i = 1:8100
+    @trace mincut = true checkpointing = true track_numbers = false for i = 1:Ntimesteps
         time_step!(model, Δt)
     end
     return nothing
@@ -366,7 +369,7 @@ dΔz            = Enzyme.make_zero(Δz)
 
 # Trying zonal transport:
 
-@info "Compiling the model run..."
+@info "Compiling the model run... (if you want to run forward code only, just compile 'estimate_tracer_error')"
 tic = time()
 rspinup_reentrant_channel_model! = @compile raise_first=true raise=true sync=true  spinup_reentrant_channel_model!(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux)
 #restimate_tracer_error = @compile raise_first=true raise=true sync=true estimate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux, Δz, mld)
@@ -412,6 +415,7 @@ jldsave(filename; Nx, Ny, Nz,
                   T_flux=convert(Array, interior(T_flux)))
 
 
+@info "Running the simulation... (if you want to run the forward code only, just run 'restimate_tracer_error')"
 tic = time()
 #output = restimate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux, Δz, mld)
 dedν = rdifferentiate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux, Δz, mld, dmodel, dTᵢ, dSᵢ, du_wind_stress, dv_wind_stress, dT_flux, dΔz, dmld)
