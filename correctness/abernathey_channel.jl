@@ -29,8 +29,8 @@ using Enzyme
 
 Oceananigans.defaults.FloatType = Float64
 
-const Ntimesteps = 8100        # Number of timesteps in zonal transport computed / AD'ed part
-const Nspinup    = 5000        # Number of timesteps that the model is spun up
+const Ntimesteps = 25        # Number of timesteps in zonal transport computed / AD'ed part
+const Nspinup    = 100        # Number of timesteps that the model is spun up
 
 graph_directory = "run_abernathy_model_ad_spinup" * string(Nspinup) * "_" * string(Ntimesteps) * "steps/"
 
@@ -394,7 +394,7 @@ else
     set!(bottom_height, -Lz)
 end
 
-# Spinup the model for a sufficient amount of time, save the T and S from this state:
+@info "Spinup the model for $Nspinup timesteps, save the T and S from this state:"
 tic = time()
 rspinup_reentrant_channel_model!(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux)
 @allowscalar set!(Tᵢ, model.tracers.T)
@@ -415,16 +415,17 @@ jldsave(filename; Nx, Ny, Nz,
                   T_flux=convert(Array, interior(T_flux)))
 
 
-@info "Running the simulation... (if you want to run the forward code only, just run 'restimate_tracer_error')"
+@info "Running the simulation for $Ntimesteps timesteps ... (if you want to run the forward code only, just run 'restimate_tracer_error')"
 tic = time()
-#output = restimate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux, Δz, mld)
-dedν = rdifferentiate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux, Δz, mld, dmodel, dTᵢ, dSᵢ, du_wind_stress, dv_wind_stress, dT_flux, dΔz, dmld)
+#Reactant.Profiler.@profile output = restimate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux, Δz, mld)
+Reactant.Profiler.@profile rdifferentiate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux, Δz, mld, dmodel, dTᵢ, dSᵢ, du_wind_stress, dv_wind_stress, dT_flux, dΔz, dmld)
 run_toc = time() - tic
 
+@info "Run toc gives you the combined time of the warmup run and the counted run from @profile, so it should be somewhat over 2x the time of profile"
 @show run_toc
 #@show output
 
-@show dedν
+#@show dedν
 
 filename = graph_directory * "data_final.jld2"
 
@@ -438,7 +439,7 @@ jldsave(filename; Nx, Ny, Nz,
                   w=convert(Array, interior(model.velocities.w)),
                   mld=convert(Array, interior(mld)),
                   #zonal_transport=convert(Float64, output),
-                  zonal_transport=convert(Float64, dedν[2]),
+                  #zonal_transport=convert(Float64, dedν[2]),
                   du_wind_stress=convert(Array, interior(du_wind_stress)),
                   dv_wind_stress=convert(Array, interior(dv_wind_stress)),
                   dT=convert(Array, interior(dTᵢ)),
