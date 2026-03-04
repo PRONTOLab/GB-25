@@ -8,7 +8,7 @@ out_dir = @__DIR__
 # export LD_PRELOAD=/capstor/scratch/cscs/lraess/.julia/gh200/juliaup/depot/artifacts/152ab7c1cf7e3e69c2fa76110b9e01affcbb1f36/lib/libcrypto.so.3
 
 # run params
-account  = "c44"
+account  = "g209"
 submit   = true #false
 run_name = "reactant_"
 time     = "00:30:00"
