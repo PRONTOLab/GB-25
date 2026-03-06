@@ -40,11 +40,11 @@ function compare_states(m1, m2; rtol=1e-8, atol=sqrt(eps(eltype(m1.grid))),
         if !(name ∈ (:w, :η))
             Gⁿ1 = m1.timestepper.Gⁿ
             Gⁿ2 = m2.timestepper.Gⁿ
-            approx_equal *= compare_fields("Gⁿ.$name", Gⁿ1[name], Gⁿ2[name]; rtol, atol)
+            approx_equal *= compare_interior("Gⁿ.$name", Gⁿ1[name], Gⁿ2[name]; rtol, atol)
 
             G⁻1 = m1.timestepper.G⁻
             G⁻2 = m2.timestepper.G⁻
-            approx_equal *= compare_fields("G⁻.$name", G⁻1[name], G⁻2[name]; rtol, atol)
+            approx_equal *= compare_interior("G⁻.$name", G⁻1[name], G⁻2[name]; rtol, atol)
         end
     end
 
