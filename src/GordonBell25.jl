@@ -1,6 +1,6 @@
 module GordonBell25
 
-export time_step!, loop!, try_code_hlo
+export first_time_step!, time_step!, loop!, try_code_hlo
 
 include("model_utils.jl")
 include("timestepping_utils.jl")

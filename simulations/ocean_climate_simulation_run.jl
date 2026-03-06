@@ -1,4 +1,4 @@
-using GordonBell25: time_step!, loop!, preamble
+using GordonBell25: first_time_step!, time_step!, loop!, preamble
 using GordonBell25: data_free_ocean_climate_model_init
 using Oceananigans.Architectures: ReactantState
 using Reactant
@@ -16,7 +16,7 @@ Ninner = ConcreteRNumber(2)
 GC.gc(true); GC.gc(false); GC.gc(true)
 
 @info "Compiling..."
-rfirst! = @compile raise=true sync=true time_step!(model)
+rfirst! = @compile raise=true sync=true first_time_step!(model)
 rstep! = @compile raise=true sync=true time_step!(model)
 rloop! = @compile raise=true sync=true loop!(model, Ninner)
 

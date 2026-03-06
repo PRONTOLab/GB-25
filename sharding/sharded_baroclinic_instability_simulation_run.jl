@@ -23,7 +23,7 @@ const parsed_args = parse_args(ARGS, args_settings)
 ENV["JULIA_DEBUG"] = "Reactant_jll,Reactant"
 
 using GordonBell25
-using GordonBell25: time_step!, loop!, factors, is_distributed_env_present
+using GordonBell25: first_time_step!, time_step!, loop!, factors, is_distributed_env_present
 using Oceananigans
 using Oceananigans.Units
 using Oceananigans.Architectures: ReactantState
@@ -110,12 +110,12 @@ if devarch isa Oceananigans.ReactantState
    end
 end
 
-@info "[$rank] Compiling time_step!..." now(UTC)
+@info "[$rank] Compiling first_time_step!..." now(UTC)
 compile_options = CompileOptions(; sync=true, raise=true, strip_llvm_debuginfo=true, strip=["enzymexla.kernel_call", "(::Reactant.Compiler.LLVMFunc", "ka_with_reactant", "(::KernelAbstractions.Kernel", "var\"#_launch!;_launch!"])
 rfirst! = if devarch isa Oceananigans.ReactantState
-     @compile compile_options=compile_options time_step!(model)
+     @compile compile_options=compile_options first_time_step!(model)
 else
-     time_step!
+     first_time_step!     
 end
 
 @info "[$rank] allocations" GordonBell25.allocatorstats()
@@ -130,10 +130,10 @@ end
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 
 profile_dir = joinpath(@__DIR__, "profiling", jobid_procid)
-mkpath(joinpath(profile_dir, "time_step"))
+mkpath(joinpath(profile_dir, "first_time_step"))
 @info "[$rank] allocations" GordonBell25.allocatorstats()
-@info "[$rank] Running time_step!..." now(UTC)
-Reactant.with_profiler(joinpath(profile_dir, "time_step")) do
+@info "[$rank] Running first_time_step!..." now(UTC)
+Reactant.with_profiler(joinpath(profile_dir, "first_time_step")) do
     Reactant.Profiler.annotate("bench"; metadata=Dict("step_num" => 1, "_r" => 1)) do
         @time "[$rank] first time step" rfirst!(model)
     end

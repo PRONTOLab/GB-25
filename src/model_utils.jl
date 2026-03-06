@@ -6,7 +6,7 @@ using Oceananigans.Architectures: Architectures
 using SeawaterPolynomials
 
 using NumericalEarth
-using NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentInterfaces
+using NumericalEarth.EarthSystemModels.InterfaceComputations: FixedIterations, ComponentInterfaces
 
 using Dates
 using Printf
