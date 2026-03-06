@@ -49,10 +49,10 @@ function compare_states(m1, m2; rtol=1e-8, atol=sqrt(eps(eltype(m1.grid))),
     end
 
     if m1.free_surface isa Oceananigans.SplitExplicitFreeSurface
-        names = (:U, :V, :η)
-        Φ1 = NamedTuple(name => getproperty(m1.free_surface.filtered_state, name) for name in names)
-        Φ2 = NamedTuple(name => getproperty(m2.free_surface.filtered_state, name) for name in names)
-        for name in keys(Φ1)
+        names = keys(m1.free_surface.filtered_state)
+        Φ1 = m1.free_surface.filtered_state
+        Φ2 = m2.free_surface.filtered_state
+        for name in names
             approx_equal *= compare_fields(name, Φ1[name], Φ2[name]; rtol, atol)
         end
     end
