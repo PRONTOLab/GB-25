@@ -4,7 +4,7 @@ using Oceananigans.Architectures
 using Reactant
 
 using NumericalEarth
-using NumericalEarth: ECCO4Monthly
+using NumericalEarth: EN4Monthly
 using NumericalEarth.EarthSystemModels.InterfaceComputations: FixedIterations, ComponentInterfaces
 # using OrthogonalSphericalShellGrids: TripolarGrid
 
@@ -64,8 +64,8 @@ grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height))
 
 # Polar restoring setup
 dates = DateTimeProlepticGregorian(1993, 1, 1) : Month(1) : DateTimeProlepticGregorian(1993, 12, 1)
-temperature = Metadatum(:temperature, dates=dates, dataset=ECCO4Monthly())
-salinity = Metadatum(:salinity, dates=dates, dataset=ECCO4Monthly())
+temperature = Metadatum(:temperature, dates=dates, dataset=EN4Monthly())
+salinity = Metadatum(:salinity, dates=dates, dataset=EN4Monthly())
 
 restoring_rate  = 1/7days
 mask = LinearlyTaperedPolarMask(southern=(-80, -70), northern=(70, 90))
@@ -75,7 +75,7 @@ FS = DatasetRestoring(salinity, grid; mask, rate=restoring_rate)
 # Ocean simulation with defaults from NumericalEarth
 ocean = ocean_simulation(grid; forcing=(T=FT, S=FT))
 
-# Initial ocean state from ECCO state estimate
+# Initial ocean state from EN4
 set!(ocean.model, T=Metadatum(:temperature; dates=first(dates)),
                   S=Metadatum(:salinity; dates=first(dates)))
 
