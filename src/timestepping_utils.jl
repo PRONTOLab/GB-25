@@ -1,14 +1,7 @@
 using Reactant
 using Oceananigans
-import Oceananigans.TimeSteppers: time_step!, update_state!, maybe_initialize_state!
-using Oceananigans.Architectures: ReactantState
+import Oceananigans.TimeSteppers: time_step!, update_state!
 using Reactant_jll: libReactantExtra
-
-# No-op for Reactant: the iteration == 0 check evaluates at trace time,
-# causing a redundant update_state! to be compiled into every time_step!.
-# Instead, first_time_step! handles initialization explicitly.
-maybe_initialize_state!(::Oceananigans.AbstractModel{<:Any, <:ReactantState}, callbacks) = nothing
-maybe_initialize_state!(::Oceananigans.AbstractModel{<:Any, <:Oceananigans.Distributed{<:ReactantState}}, callbacks) = nothing
 
 const TRY_COMPILE_FAILED = Ref(false)
 
