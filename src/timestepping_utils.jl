@@ -22,7 +22,7 @@ function first_time_step!(model)
     Reactant.Profiler.annotate("first_time_step") do
         Oceananigans.TimeSteppers.update_state!(model)
         Δt = model.clock.last_Δt + 0
-        Oceananigans.TimeSteppers.time_step!(model, Δt)
+        Oceananigans.TimeSteppers.time_step!(model, Δt; euler=true)
     end
     return nothing
 end

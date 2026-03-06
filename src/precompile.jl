@@ -25,7 +25,6 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels:
     compute_hydrostatic_boundary_tendency_contributions!,
     compute_hydrostatic_free_surface_Gc!,
     immersed_boundary_condition,
-    complete_communication_and_compute_buffer!,
     compute_tendencies!
 
 #=
@@ -69,7 +68,6 @@ function compute_interior_momentum_tendencies_workload!(model)
     #compute_hydrostatic_free_surface_tendency_contributions!(model, kernel_parameters; active_cells_map)
     
     compute_hydrostatic_momentum_tendencies!(model, model.velocities, kernel_parameters; active_cells_map)
-    complete_communication_and_compute_buffer!(model, grid, arch)
 end
 
 function compute_interior_tracer_tendencies_workload!(model)
