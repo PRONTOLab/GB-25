@@ -6,7 +6,7 @@ using Reactant
 using NumericalEarth
 using NumericalEarth: ECCO4Monthly
 using NumericalEarth.EarthSystemModels.InterfaceComputations: FixedIterations, ComponentInterfaces
-using OrthogonalSphericalShellGrids: TripolarGrid
+# using OrthogonalSphericalShellGrids: TripolarGrid
 
 using Dates
 using Printf
@@ -57,7 +57,8 @@ stop_time = 10days
 
 # Grid setup
 z_faces = ExponentialDiscretization(Nz, -6000, 0; scale=30) # may need changing for very large Nz
-underlying_grid = TripolarGrid(arch; size=(Nx, Ny, Nz), halo=(7, 7, 7), z=z_faces)
+underlying_grid = LatitudeLongitudeGrid(arch; size=(Nx, Ny, Nz), halo=(7, 7, 7), z=z_faces,
+                                        latitude=(-80, 80), longitude=(0, 360))
 bottom_height = regrid_bathymetry(underlying_grid) # adds Earth bathymetry from ETOPO1
 grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height))
 
