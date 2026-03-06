@@ -73,7 +73,7 @@ FT = DatasetRestoring(temperature, grid; mask, rate=restoring_rate)
 FS = DatasetRestoring(salinity, grid; mask, rate=restoring_rate)
 
 # Ocean simulation with defaults from NumericalEarth
-ocean = ocean_simulation(grid; forcing=(T=FT, S=FT))
+ocean = ocean_simulation(grid; forcing=(T=FT, S=FS))
 
 # Initial ocean state from EN4
 set!(ocean.model, T=Metadatum(:temperature; dates=first(dates)),
