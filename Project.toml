@@ -40,7 +40,7 @@ Serialization = "1"
 
 [sources.Oceananigans]
 url = "https://github.com/CliMA/Oceananigans.jl.git"
-rev = "glw/view-vertical-discretization"
+rev = "glw/reactant-correctness"
 
 [preferences.Reactant]
 xla_runtime = "IFRT"
