@@ -1,4 +1,4 @@
-using GordonBell25: first_time_step!, time_step!, loop!, preamble
+using GordonBell25: time_step!, loop!, preamble
 using GordonBell25: baroclinic_instability_model
 using Oceananigans
 using Oceananigans.Architectures: ReactantState
@@ -20,7 +20,7 @@ model = baroclinic_instability_model(arch, resolution=8, Δt=60, Nz=10)
 GC.gc(true); GC.gc(false); GC.gc(true)
 
 @info "Compiling..."
-rfirst! = @compile raise=true sync=true first_time_step!(model)
+rfirst! = @compile raise=true sync=true time_step!(model)
 rstep! = @compile raise=true sync=true time_step!(model)
 rloop! = @compile raise=true sync=true loop!(model, Ninner)
 

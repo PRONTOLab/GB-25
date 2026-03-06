@@ -16,19 +16,19 @@ using Oceananigans.Fields:
 
 using Oceananigans.Models.HydrostaticFreeSurfaceModels:
     mask_immersed_model_fields!,
-    compute_auxiliaries!,
+    compute_closure_fields!,
     compute_tendencies!
 
 # For reference
 
     * mask_immersed_model_fields!(model, grid)
     * tupled_fill_halo_regions!(prognostic_fields(model), grid, model.clock, fields(model))
-    * compute_auxiliaries!(model)
-    * fill_halo_regions!(model.diffusivity_fields; only_local_halos=true)
+    * compute_closure_fields!(model.closure_fields, model.closure, model, ...)
+    * fill_halo_regions!(model.closure_fields; only_local_halos=true)
     * compute_tendencies!(model, callbacks)
     * ab2_step!(model, Δt)
     * tupled_fill_halo_regions!(prognostic_fields(model), model.grid, model.clock, fields(model))
-    * correct_velocities_and_cache_previous_tendencies!(model, Δt)
+    * cache_previous_tendencies!(model)
 =#
 
 @setup_workload begin

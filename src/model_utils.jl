@@ -5,8 +5,8 @@ using Oceananigans.Units
 using Oceananigans.Architectures: Architectures
 using SeawaterPolynomials
 
-using ClimaOcean
-using ClimaOcean.OceanSeaIceModels.InterfaceComputations: FixedIterations, ComponentInterfaces
+using NumericalEarth
+using NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentInterfaces
 
 using Dates
 using Printf

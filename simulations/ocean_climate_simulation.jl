@@ -3,9 +3,9 @@ using Oceananigans.Units
 using Oceananigans.Architectures
 using Reactant
 
-using ClimaOcean
-using ClimaOcean.DataWrangling: ECCO4Monthly
-using ClimaOcean.OceanSeaIceModels.InterfaceComputations: FixedIterations, ComponentInterfaces
+using NumericalEarth
+using NumericalEarth: ECCO4Monthly
+using NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentInterfaces
 using OrthogonalSphericalShellGrids: TripolarGrid
 
 using Dates
@@ -63,30 +63,29 @@ grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height))
 
 # Polar restoring setup
 dates = DateTimeProlepticGregorian(1993, 1, 1) : Month(1) : DateTimeProlepticGregorian(1993, 12, 1)
-temperature = ECCOMetadata(:temperature, dates, ECCO4Monthly())
-salinity = ECCOMetadata(:salinity, dates, ECCO4Monthly())
+temperature = Metadatum(:temperature, dates=dates, dataset=ECCO4Monthly())
+salinity = Metadatum(:salinity, dates=dates, dataset=ECCO4Monthly())
 
 restoring_rate  = 1/7days
 mask = LinearlyTaperedPolarMask(southern=(-80, -70), northern=(70, 90))
-FT = ECCORestoring(temperature, grid; mask, rate=restoring_rate)
-FS = ECCORestoring(salinity, grid; mask, rate=restoring_rate)
+FT = DatasetRestoring(temperature, grid; mask, rate=restoring_rate)
+FS = DatasetRestoring(salinity, grid; mask, rate=restoring_rate)
 
-# Ocean simulation with defaults from ClimaOcean
+# Ocean simulation with defaults from NumericalEarth
 ocean = ocean_simulation(grid; forcing=(T=FT, S=FT))
 
 # Initial ocean state from ECCO state estimate
-set!(ocean.model, T=ECCOMetadata(:temperature; dates=first(dates)),
-                  S=ECCOMetadata(:salinity; dates=first(dates)))
+set!(ocean.model, T=Metadatum(:temperature; dates=first(dates)),
+                  S=Metadatum(:salinity; dates=first(dates)))
 
 # Atmospheric model
 radiation  = Radiation(arch)
 atmosphere = JRA55PrescribedAtmosphere(arch; backend=JRA55NetCDFBackend(41))
 
 # Coupled model and simulation
-solver_stop_criteria = FixedIterations(5) # note: more iterations = more accurate
-atmosphere_ocean_flux_formulation = SimilarityTheoryFluxes(; solver_stop_criteria)
-interfaces = ComponentInterfaces(atmosphere, ocean; radiation, atmosphere_ocean_flux_formulation)
-coupled_model = OceanSeaIceModel(ocean; atmosphere, radiation, interfaces)
+atmosphere_ocean_fluxes = SimilarityTheoryFluxes(; solver_maxiter=5)
+interfaces = ComponentInterfaces(atmosphere, ocean; radiation, atmosphere_ocean_fluxes)
+coupled_model = OceanOnlyModel(ocean; atmosphere, radiation, interfaces)
 simulation = Simulation(coupled_model; Δt, stop_time)
 
 # Utility for printing progress to the terminal
@@ -106,7 +105,7 @@ function progress(sim)
                    prettytime(sim), iteration(sim), prettytime(sim.Δt),
                    umax..., Tmax, Tmin, prettytime(step_time))
 
-    ClimaOcean.@root @info(msg)
+    NumericalEarth.@root @info(msg)
 
     wall_time[] = time_ns()
 

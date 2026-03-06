@@ -40,21 +40,12 @@ function baroclinic_instability_model(arch, Nx, Ny, Nz; Δt,
     )
 
     tracers = if buoyancy isa BuoyancyTracer
-        [:b]
+        (:b,)
     elseif buoyancy isa SeawaterBuoyancy
-        [:T, :S]
+        (:T, :S)
     else
-        Symbol[]
+        ()
     end
-
-    if closure isa Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity
-        push!(tracers, :e)
-    elseif closure isa Oceananigans.TurbulenceClosures.TKEDissipationVerticalDiffusivity
-        push!(tracers, :e)
-        push!(tracers, :ϵ)
-    end
-
-    tracers = tuple(tracers...)
 
     grid = if grid_type === :gaussian_islands
         gaussian_islands_tripolar_grid(arch, Nx, Ny, Nz; halo)

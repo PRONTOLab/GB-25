@@ -103,7 +103,7 @@ model.clock.last_Δt = ConcreteRNumber(60.0)
 # @info "[$(process_id)] allocations" GordonBell25.allocatorstats()
 
 @info "[$(process_id)] compiling first time step" now(UTC)
-compiled_first_time_step! = @compile sync=true raise=true GordonBell25.first_time_step!(model)
+compiled_first_time_step! = @compile sync=true raise=true GordonBell25.time_step!(model)
 @info "[$(process_id)] compiling loop" now(UTC)
 Ninner = ConcreteRNumber(10; sharding=Sharding.NamedSharding(arch.connectivity, ()))
 compiled_loop! = @compile sync=true raise=true GordonBell25.loop!(model, Ninner)

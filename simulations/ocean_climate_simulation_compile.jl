@@ -1,4 +1,4 @@
-using GordonBell25: first_time_step!, loop!, try_compile_code, preamble, TRY_COMPILE_FAILED
+using GordonBell25: time_step!, loop!, try_compile_code, preamble, TRY_COMPILE_FAILED
 using GordonBell25: data_free_ocean_climate_model_init, PROFILE
 using Reactant
 using Oceananigans
@@ -23,14 +23,14 @@ for optimize in (:before_raise, false, :before_jit), code_type in (:hlo, :xla)
     @info "Compiling $(kernel_type) $(code_type) kernels..."
     if code_type === :hlo
         first_code = try_compile_code() do
-            @code_hlo optimize=optimize raise=true first_time_step!(model)
+            @code_hlo optimize=optimize raise=true time_step!(model)
         end
         loop_code = try_compile_code() do
             @code_hlo optimize=optimize raise=true loop!(model, Ninner)
         end
     elseif code_type === :xla
         first_code = try_compile_code() do
-            @code_xla raise=true first_time_step!(model)
+            @code_xla raise=true time_step!(model)
         end
         loop_code = try_compile_code() do
             @code_xla raise=true loop!(model, Ninner)

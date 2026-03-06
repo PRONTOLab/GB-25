@@ -84,7 +84,7 @@ grid = LatitudeLongitudeGrid(arch, size=(Nx, Ny, Nz), halo=(H, H, H), z=(-4000, 
 free_surface = SplitExplicitFreeSurface(substeps=32)
 momentum_advection = WENOVectorInvariant(order=5)
 tracer_advection = WENO(order=5)
-tracers = (:T, :S, :e)
+tracers = (:T, :S)
 equation_of_state = TEOS10EquationOfState()
 buoyancy = SeawaterBuoyancy(; equation_of_state)
 closure = Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity()
@@ -116,7 +116,7 @@ shardy_options = Sharding.ShardyPropagationOptions(
 )
 
 @info "[$(process_id)] compiling first time step" now(UTC)
-compiled_first_time_step! = @compile shardy_passes = shardy_options sync=true raise=true GordonBell25.first_time_step!(model)
+compiled_first_time_step! = @compile shardy_passes = shardy_options sync=true raise=true GordonBell25.time_step!(model)
 @info "[$(process_id)] compiling loop" now(UTC)
 Ninner = ConcreteRNumber(128; sharding=Sharding.NamedSharding(arch.connectivity, ()))
 compiled_loop! = @compile shardy_passes = shardy_options sync=true raise=true GordonBell25.loop!(model, Ninner)

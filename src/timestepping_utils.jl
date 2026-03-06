@@ -1,6 +1,6 @@
 using Reactant
 using Oceananigans
-import Oceananigans.TimeSteppers: first_time_step!, time_step!
+import Oceananigans.TimeSteppers: time_step!
 using Reactant_jll: libReactantExtra
 
 const TRY_COMPILE_FAILED = Ref(false)
@@ -16,14 +16,6 @@ function try_compile_code(f)
         //$e
         """)
     end
-end
-
-function first_time_step!(model)
-    Reactant.Profiler.annotate("first_time_step") do
-        Δt = model.clock.last_Δt
-        Oceananigans.TimeSteppers.first_time_step!(model, Δt)
-    end
-    return nothing
 end
 
 function time_step!(model)

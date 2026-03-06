@@ -12,14 +12,14 @@ using Oceananigans.Fields:
 
 using Oceananigans.TimeSteppers:
     ab2_step!,
-    correct_velocities_and_cache_previous_tendencies!
+    cache_previous_tendencies!
 
 using Oceananigans.ImmersedBoundaries:
     get_active_cells_map
 
 using Oceananigans.Models.HydrostaticFreeSurfaceModels:
     mask_immersed_model_fields!,
-    compute_auxiliaries!,
+    compute_closure_fields!,
     compute_hydrostatic_momentum_tendencies!,
     interior_tendency_kernel_parameters,
     compute_hydrostatic_boundary_tendency_contributions!,
@@ -33,12 +33,12 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels:
 
     * mask_immersed_model_fields!(model, grid)
     * tupled_fill_halo_regions!(prognostic_fields(model), grid, model.clock, fields(model))
-    * compute_auxiliaries!(model)
-    * fill_halo_regions!(model.diffusivity_fields; only_local_halos=true)
+    * compute_closure_fields!(model.closure_fields, model.closure, model, ...)
+    * fill_halo_regions!(model.closure_fields; only_local_halos=true)
     * compute_tendencies!(model, callbacks)
     * ab2_step!(model, Δt)
     * tupled_fill_halo_regions!(prognostic_fields(model), model.grid, model.clock, fields(model))
-    * correct_velocities_and_cache_previous_tendencies!(model, Δt)
+    * cache_previous_tendencies!(model)
 =#
 
 function tupled_fill_halo_regions_workload!(model)
@@ -95,7 +95,7 @@ function compute_interior_tracer_tendencies_workload!(model)
                      model.velocities,
                      model.free_surface,
                      model.tracers,
-                     model.diffusivity_fields,
+                     model.closure_fields,
                      model.auxiliary_fields,
                      model.clock,
                      c_forcing)
@@ -111,18 +111,18 @@ function compute_interior_tracer_tendencies_workload!(model)
 end
 
 function compute_auxiliaries_workload!(model)
-    compute_auxiliaries!(model)
+    compute_closure_fields!(model.closure_fields, model.closure, model, model.buoyancy, model.tracers)
 end
 
 function fill_halo_regions_workload!(model)
-    fill_halo_regions!(model.diffusivity_fields; only_local_halos=true)
+    fill_halo_regions!(model.closure_fields; only_local_halos=true)
 end
 
 function ab2_step_workload!(model, Δt)
     ab2_step!(model, Δt)
 end
 
-function correct_velocities_and_cache_previous_tendencies_workload!(model, Δt)
-    correct_velocities_and_cache_previous_tendencies!(model, Δt)
+function cache_previous_tendencies_workload!(model)
+    cache_previous_tendencies!(model)
 end
 
