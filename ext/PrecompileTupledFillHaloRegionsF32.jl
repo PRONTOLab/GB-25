@@ -11,23 +11,22 @@ using Oceananigans: fields, prognostic_fields
 using Oceananigans.BoundaryConditions:
     fill_halo_regions!
 
-using Oceananigans.Fields:
-    tupled_fill_halo_regions!
-
 using Oceananigans.Models.HydrostaticFreeSurfaceModels:
     mask_immersed_model_fields!,
     compute_closure_fields!,
-    compute_tendencies!
+    compute_momentum_tendencies!,
+    compute_tracer_tendencies!
 
 # For reference
 
-    * mask_immersed_model_fields!(model, grid)
-    * tupled_fill_halo_regions!(prognostic_fields(model), grid, model.clock, fields(model))
+    * mask_immersed_model_fields!(model)
+    * fill_halo_regions!((u, v), model.clock, fields(model))
+    * fill_halo_regions!(tracers, model.clock, fields(model))
     * compute_closure_fields!(model.closure_fields, model.closure, model, ...)
     * fill_halo_regions!(model.closure_fields; only_local_halos=true)
-    * compute_tendencies!(model, callbacks)
+    * compute_momentum_tendencies!(model, callbacks)
     * ab2_step!(model, Δt)
-    * tupled_fill_halo_regions!(prognostic_fields(model), model.grid, model.clock, fields(model))
+    * fill_halo_regions!(prognostic_fields(model), model.clock, fields(model))
     * cache_previous_tendencies!(model)
 =#
 
@@ -39,7 +38,7 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels:
 
     @compile_workload begin
         model = GordonBell25.baroclinic_instability_model(arch; resolution=4, Δt=60, Nz=4, grid_type=:simple_lat_lon)
-        compiled! = @compile GordonBell25.tupled_fill_halo_regions_workload!(model)
+        compiled! = @compile GordonBell25.fill_halo_regions_prognostic_workload!(model)
     end
 
     # Reset float type
