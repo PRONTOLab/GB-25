@@ -43,6 +43,7 @@ model_kw = (
 )
 
 H = 8
+Rx = Ry = 1
 Tx = parsed_args["grid-x"] * Rx
 Ty = parsed_args["grid-y"] * Ry
 Nz = parsed_args["grid-z"]
