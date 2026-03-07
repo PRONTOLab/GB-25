@@ -1,6 +1,8 @@
 using Reactant
 using Oceananigans
 import Oceananigans.TimeSteppers: time_step!, update_state!
+using Oceananigans.Models: AbstractModel
+using Oceananigans.TimeSteppers: QuasiAdamsBashforth2TimeStepper
 using Reactant_jll: libReactantExtra
 
 const TRY_COMPILE_FAILED = Ref(false)
@@ -18,7 +20,7 @@ function try_compile_code(f)
     end
 end
 
-function first_time_step!(model)
+function first_time_step!(model::AbstractModel{<:QuasiAdamsBashforth2TimeStepper})
     Reactant.Profiler.annotate("first_time_step") do
         Oceananigans.initialize!(model)
         Oceananigans.TimeSteppers.update_state!(model)
@@ -27,6 +29,17 @@ function first_time_step!(model)
     end
     return nothing
 end
+
+function first_time_step!(model)
+    Reactant.Profiler.annotate("first_time_step") do
+        Oceananigans.initialize!(model)
+        Oceananigans.TimeSteppers.update_state!(model)
+        Δt = model.clock.last_Δt + 0
+        Oceananigans.TimeSteppers.time_step!(model, Δt)
+    end
+    return nothing
+end
+
 
 function time_step!(model)
     Reactant.Profiler.annotate("time_step") do
