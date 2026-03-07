@@ -1,5 +1,35 @@
+using ArgParse
+
+const args_settings = ArgParseSettings()
+@add_arg_table! args_settings begin
+    "--grid-x"
+        help = "Base factor for number of grid points on the x axis."
+        default = 128
+        arg_type = Int
+    "--grid-y"
+        help = "Base factor for number of grid points on the y axis."
+        default = 128
+        arg_type = Int
+    "--grid-z"
+        help = "Base factor for number of grid points on the z axis."
+        default = 16
+        arg_type = Int
+    "--precision"
+        help = "Number of bits of precision"
+        default = 64
+        arg_type = Int
+end
+const parsed_args = parse_args(ARGS, args_settings)
+
 using GordonBell25
 using Oceananigans
+if parsed_args["precision"] == 64
+    Oceananigans.defaults.FloatType = Float64
+elseif parsed_args["precision"] == 64
+    Oceananigans.defaults.FloatType = Float32
+else
+    throw(AssertionError("Unknown precision $(parsed_args["precision"])"))
+end
 using Reactant
 
 throw_error = true
@@ -12,7 +42,15 @@ model_kw = (
     Δt = 1e-9,
 )
 
-Nx, Ny, Nz = 112, 112, 16
+H = 8
+Rx = Ry = 1
+Tx = parsed_args["grid-x"] * Rx
+Ty = parsed_args["grid-y"] * Ry
+Nz = parsed_args["grid-z"]
+
+Nx = Tx - 2H
+Ny = Ty - 2H
+
 rarch = Oceananigans.Architectures.ReactantState()
 varch = CPU()
 rmodel = GordonBell25.baroclinic_instability_model(rarch, Nx, Ny, Nz; model_kw...)
@@ -38,14 +76,15 @@ Oceananigans.TimeSteppers.update_state!(vmodel)
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
 GordonBell25.sync_states!(rmodel, vmodel)
-rfirst! = @compile sync=true raise=true GordonBell25.first_time_step!(rmodel)
+compile_options = CompileOptions(; sync=true, raise=true, strip_llvm_debuginfo=true, strip=:all)
+rfirst! = @compile compile_options =compile_options GordonBell25.first_time_step!(rmodel)
 @showtime rfirst!(rmodel)
 @showtime GordonBell25.first_time_step!(vmodel)
 
 @info "After first time step:"
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
-rstep! = @compile sync=true raise=true GordonBell25.time_step!(rmodel)
+rstep! = @compile compile_options =compile_options GordonBell25.time_step!(rmodel)
 
 @info "Warm up:"
 @showtime rstep!(rmodel)
