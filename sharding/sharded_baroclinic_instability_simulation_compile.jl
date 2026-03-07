@@ -30,7 +30,7 @@ using Oceananigans.Architectures: ReactantState
 PROFILE[] = true
 if parsed_args["precision"] == 64
     Oceananigans.defaults.FloatType = Float64
-elseif parsed_args["precision"] == 64
+elseif parsed_args["precision"] == 32
     Oceananigans.defaults.FloatType = Float32
 else
     throw(AssertionError("Unknown precision $(parsed_args["precision"])"))
