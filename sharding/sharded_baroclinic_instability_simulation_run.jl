@@ -17,6 +17,10 @@ const args_settings = ArgParseSettings()
         help = "Base factor for number of grid points on the z axis."
         default = 4
         arg_type = Int
+    "--precision"
+        help = "Number of bits of precision"
+        default = 64
+        arg_type = Int
 end
 const parsed_args = parse_args(ARGS, args_settings)
 
@@ -25,6 +29,13 @@ ENV["JULIA_DEBUG"] = "Reactant_jll,Reactant"
 using GordonBell25
 using GordonBell25: first_time_step!, time_step!, loop!, factors, is_distributed_env_present
 using Oceananigans
+if parsed_args["precision"] == 64
+    Oceananigans.defaults.FloatType = Float64
+elseif parsed_args["precision"] == 64
+    Oceananigans.defaults.FloatType = Float32
+else
+    throw(AssertionError("Unknown precision $(parsed_args["precision"])"))
+end
 using Oceananigans.Units
 using Oceananigans.Architectures: ReactantState
 using Random
