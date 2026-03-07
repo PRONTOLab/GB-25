@@ -17,7 +17,8 @@ function data_free_ocean_climate_model_init(
     Nz::Int = 20, # eventually we want to increase this to between 100-600
     )
 
-    grid = gaussian_islands_tripolar_grid(arch, resolution, Nz)
+    # grid = gaussian_islands_tripolar_grid(arch, resolution, Nz)
+    grid = simple_latitude_longitude_grid(arch, resolution, Nz)
 
     # See visualize_ocean_climate_simulation.jl for information about how to
     # visualize the results of this run.
@@ -62,9 +63,9 @@ function data_free_ocean_climate_model_init(
 
     # Coupled model
     solver_stop_criteria = FixedIterations(5) # note: more iterations = more accurate
-    atmosphere_ocean_flux_formulation = SimilarityTheoryFluxes(; solver_stop_criteria)
-    interfaces = ComponentInterfaces(atmosphere, ocean; radiation, atmosphere_ocean_flux_formulation)
-    coupled_model = @gbprofile "OceanSeaIceModel" OceanSeaIceModel(ocean; atmosphere, radiation, interfaces)
+    atmosphere_ocean_fluxes = SimilarityTheoryFluxes(; solver_stop_criteria)
+    interfaces = ComponentInterfaces(atmosphere, ocean; radiation, atmosphere_ocean_fluxes)
+    coupled_model = @gbprofile "OceanOnlyModel" OceanOnlyModel(ocean; atmosphere, radiation, interfaces)
 
     return coupled_model
 end # data_free_ocean_climate_model_init

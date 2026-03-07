@@ -25,8 +25,8 @@ else
 end
 
 H = 8
-Tx = 32 * 48 * Rx
-Ty = 32 * 24 * Ry
+Tx = 64 * Rx
+Ty = 64 * Ry
 Nz = 4
 
 Nx = Tx - 2H
