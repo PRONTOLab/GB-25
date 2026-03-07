@@ -23,13 +23,14 @@ const parsed_args = parse_args(ARGS, args_settings)
 
 using GordonBell25
 using Oceananigans
-if parsed_args["precision"] == 64
-    Oceananigans.defaults.FloatType = Float64
+default_float_type = if parsed_args["precision"] == 64
+    Float64
 elseif parsed_args["precision"] == 32
-    Oceananigans.defaults.FloatType = Float32
+    Float32
 else
     throw(AssertionError("Unknown precision $(parsed_args["precision"])"))
 end
+Oceananigans.defaults.FloatType = default_float_type
 using Reactant
 
 if !GordonBell25.is_distributed_env_present()
@@ -39,7 +40,7 @@ end
 
 throw_error = true
 include_halos = true
-rtol = sqrt(eps(Float64))
+rtol = sqrt(eps(default_float_type))
 atol = 0
 
 GordonBell25.initialize(; single_gpu_per_process=false)
