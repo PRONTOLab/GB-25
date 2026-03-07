@@ -1,3 +1,26 @@
+using ArgParse
+
+const args_settings = ArgParseSettings()
+@add_arg_table! args_settings begin
+    "--grid-x"
+        help = "Base factor for number of grid points on the x axis."
+        default = 1536
+        arg_type = Int
+    "--grid-y"
+        help = "Base factor for number of grid points on the y axis."
+        default = 768
+        arg_type = Int
+    "--grid-z"
+        help = "Base factor for number of grid points on the z axis."
+        default = 4
+        arg_type = Int
+    "--precision"
+        help = "Number of bits of precision"
+        default = 64
+        arg_type = Int
+end
+const parsed_args = parse_args(ARGS, args_settings)
+
 using GordonBell25: first_time_step!, loop!, try_compile_code, preamble, TRY_COMPILE_FAILED
 using GordonBell25: baroclinic_instability_model, PROFILE, GordonBell25
 using Reactant
@@ -5,7 +28,13 @@ using Oceananigans
 using Oceananigans.Architectures: ReactantState
 
 PROFILE[] = true
-Oceananigans.defaults.FloatType = Float32
+if parsed_args["precision"] == 64
+    Oceananigans.defaults.FloatType = Float64
+elseif parsed_args["precision"] == 32
+    Oceananigans.defaults.FloatType = Float32
+else
+    throw(AssertionError("Unknown precision $(parsed_args["precision"])"))
+end
 
 preamble()
 
@@ -25,9 +54,9 @@ else
 end
 
 H = 8
-Tx = 64 * Rx
-Ty = 64 * Ry
-Nz = 4
+Tx = parsed_args["grid-x"] * Rx
+Ty = parsed_args["grid-y"] * Ry
+Nz = parsed_args["grid-z"]
 
 Nx = Tx - 2H
 Ny = Ty - 2H

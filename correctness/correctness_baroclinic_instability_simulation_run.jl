@@ -1,10 +1,41 @@
+using ArgParse
+
+const args_settings = ArgParseSettings()
+@add_arg_table! args_settings begin
+    "--grid-x"
+        help = "Base factor for number of grid points on the x axis."
+        default = 128
+        arg_type = Int
+    "--grid-y"
+        help = "Base factor for number of grid points on the y axis."
+        default = 128
+        arg_type = Int
+    "--grid-z"
+        help = "Base factor for number of grid points on the z axis."
+        default = 16
+        arg_type = Int
+    "--precision"
+        help = "Number of bits of precision"
+        default = 64
+        arg_type = Int
+end
+const parsed_args = parse_args(ARGS, args_settings)
+
 using GordonBell25
 using Oceananigans
+default_float_type = if parsed_args["precision"] == 64
+    Float64
+elseif parsed_args["precision"] == 32
+    Float32
+else
+    throw(AssertionError("Unknown precision $(parsed_args["precision"])"))
+end
+Oceananigans.defaults.FloatType = default_float_type
 using Reactant
 
 throw_error = true
 include_halos = true
-rtol = sqrt(eps(Float64))
+rtol = sqrt(eps(default_float_type))
 atol = 0
 
 model_kw = (
@@ -12,7 +43,15 @@ model_kw = (
     Δt = 1e-9,
 )
 
-Nx, Ny, Nz = 112, 112, 16
+H = 8
+Rx = Ry = 1
+Tx = parsed_args["grid-x"] * Rx
+Ty = parsed_args["grid-y"] * Ry
+Nz = parsed_args["grid-z"]
+
+Nx = Tx - 2H
+Ny = Ty - 2H
+
 rarch = Oceananigans.Architectures.ReactantState()
 varch = CPU()
 rmodel = GordonBell25.baroclinic_instability_model(rarch, Nx, Ny, Nz; model_kw...)

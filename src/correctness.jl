@@ -25,7 +25,7 @@ function compare_interior(name, ψ1, ψ2; rtol=1e-8, atol=sqrt(eps(eltype(ψ1)))
     return approx_equal
 end
 
-function compare_states(m1, m2; rtol=1e-8, atol=sqrt(eps(eltype(m1.grid))),
+function compare_states(m1, m2; rtol=sqrt(eps(eltype(m1.grid))), atol=0,
                         include_halos=false, throw_error=false)
 
     approx_equal = true
