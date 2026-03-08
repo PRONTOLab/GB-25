@@ -1,5 +1,36 @@
+using ArgParse
+
+const args_settings = ArgParseSettings()
+@add_arg_table! args_settings begin
+    "--grid-x"
+        help = "Base factor for number of grid points on the x axis."
+        default = 64
+        arg_type = Int
+    "--grid-y"
+        help = "Base factor for number of grid points on the y axis."
+        default = 64
+        arg_type = Int
+    "--grid-z"
+        help = "Base factor for number of grid points on the z axis."
+        default = 16
+        arg_type = Int
+    "--precision"
+        help = "Number of bits of precision"
+        default = 64
+        arg_type = Int
+end
+const parsed_args = parse_args(ARGS, args_settings)
+
 using GordonBell25
 using Oceananigans
+default_float_type = if parsed_args["precision"] == 64
+    Float64
+elseif parsed_args["precision"] == 32
+    Float32
+else
+    throw(AssertionError("Unknown precision $(parsed_args["precision"])"))
+end
+Oceananigans.defaults.FloatType = default_float_type
 using Reactant
 
 if !GordonBell25.is_distributed_env_present()
@@ -9,7 +40,7 @@ end
 
 throw_error = true
 include_halos = true
-rtol = sqrt(eps(Float64))
+rtol = sqrt(eps(default_float_type))
 atol = 0
 
 GordonBell25.initialize(; single_gpu_per_process=false)
@@ -25,9 +56,9 @@ rarch = Oceananigans.Distributed(
 rank = Reactant.Distributed.local_rank()
 
 H = 8
-Tx = 64 * Rx
-Ty = 64 * Ry
-Nz = 16
+Tx = parsed_args["grid-x"] * Rx
+Ty = parsed_args["grid-y"] * Ry
+Nz = parsed_args["grid-z"]
 
 Nx = Tx - 2H
 Ny = Ty - 2H
