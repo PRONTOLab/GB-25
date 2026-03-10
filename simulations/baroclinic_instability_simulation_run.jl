@@ -5,11 +5,11 @@ using Oceananigans.Architectures: ReactantState
 using Reactant
 
 # Reactant.Compiler.SROA_ATTRIBUTOR[] = false
-Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
+# Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
 
 preamble()
 
-Ninner = ConcreteRNumber(3)
+Ninner = 3 #ConcreteRNumber(3)
 Oceananigans.defaults.FloatType = Float32
 
 @info "Generating model..."
@@ -23,12 +23,6 @@ GC.gc(true); GC.gc(false); GC.gc(true)
 rfirst! = @compile raise=true sync=true first_time_step!(model)
 rstep! = @compile raise=true sync=true time_step!(model)
 rloop! = @compile raise=true sync=true loop!(model, Ninner)
-
-ir = @code_hlo loop!(model, Ninner)
-
-open("loop.mlir", "w") do io
-    show(IOContext(io, :debug => true), ir)
-end
 
 @info "Running..."
 Reactant.with_profiler("./") do
