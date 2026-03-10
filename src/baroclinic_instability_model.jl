@@ -32,6 +32,9 @@ function baroclinic_instability_model(arch, Nx, Ny, Nz; Δt,
     # Coriolis forces for a rotating Earth
     coriolis = HydrostaticSphericalCoriolis(),
 
+    # Use the simplest timestepper
+    timestepper = :QuasiAdamsBashforth2,
+
     # Simple momentum advection schemes. May need to be reconsidered
     # due to Float32.
     momentum_advection = WENOVectorInvariant(order=5),
@@ -55,7 +58,7 @@ function baroclinic_instability_model(arch, Nx, Ny, Nz; Δt,
     end
 
     model = HydrostaticFreeSurfaceModel(grid;
-        free_surface, closure, buoyancy, tracers,
+        free_surface, closure, buoyancy, tracers, timestepper,
         coriolis, momentum_advection, tracer_advection,
     )
 
