@@ -8,7 +8,6 @@
     return N² * z + Δb * μ + 1e-2 * Δb * randn()
 end
 
-
 function baroclinic_instability_model(arch; resolution, Nz, kw...)
     Nx, Ny = resolution_to_points(resolution)
     return baroclinic_instability_model(arch, Nx, Ny, Nz; kw...)
