@@ -30,11 +30,11 @@ function data_free_ocean_climate_model_init(
     # Set up an atmosphere
     atmos_times = range(0, 1days, length=24)
 
-    atmos_grid = LatitudeLongitudeGrid(arch,
+    topology = (Oceananigans.Grids.Periodic, Oceananigans.Grids.Bounded, Oceananigans.Grids.Flat)
+    atmos_grid = LatitudeLongitudeGrid(arch; topology,
                                        size = (360, 180),
                                        longitude = (0, 360),
-                                       latitude = (-90, 90),
-                                       topology = (Periodic, Bounded, Flat))
+                                       latitude = (-90, 90))
 
     atmosphere = PrescribedAtmosphere(atmos_grid, atmos_times)
 
