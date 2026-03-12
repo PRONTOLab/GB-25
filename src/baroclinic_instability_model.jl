@@ -72,8 +72,7 @@ function baroclinic_instability_model(arch, Nx, Ny, Nz; Δt,
     end
     =#
 
-    sharding = model.clock.last_Δt.sharding
-    model.clock.last_Δt = ConcreteRNumber(Δt; sharding)
+    model.clock.last_Δt = Δt
 
     return model
 end
