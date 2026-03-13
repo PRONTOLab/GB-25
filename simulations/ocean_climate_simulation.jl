@@ -107,7 +107,7 @@ function progress(sim)
                    prettytime(sim), iteration(sim), prettytime(sim.Δt),
                    umax..., Tmax, Tmin, prettytime(step_time))
 
-    NumericalEarth.@root @info(msg)
+    Oceananigans.DistributedComputations.@root @info(msg)
 
     wall_time[] = time_ns()
 
