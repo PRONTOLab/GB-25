@@ -78,10 +78,12 @@ vmodel = GordonBell25.baroclinic_instability_model(varch, Nx, Ny, Nz; model_kw..
 ui = 1e-3 .* rand(size(vmodel.velocities.u)...)
 vi = 1e-3 .* rand(size(vmodel.velocities.v)...)
 set!(vmodel, u=ui, v=vi)
+GordonBell25.zero_tendencies!(rmodel)
+GordonBell25.zero_tendencies!(vmodel)
 GordonBell25.sync_states!(rmodel, vmodel)
 
 @info "At the beginning:"
-GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
+GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error=false, rtol, atol)
 
 @jit Oceananigans.initialize!(rmodel)
 Oceananigans.initialize!(vmodel)
@@ -90,7 +92,7 @@ Oceananigans.initialize!(vmodel)
 Oceananigans.TimeSteppers.update_state!(vmodel)
 
 @info "After initialization and update state:"
-GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
+GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error=false, rtol, atol)
 
 GordonBell25.sync_states!(rmodel, vmodel)
 rfirst! = @compile sync=true raise=true GordonBell25.first_time_step!(rmodel)

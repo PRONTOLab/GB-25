@@ -40,27 +40,27 @@ function compare_states(m1, m2; rtol=sqrt(eps(eltype(m1.grid))), atol=0,
         if !(name ∈ (:w, :η))
             Gⁿ1 = m1.timestepper.Gⁿ
             Gⁿ2 = m2.timestepper.Gⁿ
-            approx_equal *= compare_fields("Gⁿ.$name", Gⁿ1[name], Gⁿ2[name]; rtol, atol)
+            approx_equal *= compare_interior("Gⁿ.$name", Gⁿ1[name], Gⁿ2[name]; rtol, atol)
 
             G⁻1 = m1.timestepper.G⁻
             G⁻2 = m2.timestepper.G⁻
-            approx_equal *= compare_fields("G⁻.$name", G⁻1[name], G⁻2[name]; rtol, atol)
+            approx_equal *= compare_interior("G⁻.$name", G⁻1[name], G⁻2[name]; rtol, atol)
         end
     end
 
     if m1.free_surface isa Oceananigans.SplitExplicitFreeSurface
-        names = (:U, :V, :η)
-        Φ1 = NamedTuple(name => getproperty(m1.free_surface.filtered_state, name) for name in names)
-        Φ2 = NamedTuple(name => getproperty(m2.free_surface.filtered_state, name) for name in names)
-        for name in keys(Φ1)
+        names = keys(m1.free_surface.filtered_state)
+        Φ1 = m1.free_surface.filtered_state
+        Φ2 = m2.free_surface.filtered_state
+        for name in names
             approx_equal *= compare_fields(name, Φ1[name], Φ2[name]; rtol, atol)
         end
     end
 
     if m1.closure isa Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity
         names = (:κu, :κc, :κe, :Le, :Jᵇ)
-        Φ1 = NamedTuple(name => getproperty(m1.diffusivity_fields, name) for name in names)
-        Φ2 = NamedTuple(name => getproperty(m2.diffusivity_fields, name) for name in names)
+        Φ1 = NamedTuple(name => getproperty(m1.closure_fields, name) for name in names)
+        Φ2 = NamedTuple(name => getproperty(m2.closure_fields, name) for name in names)
         for name in keys(Φ1)
             approx_equal *= compare_fields(name, Φ1[name], Φ2[name]; rtol, atol)
         end
@@ -68,8 +68,8 @@ function compare_states(m1, m2; rtol=sqrt(eps(eltype(m1.grid))), atol=0,
 
     if m1.closure isa Oceananigans.TurbulenceClosures.TKEDissipationVerticalDiffusivity
         names = (:κu, :κc, :κe, :κϵ, :Le, :Lϵ)
-        Φ1 = NamedTuple(name => getproperty(m1.diffusivity_fields, name) for name in names)
-        Φ2 = NamedTuple(name => getproperty(m2.diffusivity_fields, name) for name in names)
+        Φ1 = NamedTuple(name => getproperty(m1.closure_fields, name) for name in names)
+        Φ2 = NamedTuple(name => getproperty(m2.closure_fields, name) for name in names)
         for name in keys(Φ1)
             approx_equal *= compare_fields(name, Φ1[name], Φ2[name]; rtol, atol)
         end

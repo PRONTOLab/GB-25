@@ -7,11 +7,11 @@ const args_settings = ArgParseSettings()
 @add_arg_table! args_settings begin
     "--grid-x"
         help = "Base factor for number of grid points on the x axis."
-        default = 1536
+        default = 64
         arg_type = Int
     "--grid-y"
         help = "Base factor for number of grid points on the y axis."
-        default = 768
+        default = 64
         arg_type = Int
     "--grid-z"
         help = "Base factor for number of grid points on the z axis."
@@ -66,10 +66,9 @@ Reactant.Compiler.WHILE_CONCAT[] = true
 
 GordonBell25.initialize(; single_gpu_per_process=false)
 
-# devarch = Oceananigans.GPU()
-devarch = Oceananigans.ReactantState()
-
-arch = devarch
+# local_arch = Oceananigans.GPU()
+local_arch = Oceananigans.ReactantState()
+arch = local_arch
 
 Ndev = if arch isa Oceananigans.ReactantState
    length(Reactant.devices())
@@ -81,15 +80,13 @@ end
 @show Ndev
 
 Rx, Ry = factors(Ndev)
+
 if Ndev == 1
     rank = 0
 else
-    arch = Oceananigans.Distributed(
-	arch;
-        partition = Partition(Rx, Ry, 1)
-    )
-    rank = if devarch isa Oceananigans.ReactantState
-	Reactant.Distributed.local_rank()
+    arch = Oceananigans.Distributed(arch; partition = Partition(Rx, Ry, 1))
+    rank = if local_arch isa Oceananigans.ReactantState
+	    Reactant.Distributed.local_rank()
     else
        comm = MPI.COMM_WORLD
        MPI.Comm_rank(comm)
@@ -113,17 +110,18 @@ model = GordonBell25.baroclinic_instability_model(arch, Nx, Ny, Nz; halo=(H, H, 
 
 Ninner = 256
 
-if devarch isa Oceananigans.ReactantState
-   Ninner = if Ndev == 1
-	 ConcreteRNumber(Ninner)
-   else
-   	ConcreteRNumber(Ninner; sharding=Sharding.NamedSharding(arch.connectivity, ()))
-   end
+if local_arch isa Oceananigans.ReactantState
+    Ninner = if Ndev == 1
+        ConcreteRNumber(Ninner)
+    else
+        sharding = Sharding.NamedSharding(arch.connectivity, ())
+   	    ConcreteRNumber(Ninner; sharding)
+    end
 end
 
 @info "[$rank] Compiling first_time_step!..." now(UTC)
 compile_options = CompileOptions(; sync=true, raise=true, strip_llvm_debuginfo=true, strip=["enzymexla.kernel_call", "(::Reactant.Compiler.LLVMFunc", "ka_with_reactant", "(::KernelAbstractions.Kernel", "var\"#_launch!;_launch!"])
-rfirst! = if devarch isa Oceananigans.ReactantState
+rfirst! = if local_arch isa Oceananigans.ReactantState
      @compile compile_options=compile_options first_time_step!(model)
 else
      first_time_step!     
@@ -132,7 +130,7 @@ end
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 @info "[$rank] Compiling loop..." now(UTC)
 
-compiled_loop! = if devarch isa Oceananigans.ReactantState
+compiled_loop! = if local_arch isa Oceananigans.ReactantState
      @compile compile_options=compile_options loop!(model, Ninner)
 else
      loop!

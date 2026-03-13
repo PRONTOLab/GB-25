@@ -8,8 +8,8 @@ using Reactant
 # Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
 
 preamble()
-
-Ninner = ConcreteRNumber(3)
+Reactant.Compiler.DUMP_FAILED_LOCKSTEP[] = true
+Ninner = 3 #ConcreteRNumber(3)
 Oceananigans.defaults.FloatType = Float32
 
 @info "Generating model..."
