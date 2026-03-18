@@ -26,6 +26,7 @@ const parsed_args = parse_args(ARGS, args_settings)
 
 ENV["JULIA_DEBUG"] = "Reactant_jll,Reactant"
 
+using BFloat16s
 using GordonBell25
 using GordonBell25: first_time_step!, time_step!, loop!, factors, is_distributed_env_present
 using Oceananigans
