@@ -34,9 +34,9 @@ Oceananigans.defaults.FloatType = if parsed_args["float-type"] ∈ ("Float64", "
     Float64
 elseif parsed_args["float-type"] ∈ ("Float32", "f32")
     Float32
-elseif parse_args["float-type"] ∈ ("Float16", "f16")
+elseif parsed_args["float-type"] ∈ ("Float16", "f16")
     Float16
-elseif parse_args["float-type"] ∈ ("BFloat16", "bf16")
+elseif parsed_args["float-type"] ∈ ("BFloat16", "bf16")
     Core.BFloat16
 else
     throw(AssertionError("Unknown float type $(parsed_args["float-type"])"))
