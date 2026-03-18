@@ -17,24 +17,30 @@ const args_settings = ArgParseSettings()
         help = "Base factor for number of grid points on the z axis."
         default = 4
         arg_type = Int
-    "--precision"
-        help = "Number of bits of precision"
-        default = 64
-        arg_type = Int
+    "--float-type"
+        help = "The default Oceananigans float type"
+        default = "Float64"
+        arg_type = String
 end
 const parsed_args = parse_args(ARGS, args_settings)
 
 ENV["JULIA_DEBUG"] = "Reactant_jll,Reactant"
 
+using BFloat16s
 using GordonBell25
 using GordonBell25: first_time_step!, time_step!, loop!, factors, is_distributed_env_present
 using Oceananigans
-if parsed_args["precision"] == 64
-    Oceananigans.defaults.FloatType = Float64
-elseif parsed_args["precision"] == 32
-    Oceananigans.defaults.FloatType = Float32
+
+Oceananigans.defaults.FloatType = if parsed_args["float-type"] ∈ ("Float64", "f64")
+    Float64
+elseif parsed_args["float-type"] ∈ ("Float32", "f32")
+    Float32
+elseif parsed_args["float-type"] ∈ ("Float16", "f16")
+    Float16
+elseif parsed_args["float-type"] ∈ ("BFloat16", "bf16")
+    Core.BFloat16
 else
-    throw(AssertionError("Unknown precision $(parsed_args["precision"])"))
+    throw(AssertionError("Unknown float type $(parsed_args["float-type"])"))
 end
 using Oceananigans.Units
 using Oceananigans.Architectures: ReactantState
