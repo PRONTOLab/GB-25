@@ -29,14 +29,15 @@ ENV["JULIA_DEBUG"] = "Reactant_jll,Reactant"
 using GordonBell25
 using GordonBell25: first_time_step!, time_step!, loop!, factors, is_distributed_env_present
 using Oceananigans
-if parsed_args["float-type"] ∈ ("Float64", "f64")
-    Oceananigans.defaults.FloatType = Float64
+
+Oceananigans.defaults.FloatType = if parsed_args["float-type"] ∈ ("Float64", "f64")
+    Float64
 elseif parsed_args["float-type"] ∈ ("Float32", "f32")
-    Oceananigans.defaults.FloatType = Float32
+    Float32
 elseif parse_args["float-type"] ∈ ("Float16", "f16")
-    Oceananigans.defaults.FloatType = Float16
+    Float16
 elseif parse_args["float-type"] ∈ ("BFloat16", "bf16")
-    Oceananigans.defaults.FloatType = Core.BFloat16
+    Core.BFloat16
 else
     throw(AssertionError("Unknown float type $(parsed_args["float-type"])"))
 end
