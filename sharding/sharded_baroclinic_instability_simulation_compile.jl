@@ -33,6 +33,8 @@ if parsed_args["precision"] == 64
     Oceananigans.defaults.FloatType = Float64
 elseif parsed_args["precision"] == 32
     Oceananigans.defaults.FloatType = Float32
+elseif parse_args["precision"] == 16
+    Oceananigans.defaults.FloatType = Core.BFloat16
 else
     throw(AssertionError("Unknown precision $(parsed_args["precision"])"))
 end
