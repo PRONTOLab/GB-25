@@ -10,7 +10,7 @@ using Reactant
 
 preamble()
 Reactant.Compiler.DUMP_FAILED_LOCKSTEP[] = true
-Ninner = 3 #ConcreteRNumber(3)
+Ninner = 2 #ConcreteRNumber(3)
 Oceananigans.defaults.FloatType = Float32
 
 @info "Generating model..."
