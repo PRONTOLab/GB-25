@@ -40,6 +40,7 @@ using Oceananigans.Units
 using Oceananigans.Architectures: ReactantState
 using Random
 using Printf
+using CUDA
 using Reactant
 
 if !is_distributed_env_present()
