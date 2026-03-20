@@ -51,7 +51,7 @@ function simple_latitude_longitude_grid(arch, resolution, Nz)
 end
 
 function simple_latitude_longitude_grid(arch, Nx, Ny, Nz; halo=(8, 8, 8))
-    z = ExponentialDiscretization(Nz, -4000, 0; scale=30) # may need changing for very large Nz
+    z = ExponentialDiscretization(Nz, -4000, 0; scale=1000)
 
     grid = LatitudeLongitudeGrid(arch; size=(Nx, Ny, Nz), halo, z,
         latitude = (-80, 80),
@@ -130,7 +130,7 @@ end
 
 function gaussian_islands_tripolar_grid(arch::Architectures.AbstractArchitecture, Nx, Ny, Nz; halo=(8, 8, 8))
     # Grid setup
-    z = ExponentialDiscretization(Nz, -4000, 0; scale=30) # may need changing for very large Nz
+    z = ExponentialDiscretization(Nz, -4000, 0; scale=1000)
     underlying_grid = TripolarGrid(arch; size=(Nx, Ny, Nz), halo, z)
 
     zb = z[1]

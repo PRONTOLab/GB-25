@@ -96,6 +96,8 @@ Oceananigans.TimeSteppers.update_state!(vmodel)
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error=false, rtol, atol)
 
 GordonBell25.sync_states!(rmodel, vmodel)
+GordonBell25.zero_tendencies!(rmodel)
+GordonBell25.zero_tendencies!(vmodel)
 rfirst! = @compile sync=true raise=true GordonBell25.first_time_step!(rmodel)
 @showtime rfirst!(rmodel)
 @showtime GordonBell25.first_time_step!(vmodel)
