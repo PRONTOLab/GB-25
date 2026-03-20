@@ -89,6 +89,14 @@ function compare_states(m1, m2; rtol=sqrt(eps(eltype(m1.grid))), atol=0,
     return nothing
 end
 
+function zero_tendencies!(model)
+    for name in keys(model.timestepper.Gⁿ)
+        parent(model.timestepper.Gⁿ[name]) .= 0
+        parent(model.timestepper.G⁻[name]) .= 0
+    end
+    return nothing
+end
+
 function sync_states!(m1, m2)
     Ψ1 = Oceananigans.fields(m1)
     Ψ2 = Oceananigans.fields(m2)
