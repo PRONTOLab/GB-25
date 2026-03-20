@@ -23,6 +23,7 @@ const parsed_args = parse_args(ARGS, args_settings)
 
 using GordonBell25: first_time_step!, loop!, try_compile_code, preamble, TRY_COMPILE_FAILED
 using GordonBell25: baroclinic_instability_model, PROFILE, GordonBell25
+using CUDA
 using Reactant
 using Oceananigans
 using Oceananigans.Architectures: ReactantState

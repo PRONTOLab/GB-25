@@ -31,6 +31,7 @@ else
     throw(AssertionError("Unknown precision $(parsed_args["precision"])"))
 end
 Oceananigans.defaults.FloatType = default_float_type
+using CUDA
 using Reactant
 
 throw_error = true

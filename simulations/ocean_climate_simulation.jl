@@ -1,6 +1,7 @@
 using Oceananigans
 using Oceananigans.Units
 using Oceananigans.Architectures
+using CUDA
 using Reactant
 
 using NumericalEarth
