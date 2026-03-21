@@ -46,7 +46,7 @@ rev = "glw/manual-iterate"
 
 [sources.Oceananigans]
 url = "https://github.com/CliMA/Oceananigans.jl.git"
-rev = "51ccb470bf5304ab0e02b45e9e9fccbd022aedae"
+rev = "glw/sharding-fixes-1"
 
 [preferences.Reactant]
 xla_runtime = "IFRT"
