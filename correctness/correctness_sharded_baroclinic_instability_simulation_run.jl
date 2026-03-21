@@ -84,7 +84,7 @@ GordonBell25.zero_tendencies!(vmodel)
 GordonBell25.sync_states!(rmodel, vmodel)
 
 @info "At the beginning:"
-GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error=false, rtol, atol)
+GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
 @jit Oceananigans.initialize!(rmodel)
 Oceananigans.initialize!(vmodel)
@@ -93,7 +93,7 @@ Oceananigans.initialize!(vmodel)
 Oceananigans.TimeSteppers.update_state!(vmodel)
 
 @info "After initialization and update state:"
-GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error=false, rtol, atol)
+GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
 GordonBell25.sync_states!(rmodel, vmodel)
 GordonBell25.zero_tendencies!(rmodel)
