@@ -31,6 +31,7 @@ else
     throw(AssertionError("Unknown precision $(parsed_args["precision"])"))
 end
 Oceananigans.defaults.FloatType = default_float_type
+using CUDA
 using Reactant
 
 if !GordonBell25.is_distributed_env_present()
@@ -78,6 +79,8 @@ vmodel = GordonBell25.baroclinic_instability_model(varch, Nx, Ny, Nz; model_kw..
 ui = 1e-3 .* rand(size(vmodel.velocities.u)...)
 vi = 1e-3 .* rand(size(vmodel.velocities.v)...)
 set!(vmodel, u=ui, v=vi)
+GordonBell25.zero_tendencies!(rmodel)
+GordonBell25.zero_tendencies!(vmodel)
 GordonBell25.sync_states!(rmodel, vmodel)
 
 @info "At the beginning:"
@@ -93,6 +96,8 @@ Oceananigans.TimeSteppers.update_state!(vmodel)
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
 GordonBell25.sync_states!(rmodel, vmodel)
+GordonBell25.zero_tendencies!(rmodel)
+GordonBell25.zero_tendencies!(vmodel)
 rfirst! = @compile sync=true raise=true GordonBell25.first_time_step!(rmodel)
 @showtime rfirst!(rmodel)
 @showtime GordonBell25.first_time_step!(vmodel)
