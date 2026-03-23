@@ -27,6 +27,7 @@ using CUDA
 using Reactant
 using Oceananigans
 using Oceananigans.Architectures: ReactantState
+Reactant.Compiler.WHILE_CONCAT[] = true
 
 PROFILE[] = true
 if parsed_args["precision"] == 64

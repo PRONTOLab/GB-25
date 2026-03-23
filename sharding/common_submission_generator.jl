@@ -39,16 +39,28 @@ function generate_and_submit(submit_job_writer, cfg::JobConfig; caller_file::Str
     out_path = joinpath(cfg.out_dir, "runs", "$(timestamp)_$(randstring(4))")
     project_path = dirname(@__DIR__)
 
-    if !isfile(joinpath("..", "Manifest.toml"))
+    manifest_file = let
+        dir = readdir(project_path)
+        idx = findfirst(endswith("Manifest.toml"), dir)
+        if !isnothing(idx)
+            "Manifest.toml"
+        else
+            idx = findfirst(endswith("Manifest-v$(VERSION.major).$(VERSION.minor).toml"), dir)
+            if !isnothing(idx)
+                "Manifest-v$(VERSION.major).$(VERSION.minor).toml"
+            end
+        end
+    end
+
+    if isnothing(manifest_file)
         error("Manifest.toml missing in the top-level directory of this repository! Instantiate the environment before submitting the job")
     end
 
     mkpath(out_path)
 
     # Copy environment files and run files for future reference.
-    for filename in ("Project.toml", "Manifest.toml", "LocalPreferences.toml")
+    for filename in ("Project.toml", manifest_file, "LocalPreferences.toml")
         if filename == "LocalPreferences.toml" && !isfile(joinpath("..", filename))
-            @warn "LocalPreferences.toml missing, are you sure you selected the XLA runtime correctly?"
             continue
         end
         cp(joinpath("..", filename), joinpath(out_path, filename))
