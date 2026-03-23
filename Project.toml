@@ -31,12 +31,11 @@ HDF5_jll = "=1.14.3"
 KernelAbstractions = "0.9.34"
 MPI = "0.20.22"
 NumericalEarth = "0.2.2"
-Oceananigans = "0.106"
+Oceananigans = "0.106.1"
 PrecompileTools = "1.2.1"
 Printf = "1"
 Profile = "1"
 Reactant = "0.2.239"
-Reactant_jll = "0.0.358"
 ReactantCore = "0.1.17"
 SeawaterPolynomials = "0.3.9"
 Serialization = "1"
@@ -44,10 +43,6 @@ Serialization = "1"
 [sources.NumericalEarth]
 url = "https://github.com/NumericalEarth/NumericalEarth.jl.git"
 rev = "glw/manual-iterate"
-
-[sources.Oceananigans]
-url = "https://github.com/CliMA/Oceananigans.jl.git"
-rev = "glw/sharding-fixes-1"
 
 [preferences.Reactant]
 xla_runtime = "IFRT"
