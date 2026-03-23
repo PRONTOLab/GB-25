@@ -48,6 +48,8 @@ jobs:
   simulation:
     name: Julia ${{ inputs.julia_version }} - ${{ inputs.sim_type }} - ${{ inputs.os }} - ${{ inputs.xla_runtime }} - ${{ inputs.compile_or_run }}
     runs-on: ${{ inputs.os }}
+    env:
+      JULIA_PKG_SERVER_REGISTRY_PREFERENCE: eager
     strategy:
       fail-fast: false
     steps:
