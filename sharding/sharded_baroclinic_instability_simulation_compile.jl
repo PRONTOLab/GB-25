@@ -69,7 +69,7 @@ model = GordonBell25.baroclinic_instability_model(arch, Nx, Ny, Nz; halo=(H, H, 
 GC.gc(true); GC.gc(false); GC.gc(true)
 
 TRY_COMPILE_FAILED[] = false
-Ninner = ConcreteRNumber(2)
+Ninner = ConcreteRNumber(1)
 
 for optimize in (:before_raise, false, :before_jit), code_type in (:hlo, :xla)
     # We only want the optimised XLA code
