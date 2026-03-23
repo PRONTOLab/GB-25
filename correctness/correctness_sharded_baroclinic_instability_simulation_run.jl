@@ -1,6 +1,11 @@
 using ArgParse
+using GordonBell25
+using Oceananigans
+using CUDA
+using Reactant
 
 const args_settings = ArgParseSettings()
+
 @add_arg_table! args_settings begin
     "--grid-x"
         help = "Base factor for number of grid points on the x axis."
@@ -19,10 +24,9 @@ const args_settings = ArgParseSettings()
         default = 64
         arg_type = Int
 end
+
 const parsed_args = parse_args(ARGS, args_settings)
 
-using GordonBell25
-using Oceananigans
 default_float_type = if parsed_args["precision"] == 64
     Float64
 elseif parsed_args["precision"] == 32
@@ -30,9 +34,8 @@ elseif parsed_args["precision"] == 32
 else
     throw(AssertionError("Unknown precision $(parsed_args["precision"])"))
 end
+
 Oceananigans.defaults.FloatType = default_float_type
-using CUDA
-using Reactant
 
 if !GordonBell25.is_distributed_env_present()
     using MPI
