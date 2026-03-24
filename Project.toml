@@ -40,6 +40,10 @@ ReactantCore = "0.1.18"
 SeawaterPolynomials = "0.3.9"
 Serialization = "1"
 
+[sources.Reactant]
+url = "https://github.com/EnzymeAD/Reactant.jl.git"
+rev = "pb/fixup-pass"
+
 [sources.NumericalEarth]
 url = "https://github.com/NumericalEarth/NumericalEarth.jl.git"
 rev = "glw/manual-iterate"
