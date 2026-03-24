@@ -42,6 +42,12 @@ source /global/common/software/nersc9/julia/scripts/activate_beta.sh
 ml load julia/1.11.7
 # this nccl is too old
 # ml load nccl/2.24.3
+module load nccl/2.29.2-cu13
+
+# Need this line with ml load nccl to fix:
+# ERROR: LoadError: InitError: could not load library "/pscratch/sd/r/romanlee/.julia/artifacts/42064552046f09c23aca05732f86e216b067d439/lib/libReactantExtra.so"
+/global/common/software/nersc9/julia/1.11.7/bin/../lib/julia/libstdc++.so.6: version `CXXABI_1.3.15' not found (required by /global/common/software/nersc9/nccl/2.29.2-cu13/lib/libnccl.so.2)
+export LD_PRELOAD=/usr/lib64/libstdc++.so.6
 
 export SBATCH_ACCOUNT=$(cfg.account)
 export SALLOC_ACCOUNT=$(cfg.account)
