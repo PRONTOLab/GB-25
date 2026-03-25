@@ -1,7 +1,7 @@
 name = "GordonBell25"
 uuid = "01bae11a-8c86-47ea-956a-4644a8dd5e5e"
-authors = ["William Moses and contributors"]
 version = "0.1.0"
+authors = ["William Moses and contributors"]
 
 [deps]
 ArgParse = "c7e460c6-2fb9-53a9-8c5b-16f535851c63"
@@ -12,6 +12,7 @@ Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
 HDF5_jll = "0234f1f7-429e-5d53-9886-15a909be8d59"
 KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
 MPI = "da04e1cc-30fd-572f-bb4f-1f8673147195"
+NPZ = "15e1cf62-19b3-5cfa-8e77-841668bca605"
 Oceananigans = "9e8cae18-63c1-5223-a75c-80ca9d6e9a09"
 PrecompileTools = "aea7be01-6a6a-4083-8856-8a6e6704d82a"
 Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
@@ -30,6 +31,7 @@ Dates = "1"
 HDF5_jll = "=1.14.3"
 KernelAbstractions = "0.9.34"
 MPI = "0.20.22"
+NPZ = "0.4.3"
 Oceananigans = "=0.96.26"
 PrecompileTools = "1.2.1"
 Printf = "1"
