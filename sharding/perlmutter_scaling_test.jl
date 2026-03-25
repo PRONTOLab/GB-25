@@ -28,7 +28,7 @@ function perlmutter_submit_job_writer(cfg::JobConfig, job_name, Nnodes, job_dir,
                 """
 #!/bin/bash -l
 
-#SBATCH -C gpu
+#SBATCH -C gpu&hbm40g
 #SBATCH -q $(queue)
 #SBATCH --gpu-bind=none
 #SBATCH --job-name="$(job_name)"
