@@ -42,6 +42,9 @@ source /global/common/software/nersc9/julia/scripts/activate_beta.sh
 ml load julia/1.11.7
 # this nccl is too old
 # ml load nccl/2.24.3
+module load nccl/2.29.2-cu13
+
+export LD_PRELOAD=/usr/lib64/libstdc++.so.6
 
 export SBATCH_ACCOUNT=$(cfg.account)
 export SALLOC_ACCOUNT=$(cfg.account)
