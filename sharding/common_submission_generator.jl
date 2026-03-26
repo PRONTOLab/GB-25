@@ -2,6 +2,9 @@ using Dates, Random
 
 username = ENV["USER"]
 
+run_prefix = get(ENV, "GB25_RUN_PREFIX", "runs")
+run_postfix = get(ENV, "GB25_RUN_POSTFIX", randstring(4))
+
 @kwdef struct JobConfig
     username::String
     account::String
@@ -36,7 +39,7 @@ function generate_and_submit(submit_job_writer, cfg::JobConfig; caller_file::Str
     end
     # Some filesystems don't like colons in directory names
     timestamp = replace(string(now(UTC)), ':' => '-')
-    out_path = joinpath(cfg.out_dir, "runs", "$(timestamp)_$(randstring(4))")
+    out_path = joinpath(cfg.out_dir, run_prefix, "$(timestamp)_$(run_postfix)")
     project_path = dirname(@__DIR__)
 
     manifest_file = let
