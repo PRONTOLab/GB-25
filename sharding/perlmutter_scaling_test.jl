@@ -66,7 +66,7 @@ export FI_CXI_SAFE_DEVMEM_COPY_THRESHOLD=16777216
 # export MPICH_GPU_SUPPORT_ENABLED=0
 export NCCL_BUFFSIZE=33554432
 export JULIA_CUDA_USE_COMPAT=false
-srun -n $(Nnodes) -c 32 -G $(Ngpu) --cpu-bind=verbose,cores $(job_dir)/launcher.sh julia --project=$(project_path) --compiled-modules=strict -O0 $(run_file) 
+srun -n $(Nnodes) -c 32 -G $(Ngpu) --cpu-bind=verbose,cores $(job_dir)/launcher.sh $(Base.julia_cmd()[1]) --project=$(project_path) --compiled-modules=strict -O0 $(run_file)
 """
 end
 
