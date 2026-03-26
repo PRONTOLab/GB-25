@@ -25,9 +25,9 @@ rloop! = @compile raise=true sync=true loop!(model, Ninner)
 Reactant.with_profiler("./") do
     rfirst!(model)
 end
-Reactant.with_profiler("./") do
-    rstep!(model)
-end
+# Reactant.with_profiler("./") do
+#     rstep!(model)
+# end
 Reactant.with_profiler("./") do
     rloop!(model, Ninner)
 end
