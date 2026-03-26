@@ -133,7 +133,7 @@ jobs:
         run: |
           OK="true"
           for OP in all-to-all all-gather all-reduce; do
-              COLLECTIVES=$(find . -name 'optimised_${{ inputs.sim_type }}*.xla' -exec grep --with-filename --line-number --extended-regexp "${OP}" '{}' \;)
+              COLLECTIVES=$(find . -name 'optimised_${{ inputs.sim_type }}*.xla' -exec grep --with-filename --line-number --extended-regexp "${OP}\(" '{}' \;)
               NUM_COLLECTIVES=$(echo "${COLLECTIVES}" | wc -l | xargs)
               if [[ -n "${COLLECTIVES}" ]]; then
                   MSG="There are ${NUM_COLLECTIVES} remaining ${OP} operations"
