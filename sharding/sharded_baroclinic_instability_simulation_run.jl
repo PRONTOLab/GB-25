@@ -1,47 +1,21 @@
 using Dates
 @info "This is when the fun begins" now(UTC)
 
-using ArgParse
-
-const args_settings = ArgParseSettings()
-@add_arg_table! args_settings begin
-    "--grid-x"
-        help = "Base factor for number of grid points on the x axis."
-        default = 1536
-        arg_type = Int
-    "--grid-y"
-        help = "Base factor for number of grid points on the y axis."
-        default = 768
-        arg_type = Int
-    "--grid-z"
-        help = "Base factor for number of grid points on the z axis."
-        default = 4
-        arg_type = Int
-    "--float-type"
-        help = "The default Oceananigans float type"
-        default = "Float64"
-        arg_type = String
-end
-const parsed_args = parse_args(ARGS, args_settings)
-
 ENV["JULIA_DEBUG"] = "Reactant_jll,Reactant"
 
 using BFloat16s
 using GordonBell25
 using GordonBell25: first_time_step!, time_step!, loop!, factors, is_distributed_env_present
+
+const parsed_args = GordonBell25.parse_baroclinic_instability_args(;
+    grid_x_default = 1536,
+    grid_y_default = 768,
+    grid_z_default = 4,
+)
+
 using Oceananigans
 
-Oceananigans.defaults.FloatType = if parsed_args["float-type"] ∈ ("Float64", "f64")
-    Float64
-elseif parsed_args["float-type"] ∈ ("Float32", "f32")
-    Float32
-elseif parsed_args["float-type"] ∈ ("Float16", "f16")
-    Float16
-elseif parsed_args["float-type"] ∈ ("BFloat16", "bf16")
-    Core.BFloat16
-else
-    throw(AssertionError("Unknown float type $(parsed_args["float-type"])"))
-end
+Oceananigans.defaults.FloatType = GordonBell25.float_type_from_args(parsed_args)
 using Oceananigans.Units
 using Oceananigans.Architectures: ReactantState
 using Random
