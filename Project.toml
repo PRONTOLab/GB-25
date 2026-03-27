@@ -35,14 +35,10 @@ Oceananigans = "0.106.1"
 PrecompileTools = "1.2.1"
 Printf = "1"
 Profile = "1"
-Reactant = "0.2.240"
+Reactant = "0.2.242"
 ReactantCore = "0.1.18"
 SeawaterPolynomials = "0.3.9"
 Serialization = "1"
-
-[sources.Reactant]
-url = "https://github.com/EnzymeAD/Reactant.jl.git"
-rev = "pb/fixup-pass"
 
 [sources.NumericalEarth]
 url = "https://github.com/NumericalEarth/NumericalEarth.jl.git"
