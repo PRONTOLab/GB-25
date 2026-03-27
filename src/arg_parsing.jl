@@ -1,4 +1,4 @@
-using ArgParse
+using ArgParse, BFloat16s
 
 """
     parse_baroclinic_instability_args(; grid_x_default, grid_y_default, grid_z_default)
