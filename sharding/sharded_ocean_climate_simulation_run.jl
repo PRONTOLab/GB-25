@@ -89,7 +89,7 @@ Nz = parsed_args["grid-z"]
 Nx = Tx - 2H
 Ny = Ty - 2H
 
-grid_type = Symbol(get(ENV, "grid_type", "simple_tripolar"))
+grid_type = Symbol(get(ENV, "grid_type", "simple_lat_lon"))
 @info "[$rank] Generating model (Nx=$Nx, Ny=$Ny, grid_type=$grid_type)..." now(UTC)
 model = data_free_ocean_climate_model_init(arch, Nx, Ny, Nz; halo=(H, H, H), grid_type,
                                           set_initial_conditions=false)

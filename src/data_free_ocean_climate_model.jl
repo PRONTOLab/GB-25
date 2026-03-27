@@ -23,7 +23,7 @@ function data_free_ocean_climate_model_init(
     Nx::Int, Ny::Int, Nz::Int;
     Δt = 30,
     halo = (8, 8, 8),
-    grid_type = :gaussian_islands,
+    grid_type = :simple_lat_lon,
     set_initial_conditions = true,
     free_surface = SplitExplicitFreeSurface(substeps=30),
     )
@@ -32,8 +32,10 @@ function data_free_ocean_climate_model_init(
         gaussian_islands_tripolar_grid(arch, Nx, Ny, Nz; halo)
     elseif grid_type === :simple_tripolar
         simple_tripolar_grid(arch, Nx, Ny, Nz; halo)
+    elseif grid_type === :simple_lat_lon
+        simple_latitude_longitude_grid(arch, Nx, Ny, Nz; halo)
     else
-        error("grid_type=$grid_type must be :gaussian_islands or :simple_tripolar.")
+        error("grid_type=$grid_type must be :gaussian_islands, :simple_tripolar, or :simple_lat_lon.")
     end
 
     # See visualize_ocean_climate_simulation.jl for information about how to
