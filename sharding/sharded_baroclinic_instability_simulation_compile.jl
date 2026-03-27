@@ -26,6 +26,7 @@ using GordonBell25: baroclinic_instability_model, PROFILE, GordonBell25
 using Reactant
 using Oceananigans
 using Oceananigans.Architectures: ReactantState
+using NPZ
 Reactant.Compiler.WHILE_CONCAT[] = true
 
 PROFILE[] = true
@@ -99,6 +100,25 @@ for optimize in (:before_raise, false, :before_jit), code_type in (:hlo, :xla)
         end
     end
 end
+
+# Export to a jax script for easier debugging
+@info "Exporting to jax script..."
+output_dir = joinpath(@__DIR__, "jax_scripts")
+export_dir = Reactant.Serialization.EnzymeJAX.export_to_enzymejax(
+    first_time_step!,
+    model;
+    export_data_as_npz=false,
+    output_dir
+)
+@info "first_time_step! exported to $(output_dir)"
+export_dir = Reactant.Serialization.EnzymeJAX.export_to_enzymejax(
+    loop!,
+    model,
+    Ninner;
+    export_data_as_npz=false,
+    output_dir
+)
+@info "loop! exported to $(output_dir)"
 
 if TRY_COMPILE_FAILED[]
     error("compilation failed")
