@@ -83,7 +83,7 @@ function generate_and_submit(submit_job_writer, cfg::JobConfig; caller_file::Str
         run_id   = string(run_name, "_",
                           Dates.format(now(UTC), "ud"), "_ngpu",  ngpu_string)
 
-        job_name = "scaling_test_$(ngpu_string)"
+        job_name = "scaling_test_$(run_postfix)"
 
         # !isinteger(cbrt(Ngpu)) && (@warn "problem size is not cubic")
         Nnodes = ceil(Int, Ngpu / cfg.gpus_per_node)
