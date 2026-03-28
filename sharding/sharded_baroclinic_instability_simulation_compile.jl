@@ -72,6 +72,8 @@ GC.gc(true); GC.gc(false); GC.gc(true)
 TRY_COMPILE_FAILED[] = false
 Ninner = ConcreteRNumber(1)
 
+ctx = Reactant.ReactantContext()
+Reactant.MLIR.IR.activate(ctx)
 for optimize in (:before_raise, false, :before_jit), code_type in (:hlo, :xla)
     # We only want the optimised XLA code
     optimize in (:before_raise, false) && code_type === :xla && continue
@@ -79,10 +81,10 @@ for optimize in (:before_raise, false, :before_jit), code_type in (:hlo, :xla)
     @info "Compiling $(kernel_type) $(code_type) kernels..."
     if code_type === :hlo
         first_code = try_compile_code() do
-            @code_hlo debug=true optimize=optimize raise=true shardy_passes=:post_sdy_propagation first_time_step!(model)
+            code_hlo(first_time_step!, model; optimize, raise=true)
         end
         loop_code = try_compile_code() do
-            @code_hlo debug=true optimize=optimize raise=true shardy_passes=:post_sdy_propagation loop!(model, Ninner)
+            code_hlo(loop!, model, Ninner; optimize, raise=true)
         end
     elseif code_type === :xla
         first_code = try_compile_code() do
@@ -96,19 +98,13 @@ for optimize in (:before_raise, false, :before_jit), code_type in (:hlo, :xla)
         # No debug info for `@code_xla`
         code_type === :xla && debug && continue
         open("$(kernel_type)_sharded_baroclinic_instability_simulation_$(name)$(debug ? "_debug" : "").$(code_type == :xla ? "xla" : "mlir")", "w") do io
-            ir = (Base.@locals())[Symbol(name, "_code")]
-
-            if code_type === :hlo && !debug
-                ir = Reactant.MLIR.IR.@dispose ctx = Reactant.ReactantContext() begin
-                    Reactant.MLIR.IR.activate(ctx)
-                    sprint(show, parse(Reactant.MLIR.IR.Module, String(ir)))
-                end
-            end
-
-            show(io, ir)
+            mod = (Base.@locals())[Symbol(name, "_code")]
+            show(IOContext(io, :debug => debug), mod)
+            mod isa Reactant.MLIR.IR.Module && Reactant.MLIR.IR.dispose(mod)
         end
     end
 end
+Reactant.MLIR.IR.dispose(ctx)
 
 if TRY_COMPILE_FAILED[]
     error("compilation failed")
