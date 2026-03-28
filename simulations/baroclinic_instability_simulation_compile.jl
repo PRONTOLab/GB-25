@@ -26,10 +26,10 @@ for optimize in (:before_raise, false, :before_jit), code_type in (:hlo, :xla)
     @info "Compiling $(kernel_type) $(code_type) kernels..."
     if code_type === :hlo
         first_code = try_compile_code() do
-            @code_hlo optimize=optimize raise=true first_time_step!(model)
+            @code_hlo debug=true optimize=optimize raise=true first_time_step!(model)
         end
         loop_code = try_compile_code() do
-            @code_hlo optimize=optimize raise=true loop!(model, Ninner)
+            @code_hlo debug=true optimize=optimize raise=true loop!(model, Ninner)
         end
     elseif code_type === :xla
         first_code = try_compile_code() do
@@ -43,7 +43,16 @@ for optimize in (:before_raise, false, :before_jit), code_type in (:hlo, :xla)
         # No debug info for `@code_xla`
         code_type === :xla && debug && continue
         open("$(kernel_type)_baroclinic_instability_simulation_$(name)$(debug ? "_debug" : "").$(code_type == :xla ? "xla" : "mlir")", "w") do io
-            show(IOContext(io, :debug => debug), (Base.@locals())[Symbol(name, "_code")])
+            ir = (Base.@locals())[Symbol(name, "_code")]
+
+            if code_type === :hlo && !debug
+                ir = Reactant.MLIR.IR.@dispose ctx = Reactant.ReactantContext() begin
+                    Reactant.MLIR.IR.activate(ctx)
+                    sprint(show, parse(Reactant.MLIR.IR.Module, String(ir)))
+                end
+            end
+
+            show(io, ir)
         end
     end
 end
