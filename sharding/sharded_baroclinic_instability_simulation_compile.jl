@@ -81,10 +81,10 @@ for optimize in (:before_raise, false, :before_jit), code_type in (:hlo, :xla)
     @info "Compiling $(kernel_type) $(code_type) kernels..."
     if code_type === :hlo
         first_code = try_compile_code() do
-            Reactant.Compiler.code_hlo(ctx, first_time_step!, model; optimize, raise=true)
+            Reactant.Compiler.code_hlo(ctx, first_time_step!, (model,); optimize, raise=true)
         end
         loop_code = try_compile_code() do
-            Reactant.Compiler.code_hlo(ctx, loop!, model, Ninner; optimize, raise=true)
+            Reactant.Compiler.code_hlo(ctx, loop!, (model, Ninner); optimize, raise=true)
         end
     elseif code_type === :xla
         first_code = try_compile_code() do
