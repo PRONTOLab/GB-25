@@ -414,6 +414,10 @@ jldsave(filename; Nx, Ny, Nz,
                   dkappaS_init=convert(Array, interior(dmodel.closure[2].κ[2])),
                   T_flux=convert(Array, interior(T_flux)))
 
+@info "Running for results, then profiling:"
+output = restimate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux, Δz, mld)
+dedν   = rdifferentiate_tracer_error(model, Tᵢ, Sᵢ, u_wind_stress, v_wind_stress, T_flux, Δz, mld, dmodel, dTᵢ, dSᵢ, du_wind_stress, dv_wind_stress, dT_flux, dΔz, dmld)
+
 
 @info "Running the simulation for $Ntimesteps timesteps ... (if you want to run the forward code only, just run 'restimate_tracer_error')"
 tic = time()
@@ -439,7 +443,7 @@ jldsave(filename; Nx, Ny, Nz,
                   w=convert(Array, interior(model.velocities.w)),
                   mld=convert(Array, interior(mld)),
                   #zonal_transport=convert(Float64, output),
-                  #zonal_transport=convert(Float64, dedν[2]),
+                  zonal_transport=convert(Float64, dedν[2]),
                   du_wind_stress=convert(Array, interior(du_wind_stress)),
                   dv_wind_stress=convert(Array, interior(dv_wind_stress)),
                   dT=convert(Array, interior(dTᵢ)),
