@@ -40,10 +40,6 @@ ReactantCore = "0.1.18"
 SeawaterPolynomials = "0.3.9"
 Serialization = "1"
 
-[sources.Oceananigans]
-url = "https://github.com/CliMA/Oceananigans.jl.git"
-rev = "pb/step-fix"
-
 [sources.NumericalEarth]
 url = "https://github.com/NumericalEarth/NumericalEarth.jl.git"
 rev = "glw/manual-iterate"
