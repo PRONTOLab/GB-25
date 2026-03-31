@@ -123,66 +123,6 @@ function set_baroclinic_instability!(model)
     end
 end
 
-# ── Moist baroclinic wave IC kernels ──────────────────────────────────────
-
-using Oceananigans.Grids: λnode, φnode, znode
-using Breeze.AtmosphereModels: dynamics_density, specific_prognostic_moisture
-
-@kernel function _set_moist_baroclinic_wave_kernel!(θ_field, ρ_field, qv_field, grid)
-    i, j, k = @index(Global, NTuple)
-    λ_deg = λnode(i, j, k, grid, Center(), Center(), Center())
-    φ_deg = φnode(i, j, k, grid, Center(), Center(), Center())
-    z     = znode(i, j, k, grid, Center(), Center(), Center())
-    @inbounds begin
-        θ_field[i, j, k] = initial_theta(λ_deg, φ_deg, z)
-        ρ_field[i, j, k] = initial_density(λ_deg, φ_deg, z)
-        qv_field[i, j, k] = initial_moisture(λ_deg, φ_deg, z)
-    end
-end
-
-@kernel function _set_zonal_wind_kernel!(u_field, grid)
-    i, j, k = @index(Global, NTuple)
-    λ_deg = λnode(i, j, k, grid, Face(), Center(), Center())
-    φ_deg = φnode(i, j, k, grid, Face(), Center(), Center())
-    z     = znode(i, j, k, grid, Face(), Center(), Center())
-    @inbounds u_field[i, j, k] = initial_zonal_wind(λ_deg, φ_deg, z)
-end
-
-function _set_moist_baroclinic_wave!(model)
-    grid = model.grid
-    arch = grid.architecture
-
-    ρ  = dynamics_density(model.dynamics)
-    θ  = model.temperature
-    qv = specific_prognostic_moisture(model)
-    u  = model.velocities.u
-
-    Oceananigans.Utils.launch!(arch, grid, :xyz,
-        _set_moist_baroclinic_wave_kernel!, θ, ρ, qv, grid)
-
-    Oceananigans.Utils.launch!(arch, grid, :xyz,
-        _set_zonal_wind_kernel!, u, grid)
-
-    ρu = model.momentum.ρu
-    parent(ρu) .= parent(ρ) .* parent(u)
-
-    ρqv = model.moisture_density
-    parent(ρqv) .= parent(ρ) .* parent(qv)
-
-    return nothing
-end
-
-function set_moist_baroclinic_wave!(model)
-    if model.grid.architecture isa ReactantState
-        rset! = @compile sync=true raise=true _set_moist_baroclinic_wave!(model)
-        rset!(model)
-    else
-        _set_moist_baroclinic_wave!(model)
-    end
-end
-
-# ──────────────────────────────────────────────────────────────────────────
-
 function gaussian_islands_tripolar_grid(arch::Architectures.AbstractArchitecture, resolution, Nz)
     Nx, Ny = resolution_to_points(resolution)
     return gaussian_islands_tripolar_grid(arch, Nx, Ny, Nz)

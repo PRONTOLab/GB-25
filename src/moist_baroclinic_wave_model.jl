@@ -11,13 +11,18 @@
 # while maintaining the same pressure-gradient forcing.
 # Density always uses virtual temperature:  ρ = p / (Rd · Tv).
 
+using KernelAbstractions: @kernel, @index
 using Breeze
 using Breeze: AtmosphereModel, CompressibleDynamics, ExplicitTimeStepping
+using Breeze.AtmosphereModels: dynamics_density, specific_prognostic_moisture
 using Breeze.Microphysics: NonEquilibriumCloudFormation
 using Oceananigans.Coriolis: HydrostaticSphericalCoriolis
 using Oceananigans.Architectures: ReactantState
+using Oceananigans.Grids: λnode, φnode, znode
 using CloudMicrophysics
 using SpecialFunctions
+using CUDA
+using Reactant
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Physical constants
@@ -214,6 +219,64 @@ initial_moisture(λ_deg, φ_deg, z) = moisture_profile(deg2rad(φ_deg), z)
 
 """Reference potential temperature at the equator for base-state subtraction."""
 theta_reference(z) = initial_theta(0.0, 0.0, z)
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Initial-condition kernels
+# ═══════════════════════════════════════════════════════════════════════════
+
+@kernel function _set_moist_baroclinic_wave_kernel!(θ_field, ρ_field, qv_field, grid)
+    i, j, k = @index(Global, NTuple)
+    λ_deg = λnode(i, j, k, grid, Center(), Center(), Center())
+    φ_deg = φnode(i, j, k, grid, Center(), Center(), Center())
+    z     = znode(i, j, k, grid, Center(), Center(), Center())
+    @inbounds begin
+        θ_field[i, j, k] = initial_theta(λ_deg, φ_deg, z)
+        ρ_field[i, j, k] = initial_density(λ_deg, φ_deg, z)
+        qv_field[i, j, k] = initial_moisture(λ_deg, φ_deg, z)
+    end
+end
+
+@kernel function _set_zonal_wind_kernel!(u_field, grid)
+    i, j, k = @index(Global, NTuple)
+    λ_deg = λnode(i, j, k, grid, Face(), Center(), Center())
+    φ_deg = φnode(i, j, k, grid, Face(), Center(), Center())
+    z     = znode(i, j, k, grid, Face(), Center(), Center())
+    @inbounds u_field[i, j, k] = initial_zonal_wind(λ_deg, φ_deg, z)
+end
+
+function _set_moist_baroclinic_wave!(model)
+    grid = model.grid
+    arch = grid.architecture
+
+    ρ  = dynamics_density(model.dynamics)
+    θ  = model.temperature
+    qv = specific_prognostic_moisture(model)
+    u  = model.velocities.u
+
+    Oceananigans.Utils.launch!(arch, grid, :xyz,
+        _set_moist_baroclinic_wave_kernel!, θ, ρ, qv, grid)
+
+    Oceananigans.Utils.launch!(arch, grid, :xyz,
+        _set_zonal_wind_kernel!, u, grid)
+
+    ρu = model.momentum.ρu
+    parent(ρu) .= parent(ρ) .* parent(u)
+
+    ρqv = model.moisture_density
+    parent(ρqv) .= parent(ρ) .* parent(qv)
+
+    return nothing
+end
+
+function set_moist_baroclinic_wave!(model)
+    if model.grid.architecture isa ReactantState
+        rset! = @compile sync=true raise=true _set_moist_baroclinic_wave!(model)
+        rset!(model)
+    else
+        _set_moist_baroclinic_wave!(model)
+    end
+end
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Model constructor
 # ═══════════════════════════════════════════════════════════════════════════
@@ -232,10 +295,6 @@ Components
 
 Grid: 0°–360° longitude, ±85° latitude, 0–`H` m altitude.
 Default resolution ≈ 1° (Nλ=360, Nφ=170).
-
-The model is returned *uninitialised*.  Call `set_moist_baroclinic_wave!(model)`
-afterwards to apply the DCMIP-2016 initial conditions.
-(On `ReactantState` this compiles the setter with `@compile raise=true`.)
 """
 function moist_baroclinic_wave_model(arch;
                                      Nλ   = 360,
@@ -267,6 +326,8 @@ function moist_baroclinic_wave_model(arch;
     model = AtmosphereModel(grid; dynamics, coriolis, advection, microphysics)
 
     model.clock.last_Δt = Δt
+
+    set_moist_baroclinic_wave!(model)
 
     return model
 end

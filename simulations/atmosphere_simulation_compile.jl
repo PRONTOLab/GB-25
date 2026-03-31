@@ -1,5 +1,5 @@
 using GordonBell25: first_time_step!, loop!, try_compile_code, preamble, TRY_COMPILE_FAILED
-using GordonBell25: moist_baroclinic_wave_model, set_moist_baroclinic_wave!, PROFILE
+using GordonBell25: moist_baroclinic_wave_model, PROFILE
 using CUDA
 using Reactant
 using Oceananigans
@@ -12,9 +12,6 @@ preamble()
 @info "Generating atmosphere model..."
 arch = ReactantState()
 model = moist_baroclinic_wave_model(arch; Nλ=48, Nφ=24, Nz=10, Δt=2.0)
-
-@info "Setting initial conditions..."
-set_moist_baroclinic_wave!(model)
 
 GC.gc(true); GC.gc(false); GC.gc(true)
 
