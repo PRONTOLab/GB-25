@@ -5,8 +5,10 @@ version = "0.1.0"
 
 [deps]
 ArgParse = "c7e460c6-2fb9-53a9-8c5b-16f535851c63"
+Breeze = "660aa2fb-d4c8-4359-a52c-9c057bc511da"
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 CUDA_Runtime_jll = "76a88914-d11a-5bdc-97e0-2f5a05c973a2"
+CloudMicrophysics = "6a9e3e04-43cd-43ba-94b9-e8782df3c71b"
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
 HDF5_jll = "0234f1f7-429e-5d53-9886-15a909be8d59"
 KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
@@ -22,16 +24,19 @@ ReactantCore = "a3311ec8-5e00-46d5-b541-4f83e724a433"
 Reactant_jll = "0192cb87-2b54-54ad-80e0-3be72ad8a3c0"
 SeawaterPolynomials = "d496a93d-167e-4197-9f49-d3af4ff8fe40"
 Serialization = "9e88b42a-f829-5b0c-bbe9-9e923198166b"
+SpecialFunctions = "276daf66-3868-5448-9aa4-cd146d93841b"
 
 [compat]
 ArgParse = "1.2.0"
+Breeze = "0.4"
 CUDA = "5.7.1"
+CloudMicrophysics = "0.33"
 Dates = "1"
 HDF5_jll = "=1.14.3"
 KernelAbstractions = "0.9.34"
 MPI = "0.20.22"
 NumericalEarth = "0.2.2"
-Oceananigans = "0.106.1"
+Oceananigans = "0.106"
 PrecompileTools = "1.2.1"
 Printf = "1"
 Profile = "1"
@@ -39,6 +44,15 @@ Reactant = "0.2.242"
 ReactantCore = "0.1.18"
 SeawaterPolynomials = "0.3.9"
 Serialization = "1"
+SpecialFunctions = "2"
+
+[sources.Breeze]
+url = "https://github.com/NumericalEarth/Breeze.jl.git"
+rev = "dkz/raise-microphysics"
+
+[sources.CloudMicrophysics]
+url = "https://github.com/CliMA/CloudMicrophysics.jl.git"
+rev = "main"
 
 [sources.Oceananigans]
 url = "https://github.com/CliMA/Oceananigans.jl.git"

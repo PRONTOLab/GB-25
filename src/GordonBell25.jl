@@ -1,7 +1,8 @@
 module GordonBell25
 
-export first_time_step!, time_step!, loop!, try_code_hlo
+export first_time_step!, time_step!, loop!, try_code_hlo, moist_baroclinic_wave_model, set_moist_baroclinic_wave!
 
+include("moist_baroclinic_wave_model.jl")
 include("model_utils.jl")
 include("timestepping_utils.jl")
 include("data_free_ocean_climate_model.jl")
