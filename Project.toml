@@ -30,7 +30,7 @@ SpecialFunctions = "276daf66-3868-5448-9aa4-cd146d93841b"
 ArgParse = "1.2.0"
 Breeze = "0.4"
 CUDA = "5.7.1"
-CloudMicrophysics = "0.33"
+CloudMicrophysics = "0.32"
 Dates = "1"
 HDF5_jll = "=1.14.3"
 KernelAbstractions = "0.9.34"
@@ -40,18 +40,22 @@ Oceananigans = "0.106"
 PrecompileTools = "1.2.1"
 Printf = "1"
 Profile = "1"
-Reactant = "0.2.242"
+Reactant = "0.2.240"
 ReactantCore = "0.1.18"
 SeawaterPolynomials = "0.3.9"
 Serialization = "1"
 SpecialFunctions = "2"
 
+[sources.Reactant]
+url = "https://github.com/dkytezab/Reactant.jl.git"
+rev = "jllcompat"
+
+[sources.Reactant_jll]
+url = "https://github.com/EnzymeAD/Reactant_jll.jl"
+rev = "main"
+
 [sources.Breeze]
 url = "https://github.com/NumericalEarth/Breeze.jl.git"
-rev = "dkz/raise-microphysics"
-
-[sources.CloudMicrophysics]
-url = "https://github.com/CliMA/CloudMicrophysics.jl.git"
 rev = "main"
 
 [sources.Oceananigans]
