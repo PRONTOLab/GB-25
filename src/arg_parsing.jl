@@ -101,7 +101,7 @@ function multifloat_from_args(parsed_args)
 	return nothing
     end
     # normalize the string
-    source = float_type_to_string(float_type_from_stirng(parsed_args["float-type"]))
+    source = float_type_to_string(float_type_from_string(parsed_args["float-type"]))
     target = float_type_to_string(float_type_from_string(parsed_args["float-type-target"]))
     return Reactant.Compiler.MultiFloatOptions(source, target, parsed_args["dimension"], parsed_args["limbs"])
 end
