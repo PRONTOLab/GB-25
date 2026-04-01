@@ -54,10 +54,11 @@ GC.gc(true); GC.gc(false); GC.gc(true)
 TRY_COMPILE_FAILED[] = false
 Ninner = ConcreteRNumber(2)
 
-for optimize in (:before_raise, false, :before_jit), code_type in (:hlo, :xla)
+for optimize in (:before_raise, false, :before_jit, true), code_type in (:hlo, :xla)
     # We only want the optimised XLA code
-    optimize in (:before_raise, false) && code_type === :xla && continue
-    kernel_type = optimize === :before_raise ? "before_raise" : (optimize === false ? "unoptimised" : "optimised")
+    optimize in (:before_raise, false, :before_jit) && code_type === :xla && continue
+    optimize == true && code_type !== :xla && continue
+    kernel_type = optimize isa Bool ? (optimize === false ? "unoptimised" : "optimised") : string(optimize)
 
     compile_options = CompileOptions(; sync=true, raise=true, strip_llvm_debuginfo=true, strip=["enzymexla.kernel_call", "(::Reactant.Compiler.LLVMFunc", "ka_with_reactant", "(::KernelAbstractions.Kernel", "var\"#_launch!;_launch!"], multifloat=GordonBell25.multifloat_from_args(parsed_args), optimization_passes=optimize)
     @info "Compiling $(kernel_type) $(code_type) kernels..."
