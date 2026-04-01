@@ -53,20 +53,22 @@ for optimize in (:before_raise, false, :before_jit), code_type in (:hlo, :xla)
     # We only want the optimised XLA code
     optimize in (:before_raise, false) && code_type === :xla && continue
     kernel_type = optimize === :before_raise ? "before_raise" : (optimize === false ? "unoptimised" : "optimised")
+
+    compile_options = CompileOptions(; sync=true, raise=true, strip_llvm_debuginfo=true, strip=["enzymexla.kernel_call", "(::Reactant.Compiler.LLVMFunc", "ka_with_reactant", "(::KernelAbstractions.Kernel", "var\"#_launch!;_launch!"], multifloat=GordonBell25.multifloat_from_args(parsed_args), optimize=optimize)
     @info "Compiling $(kernel_type) $(code_type) kernels..."
     if code_type === :hlo
         first_code = try_compile_code() do
-            @code_hlo optimize=optimize raise=true shardy_passes=:post_sdy_propagation first_time_step!(model)
+            @code_hlo compile_options=compile_options first_time_step!(model)
         end
         loop_code = try_compile_code() do
-            @code_hlo optimize=optimize raise=true shardy_passes=:post_sdy_propagation loop!(model, Ninner)
+            @code_hlo compile_options=compile_options loop!(model, Ninner)
         end
     elseif code_type === :xla
         first_code = try_compile_code() do
-            @code_xla raise=true first_time_step!(model)
+            @code_xla compile_options=compile_options first_time_step!(model)
         end
         loop_code = try_compile_code() do
-            @code_xla raise=true loop!(model, Ninner)
+            @code_xla compile_options=compile_options loop!(model, Ninner)
         end
     end
     for name in ("first", "loop"), debug in (true, false)
