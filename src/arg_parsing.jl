@@ -32,7 +32,7 @@ function parse_baroclinic_instability_args(;
         "--target-float-type"
             help = "the float type for execution (Float64/f64, Float32/f32, Float16/f16, BFloat16/bf16, Float8E5M2/f8E5M2/f8, Float8E4M3/f8E4M3) or the empty string for no lowering"
             default = ""
-            arg_type = string
+            arg_type = String
         "--limbs"
             help = "Number of lower-precision limbs in the multifloat lowering"
             default = 2
