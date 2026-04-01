@@ -14,9 +14,11 @@
 using KernelAbstractions: @kernel, @index
 using Breeze
 using Breeze: AtmosphereModel, CompressibleDynamics, ExplicitTimeStepping
+using Breeze: BulkDrag, BulkSensibleHeatFlux, BulkVaporFlux
 using Breeze.AtmosphereModels: dynamics_density, specific_prognostic_moisture
 using Breeze.Microphysics: NonEquilibriumCloudFormation
 using Oceananigans.Coriolis: HydrostaticSphericalCoriolis
+using Oceananigans.BoundaryConditions: FieldBoundaryConditions
 using Oceananigans.Architectures: ReactantState
 using Oceananigans.Grids: λnode, φnode, znode
 using CloudMicrophysics
@@ -220,6 +222,16 @@ initial_moisture(λ_deg, φ_deg, z) = moisture_profile(deg2rad(φ_deg), z)
 """Reference potential temperature at the equator for base-state subtraction."""
 theta_reference(z) = initial_theta(0.0, 0.0, z)
 
+"""
+    surface_temperature(λ_deg, φ_deg)
+
+Prescribed SST from the DCMIP-2016 balanced state evaluated at z = 0.
+Returns virtual temperature at the surface, which for the bulk flux
+formulas serves as the ocean skin temperature driving sensible/latent
+heat exchange.
+"""
+surface_temperature(λ_deg, φ_deg) = virtual_temperature(deg2rad(φ_deg), 0.0)
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Initial-condition kernels
 # ═══════════════════════════════════════════════════════════════════════════
@@ -323,7 +335,19 @@ function moist_baroclinic_wave_model(arch;
 
     advection = WENO(order = 5)
 
-    model = AtmosphereModel(grid; dynamics, coriolis, advection, microphysics)
+    # Prescribed-SST bulk surface flux boundary conditions
+    Cᴰ = 1e-3   # constant bulk exchange coefficient
+    Uᵍ = 1e-2   # gustiness [m/s]
+    T₀ = surface_temperature
+
+    ρu_bcs = FieldBoundaryConditions(bottom = BulkDrag(coefficient=Cᴰ, gustiness=Uᵍ, surface_temperature=T₀))
+    ρv_bcs = FieldBoundaryConditions(bottom = BulkDrag(coefficient=Cᴰ, gustiness=Uᵍ, surface_temperature=T₀))
+    ρe_bcs = FieldBoundaryConditions(bottom = BulkSensibleHeatFlux(coefficient=Cᴰ, gustiness=Uᵍ, surface_temperature=T₀))
+    ρqᵛ_bcs = FieldBoundaryConditions(bottom = BulkVaporFlux(coefficient=Cᴰ, gustiness=Uᵍ, surface_temperature=T₀))
+
+    boundary_conditions = (; ρu=ρu_bcs, ρv=ρv_bcs, ρe=ρe_bcs, ρqᵛ=ρqᵛ_bcs)
+
+    model = AtmosphereModel(grid; dynamics, coriolis, advection, microphysics, boundary_conditions)
 
     model.clock.last_Δt = Δt
 
