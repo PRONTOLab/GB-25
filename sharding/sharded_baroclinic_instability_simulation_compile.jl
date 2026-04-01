@@ -1,6 +1,6 @@
 using BFloat16s
 using GordonBell25: first_time_step!, loop!, try_compile_code, preamble, TRY_COMPILE_FAILED
-using GordonBell25: baroclinic_instability_model, PROFILE, GordonBell25
+using GordonBell25: baroclinic_instability_model, PROFILE, GordonBell25, is_distributed_env_present
 using Reactant
 using Oceananigans
 using Oceananigans.Architectures: ReactantState
@@ -14,6 +14,11 @@ const parsed_args = GordonBell25.parse_baroclinic_instability_args(;
 
 PROFILE[] = true
 Oceananigans.defaults.FloatType = GordonBell25.float_type_from_args(parsed_args)
+
+if !is_distributed_env_present()
+    using MPI
+    MPI.Init()
+end
 
 preamble()
 
