@@ -54,7 +54,7 @@ for optimize in (:before_raise, false, :before_jit), code_type in (:hlo, :xla)
     optimize in (:before_raise, false) && code_type === :xla && continue
     kernel_type = optimize === :before_raise ? "before_raise" : (optimize === false ? "unoptimised" : "optimised")
 
-    compile_options = CompileOptions(; sync=true, raise=true, strip_llvm_debuginfo=true, strip=["enzymexla.kernel_call", "(::Reactant.Compiler.LLVMFunc", "ka_with_reactant", "(::KernelAbstractions.Kernel", "var\"#_launch!;_launch!"], multifloat=GordonBell25.multifloat_from_args(parsed_args), optimize=optimize)
+    compile_options = CompileOptions(; sync=true, raise=true, strip_llvm_debuginfo=true, strip=["enzymexla.kernel_call", "(::Reactant.Compiler.LLVMFunc", "ka_with_reactant", "(::KernelAbstractions.Kernel", "var\"#_launch!;_launch!"], multifloat=GordonBell25.multifloat_from_args(parsed_args), optimization_passes=optimize)
     @info "Compiling $(kernel_type) $(code_type) kernels..."
     if code_type === :hlo
         first_code = try_compile_code() do
