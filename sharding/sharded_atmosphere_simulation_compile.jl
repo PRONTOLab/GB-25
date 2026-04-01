@@ -12,7 +12,7 @@ const args_settings = ArgParseSettings()
         arg_type = Int
     "--grid-z"
         help = "Number of grid points on the z axis."
-        default = 8
+        default = 4
         arg_type = Int
     "--precision"
         help = "Number of bits of precision"
@@ -31,7 +31,7 @@ Reactant.Compiler.WHILE_CONCAT[] = true
 
 PROFILE[] = true
 if parsed_args["precision"] == 32
-    Oceananigans.defaults.FloatType = Float32
+    Oceananigans.defaults.FloatType = Float64
 elseif parsed_args["precision"] == 64
     Oceananigans.defaults.FloatType = Float64
 else

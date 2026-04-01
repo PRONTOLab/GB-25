@@ -5,7 +5,7 @@ using Oceananigans.Architectures: ReactantState
 using CUDA
 using Reactant
 
-Oceananigans.defaults.FloatType = Float32
+Oceananigans.defaults.FloatType = Float64
 
 preamble()
 
