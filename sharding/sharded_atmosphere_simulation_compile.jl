@@ -4,15 +4,15 @@ const args_settings = ArgParseSettings()
 @add_arg_table! args_settings begin
     "--grid-x"
         help = "Base factor for number of grid points on the λ axis."
-        default = 48
+        default = 512
         arg_type = Int
     "--grid-y"
         help = "Base factor for number of grid points on the φ axis."
-        default = 24
+        default = 256
         arg_type = Int
     "--grid-z"
         help = "Number of grid points on the z axis."
-        default = 10
+        default = 8
         arg_type = Int
     "--precision"
         help = "Number of bits of precision"

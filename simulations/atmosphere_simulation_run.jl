@@ -13,7 +13,7 @@ Ninner = ConcreteRNumber(2)
 
 @info "Generating atmosphere model..."
 arch = ReactantState()
-model = moist_baroclinic_wave_model(arch; Nλ=48, Nφ=24, Nz=10, Δt=2.0)
+model = moist_baroclinic_wave_model(arch; Nλ=48, Nφ=24, Nz=10, Δt=2.0, halo=(8, 8, 8))
 
 GC.gc(true); GC.gc(false); GC.gc(true)
 
