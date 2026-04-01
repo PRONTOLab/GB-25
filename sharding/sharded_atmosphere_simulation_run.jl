@@ -19,7 +19,7 @@ const args_settings = ArgParseSettings()
         arg_type = Int
     "--precision"
         help = "Number of bits of precision"
-        default = 32
+        default = 64
         arg_type = Int
 end
 const parsed_args = parse_args(ARGS, args_settings)

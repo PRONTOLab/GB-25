@@ -16,7 +16,7 @@ const args_settings = ArgParseSettings()
         arg_type = Int
     "--precision"
         help = "Number of bits of precision"
-        default = 32
+        default = 64
         arg_type = Int
 end
 const parsed_args = parse_args(ARGS, args_settings)
@@ -31,7 +31,7 @@ Reactant.Compiler.WHILE_CONCAT[] = true
 
 PROFILE[] = true
 if parsed_args["precision"] == 32
-    Oceananigans.defaults.FloatType = Float64
+    Oceananigans.defaults.FloatType = Float32
 elseif parsed_args["precision"] == 64
     Oceananigans.defaults.FloatType = Float64
 else
