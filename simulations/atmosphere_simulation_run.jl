@@ -1,8 +1,11 @@
 using GordonBell25: first_time_step!, time_step!, loop!, preamble
 using GordonBell25: moist_baroclinic_wave_model
+using Oceananigans
 using Oceananigans.Architectures: ReactantState
 using CUDA
 using Reactant
+
+Oceananigans.defaults.FloatType = Float32
 
 preamble()
 

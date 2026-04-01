@@ -16,7 +16,7 @@ const args_settings = ArgParseSettings()
         arg_type = Int
     "--precision"
         help = "Number of bits of precision"
-        default = 64
+        default = 32
         arg_type = Int
 end
 const parsed_args = parse_args(ARGS, args_settings)
@@ -30,10 +30,10 @@ using Oceananigans.Architectures: ReactantState
 Reactant.Compiler.WHILE_CONCAT[] = true
 
 PROFILE[] = true
-if parsed_args["precision"] == 64
-    Oceananigans.defaults.FloatType = Float64
-elseif parsed_args["precision"] == 32
+if parsed_args["precision"] == 32
     Oceananigans.defaults.FloatType = Float32
+elseif parsed_args["precision"] == 64
+    Oceananigans.defaults.FloatType = Float64
 else
     throw(AssertionError("Unknown precision $(parsed_args["precision"])"))
 end

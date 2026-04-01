@@ -6,6 +6,7 @@ using Oceananigans
 using Oceananigans.Architectures: ReactantState
 
 PROFILE[] = true
+Oceananigans.defaults.FloatType = Float32
 
 preamble()
 
