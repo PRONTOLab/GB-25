@@ -102,7 +102,7 @@ if devarch isa Oceananigans.ReactantState
 end
 
 @info "[$rank] Compiling first_time_step!..." now(UTC)
-compile_options = CompileOptions(; sync=true, raise=true, strip_llvm_debuginfo=true, strip=["enzymexla.kernel_call", "(::Reactant.Compiler.LLVMFunc", "ka_with_reactant", "(::KernelAbstractions.Kernel", "var\"#_launch!;_launch!"], multifloat=GordonBell25.float_type_from_args(parsed_args))
+compile_options = CompileOptions(; sync=true, raise=true, strip_llvm_debuginfo=true, strip=["enzymexla.kernel_call", "(::Reactant.Compiler.LLVMFunc", "ka_with_reactant", "(::KernelAbstractions.Kernel", "var\"#_launch!;_launch!"], multifloat=GordonBell25.multifloat_from_args(parsed_args))
 rfirst! = if devarch isa Oceananigans.ReactantState
      @compile compile_options=compile_options first_time_step!(model)
 else
