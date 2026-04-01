@@ -60,7 +60,7 @@ rev = "main"
 
 [sources.Oceananigans]
 url = "https://github.com/CliMA/Oceananigans.jl.git"
-rev = "pb/step-fix"
+rev = "main"
 
 [sources.NumericalEarth]
 url = "https://github.com/NumericalEarth/NumericalEarth.jl.git"
