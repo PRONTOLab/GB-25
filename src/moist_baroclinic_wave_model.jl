@@ -323,7 +323,7 @@ function moist_baroclinic_wave_model(arch;
                                  latitude  = (-85, 85),
                                  z = (0, H))
 
-    coriolis = HydrostaticSphericalCoriolis()
+    coriolis = SphericalCoriolis()
 
     dynamics = CompressibleDynamics(ExplicitTimeStepping();
                                    surface_pressure = p_ref,
