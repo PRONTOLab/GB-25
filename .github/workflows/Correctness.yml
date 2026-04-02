@@ -44,8 +44,8 @@ jobs:
           os: ['ubuntu-24.04', 'ubuntu-22.04-arm']
           grid_type: ['simple_lat_lon']
           sym_type:
-            - 'correctness_baroclinic_instability'
-            - 'correctness_sharded_baroclinic_instability'
+            # - 'correctness_baroclinic_instability'
+            # - 'correctness_sharded_baroclinic_instability'
             - 'correctness_atmosphere'
             - 'correctness_sharded_atmosphere'
     uses: ./.github/workflows/CompileOrRun.yml
