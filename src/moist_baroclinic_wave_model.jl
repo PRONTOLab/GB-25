@@ -261,7 +261,7 @@ function _set_moist_baroclinic_wave!(model)
     arch = grid.architecture
 
     ρ  = dynamics_density(model.dynamics)
-    θ  = model.temperature
+    θ  = model.formulation.potential_temperature
     qv = specific_prognostic_moisture(model)
     u  = model.velocities.u
 
@@ -270,6 +270,9 @@ function _set_moist_baroclinic_wave!(model)
 
     Oceananigans.Utils.launch!(arch, grid, :xyz,
         _set_zonal_wind_kernel!, u, grid)
+
+    ρθ = model.formulation.potential_temperature_density
+    parent(ρθ) .= parent(ρ) .* parent(θ)
 
     ρu = model.momentum.ρu
     parent(ρu) .= parent(ρ) .* parent(u)
