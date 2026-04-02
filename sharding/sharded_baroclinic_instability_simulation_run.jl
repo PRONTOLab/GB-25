@@ -143,7 +143,19 @@ end
 mkpath(joinpath(profile_dir, "loop2"))
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 @info "[$rank] running second loop" now(UTC)
-Reactant.with_profiler(joinpath(profile_dir, "loop2")) do
+Reactant.with_profiler(joinpath(profile_dir, "loop2");
+                        advanced_config=Dict{String,String}(
+                            "gpu_pm_sample_counters" => join([
+                                "sm__cycles_active.avg",
+                                "sm__inst_executed_realtime.avg.per_cycle_active",
+                                "dram__throughput.avg.pct_of_peak_sustained_elapsed",
+                                "lts__throughput.avg.pct_of_peak_sustained_elapsed",
+                                "lts__t_sector_hit_rate.pct",
+                                "sm__warps_active.avg.pct_of_peak_sustained_active",
+                                "l1tex__throughput.avg.pct_of_peak_sustained_elapsed",
+                                "sm__inst_executed.sum",
+                            ], ","),
+                        )) do
     Reactant.Profiler.annotate("bench"; metadata=Dict("step_num" => 1, "_r" => 1)) do
         @time "[$rank] second loop" compiled_loop!(model, Ninner)
     end
