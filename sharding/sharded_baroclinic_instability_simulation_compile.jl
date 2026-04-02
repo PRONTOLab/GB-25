@@ -28,6 +28,7 @@ using Reactant
 using Oceananigans
 using Oceananigans.Architectures: ReactantState
 Reactant.Compiler.WHILE_CONCAT[] = true
+# Reactant.Compiler.AGGRESSIVE_PROPAGATION[] = true
 
 PROFILE[] = true
 if parsed_args["precision"] == 64
