@@ -50,7 +50,7 @@ SpecialFunctions = "2"
 
 [sources.Reactant]
 url = "https://github.com/dkytezab/Reactant.jl.git"
-rev = "jllcompat"
+rev = "main"
 
 [sources.Reactant_jll]
 url = "https://github.com/EnzymeAD/Reactant_jll.jl"
