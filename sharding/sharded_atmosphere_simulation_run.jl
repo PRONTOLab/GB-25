@@ -90,12 +90,16 @@ end
 
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 
-Nλ = parsed_args["grid-x"] * Rx
-Nφ = parsed_args["grid-y"] * Ry
+H = 8
+Tλ = parsed_args["grid-x"] * Rx
+Tφ = parsed_args["grid-y"] * Ry
 Nz = parsed_args["grid-z"]
 
+Nλ = Tλ - 2H
+Nφ = Tφ - 2H
+
 @info "[$rank] Generating atmosphere model (Nλ=$Nλ, Nφ=$Nφ, Nz=$Nz)..." now(UTC)
-model = GordonBell25.moist_baroclinic_wave_model(arch; Nλ, Nφ, Nz, Δt=2.0, halo=(8, 8, 8))
+model = GordonBell25.moist_baroclinic_wave_model(arch; Nλ, Nφ, Nz, Δt=2.0, halo=(H, H, H))
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 
 @show model
