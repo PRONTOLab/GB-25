@@ -1,3 +1,4 @@
+ENV["JULIA_DEBUG"] = "Reactant_jll,Reactant"
 using GordonBell25
 using Oceananigans
 
@@ -10,6 +11,7 @@ const parsed_args = GordonBell25.parse_baroclinic_instability_args(;
 default_float_type = GordonBell25.float_type_from_args(parsed_args)
 Oceananigans.defaults.FloatType = default_float_type
 using Reactant
+Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
 
 if !GordonBell25.is_distributed_env_present()
     using MPI
