@@ -1,42 +1,24 @@
-using ArgParse
-
-const args_settings = ArgParseSettings()
-@add_arg_table! args_settings begin
-    "--grid-x"
-        help = "Base factor for number of grid points on the x axis."
-        default = 64
-        arg_type = Int
-    "--grid-y"
-        help = "Base factor for number of grid points on the y axis."
-        default = 64
-        arg_type = Int
-    "--grid-z"
-        help = "Base factor for number of grid points on the z axis."
-        default = 4
-        arg_type = Int
-    "--precision"
-        help = "Number of bits of precision"
-        default = 64
-        arg_type = Int
-end
-const parsed_args = parse_args(ARGS, args_settings)
-
+using BFloat16s
 using GordonBell25: first_time_step!, loop!, try_compile_code, preamble, TRY_COMPILE_FAILED
-using GordonBell25: baroclinic_instability_model, PROFILE, GordonBell25
-using CUDA
+using GordonBell25: baroclinic_instability_model, PROFILE, GordonBell25, is_distributed_env_present
 using Reactant
 using Oceananigans
 using Oceananigans.Architectures: ReactantState
 Reactant.Compiler.WHILE_CONCAT[] = true
 # Reactant.Compiler.AGGRESSIVE_PROPAGATION[] = true
 
+const parsed_args = GordonBell25.parse_baroclinic_instability_args(;
+    grid_x_default = 1536,
+    grid_y_default = 768,
+    grid_z_default = 4,
+)
+
 PROFILE[] = true
-if parsed_args["precision"] == 64
-    Oceananigans.defaults.FloatType = Float64
-elseif parsed_args["precision"] == 32
-    Oceananigans.defaults.FloatType = Float32
-else
-    throw(AssertionError("Unknown precision $(parsed_args["precision"])"))
+Oceananigans.defaults.FloatType = GordonBell25.float_type_from_args(parsed_args)
+
+if !is_distributed_env_present()
+    using MPI
+    MPI.Init()
 end
 
 preamble()
@@ -73,24 +55,27 @@ GC.gc(true); GC.gc(false); GC.gc(true)
 TRY_COMPILE_FAILED[] = false
 Ninner = ConcreteRNumber(1)
 
-for optimize in (:before_raise, false, :before_jit), code_type in (:hlo, :xla)
+for optimize in (:before_raise, false, :before_jit, true), code_type in (:hlo, :xla)
     # We only want the optimised XLA code
-    optimize in (:before_raise, false) && code_type === :xla && continue
-    kernel_type = optimize === :before_raise ? "before_raise" : (optimize === false ? "unoptimised" : "optimised")
+    optimize in (:before_raise, false, :before_jit) && code_type === :xla && continue
+    optimize == true && code_type !== :xla && continue
+    kernel_type = optimize isa Bool ? (optimize === false ? "unoptimised" : "optimised") : string(optimize)
+
+    compile_options = CompileOptions(; sync=true, raise=true, strip_llvm_debuginfo=true, strip=["enzymexla.kernel_call", "(::Reactant.Compiler.LLVMFunc", "ka_with_reactant", "(::KernelAbstractions.Kernel", "var\"#_launch!;_launch!"], multifloat=GordonBell25.multifloat_from_args(parsed_args), optimization_passes=optimize)
     @info "Compiling $(kernel_type) $(code_type) kernels..."
     if code_type === :hlo
         first_code = try_compile_code() do
-            @code_hlo optimize=optimize raise=true shardy_passes=:post_sdy_propagation first_time_step!(model)
+            @code_hlo compile_options=compile_options first_time_step!(model)
         end
         loop_code = try_compile_code() do
-            @code_hlo optimize=optimize raise=true shardy_passes=:post_sdy_propagation loop!(model, Ninner)
+            @code_hlo compile_options=compile_options loop!(model, Ninner)
         end
     elseif code_type === :xla
         first_code = try_compile_code() do
-            @code_xla raise=true first_time_step!(model)
+            @code_xla compile_options=compile_options first_time_step!(model)
         end
         loop_code = try_compile_code() do
-            @code_xla raise=true loop!(model, Ninner)
+            @code_xla compile_options=compile_options loop!(model, Ninner)
         end
     end
     for name in ("first", "loop"), debug in (true, false)

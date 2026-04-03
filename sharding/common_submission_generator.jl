@@ -2,6 +2,9 @@ using Dates, Random
 
 username = ENV["USER"]
 
+run_prefix = get(ENV, "GB25_RUN_PREFIX", "runs")
+run_postfix = get(ENV, "GB25_RUN_POSTFIX", randstring(4))
+
 @kwdef struct JobConfig
     username::String
     account::String
@@ -36,7 +39,7 @@ function generate_and_submit(submit_job_writer, cfg::JobConfig; caller_file::Str
     end
     # Some filesystems don't like colons in directory names
     timestamp = replace(string(now(UTC)), ':' => '-')
-    out_path = joinpath(cfg.out_dir, "runs", "$(timestamp)_$(randstring(4))")
+    out_path = joinpath(cfg.out_dir, run_prefix, "$(timestamp)_$(run_postfix)")
     project_path = dirname(@__DIR__)
 
     manifest_file = let
@@ -112,7 +115,7 @@ export JULIA_DEPOT_PATH=$(join(Base.DEPOT_PATH, ':'))
 # export TF_CPP_MAX_VLOG_LEVEL=3
 #
 export XLA_FLAGS="--xla_gpu_first_collective_call_warn_stuck_timeout_seconds=40 --xla_gpu_first_collective_call_terminate_timeout_seconds=80 \${XLA_FLAGS}"
-export XLA_FLAGS="--xla_disable_hlo_passes=host-offload-legalize,hlo_constant_splitter \${XLA_FLAGS}"
+export XLA_FLAGS="--xla_disable_hlo_passes=host-offload-legalize,hlo_constant_splitter,multi_output_fusion \${XLA_FLAGS}"
 # export XLA_FLAGS="--xla_dump_to=$(job_dir)/xla_dump \${XLA_FLAGS}"
 # export XLA_FLAGS="--xla_dump_hlo_pass_re=.* \${XLA_FLAGS}"
 export XLA_REACTANT_GPU_MEM_FRACTION=0.9
