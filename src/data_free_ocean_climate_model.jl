@@ -17,8 +17,8 @@ function data_free_ocean_climate_model_init(
     Nz::Int = 20, # eventually we want to increase this to between 100-600
     )
 
-    # grid = gaussian_islands_tripolar_grid(arch, resolution, Nz)
-    grid = simple_latitude_longitude_grid(arch, resolution, Nz)
+    grid = gaussian_islands_tripolar_grid(arch, resolution, Nz)
+    # grid = simple_latitude_longitude_grid(arch, resolution, Nz)
 
     # See visualize_ocean_climate_simulation.jl for information about how to
     # visualize the results of this run.
