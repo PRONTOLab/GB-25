@@ -64,5 +64,9 @@ rev = "main"
 url = "https://github.com/NumericalEarth/NumericalEarth.jl.git"
 rev = "glw/manual-iterate"
 
+[sources.Breeze]
+url = "https://github.com/NumericalEarth/Breeze.jl.git"
+rev = "f3365c30c03e7a4119d6a6fccf9be6f31887530a"
+
 [preferences.Reactant]
 xla_runtime = "IFRT"
