@@ -18,6 +18,9 @@ if !GordonBell25.is_distributed_env_present()
     MPI.Init()
 end
 
+jobid_procid = GordonBell25.get_jobid_procid()
+Reactant.MLIR.IR.DUMP_MLIR_DIR[] = joinpath(@__DIR__, "mlir_dumps", jobid_procid)
+
 throw_error = true
 include_halos = true
 rtol = sqrt(eps(default_float_type))
