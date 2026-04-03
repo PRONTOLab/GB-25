@@ -352,7 +352,8 @@ function moist_baroclinic_wave_model(arch;
 
     model = AtmosphereModel(grid; dynamics, coriolis, advection, microphysics, boundary_conditions)
 
-    model.clock.last_Δt = Δt
+    FT = eltype(grid)
+    model.clock.last_Δt = FT(Δt)
 
     set_moist_baroclinic_wave!(model)
 
