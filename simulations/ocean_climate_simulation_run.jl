@@ -1,6 +1,7 @@
 using GordonBell25: first_time_step!, time_step!, loop!, preamble
 using GordonBell25: data_free_ocean_climate_model_init
 using Oceananigans.Architectures: ReactantState
+using CUDA
 using Reactant
 
 # Reactant.Compiler.SROA_ATTRIBUTOR[] = false
@@ -24,9 +25,9 @@ rloop! = @compile raise=true sync=true loop!(model, Ninner)
 Reactant.with_profiler("./") do
     rfirst!(model)
 end
-Reactant.with_profiler("./") do
-    rstep!(model)
-end
+# Reactant.with_profiler("./") do
+#     rstep!(model)
+# end
 Reactant.with_profiler("./") do
     rloop!(model, Ninner)
 end

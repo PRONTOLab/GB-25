@@ -20,6 +20,7 @@ using Oceananigans.Units
 using Oceananigans.Architectures: ReactantState
 using Random
 using Printf
+using CUDA
 using Reactant
 
 if !is_distributed_env_present()
@@ -40,16 +41,16 @@ Reactant.MLIR.IR.DUMP_MLIR_DIR[] = joinpath(@__DIR__, "mlir_dumps", jobid_procid
 Reactant.Compiler.DEBUG_DISABLE_RESHARDING[] = true
 # Reactant.Compiler.DEBUG_PRINT_CODEGEN[] = true
 Reactant.Compiler.WHILE_CONCAT[] = true
+# Reactant.Compiler.AGGRESSIVE_PROPAGATION[] = true
 # Reactant.Compiler.DUS_TO_CONCAT[] = false
 # Reactant.Compiler.SUM_TO_REDUCEWINDOW[] = true
 # Reactant.Compiler.AGGRESSIVE_SUM_TO_CONV[] = true
 
 GordonBell25.initialize(; single_gpu_per_process=false)
 
-# devarch = Oceananigans.GPU()
-devarch = Oceananigans.ReactantState()
-
-arch = devarch
+# local_arch = Oceananigans.GPU()
+local_arch = Oceananigans.ReactantState()
+arch = local_arch
 
 Ndev = if arch isa Oceananigans.ReactantState
    length(Reactant.devices())
@@ -61,15 +62,13 @@ end
 @show Ndev
 
 Rx, Ry = factors(Ndev)
+
 if Ndev == 1
     rank = 0
 else
-    arch = Oceananigans.Distributed(
-	arch;
-        partition = Partition(Rx, Ry, 1)
-    )
-    rank = if devarch isa Oceananigans.ReactantState
-	Reactant.Distributed.local_rank()
+    arch = Oceananigans.Distributed(arch; partition = Partition(Rx, Ry, 1))
+    rank = if local_arch isa Oceananigans.ReactantState
+	    Reactant.Distributed.local_rank()
     else
        comm = MPI.COMM_WORLD
        MPI.Comm_rank(comm)
@@ -93,12 +92,13 @@ model = GordonBell25.baroclinic_instability_model(arch, Nx, Ny, Nz; halo=(H, H, 
 
 Ninner = 256
 
-if devarch isa Oceananigans.ReactantState
-   Ninner = if Ndev == 1
-	 ConcreteRNumber(Ninner)
-   else
-   	ConcreteRNumber(Ninner; sharding=Sharding.NamedSharding(arch.connectivity, ()))
-   end
+if local_arch isa Oceananigans.ReactantState
+    Ninner = if Ndev == 1
+        ConcreteRNumber(Ninner)
+    else
+        sharding = Sharding.NamedSharding(arch.connectivity, ())
+   	    ConcreteRNumber(Ninner; sharding)
+    end
 end
 
 @info "[$rank] Compiling first_time_step!..." now(UTC)
@@ -112,7 +112,7 @@ end
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 @info "[$rank] Compiling loop..." now(UTC)
 
-compiled_loop! = if devarch isa Oceananigans.ReactantState
+compiled_loop! = if local_arch isa Oceananigans.ReactantState
      @compile compile_options=compile_options loop!(model, Ninner)
 else
      loop!

@@ -7,57 +7,44 @@ using Oceananigans.Architectures:
 using Oceananigans.BoundaryConditions:
     fill_halo_regions!
 
-using Oceananigans.Fields:
-    tupled_fill_halo_regions!
-
 using Oceananigans.TimeSteppers:
     ab2_step!,
-    correct_velocities_and_cache_previous_tendencies!
+    cache_previous_tendencies!
 
-using Oceananigans.ImmersedBoundaries:
+using Oceananigans.Grids:
     get_active_cells_map
 
 using Oceananigans.Models.HydrostaticFreeSurfaceModels:
     mask_immersed_model_fields!,
-    compute_auxiliaries!,
+    compute_closure_fields!,
     compute_hydrostatic_momentum_tendencies!,
+    compute_momentum_tendencies!,
+    compute_tracer_tendencies!,
     interior_tendency_kernel_parameters,
-    compute_hydrostatic_boundary_tendency_contributions!,
     compute_hydrostatic_free_surface_Gc!,
-    immersed_boundary_condition,
-    complete_communication_and_compute_buffer!,
-    compute_tendencies!
+    immersed_boundary_condition
 
 #=
-# For reference
+# For reference (update_state! + ab2_step! flow)
 
-    * mask_immersed_model_fields!(model, grid)
-    * tupled_fill_halo_regions!(prognostic_fields(model), grid, model.clock, fields(model))
-    * compute_auxiliaries!(model)
-    * fill_halo_regions!(model.diffusivity_fields; only_local_halos=true)
-    * compute_tendencies!(model, callbacks)
+    * mask_immersed_model_fields!(model)
+    * fill_halo_regions!((u, v), model.clock, fields(model))
+    * fill_halo_regions!(tracers, model.clock, fields(model))
+    * compute_closure_fields!(model.closure_fields, model.closure, model, ...)
+    * fill_halo_regions!(model.closure_fields; only_local_halos=true)
+    * compute_momentum_tendencies!(model, callbacks)
     * ab2_step!(model, Δt)
-    * tupled_fill_halo_regions!(prognostic_fields(model), model.grid, model.clock, fields(model))
-    * correct_velocities_and_cache_previous_tendencies!(model, Δt)
+    * fill_halo_regions!(prognostic_fields(model), model.clock, fields(model))
+    * cache_previous_tendencies!(model)
 =#
 
-function tupled_fill_halo_regions_workload!(model)
-    tupled_fill_halo_regions!(prognostic_fields(model), model.grid, model.clock, fields(model))
+function fill_halo_regions_prognostic_workload!(model)
+    fill_halo_regions!(prognostic_fields(model), model.clock, fields(model))
 end
 
 function compute_tendencies_workload!(model)
-    compute_tendencies!(model, [])
-end
-
-function compute_boundary_tendencies_workload!(model)
-    compute_hydrostatic_boundary_tendency_contributions!(model.timestepper.Gⁿ,
-                                                         model.architecture,
-                                                         model.velocities,
-                                                         model.tracers,
-                                                         model.clock,
-                                                         fields(model),
-                                                         model.closure,
-                                                         model.buoyancy)
+    compute_momentum_tendencies!(model, [])
+    compute_tracer_tendencies!(model)
 end
 
 function compute_interior_momentum_tendencies_workload!(model)
@@ -69,7 +56,6 @@ function compute_interior_momentum_tendencies_workload!(model)
     #compute_hydrostatic_free_surface_tendency_contributions!(model, kernel_parameters; active_cells_map)
     
     compute_hydrostatic_momentum_tendencies!(model, model.velocities, kernel_parameters; active_cells_map)
-    complete_communication_and_compute_buffer!(model, grid, arch)
 end
 
 function compute_interior_tracer_tendencies_workload!(model)
@@ -92,10 +78,10 @@ function compute_interior_tracer_tendencies_workload!(model)
                      c_immersed_bc,
                      model.buoyancy,
                      model.biogeochemistry,
-                     model.velocities,
+                     model.transport_velocities,
                      model.free_surface,
                      model.tracers,
-                     model.diffusivity_fields,
+                     model.closure_fields,
                      model.auxiliary_fields,
                      model.clock,
                      c_forcing)
@@ -104,25 +90,24 @@ function compute_interior_tracer_tendencies_workload!(model)
                 compute_hydrostatic_free_surface_Gc!,
                 c_tendency,
                 grid,
-                active_cells_map,
                 args;
                 active_cells_map)
     end
 end
 
 function compute_auxiliaries_workload!(model)
-    compute_auxiliaries!(model)
+    compute_closure_fields!(model.closure_fields, model.closure, model)
 end
 
 function fill_halo_regions_workload!(model)
-    fill_halo_regions!(model.diffusivity_fields; only_local_halos=true)
+    fill_halo_regions!(model.closure_fields; only_local_halos=true)
 end
 
 function ab2_step_workload!(model, Δt)
     ab2_step!(model, Δt)
 end
 
-function correct_velocities_and_cache_previous_tendencies_workload!(model, Δt)
-    correct_velocities_and_cache_previous_tendencies!(model, Δt)
+function cache_previous_tendencies_workload!(model)
+    cache_previous_tendencies!(model)
 end
 
