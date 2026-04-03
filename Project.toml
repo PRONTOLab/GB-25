@@ -41,7 +41,7 @@ SeawaterPolynomials = "0.3.9"
 Serialization = "1"
 
 [sources.Oceananigans]
-url = "https://github.com/CliMA/Oceananigans.jl.git"
+url = "https://github.com/Pangoraw/Oceananigans.jl.git"
 rev = "bf16"
 
 [sources.Reactant]
