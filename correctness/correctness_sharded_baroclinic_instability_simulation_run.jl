@@ -86,13 +86,15 @@ GordonBell25.zero_tendencies!(rmodel)
 GordonBell25.zero_tendencies!(vmodel)
 GordonBell25.sync_states!(rmodel, vmodel)
 
+compile_options = CompileOptions(; sync=true, raise=true, strip_llvm_debuginfo=true, strip=["enzymexla.kernel_call", "(::Reactant.Compiler.LLVMFunc", "ka_with_reactant", "(::KernelAbstractions.Kernel", "var\"#_launch!;_launch!"], multifloat=GordonBell25.multifloat_from_args(parsed_args))
+
 @info "At the beginning:"
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
-@jit Oceananigans.initialize!(rmodel)
+@jit compile_options=compile_options Oceananigans.initialize!(rmodel)
 Oceananigans.initialize!(vmodel)
 
-@jit Oceananigans.TimeSteppers.update_state!(rmodel)
+@jit compile_options=compile_options Oceananigans.TimeSteppers.update_state!(rmodel)
 Oceananigans.TimeSteppers.update_state!(vmodel)
 
 @info "After initialization and update state:"
@@ -101,14 +103,14 @@ GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, at
 GordonBell25.sync_states!(rmodel, vmodel)
 GordonBell25.zero_tendencies!(rmodel)
 GordonBell25.zero_tendencies!(vmodel)
-rfirst! = @compile sync=true raise=true GordonBell25.first_time_step!(rmodel)
+rfirst! = @compile compile_options=compile_options GordonBell25.first_time_step!(rmodel)
 @showtime rfirst!(rmodel)
 @showtime GordonBell25.first_time_step!(vmodel)
 
 @info "After first time step:"
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
-rstep! = @compile sync=true raise=true GordonBell25.time_step!(rmodel)
+rstep! = @compile compile_options=compile_options GordonBell25.time_step!(rmodel)
 
 @info "Warm up:"
 @showtime rstep!(rmodel)
@@ -138,7 +140,7 @@ GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, at
 
 Nt = 100
 rNt = ConcreteRNumber(Nt)
-rloop! = @compile sync=true raise=true GordonBell25.loop!(rmodel, rNt)
+rloop! = @compile compile_options=compile_options GordonBell25.loop!(rmodel, rNt)
 @showtime rloop!(rmodel, rNt)
 @showtime GordonBell25.loop!(vmodel, Nt)
 

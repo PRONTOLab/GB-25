@@ -5,6 +5,7 @@ version = "0.1.0"
 
 [deps]
 ArgParse = "c7e460c6-2fb9-53a9-8c5b-16f535851c63"
+BFloat16s = "ab4f0b2a-ad5b-11e8-123f-65d77653426b"
 Breeze = "660aa2fb-d4c8-4359-a52c-9c057bc511da"
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 CUDA_Runtime_jll = "76a88914-d11a-5bdc-97e0-2f5a05c973a2"
@@ -30,6 +31,7 @@ SpecialFunctions = "276daf66-3868-5448-9aa4-cd146d93841b"
 [compat]
 ArgParse = "1.2.0"
 Breeze = "= 0.4.4"
+BFloat16s = "0.6.1"
 CUDA = "5.7.1"
 ClimaSeaIce = "= 0.4.5"
 CloudMicrophysics = "0.32"

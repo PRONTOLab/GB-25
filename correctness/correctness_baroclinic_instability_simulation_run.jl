@@ -1,35 +1,13 @@
-using ArgParse
-
-const args_settings = ArgParseSettings()
-@add_arg_table! args_settings begin
-    "--grid-x"
-        help = "Base factor for number of grid points on the x axis."
-        default = 128
-        arg_type = Int
-    "--grid-y"
-        help = "Base factor for number of grid points on the y axis."
-        default = 128
-        arg_type = Int
-    "--grid-z"
-        help = "Base factor for number of grid points on the z axis."
-        default = 16
-        arg_type = Int
-    "--precision"
-        help = "Number of bits of precision"
-        default = 64
-        arg_type = Int
-end
-const parsed_args = parse_args(ARGS, args_settings)
-
 using GordonBell25
 using Oceananigans
-default_float_type = if parsed_args["precision"] == 64
-    Float64
-elseif parsed_args["precision"] == 32
-    Float32
-else
-    throw(AssertionError("Unknown precision $(parsed_args["precision"])"))
-end
+
+const parsed_args = GordonBell25.parse_baroclinic_instability_args(;
+    grid_x_default = 128,
+    grid_y_default = 128,
+    grid_z_default = 16,
+)
+
+default_float_type = GordonBell25.float_type_from_args(parsed_args)
 Oceananigans.defaults.FloatType = default_float_type
 using CUDA
 using Reactant
@@ -70,10 +48,12 @@ GordonBell25.sync_states!(rmodel, vmodel)
 @info "At the beginning:"
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
-@jit Oceananigans.initialize!(rmodel)
+compile_options = CompileOptions(; sync=true, raise=true, strip_llvm_debuginfo=true, strip=["enzymexla.kernel_call", "(::Reactant.Compiler.LLVMFunc", "ka_with_reactant", "(::KernelAbstractions.Kernel", "var\"#_launch!;_launch!"], multifloat=GordonBell25.multifloat_from_args(parsed_args))
+
+@jit compile_options=compile_options Oceananigans.initialize!(rmodel)
 Oceananigans.initialize!(vmodel)
 
-@jit Oceananigans.TimeSteppers.update_state!(rmodel)
+@jit compile_options=compile_options Oceananigans.TimeSteppers.update_state!(rmodel)
 Oceananigans.TimeSteppers.update_state!(vmodel)
 
 @info "After initialization and update state:"
@@ -82,7 +62,6 @@ GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, at
 GordonBell25.sync_states!(rmodel, vmodel)
 GordonBell25.zero_tendencies!(rmodel)
 GordonBell25.zero_tendencies!(vmodel)
-compile_options = CompileOptions(; sync=true, raise=true, strip_llvm_debuginfo=true, strip=:all)
 rfirst! = @compile compile_options =compile_options GordonBell25.first_time_step!(rmodel)
 @showtime rfirst!(rmodel)
 @showtime GordonBell25.first_time_step!(vmodel)
@@ -90,7 +69,7 @@ rfirst! = @compile compile_options =compile_options GordonBell25.first_time_step
 @info "After first time step:"
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
-rstep! = @compile compile_options =compile_options GordonBell25.time_step!(rmodel)
+rstep! = @compile compile_options=compile_options GordonBell25.time_step!(rmodel)
 
 @info "Warm up:"
 @showtime rstep!(rmodel)
@@ -113,14 +92,14 @@ end
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
 GordonBell25.sync_states!(rmodel, vmodel)
-@jit Oceananigans.TimeSteppers.update_state!(rmodel)
+@jit compile_options=compile_options Oceananigans.TimeSteppers.update_state!(rmodel)
 
 @info "After syncing and updating state again:"
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
 Nt = 100
 rNt = ConcreteRNumber(Nt)
-rloop! = @compile sync=true raise=true GordonBell25.loop!(rmodel, rNt)
+rloop! = @compile compile_options=compile_options GordonBell25.loop!(rmodel, rNt)
 @showtime rloop!(rmodel, rNt)
 @showtime GordonBell25.loop!(vmodel, Nt)
 
