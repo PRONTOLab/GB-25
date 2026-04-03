@@ -75,6 +75,22 @@ function generate_and_submit(submit_job_writer, cfg::JobConfig; caller_file::Str
     @info "run_file=$(run_file)"
     @info "Writing all output to: $(out_path)"
 
+    # Capture repository state alongside the copied input for reproducibility.
+    git_describe = chomp(read(Cmd(["git", "--no-pager", "describe", "--tags", "--always", "--dirty"]; dir=project_path), String))
+    git_branch = chomp(read(Cmd(["git", "rev-parse", "--abbrev-ref", "HEAD"]; dir=project_path), String))
+    git_diff = read(Cmd(["git", "--no-pager", "diff", "--no-ext-diff", "HEAD"]; dir=project_path), String)
+    open(joinpath(out_path, "run-info.yaml"), "w") do io
+        print(io, """
+git_describe: "$(git_describe)"
+git_branch: "$(git_branch)"
+""")
+    end
+    if !isempty(git_diff)
+        open(joinpath(out_path, "git.diff"), "w") do io
+            print(io, git_diff)
+        end
+    end
+
     for Ngpu in cfg.Ngpus
         ngpu_string = lpad(Ngpu, 5, '0')
         job_dir = joinpath(out_path, "ngpu=$(ngpu_string)")
