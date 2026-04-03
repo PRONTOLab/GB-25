@@ -4,6 +4,8 @@ using Oceananigans
 using CUDA
 using Reactant
 
+GordonBell25.preamble()
+
 const args_settings = ArgParseSettings()
 
 @add_arg_table! args_settings begin
@@ -138,7 +140,8 @@ GordonBell25.atmos_compare_states(rmodel, vmodel; include_halos, throw_error, rt
 # ═══════════════════════════════════════════════════════════════════════════════
 
 GordonBell25.atmos_sync_states!(rmodel, vmodel)
-@jit Oceananigans.TimeSteppers.update_state!(rmodel)
+rupdate! = @compile sync=true raise=true GordonBell25.update_state!(rmodel)
+rupdate!(rmodel)
 
 @info "After syncing and updating state again:"
 GordonBell25.atmos_compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)

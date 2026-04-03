@@ -34,6 +34,8 @@ Oceananigans.defaults.FloatType = default_float_type
 using CUDA
 using Reactant
 
+GordonBell25.preamble()
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # Build models
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -117,6 +119,7 @@ GordonBell25.atmos_compare_states(rmodel, vmodel; include_halos, throw_error, rt
 
 GordonBell25.atmos_sync_states!(rmodel, vmodel)
 @jit Oceananigans.TimeSteppers.update_state!(rmodel)
+# Fix for above: wrap in compile and raise. TODO figure out why raise=false crashes because of TGammaOp
 
 @info "After syncing and updating state again:"
 GordonBell25.atmos_compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
