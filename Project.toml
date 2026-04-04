@@ -59,8 +59,8 @@ url = "https://github.com/EnzymeAD/Reactant_jll.jl"
 rev = "main"
 
 [sources.Oceananigans]
-url = "https://github.com/CliMA/Oceananigans.jl.git"
-rev = "main"
+url = "https://github.com/dkytezab/Oceananigans.jl.git"
+rev = "dkz/fix-ranges"
 
 [sources.NumericalEarth]
 url = "https://github.com/NumericalEarth/NumericalEarth.jl.git"
@@ -68,7 +68,7 @@ rev = "glw/manual-iterate"
 
 [sources.Breeze]
 url = "https://github.com/NumericalEarth/Breeze.jl.git"
-rev = "f3365c30c03e7a4119d6a6fccf9be6f31887530a"
+rev = "dkz/feat-reactant-version"
 
 [preferences.Reactant]
 xla_runtime = "IFRT"
