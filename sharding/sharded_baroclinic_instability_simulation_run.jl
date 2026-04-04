@@ -78,12 +78,9 @@ end
 
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 H = 8
-Tx = parsed_args["grid-x"] * Rx
-Ty = parsed_args["grid-y"] * Ry
+Nx = parsed_args["grid-x"] * Rx
+Ny = parsed_args["grid-y"] * Ry
 Nz = parsed_args["grid-z"]
-
-Nx = Tx - 2H
-Ny = Ty - 2H
 
 @info "[$rank] Generating model (Nx=$Nx, Ny=$Ny)..." now(UTC)
 model = GordonBell25.baroclinic_instability_model(arch, Nx, Ny, Nz; halo=(H, H, H), Δt=1)
