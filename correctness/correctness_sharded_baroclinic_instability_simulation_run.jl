@@ -1,5 +1,3 @@
-ENV["XLA_FLAGS"] = "--xla_gpu_detect_nan=fail --xla_tpu_detect_nan=fail"
-
 using GordonBell25
 using Oceananigans
 
