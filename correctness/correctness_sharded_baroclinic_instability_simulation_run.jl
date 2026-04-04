@@ -1,3 +1,5 @@
+ENV["XLA_FLAGS"] = "--xla_gpu_detect_nan=fail --xla_tpu_detect_nan=fail"
+
 using GordonBell25
 using Oceananigans
 
@@ -66,10 +68,13 @@ GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, at
 @jit compile_options=compile_options Oceananigans.initialize!(rmodel)
 Oceananigans.initialize!(vmodel)
 
+@info "After initialization"
+GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
+
 @jit compile_options=compile_options Oceananigans.TimeSteppers.update_state!(rmodel)
 Oceananigans.TimeSteppers.update_state!(vmodel)
 
-@info "After initialization and update state:"
+@info "After update state:"
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
 GordonBell25.sync_states!(rmodel, vmodel)
