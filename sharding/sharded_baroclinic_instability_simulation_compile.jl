@@ -1,27 +1,3 @@
-using ArgParse
-
-const args_settings = ArgParseSettings()
-@add_arg_table! args_settings begin
-    "--grid-x"
-        help = "Base factor for number of grid points on the x axis."
-        default = 64
-        arg_type = Int
-    "--grid-y"
-        help = "Base factor for number of grid points on the y axis."
-        default = 64
-        arg_type = Int
-    "--grid-z"
-        help = "Base factor for number of grid points on the z axis."
-        default = 4
-        arg_type = Int
-    "--precision"
-        help = "Number of bits of precision"
-        default = 64
-        arg_type = Int
-end
-const parsed_args = parse_args(ARGS, args_settings)
-
-using CUDA
 using BFloat16s
 using GordonBell25: first_time_step!, loop!, try_compile_code, preamble, TRY_COMPILE_FAILED
 using GordonBell25: baroclinic_instability_model, PROFILE, GordonBell25, is_distributed_env_present
