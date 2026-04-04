@@ -110,6 +110,61 @@ function sync_states!(m1, m2)
     return nothing
 end
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# Atmosphere-model variants
+#
+# SSPRungeKutta3 has Gⁿ but no G⁻, and AtmosphereModel lacks free_surface /
+# closure properties, so we keep a separate set that avoids those assumptions.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+function atmos_compare_states(m1, m2; rtol=sqrt(eps(eltype(m1.grid))), atol=0,
+                              include_halos=false, throw_error=false)
+    ok = true
+    cmp = include_halos ? compare_parent : compare_interior
+
+    Ψ1 = Oceananigans.fields(m1)
+    Ψ2 = Oceananigans.fields(m2)
+
+    for name in keys(Ψ1)
+        ok &= cmp(name, Ψ1[name], Ψ2[name]; rtol, atol)
+    end
+
+    Gⁿ1 = m1.timestepper.Gⁿ
+    Gⁿ2 = m2.timestepper.Gⁿ
+    for name in keys(Gⁿ1)
+        ok &= compare_interior("Gⁿ.$name", Gⁿ1[name], Gⁿ2[name]; rtol, atol)
+    end
+
+    if ok
+        @info "The two atmosphere models are consistent within rtol=$(rtol) and atol=$(atol) !"
+    else
+        msg = "There is a discrepancy between the atmosphere models!  See the details above"
+        throw_error ? error(msg) : @error(msg)
+    end
+
+    return nothing
+end
+
+function atmos_zero_tendencies!(model)
+    for name in keys(model.timestepper.Gⁿ)
+        parent(model.timestepper.Gⁿ[name]) .= 0
+    end
+    return nothing
+end
+
+function atmos_sync_states!(m1, m2)
+    Ψ1 = Oceananigans.fields(m1)
+    Ψ2 = Oceananigans.fields(m2)
+    for name in keys(Ψ1)
+        ψ1 = parent(Ψ1[name])
+        x, y, z = size(ψ1)
+        ψ2 = parent(Ψ2[name])
+        ψ2 = view(ψ2, 1:x, 1:y, 1:z)
+        copyto!(ψ1, Array(ψ2))
+    end
+    return nothing
+end
+
 function sync_parent_states!(m1, m2)
     Ψ1 = Oceananigans.fields(m1)
     Ψ2 = Oceananigans.fields(m2)

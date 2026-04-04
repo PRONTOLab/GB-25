@@ -1,21 +1,41 @@
 using Dates
 @info "This is when the fun begins" now(UTC)
 
-using BFloat16s
-using GordonBell25
-using GordonBell25: first_time_step!, time_step!, loop!, factors, is_distributed_env_present
+using ArgParse
 
-const parsed_args = GordonBell25.parse_baroclinic_instability_args(;
-    grid_x_default = 1536,
-    grid_y_default = 768,
-    grid_z_default = 4,
-)
+const args_settings = ArgParseSettings()
+@add_arg_table! args_settings begin
+    "--grid-x"
+        help = "Base factor for number of grid points on the λ axis."
+        default = 128
+        arg_type = Int
+    "--grid-y"
+        help = "Base factor for number of grid points on the φ axis."
+        default = 64
+        arg_type = Int
+    "--grid-z"
+        help = "Number of grid points on the z axis."
+        default = 4
+        arg_type = Int
+    "--precision"
+        help = "Number of bits of precision"
+        default = 32
+        arg_type = Int
+end
+const parsed_args = parse_args(ARGS, args_settings)
 
 ENV["JULIA_DEBUG"] = "Reactant_jll,Reactant"
 
+using GordonBell25
+using GordonBell25: first_time_step!, time_step!, loop!, factors, is_distributed_env_present
 using Oceananigans
-
-Oceananigans.defaults.FloatType = GordonBell25.float_type_from_args(parsed_args)
+if parsed_args["precision"] == 64
+    Oceananigans.defaults.FloatType = Float64
+elseif parsed_args["precision"] == 32
+    Oceananigans.defaults.FloatType = Float32
+else
+    throw(AssertionError("Unknown precision $(parsed_args["precision"])"))
+end
 using Oceananigans.Units
 using Oceananigans.Architectures: ReactantState
 using Random
@@ -30,7 +50,6 @@ end
 
 jobid_procid = GordonBell25.get_jobid_procid()
 
-# This must be called before `GordonBell25.initialize`!
 GordonBell25.preamble()
 
 using Libdl: dllist
@@ -39,16 +58,10 @@ using Libdl: dllist
 Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
 Reactant.MLIR.IR.DUMP_MLIR_DIR[] = joinpath(@__DIR__, "mlir_dumps", jobid_procid)
 Reactant.Compiler.DEBUG_DISABLE_RESHARDING[] = true
-# Reactant.Compiler.DEBUG_PRINT_CODEGEN[] = true
 Reactant.Compiler.WHILE_CONCAT[] = true
-# Reactant.Compiler.AGGRESSIVE_PROPAGATION[] = true
-# Reactant.Compiler.DUS_TO_CONCAT[] = false
-# Reactant.Compiler.SUM_TO_REDUCEWINDOW[] = true
-# Reactant.Compiler.AGGRESSIVE_SUM_TO_CONV[] = true
 
 GordonBell25.initialize(; single_gpu_per_process=false)
 
-# local_arch = Oceananigans.GPU()
 local_arch = Oceananigans.ReactantState()
 arch = local_arch
 
@@ -76,16 +89,17 @@ else
 end
 
 @info "[$rank] allocations" GordonBell25.allocatorstats()
+
 H = 8
-Tx = parsed_args["grid-x"] * Rx
-Ty = parsed_args["grid-y"] * Ry
+Tλ = parsed_args["grid-x"] * Rx
+Tφ = parsed_args["grid-y"] * Ry
 Nz = parsed_args["grid-z"]
 
-Nx = Tx - 2H
-Ny = Ty - 2H
+Nλ = Tλ - 2H
+Nφ = Tφ - 2H
 
-@info "[$rank] Generating model (Nx=$Nx, Ny=$Ny)..." now(UTC)
-model = GordonBell25.baroclinic_instability_model(arch, Nx, Ny, Nz; halo=(H, H, H), Δt=1)
+@info "[$rank] Generating atmosphere model (Nλ=$Nλ, Nφ=$Nφ, Nz=$Nz)..." now(UTC)
+model = GordonBell25.moist_baroclinic_wave_model(arch; Nλ, Nφ, Nz, Δt=2.0, halo=(H, H, H))
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 
 @show model
@@ -102,11 +116,11 @@ if local_arch isa Oceananigans.ReactantState
 end
 
 @info "[$rank] Compiling first_time_step!..." now(UTC)
-compile_options = CompileOptions(; sync=true, raise=true, strip_llvm_debuginfo=true, strip=["enzymexla.kernel_call", "(::Reactant.Compiler.LLVMFunc", "ka_with_reactant", "(::KernelAbstractions.Kernel", "var\"#_launch!;_launch!"], multifloat=GordonBell25.multifloat_from_args(parsed_args))
+compile_options = CompileOptions(; sync=true, raise=true, strip_llvm_debuginfo=true, strip=["enzymexla.kernel_call", "(::Reactant.Compiler.LLVMFunc", "ka_with_reactant", "(::KernelAbstractions.Kernel", "var\"#_launch!;_launch!"])
 rfirst! = if local_arch isa Oceananigans.ReactantState
      @compile compile_options=compile_options first_time_step!(model)
 else
-     first_time_step!     
+     first_time_step!
 end
 
 @info "[$rank] allocations" GordonBell25.allocatorstats()
