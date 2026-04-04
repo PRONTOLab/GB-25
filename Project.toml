@@ -30,7 +30,7 @@ SpecialFunctions = "276daf66-3868-5448-9aa4-cd146d93841b"
 
 [compat]
 ArgParse = "1.2.0"
-Breeze = "= 0.4.4"
+Breeze = "= 0.4.5"
 BFloat16s = "0.6.1"
 CUDA = "5.7.1"
 ClimaSeaIce = "= 0.4.5"
