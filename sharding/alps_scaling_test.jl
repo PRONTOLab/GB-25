@@ -44,12 +44,30 @@ export MPICH_GPU_SUPPORT_ENABLED=0
 export JULIA_CUDA_USE_COMPAT=false
 export FI_MR_CACHE_MONITOR=disabled
 
+# https://docs.cscs.ch/software/communication/nccl/#uenv
+export NCCL_NET="AWS Libfabric"
+export NCCL_NET_GDR_LEVEL=PHB
+export NCCL_CROSS_NIC=1
+export NCCL_PROTO=^LL128
+export FI_CXI_DEFAULT_CQ_SIZE=131072
+export FI_CXI_DEFAULT_TX_SIZE=16384
+export FI_CXI_DISABLE_HOST_REGISTER=1
+export FI_CXI_RX_MATCH_MODE=software
+# export FI_MR_CACHE_MONITOR=userfaultfd
+export NCCL_NCHANNELS_PER_NET_PEER=4
+
+# Equivalent to loading the `aws-ofi-nccl` module, without having to load it:
+# https://docs.cscs.ch/software/communication/nccl/#uenv
+export LD_LIBRARY_PATH="/user-environment/linux-neoverse_v2/aws-ofi-nccl-1.17.1-rpvjytyqpdw2taig4xibhrtgudie4a3q/lib:/user-environment/linux-neoverse_v2/libfabric-2.3.1-npwd54pnpalgjcizhpejkh7gwg4c7idu/lib:/user-environment/linux-neoverse_v2/aws-ofi-nccl-1.17.1-rpvjytyqpdw2taig4xibhrtgudie4a3q/lib"
+
 ulimit -s unlimited
 
 # Setting `--cpu_bind` is explicitly discouraged:
 # <https://eth-cscs.github.io/cscs-docs/guides/gb2025/#slurm>.
 # We only set it to `verbose` to record what's going on.
-srun $(job_dir)/launcher.sh $(Base.julia_cmd()[1]) --project=$(project_path) --startup-file=no --threads=16 --compiled-modules=strict -O0 $(run_file)
+srun --uenv="\${SCRATCH}/uenv_julia/julia_26_3_v1_gh200.squashfs" --view=juliaup --preserve-env --cpu_bind=verbose \
+    --export=ALL,LD_PRELOAD="/user-environment/linux-neoverse_v2/nccl-2.28.7-1-sybuzb6n6j63b2pazvl2vh3nktz3jq27/lib/libnccl.so.2" \
+    $(job_dir)/launcher.sh $(Base.julia_cmd()[1]) --project=$(project_path) --startup-file=no --threads=16 --compiled-modules=strict -O0 $(run_file)
 """
 end
 
