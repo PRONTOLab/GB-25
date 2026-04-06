@@ -1,4 +1,3 @@
-using ArgParse
 using GordonBell25
 using Oceananigans
 using CUDA
@@ -6,37 +5,13 @@ using Reactant
 
 GordonBell25.preamble()
 
-const args_settings = ArgParseSettings()
+const parsed_args = GordonBell25.parse_baroclinic_instability_args(;
+    grid_x_default = 64,
+    grid_y_default = 64,
+    grid_z_default = 16,
+)
 
-@add_arg_table! args_settings begin
-    "--grid-x"
-        help = "Per-device grid points in longitude (total = grid-x * Rx)."
-        default = 32
-        arg_type = Int
-    "--grid-y"
-        help = "Per-device grid points in latitude (total = grid-y * Ry)."
-        default = 32
-        arg_type = Int
-    "--grid-z"
-        help = "Number of vertical grid points."
-        default = 4
-        arg_type = Int
-    "--precision"
-        help = "Number of bits of precision"
-        default = 32
-        arg_type = Int
-end
-
-const parsed_args = parse_args(ARGS, args_settings)
-
-default_float_type = if parsed_args["precision"] == 64
-    Float64
-elseif parsed_args["precision"] == 32
-    Float32
-else
-    throw(AssertionError("Unknown precision $(parsed_args["precision"])"))
-end
-
+default_float_type = GordonBell25.float_type_from_args(parsed_args)
 Oceananigans.defaults.FloatType = default_float_type
 
 if !GordonBell25.is_distributed_env_present()
