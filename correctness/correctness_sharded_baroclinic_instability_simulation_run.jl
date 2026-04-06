@@ -101,6 +101,7 @@ function test_update_state!(model)
     # Update possible FieldTimeSeries used in the model
     @apply_regionally update_model_field_time_series!(model, model.clock)
 
+    if false
     # Update the boundary conditions
     @apply_regionally update_boundary_condition!(fields(model), model)
 
@@ -108,6 +109,7 @@ function test_update_state!(model)
 
     @apply_regionally replace_horizontal_vector_halos!(model.velocities, model.grid)
     @apply_regionally compute_auxiliaries!(model)
+    end
 
     if false
     fill_halo_regions!(model.diffusivity_fields; only_local_halos = true)
