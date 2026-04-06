@@ -1,41 +1,21 @@
 using Dates
 @info "This is when the fun begins" now(UTC)
 
-using ArgParse
-
-const args_settings = ArgParseSettings()
-@add_arg_table! args_settings begin
-    "--grid-x"
-        help = "Base factor for number of grid points on the λ axis."
-        default = 128
-        arg_type = Int
-    "--grid-y"
-        help = "Base factor for number of grid points on the φ axis."
-        default = 64
-        arg_type = Int
-    "--grid-z"
-        help = "Number of grid points on the z axis."
-        default = 4
-        arg_type = Int
-    "--precision"
-        help = "Number of bits of precision"
-        default = 32
-        arg_type = Int
-end
-const parsed_args = parse_args(ARGS, args_settings)
-
 ENV["JULIA_DEBUG"] = "Reactant_jll,Reactant"
 
 using GordonBell25
 using GordonBell25: first_time_step!, time_step!, loop!, factors, is_distributed_env_present
 using Oceananigans
-if parsed_args["precision"] == 64
-    Oceananigans.defaults.FloatType = Float64
-elseif parsed_args["precision"] == 32
-    Oceananigans.defaults.FloatType = Float32
-else
-    throw(AssertionError("Unknown precision $(parsed_args["precision"])"))
-end
+
+const parsed_args = GordonBell25.parse_baroclinic_instability_args(;
+    grid_x_default = 64,
+    grid_y_default = 64,
+    grid_z_default = 16,
+)
+
+default_float_type = GordonBell25.float_type_from_args(parsed_args)
+Oceananigans.defaults.FloatType = default_float_type
+
 using Oceananigans.Units
 using Oceananigans.Architectures: ReactantState
 using Random
