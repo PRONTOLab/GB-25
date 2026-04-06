@@ -54,6 +54,56 @@ model_kw = (
 varch = CPU()
 rmodel = GordonBell25.baroclinic_instability_model(rarch, Nx, Ny, Nz; model_kw...)
 vmodel = GordonBell25.baroclinic_instability_model(varch, Nx, Ny, Nz; model_kw...)
+
+using InteractiveUtils
+
+using Oceananigans.Architectures
+using Oceananigans.BoundaryConditions
+
+using Oceananigans: UpdateStateCallsite
+using Oceananigans.Biogeochemistry: update_biogeochemical_state!
+using Oceananigans.BoundaryConditions: update_boundary_condition!, replace_horizontal_vector_halos!
+using Oceananigans.TurbulenceClosures: compute_diffusivities!
+using Oceananigans.ImmersedBoundaries: mask_immersed_field!, mask_immersed_field_xy!, inactive_node
+using Oceananigans.Models: update_model_field_time_series!
+using Oceananigans.Models.NonhydrostaticModels: update_hydrostatic_pressure!, p_kernel_parameters
+using Oceananigans.Fields: tupled_fill_halo_regions!
+
+import Oceananigans.Models.NonhydrostaticModels: compute_auxiliaries!
+import Oceananigans.TimeSteppers: update_state!
+
+function test_update_state!(model)
+    grid = model.grid
+    callbacks = []
+    compute_tendencies = true
+
+    @apply_regionally mask_immersed_model_fields!(model, grid)
+
+    # Update possible FieldTimeSeries used in the model
+    @apply_regionally update_model_field_time_series!(model, model.clock)
+
+    # Update the boundary conditions
+    @apply_regionally update_boundary_condition!(fields(model), model)
+
+    tupled_fill_halo_regions!(prognostic_fields(model), grid, model.clock, fields(model), async=true)
+
+    @apply_regionally replace_horizontal_vector_halos!(model.velocities, model.grid)
+    @apply_regionally compute_auxiliaries!(model)
+
+    if false
+    fill_halo_regions!(model.diffusivity_fields; only_local_halos = true)
+
+    [callback(model) for callback in callbacks if callback.callsite isa UpdateStateCallsite]
+
+    update_biogeochemical_state!(model.biogeochemistry, model)
+
+    compute_tendencies &&
+        @apply_regionally compute_tendencies!(model, callbacks)
+    end
+
+    return
+end
+
 @show vmodel
 @show rmodel
 @assert rmodel.architecture isa Distributed
@@ -71,8 +121,8 @@ GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, at
 @jit compile_options=compile_options Oceananigans.initialize!(rmodel)
 Oceananigans.initialize!(vmodel)
 
-@jit compile_options=compile_options Oceananigans.TimeSteppers.update_state!(rmodel)
-Oceananigans.TimeSteppers.update_state!(vmodel)
+@jit compile_options=compile_options test_update_state!(rmodel)
+test_update_state!(vmodel)
 
 @info "After initialization and update state:"
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
