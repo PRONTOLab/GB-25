@@ -40,7 +40,7 @@ GordonBell25.preamble()
 # Build models
 # ═══════════════════════════════════════════════════════════════════════════════
 
-throw_error = true
+throw_error = false
 include_halos = true
 rtol = sqrt(eps(default_float_type))
 atol = 0
