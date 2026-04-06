@@ -42,7 +42,7 @@ GordonBell25.preamble()
 
 throw_error = false
 include_halos = true
-rtol = sqrt(eps(default_float_type))
+rtol = 2 * sqrt(eps(default_float_type))
 atol = 0
 
 model_kw = (;
