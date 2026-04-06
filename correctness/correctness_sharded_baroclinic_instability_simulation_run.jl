@@ -69,6 +69,8 @@ using Oceananigans.Models: update_model_field_time_series!
 using Oceananigans.Models.NonhydrostaticModels: update_hydrostatic_pressure!, p_kernel_parameters
 using Oceananigans.Fields: tupled_fill_halo_regions!
 
+using Oceananigans: fields, prognostic_fields
+
 import Oceananigans.Models.NonhydrostaticModels: compute_auxiliaries!
 import Oceananigans.TimeSteppers: update_state!
 
@@ -102,7 +104,7 @@ function test_update_state!(model)
     # Update the boundary conditions
     @apply_regionally update_boundary_condition!(fields(model), model)
 
-    tupled_fill_halo_regions!(prognostic_fields(model), grid, model.clock, fields(model), async=true)
+    tupled_fill_halo_regions!(Oceananigans.prognostic_fields(model), grid, model.clock, fields(model), async=true)
 
     @apply_regionally replace_horizontal_vector_halos!(model.velocities, model.grid)
     @apply_regionally compute_auxiliaries!(model)
