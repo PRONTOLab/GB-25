@@ -72,10 +72,12 @@ using Oceananigans.Fields: tupled_fill_halo_regions!
 import Oceananigans.Models.NonhydrostaticModels: compute_auxiliaries!
 import Oceananigans.TimeSteppers: update_state!
 
+using Oceananigans.ImmersedBoundaries: mask_immersed_field!
+
 # Mask immersed fields
 function mask_immersed_model_fields!(model, grid)
     η = Oceananigans.Models.HydrostaticFreeSurfaceModels.displacement(model.free_surface)
-    fields_to_mask = merge(model.auxiliary_fields, prognostic_fields(model))
+    fields_to_mask = merge(model.auxiliary_fields, Oceananigans.prognostic_fields(model))
 
     foreach(fields_to_mask) do field
         if field !== η
