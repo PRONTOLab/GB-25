@@ -1,42 +1,22 @@
-using ArgParse
-
-const args_settings = ArgParseSettings()
-@add_arg_table! args_settings begin
-    "--grid-x"
-        help = "Base factor for number of grid points on the λ axis."
-        default = 512
-        arg_type = Int
-    "--grid-y"
-        help = "Base factor for number of grid points on the φ axis."
-        default = 256
-        arg_type = Int
-    "--grid-z"
-        help = "Number of grid points on the z axis."
-        default = 4
-        arg_type = Int
-    "--precision"
-        help = "Number of bits of precision"
-        default = 32
-        arg_type = Int
-end
-const parsed_args = parse_args(ARGS, args_settings)
-
 using GordonBell25: first_time_step!, loop!, try_compile_code, preamble, TRY_COMPILE_FAILED
 using GordonBell25: moist_baroclinic_wave_model, PROFILE, GordonBell25
+using Oceananigans
+
+const parsed_args = GordonBell25.parse_baroclinic_instability_args(;
+    grid_x_default = 64,
+    grid_y_default = 64,
+    grid_z_default = 16,
+)
+
+default_float_type = GordonBell25.float_type_from_args(parsed_args)
+Oceananigans.defaults.FloatType = default_float_type
+
 using CUDA
 using Reactant
-using Oceananigans
 using Oceananigans.Architectures: ReactantState
 Reactant.Compiler.WHILE_CONCAT[] = true
 
 PROFILE[] = true
-if parsed_args["precision"] == 32
-    Oceananigans.defaults.FloatType = Float32
-elseif parsed_args["precision"] == 64
-    Oceananigans.defaults.FloatType = Float64
-else
-    throw(AssertionError("Unknown precision $(parsed_args["precision"])"))
-end
 
 preamble()
 
