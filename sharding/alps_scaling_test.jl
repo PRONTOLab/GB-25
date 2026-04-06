@@ -15,14 +15,20 @@ time     = "00:30:00"
 Ngpus    = [4, 8, 12, 16]
 type     = "weak"
 
+all(ispow2, Ngpus) || error("Not all elements of Ngpus are powers of 2")
+
 gpus_per_node = 4
 cpus_per_task = 288
 
 alps_config = JobConfig(; username, account, out_dir, time, cpus_per_task, Ngpus,
                         run_name, gpus_per_node, type, submit)
 
+ispow4(n) = n > 0 && ispow2(n) && !iszero(n & 0x5555555555555555)
+
 function alps_submit_job_writer(cfg::JobConfig, job_name, Nnodes, job_dir, Ngpu,
                                 resolution_fraction, project_path, run_file)
+
+    x, y = ispow4(Ngpu) ? (1088, 544) : (768, 768)
 
     """
 #!/bin/bash -l
@@ -67,7 +73,7 @@ ulimit -s unlimited
 # We only set it to `verbose` to record what's going on.
 srun --uenv="\${SCRATCH}/uenv_julia/julia_26_3_v1_gh200.squashfs" --view=juliaup --preserve-env --cpu_bind=verbose \
     --export=ALL,LD_PRELOAD="/user-environment/linux-neoverse_v2/nccl-2.28.7-1-sybuzb6n6j63b2pazvl2vh3nktz3jq27/lib/libnccl.so.2" \
-    $(job_dir)/launcher.sh $(Base.julia_cmd()[1]) --project=$(project_path) --startup-file=no --threads=16 --compiled-modules=strict -O0 $(run_file)
+    $(job_dir)/launcher.sh $(Base.julia_cmd()[1]) --project=$(project_path) --startup-file=no --threads=16 --compiled-modules=strict -O0 $(run_file) --grid-x $(x) --grid-y $(y) --grid-z 64
 """
 end
 
