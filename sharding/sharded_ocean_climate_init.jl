@@ -93,6 +93,13 @@ catch err
     @warn "[$rank] could not extract extrema (sharded field?): $err"
 end
 
+@info "[$rank] INIT FROM FILE PASSED — sharded initialization works"
+
+if get(ENV, "SKIP_COMPILE", "false") == "true"
+    @info "[$rank] SKIP_COMPILE=true, stopping before first_time_step! compile"
+    exit(0)
+end
+
 # ---- Compile first_time_step! under Reactant ----
 @info "[$rank] @compile first_time_step!..."
 compile_options = CompileOptions(;
