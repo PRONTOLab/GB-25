@@ -72,7 +72,7 @@ function generate_and_submit(submit_job_writer, cfg::JobConfig; caller_file::Str
     cp(input_file, run_file)
 
     # Capture repository state
-    git_describe = chomp(read(Cmd(`git --no-pager describe --tags --always --dirty`; dir=project_path), String))
+    git_describe = readchomp(`git -C $(project_path) --no-pager describe --tags --always --dirty`)
     git_branch = chomp(read(Cmd(`git rev-parse --abbrev-ref HEAD`; dir=project_path), String))
     git_diff = read(Cmd(`git --no-pager diff --no-ext-diff HEAD`; dir=project_path), String)
     open(joinpath(out_path, "run-info.toml"), "w") do io
