@@ -33,8 +33,7 @@ SpecialFunctions = "276daf66-3868-5448-9aa4-cd146d93841b"
 Breeze = {rev = "dkz/feat-reactant-version", url = "https://github.com/NumericalEarth/Breeze.jl.git"}
 NumericalEarth = {rev = "glw/manual-iterate", url = "https://github.com/NumericalEarth/NumericalEarth.jl.git"}
 Oceananigans = {rev = "dkz/fix-ranges", url = "https://github.com/dkytezab/Oceananigans.jl.git"}
-Reactant = {rev = "jllcompat", url = "https://github.com/dkytezab/Reactant.jl.git"}
-Reactant_jll = {rev = "main", url = "https://github.com/EnzymeAD/Reactant_jll.jl"}
+Reactant = {rev = "main", url = "https://github.com/dkytezab/Reactant.jl.git"}
 
 [compat]
 ArgParse = "1.2.0"
