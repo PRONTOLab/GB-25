@@ -121,4 +121,14 @@ Reactant.with_profiler(joinpath(profile_dir, "loop2")) do
     end
 end
 
+checkpoint_dir = joinpath(@__DIR__, "checkpoints", replace(string(now(UTC)), ':' => '-'))
+@info "[$rank] Saving checkpoint to $checkpoint_dir..." now(UTC)
+GordonBell25.save_model_state(checkpoint_dir, model, arch; label="final")
+@info "[$rank] Visualizing checkpoint..." now(UTC)
+GordonBell25.visualize_checkpoint(joinpath(checkpoint_dir, "final");
+                                  halo=8,
+                                  longitude=(0, 360),
+                                  latitude=(-80, 80),
+                                  z=(-4000, 0))
+
 @info "[$rank] Done!" now(UTC)
