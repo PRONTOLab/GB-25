@@ -35,7 +35,7 @@ GordonBell25.preamble()
 using Libdl: dllist
 @show filter(contains("nccl"), dllist())
 
-Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
+Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = false
 Reactant.MLIR.IR.DUMP_MLIR_DIR[] = joinpath(@__DIR__, "mlir_dumps", jobid_procid)
 Reactant.Compiler.DEBUG_DISABLE_RESHARDING[] = true
 # Reactant.Compiler.DEBUG_PRINT_CODEGEN[] = true
@@ -100,6 +100,9 @@ if devarch isa Oceananigans.ReactantState
    	ConcreteRNumber(Ninner; sharding=Sharding.NamedSharding(arch.connectivity, ()))
    end
 end
+
+# reenable MLIR dumping after model generation, to avoid dumping the IR for all the helper functions called during model setup
+Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
 
 @info "[$rank] Compiling first_time_step!..." now(UTC)
 compile_options = CompileOptions(; sync=true, raise=true, strip_llvm_debuginfo=true, strip=["enzymexla.kernel_call", "(::Reactant.Compiler.LLVMFunc", "ka_with_reactant", "(::KernelAbstractions.Kernel", "var\"#_launch!;_launch!"], multifloat=GordonBell25.multifloat_from_args(parsed_args))
