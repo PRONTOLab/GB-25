@@ -1,6 +1,7 @@
 using Reactant
 using Oceananigans
 using Serialization
+using CairoMakie
 
 """
     local_shards_to_host(arr::Reactant.ConcreteIFRTArray{T,N})
@@ -185,5 +186,89 @@ function load_checkpoint_metadata(dir)
         Serialization.deserialize(io)
     end
     return (iteration=state[:iteration], time=state[:time], field_names=state[:field_names])
+end
+
+"""
+    load_all_fields(dir; halo=0)
+
+Load every field from a checkpoint directory, optionally stripping `halo` cells
+from each side of each dimension. Returns `(metadata, field_data)` where
+`metadata` is a NamedTuple with `:iteration`, `:time`, `:field_names` and
+`field_data` is a `Dict{Symbol, Array}`.
+"""
+function load_all_fields(dir; halo::Int=0)
+    meta = load_checkpoint_metadata(dir)
+    data = Dict{Symbol, Array}()
+    for name in meta.field_names
+        raw = load_global_field(dir, name)
+        if halo > 0
+            interior_ranges = ntuple(ndims(raw)) do d
+                (halo + 1):(size(raw, d) - halo)
+            end
+            data[name] = raw[interior_ranges...]
+        else
+            data[name] = raw
+        end
+    end
+    return meta, data
+end
+
+"""
+    visualize_checkpoint(dir; halo=0, output_path=nothing)
+
+Load a checkpoint from `dir`, plot horizontal slices (bottom, mid, top) of every
+field, and save the figure as a PNG. Returns the output path.
+
+Keyword arguments:
+- `halo`: number of halo cells to strip from each side (default 0)
+- `output_path`: where to write the PNG (defaults to `<parent of dir>/checkpoint_slices.png`)
+"""
+function visualize_checkpoint(dir::AbstractString; halo::Int=0, output_path=nothing)
+    meta, field_data = load_all_fields(dir; halo)
+    isempty(field_data) && error("No fields found in $dir")
+
+    names_to_plot = meta.field_names
+    n_fields = length(names_to_plot)
+    fig = CairoMakie.Figure(; size=(960, 320 * max(n_fields, 1)), fontsize=11)
+
+    for (row, name) in enumerate(names_to_plot)
+        arr = field_data[name]
+        ndims(arr) >= 3 || continue
+        nx, ny, nz = size(arr, 1), size(arr, 2), size(arr, 3)
+
+        ks     = (1, max(1, nz ÷ 2), nz)
+        labels = ("k=$(ks[1]) (bottom)", "k=$(ks[2]) (mid)", "k=$(ks[3]) (top)")
+        slices = ntuple(i -> arr[:, :, ks[i]], 3)
+
+        vmin = minimum(minimum, slices)
+        vmax = maximum(maximum, slices)
+        if vmin ≈ vmax
+            vmin -= one(vmin)
+            vmax += one(vmax)
+        end
+
+        for col in 1:3
+            ax = CairoMakie.Axis(fig[row, col];
+                      title="$name — $(labels[col])",
+                      xlabel= col == 2 ? "x index" : "",
+                      ylabel= col == 1 ? "y index" : "")
+            hm = CairoMakie.heatmap!(ax, 1:nx, 1:ny, slices[col]';
+                          colorrange=(vmin, vmax), colormap=:balance)
+            col == 3 && CairoMakie.Colorbar(fig[row, 4], hm; width=12)
+        end
+    end
+
+    iter_str = meta.iteration === nothing ? "?" : string(meta.iteration)
+    time_str = meta.time === nothing ? "?" : string(meta.time)
+    CairoMakie.Label(fig[0, 1:4], "Checkpoint  iter=$iter_str  t=$(time_str) s";
+                      fontsize=15, font=:bold)
+
+    if output_path === nothing
+        output_path = joinpath(dirname(dir), "checkpoint_slices.png")
+    end
+    mkpath(dirname(output_path))
+    CairoMakie.save(output_path, fig; px_per_unit=2)
+    @info "Checkpoint visualization saved to $output_path"
+    return output_path
 end
 

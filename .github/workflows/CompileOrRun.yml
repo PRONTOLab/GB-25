@@ -190,3 +190,21 @@ jobs:
           path: '**/plugins'
           retention-days: 90
           overwrite: false
+      - name: Upload checkpoint data
+        uses: actions/upload-artifact@v7
+        timeout-minutes: 10
+        if: ${{ always() && inputs.compile_or_run == 'run' }}
+        with:
+          name: 'simulation-checkpoints-${{ inputs.sim_type }}-${{ inputs.grid_type }}-${{ inputs.julia_version }}-${{ inputs.os }}-${{ inputs.xla_runtime }}'
+          path: '**/checkpoints/**/*.dat'
+          retention-days: 90
+          overwrite: false
+      - name: Upload checkpoint plots
+        uses: actions/upload-artifact@v7
+        timeout-minutes: 10
+        if: ${{ always() && inputs.compile_or_run == 'run' }}
+        with:
+          name: 'simulation-checkpoint-plots-${{ inputs.sim_type }}-${{ inputs.grid_type }}-${{ inputs.julia_version }}-${{ inputs.os }}-${{ inputs.xla_runtime }}'
+          path: '**/checkpoints/**/*.png'
+          retention-days: 90
+          overwrite: false
