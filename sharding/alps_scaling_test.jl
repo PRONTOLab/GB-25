@@ -12,7 +12,7 @@ account  = "g209"
 submit   = true #false
 run_name = "reactant_"
 time     = "00:30:00"
-Ngpus    = [4, 8, 12, 16]
+Ngpus    = [4, 8, 16]
 type     = "weak"
 
 all(ispow2, Ngpus) || error("Not all elements of Ngpus are powers of 2")
