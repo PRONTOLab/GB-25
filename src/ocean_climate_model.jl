@@ -46,14 +46,32 @@ const DEFAULT_INITIAL_CONDITIONS_FILE =
 ##### of an `interpolate!` onto the target grid (which lives on `arch`).
 #####
 
-"""
-    _interpolated_bathymetry_array(bathymetry_file, target_size, target_z, target_topology)
+#=
+The "ideal" pattern would be:
+  1) Load JLD2 into a CPU `Field` on the native 1/6° grid
+  2) `on_architecture(arch, cpu_field)` to move it to `arch`
+  3) `interpolate!(model_field, native_data)`
 
-Read the cached 1/6° bathymetry from `bathymetry_file`, build a CPU
-source `Field`, and interpolate it onto a CPU `Field` with the
-same shape as the target grid. Returns a plain `Array{Float64,2}` of
-the interpolated bottom height (no halos), ready to feed into a
-`set!` on the device-side bottom_height field.
+That works on `CPU()` and on plain `ReactantState()`. Under
+`Distributed{ReactantState}` step (3) currently fails: Reactant's MLIR
+pass manager errors with "failed to run pass manager on module" while
+lowering `gpu__interpolate!` for two sharded `LatitudeLongitudeGrid`s
+(repro module saved to /tmp/sharded_interpolate_repro.mlir during
+debugging on this machine).
+
+Workaround used here: do `interpolate!` entirely on a CPU twin of the
+target grid, then `set!(device_field, host_array)` to transfer the
+already-target-shaped data onto the (possibly sharded) device field. The
+host→device `set!` is a NoSharding→DimsSharding reshard, which Reactant
+handles (resharding must remain enabled — see notes in the sharded run
+script).
+=#
+
+"""
+    _interpolated_bathymetry_array(bathymetry_file, Nx, Ny)
+
+Read cached 1/6° bathymetry, build a CPU source `Field`, `interpolate!`
+onto a CPU target-shaped `Field`, return the interpolated host array.
 """
 function _interpolated_bathymetry_array(bathymetry_file::AbstractString,
                                         Nx::Int, Ny::Int)
@@ -92,11 +110,10 @@ function _interpolated_bathymetry_array(bathymetry_file::AbstractString,
 end
 
 """
-    _interpolated_T_S_arrays(ic_file, target_size, target_z)
+    _interpolated_T_S_arrays(ic_file, Nx, Ny, Nz, target_z)
 
-Read cached 1/6° T, S, build CPU source `Field`s, and `interpolate!`
-them onto CPU `Field`s shaped like the target grid. Returns plain
-3D `Array`s ready for `set!` onto device-side tracers.
+Read cached 1/6° T, S, build CPU source `Field`s, `interpolate!` onto
+CPU target-shaped `Field`s, return interpolated host arrays.
 """
 function _interpolated_T_S_arrays(ic_file::AbstractString,
                                   Nx::Int, Ny::Int, Nz::Int, target_z)
