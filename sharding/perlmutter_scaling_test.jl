@@ -28,7 +28,7 @@ ispow4(n) = n > 0 && ispow2(n) && !iszero(n & 0x5555555555555555)
 function perlmutter_submit_job_writer(cfg::JobConfig, job_name, Nnodes, job_dir, Ngpu,
                                       resolution_fraction, project_path, run_file)
 
-    x, y = ispow4(Ngpu) ? (1088, 544) : (768, 768)
+    x, y = ispow4(Ngpu) ? (360, 180) : (256, 256)
 
 #SBATCH -q premium
                 """
