@@ -1,5 +1,5 @@
 using GordonBell25: first_time_step!, time_step!, loop!, preamble
-using GordonBell25: data_free_ocean_climate_model_init
+using GordonBell25: ocean_climate_model_init
 using Oceananigans.Architectures: ReactantState
 using Reactant
 
@@ -10,7 +10,7 @@ preamble()
 Ninner = ConcreteRNumber(3)
 
 @info "Generating model..."
-model = data_free_ocean_climate_model_init(ReactantState())
+model = ocean_climate_model_init(ReactantState())
 Ninner = ConcreteRNumber(2)
 
 GC.gc(true); GC.gc(false); GC.gc(true)

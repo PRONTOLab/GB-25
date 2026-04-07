@@ -22,7 +22,10 @@ GordonBell25.preamble()
 
 Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
 Reactant.MLIR.IR.DUMP_MLIR_DIR[] = joinpath(@__DIR__, "mlir_dumps", jobid_procid)
-Reactant.Compiler.DEBUG_DISABLE_RESHARDING[] = true
+# Resharding must remain enabled — the constructor sets! host arrays
+# into sharded fields (bathymetry, T, S, atmosphere), which is a
+# NoSharding -> DimsSharding reshard. The data-free baroclinic test
+# disables resharding because it uses purely analytic init; we cannot.
 Reactant.Compiler.WHILE_CONCAT[] = true
 
 GordonBell25.initialize(; single_gpu_per_process=false)
