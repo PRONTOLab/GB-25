@@ -1,46 +1,32 @@
-#=
-Sharded `Distributed{ReactantState}` smoke test for `ocean_climate_model_init`.
-
-Goal: confirm that the new constructor (which loads bathymetry + T, S from
-the cached 1/6° JLD2 artifacts and `interpolate!`s onto the target grid)
-builds, compiles `first_time_step!`, and runs it once — both for a single
-Reactant device and for the multi-device sharded case.
-
-Resolution defaults to 2° (small enough that compile + first step finishes
-quickly); override with the `RESOLUTION` env var if you want to push it.
-
-Run (single device):
-    LD_PRELOAD=.../libcrypto.so.3 julia +1.11.9 --project=. \
-        sharding/sharded_ocean_climate_init.jl
-
-Run (multi-device, e.g. 8 GPUs via Reactant.Distributed):
-    LD_PRELOAD=.../libcrypto.so.3 julia +1.11.9 --project=. \
-        sharding/sharded_ocean_climate_init.jl
-(Reactant.Distributed.initialize picks up XLA_FLAGS / SLURM env on its own.)
-=#
-
 using Dates
-@info "[$(now(UTC))] this is when the fun begins"
+@info "This is when the fun begins" now(UTC)
 
 ENV["JULIA_DEBUG"] = "Reactant_jll,Reactant"
 
 using GordonBell25
-using GordonBell25: factors, is_distributed_env_present
+using GordonBell25: first_time_step!, time_step!, loop!, factors, is_distributed_env_present
+
 using Oceananigans
 using Oceananigans.Units
 using Oceananigans.Architectures: ReactantState
 using Reactant
-using Printf
 
 if !is_distributed_env_present()
     using MPI
     MPI.Init()
 end
 
+jobid_procid = GordonBell25.get_jobid_procid()
+
 GordonBell25.preamble()
+
+Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
+Reactant.MLIR.IR.DUMP_MLIR_DIR[] = joinpath(@__DIR__, "mlir_dumps", jobid_procid)
+Reactant.Compiler.DEBUG_DISABLE_RESHARDING[] = true
+Reactant.Compiler.WHILE_CONCAT[] = true
+
 GordonBell25.initialize(; single_gpu_per_process=false)
 
-# ---- Architecture ----
 devarch = Oceananigans.ReactantState()
 arch    = devarch
 
@@ -51,72 +37,85 @@ else
     MPI.Comm_size(comm)
 end
 
-@info "[startup] Ndev = $Ndev"
-
 Rx, Ry = factors(Ndev)
-if Ndev > 1
+
+if Ndev == 1
+    rank = 0
+else
     arch = Oceananigans.Distributed(devarch; partition = Partition(Rx, Ry, 1))
     rank = Reactant.Distributed.local_rank()
-else
-    rank = 0
 end
 
-@info "[$rank] Rx,Ry = $Rx,$Ry"
-
-# ---- Resolution sweep / single-resolution run ----
 resolution = parse(Float64, get(ENV, "RESOLUTION", "2"))
 Nz         = parse(Int,     get(ENV, "NZ",         "20"))
 Δt         = parse(Float64, get(ENV, "DT_SECONDS", "30"))
 
-@info "[$rank] Building model: resolution=$resolution, Nz=$Nz, Δt=$Δt"
+@info "[$rank] Generating model (resolution=$resolution, Nz=$Nz)..." now(UTC)
 model = GordonBell25.ocean_climate_model_init(arch;
                                               resolution = resolution,
                                               Nz         = Nz,
                                               Δt         = Δt)
-@info "[$rank] model built"
-@info "[$rank] grid size: $(size(model.ocean.model.grid))"
 
-# Quick sanity: report (T, S, bottom_height) extrema before compile.
-# These calls go through Reactant for sharded fields; if interpolate! into
-# a sharded target broke, this is where we'd see it.
-T = model.ocean.model.tracers.T
-S = model.ocean.model.tracers.S
-bh = model.ocean.model.grid.immersed_boundary.bottom_height
+Ninner = 256
 
-try
-    Tmin, Tmax = extrema(Array(interior(T)))
-    Smin, Smax = extrema(Array(interior(S)))
-    bhmin, bhmax = extrema(Array(interior(bh)))
-    @info @sprintf("[%d] T:[%.2f,%.2f]  S:[%.2f,%.2f]  bh:[%.1f,%.1f]",
-                   rank, Tmin, Tmax, Smin, Smax, bhmin, bhmax)
-catch err
-    @warn "[$rank] could not extract extrema (sharded field?): $err"
+if devarch isa Oceananigans.ReactantState
+    Ninner = if Ndev == 1
+        ConcreteRNumber(Ninner)
+    else
+        sharding = Sharding.NamedSharding(arch.connectivity, ())
+        ConcreteRNumber(Ninner; sharding)
+    end
 end
 
-@info "[$rank] INIT FROM FILE PASSED — sharded initialization works"
-
-if get(ENV, "SKIP_COMPILE", "false") == "true"
-    @info "[$rank] SKIP_COMPILE=true, stopping before first_time_step! compile"
-    exit(0)
-end
-
-# ---- Compile first_time_step! under Reactant ----
-@info "[$rank] @compile first_time_step!..."
+@info "[$rank] Compiling first_time_step!..." now(UTC)
 compile_options = CompileOptions(;
     sync = true, raise = true,
     strip_llvm_debuginfo = true,
+    strip = ["enzymexla.kernel_call",
+             "(::Reactant.Compiler.LLVMFunc",
+             "ka_with_reactant",
+             "(::KernelAbstractions.Kernel",
+             "var\"#_launch!;_launch!"],
 )
 
 rfirst! = if devarch isa Oceananigans.ReactantState
     @compile compile_options=compile_options first_time_step!(model)
 else
-    GordonBell25.first_time_step!
+    first_time_step!
 end
-@info "[$rank] compiled first_time_step!"
 
-# ---- Run it once ----
-@info "[$rank] running first_time_step!..."
-@time "[$rank] first time step" rfirst!(model)
-@info "[$rank] first_time_step! returned"
+@info "[$rank] Compiling loop..." now(UTC)
 
-@info "[$rank] DONE — sharded init test passed at resolution=$resolution"
+compiled_loop! = if devarch isa Oceananigans.ReactantState
+    @compile compile_options=compile_options loop!(model, Ninner)
+else
+    loop!
+end
+
+profile_dir = joinpath(@__DIR__, "profiling", jobid_procid)
+
+mkpath(joinpath(profile_dir, "first_time_step"))
+@info "[$rank] Running first_time_step!..." now(UTC)
+Reactant.with_profiler(joinpath(profile_dir, "first_time_step")) do
+    Reactant.Profiler.annotate("bench"; metadata=Dict("step_num" => 1, "_r" => 1)) do
+        @time "[$rank] first time step" rfirst!(model)
+    end
+end
+
+mkpath(joinpath(profile_dir, "loop"))
+@info "[$rank] running loop" now(UTC)
+Reactant.with_profiler(joinpath(profile_dir, "loop")) do
+    Reactant.Profiler.annotate("bench"; metadata=Dict("step_num" => 1, "_r" => 1)) do
+        @time "[$rank] loop" compiled_loop!(model, Ninner)
+    end
+end
+
+mkpath(joinpath(profile_dir, "loop2"))
+@info "[$rank] running second loop" now(UTC)
+Reactant.with_profiler(joinpath(profile_dir, "loop2")) do
+    Reactant.Profiler.annotate("bench"; metadata=Dict("step_num" => 1, "_r" => 1)) do
+        @time "[$rank] second loop" compiled_loop!(model, Ninner)
+    end
+end
+
+@info "[$rank] Done!" now(UTC)
