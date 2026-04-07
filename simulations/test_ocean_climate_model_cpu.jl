@@ -12,6 +12,7 @@ using Dates
 @info "[$(now())] starting CPU smoke test"
 
 using GordonBell25
+using GordonBell25: save_model_state, visualize_checkpoint
 using Oceananigans
 using Oceananigans.Architectures: CPU
 using Printf
@@ -38,4 +39,15 @@ bhmin, bhmax = extrema(interior(bh))
 @info @sprintf("bottom_height range: [%.2f, %.2f] m", bhmin, bhmax)
 
 @info "[$(now())] grid size: $(size(ocean_model.grid))"
+
+checkpoint_dir = joinpath(@__DIR__, "checkpoints", replace(string(now()), ':' => '-'))
+@info "[$(now())] Saving checkpoint to $checkpoint_dir..."
+save_model_state(checkpoint_dir, model, CPU(); label="final")
+@info "[$(now())] Visualizing checkpoint..."
+visualize_checkpoint(joinpath(checkpoint_dir, "final");
+                     halo=8,
+                     longitude=(0, 360),
+                     latitude=(-80, 80),
+                     z=(-4000, 0))
+
 @info "[$(now())] CPU smoke test PASSED"

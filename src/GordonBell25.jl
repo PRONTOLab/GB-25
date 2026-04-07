@@ -2,6 +2,7 @@ module GordonBell25
 
 export first_time_step!, time_step!, loop!, try_code_hlo
 export parse_baroclinic_instability_args, float_type_from_args, multifloat_from_args
+export save_model_state, load_all_fields, visualize_checkpoint
 
 include("arg_parsing.jl")
 include("model_utils.jl")
@@ -11,6 +12,7 @@ include("ocean_climate_model.jl")
 include("baroclinic_instability_model.jl")
 include("sharding_utils.jl")
 include("correctness.jl")
+include("sharded_io.jl")
 include("precompile.jl")
 
 end # module
