@@ -8,7 +8,8 @@ ndev = length(Reactant.devices())
 @info "Devices: $ndev"
 
 Dx, Dy = GordonBell25.factors(ndev)
-mesh = Sharding.Mesh(Reactant.devices(), ("x", "y"); mesh_shape=(Dx, Dy))
+device_ids = reshape(Reactant.XLA.device_ordinal.(Reactant.devices()), Dx, Dy)
+mesh = Sharding.Mesh(device_ids, ("x", "y"))
 sharding = Sharding.NamedSharding(mesh, ("x", "y", nothing))
 
 truth = Float32.(reshape(1:1024, 16, 16, 4))
