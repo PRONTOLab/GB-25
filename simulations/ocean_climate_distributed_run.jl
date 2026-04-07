@@ -13,8 +13,25 @@ using NumericalEarth
 using NumericalEarth.EarthSystemModels.InterfaceComputations: TenUnrolledIterations, ComponentInterfaces
 
 using Dates
+using Downloads
 using JLD2
 using Printf
+
+# ============================================================
+# Artifact download (rank 0 only, then barrier)
+# ============================================================
+
+const GB25_ARTIFACTS_URL = "https://github.com/glwagner/GB25Artifacts/releases/download/v1.0"
+
+function download_artifact_if_missing(path)
+    if !isfile(path)
+        url = GB25_ARTIFACTS_URL * "/" * basename(path)
+        @info "Downloading $(basename(path)) from $url..."
+        Downloads.download(url, path)
+        @info "Downloaded $(basename(path)) → $path"
+    end
+    return path
+end
 
 # ============================================================
 # Configuration
@@ -64,6 +81,13 @@ grid = LatitudeLongitudeGrid(arch; size=(Nx, Ny, Nz), halo=(8, 8, 8), z,
 # ============================================================
 # Bathymetry — interpolate from cached 1/6° file
 # ============================================================
+
+# Rank 0 fetches both artifacts (if missing); other ranks wait at the barrier.
+if rank == 0
+    download_artifact_if_missing(bathymetry_file)
+    download_artifact_if_missing(ic_file)
+end
+MPI.Barrier(comm)
 
 rank == 0 && @info "Loading bathymetry from $bathymetry_file..."
 bathy_data = jldopen(bathymetry_file)
