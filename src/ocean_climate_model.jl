@@ -21,6 +21,19 @@ function _set_atm_tracers!(T, q, u, ua, shortwave, Qs, Ta, qa)
     nothing
 end
 
+# Broadcasts host 2D arrays directly into the (possibly 4D, sharded)
+# atmosphere parent arrays. The 2D inputs broadcast across the time
+# dimension. Pass `parent(atmosphere.tracers.T)` etc. as the targets so
+# that under Distributed{ReactantState} the sharding metadata is taken
+# from the target, not from a separately-built Field.
+function _set_atm_tracers_from_host!(atmT, atmq, atmu, atmQsw, Ta_arr, qa_arr, ua_arr, Qs_arr)
+    atmT  .= Ta_arr .+ 273.15
+    atmq  .= qa_arr
+    atmu  .= ua_arr
+    atmQsw .= Qs_arr
+    nothing
+end
+
 const DEFAULT_BATHYMETRY_FILE =
     abspath(joinpath(@__DIR__, "..", "bathymetry_sixth_degree.jld2"))
 const DEFAULT_INITIAL_CONDITIONS_FILE =
@@ -193,9 +206,12 @@ function ocean_climate_model_init(
 
     atmosphere = PrescribedAtmosphere(atmos_grid, atmos_times)
 
-    # Build the analytic atmosphere fields on CPU (set!(field, fn) does
-    # not currently compile under Distributed{ReactantState}), then set!
-    # the host arrays into the device-side atmosphere fields.
+    # Compute the analytic profiles on a CPU twin grid (set!(field, fn)
+    # does not currently compile under Distributed{ReactantState}). Then
+    # broadcast the resulting host arrays directly into the
+    # *atmosphere's own* parent arrays — under sharding the target's
+    # sharding metadata governs the placement, instead of an
+    # intermediate Ta/ua/Qs/qa field that would be replicated.
     cpu_atmos_grid = LatitudeLongitudeGrid(Oceananigans.CPU();
                                            size = (360, 180),
                                            longitude = (0, 360),
@@ -206,39 +222,38 @@ function ocean_climate_model_init(
     cpu_Qs = Field{Center, Center, Nothing}(cpu_atmos_grid); set!(cpu_Qs, _oc_sunlight)
     cpu_qa = Field{Center, Center, Nothing}(cpu_atmos_grid); set!(cpu_qa, _oc_qatm)
 
-    Ta_arr = Array(interior(cpu_Ta, :, :, 1))
-    ua_arr = Array(interior(cpu_ua, :, :, 1))
-    Qs_arr = Array(interior(cpu_Qs, :, :, 1))
-    qa_arr = Array(interior(cpu_qa, :, :, 1))
+    # Use parent (halo-included) so broadcast shape matches the
+    # atmosphere's parent arrays on the target.
+    Ta_arr = Array(parent(cpu_Ta))
+    ua_arr = Array(parent(cpu_ua))
+    Qs_arr = Array(parent(cpu_Qs))
+    qa_arr = Array(parent(cpu_qa))
 
-    Ta = Field{Center, Center, Nothing}(atmos_grid); set!(Ta, Ta_arr)
-    ua = Field{Center, Center, Nothing}(atmos_grid); set!(ua, ua_arr)
-    Qs = Field{Center, Center, Nothing}(atmos_grid); set!(Qs, Qs_arr)
-    qa = Field{Center, Center, Nothing}(atmos_grid); set!(qa, qa_arr)
+    # Distributed{ReactantState} also needs the @jit path — check via child arch.
+    reactant_arch = arch isa Architectures.ReactantState ||
+                    (arch isa Oceananigans.Distributed &&
+                     Oceananigans.Architectures.child_architecture(arch) isa Architectures.ReactantState)
 
-    if arch isa Architectures.ReactantState
+    if reactant_arch
         if Reactant.precompiling()
-            @code_hlo _set_atm_tracers!(parent(atmosphere.tracers.T),
-                                        parent(atmosphere.tracers.q),
-                                        parent(atmosphere.velocities.u),
-                                        parent(ua),
-                                        parent(atmosphere.downwelling_radiation.shortwave),
-                                        parent(Qs), parent(Ta), parent(qa))
+            @code_hlo _set_atm_tracers_from_host!(parent(atmosphere.tracers.T),
+                                                  parent(atmosphere.tracers.q),
+                                                  parent(atmosphere.velocities.u),
+                                                  parent(atmosphere.downwelling_radiation.shortwave),
+                                                  Ta_arr, qa_arr, ua_arr, Qs_arr)
         else
-            @jit _set_atm_tracers!(parent(atmosphere.tracers.T),
-                                   parent(atmosphere.tracers.q),
-                                   parent(atmosphere.velocities.u),
-                                   parent(ua),
-                                   parent(atmosphere.downwelling_radiation.shortwave),
-                                   parent(Qs), parent(Ta), parent(qa))
+            @jit _set_atm_tracers_from_host!(parent(atmosphere.tracers.T),
+                                             parent(atmosphere.tracers.q),
+                                             parent(atmosphere.velocities.u),
+                                             parent(atmosphere.downwelling_radiation.shortwave),
+                                             Ta_arr, qa_arr, ua_arr, Qs_arr)
         end
     else
-        _set_atm_tracers!(parent(atmosphere.tracers.T),
-                          parent(atmosphere.tracers.q),
-                          parent(atmosphere.velocities.u),
-                          parent(ua),
-                          parent(atmosphere.downwelling_radiation.shortwave),
-                          parent(Qs), parent(Ta), parent(qa))
+        _set_atm_tracers_from_host!(parent(atmosphere.tracers.T),
+                                    parent(atmosphere.tracers.q),
+                                    parent(atmosphere.velocities.u),
+                                    parent(atmosphere.downwelling_radiation.shortwave),
+                                    Ta_arr, qa_arr, ua_arr, Qs_arr)
     end
 
     # ---- Coupled model ----
