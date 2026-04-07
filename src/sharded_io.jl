@@ -98,15 +98,17 @@ end
 """
     extract_model_fields(model)
 
-Extract the prognostic field data arrays from a Breeze/Oceananigans model
+Extract all field data arrays from a Breeze/Oceananigans model
 as a NamedTuple suitable for `save_sharded_fields`.
+
+Uses `Oceananigans.fields(model)` which, for a Breeze `AtmosphereModel`,
+includes prognostic fields, formulation fields (θ, ρθ, …), velocities,
+temperature, and microphysical fields.
 """
 function extract_model_fields(model)
+    all_fields = Oceananigans.fields(model)
     field_pairs = Pair{Symbol,Any}[]
-    for (name, field) in pairs(model.velocities)
-        push!(field_pairs, name => field.data)
-    end
-    for (name, field) in pairs(model.tracers)
+    for (name, field) in pairs(all_fields)
         push!(field_pairs, name => field.data)
     end
     return NamedTuple(field_pairs)
