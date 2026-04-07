@@ -11,3 +11,7 @@
 *.log
 *.mlir
 *.xla
+
+.claude/
+Manifest.toml
+*.log
