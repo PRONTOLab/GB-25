@@ -144,4 +144,17 @@ Reactant.with_profiler(joinpath(profile_dir, "loop2")) do
 end
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 
+checkpoint_dir = joinpath(@__DIR__, "checkpoints", jobid_procid)
+@info "[$rank] Saving sharded checkpoint..." now(UTC)
+@time "[$rank] checkpoint save" begin
+    filepath = GordonBell25.save_model_state(checkpoint_dir, model, arch; label="final")
+    @info "[$rank] Checkpoint saved to $filepath"
+end
+
+checkpoint_data_dir = joinpath(checkpoint_dir, "final")
+@info "[$rank] Visualizing checkpoint..." now(UTC)
+@time "[$rank] checkpoint visualize" begin
+    GordonBell25.visualize_checkpoint(checkpoint_data_dir; halo=H)
+end
+
 @info "[$rank] Done!" now(UTC)
