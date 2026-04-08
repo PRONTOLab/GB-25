@@ -23,8 +23,6 @@ cpus_per_task = 16
 perlmutter_config = JobConfig(; username, account, out_dir, time, cpus_per_task, Ngpus,
                               run_name, gpus_per_node, type, submit)
 
-ispow4(n) = n > 0 && ispow2(n) && !iszero(n & 0x5555555555555555)
-
 function perlmutter_submit_job_writer(cfg::JobConfig, job_name, Nnodes, job_dir, Ngpu,
                                       resolution_fraction, project_path, run_file)
 
