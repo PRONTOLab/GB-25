@@ -13,7 +13,7 @@
 
 using KernelAbstractions: @kernel, @index
 using Breeze
-using Breeze: AtmosphereModel, CompressibleDynamics, ExplicitTimeStepping
+using Breeze: AtmosphereModel, CompressibleDynamics, ExplicitTimeStepping, SplitExplicitTimeDiscretization
 using Breeze: BulkDrag, BulkSensibleHeatFlux, BulkVaporFlux
 using Breeze.AtmosphereModels: dynamics_density, specific_prognostic_moisture
 using Breeze.Microphysics: NonEquilibriumCloudFormation
@@ -297,27 +297,36 @@ end
 # ═══════════════════════════════════════════════════════════════════════════
 
 """
-    moist_baroclinic_wave_model(arch; Nλ=360, Nφ=170, Nz=30, H=30e3, Δt=2.0, halo=(5,5,5))
+    moist_baroclinic_wave_model(arch; Nλ=360, Nφ=170, Nz=30, H=30e3, Δt=nothing, halo=(5,5,5))
 
 Build a Breeze `AtmosphereModel` on a global LatitudeLongitudeGrid initialised
 with the DCMIP-2016 moist baroclinic wave (Test 1-1).
 
 Components
-  • `CompressibleDynamics` with reference θ from the equatorial profile
+  • `CompressibleDynamics` with `SplitExplicitTimeDiscretization` (WS-RK3 +
+    acoustic substepping) — enables advective-CFL outer time steps
   • `HydrostaticSphericalCoriolis`
   • `WENO(order=5)` advection (flux form)
   • `OneMomentCloudMicrophysics` (mixed-phase non-equilibrium with ice)
 
 Grid: 0°–360° longitude, ±85° latitude, 0–`H` m altitude.
 Default resolution ≈ 1° (Nλ=360, Nφ=170).
+
+Time step: `Δt = 60 s` is stable at 1° (Nλ=360) with split-explicit
+substepping. If `Δt === nothing`, it is scaled linearly with horizontal
+resolution as `Δt = 60 · (360 / Nλ)` s so doubling the resolution halves Δt.
 """
 function moist_baroclinic_wave_model(arch;
                                      Nλ   = 360,
                                      Nφ   = 170,
                                      Nz   = 30,
                                      H    = 30e3,
-                                     Δt   = 2.0,
+                                     Δt   = nothing,
                                      halo = (5, 5, 5))
+
+    # Advective-CFL Δt for split-explicit substepping: 60 s at 1° (Nλ=360),
+    # scaling linearly with horizontal grid spacing.
+    Δt_value = isnothing(Δt) ? 60.0 * (360 / Nλ) : Δt
 
     grid = LatitudeLongitudeGrid(arch;
                                  size = (Nλ, Nφ, Nz),
@@ -328,7 +337,7 @@ function moist_baroclinic_wave_model(arch;
 
     coriolis = SphericalCoriolis()
 
-    dynamics = CompressibleDynamics(ExplicitTimeStepping();
+    dynamics = CompressibleDynamics(SplitExplicitTimeDiscretization();
                                    surface_pressure = p_ref,
                                    reference_potential_temperature = theta_reference)
 
@@ -353,7 +362,7 @@ function moist_baroclinic_wave_model(arch;
     model = AtmosphereModel(grid; dynamics, coriolis, advection, microphysics, boundary_conditions)
 
     FT = eltype(grid)
-    model.clock.last_Δt = FT(Δt)
+    model.clock.last_Δt = FT(Δt_value)
 
     set_moist_baroclinic_wave!(model)
 
