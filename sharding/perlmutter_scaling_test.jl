@@ -24,6 +24,8 @@ perlmutter_config = JobConfig(; username, account, out_dir, time, cpus_per_task,
 function perlmutter_submit_job_writer(cfg::JobConfig, job_name, Nnodes, job_dir, Ngpu,
                                       resolution_fraction, project_path, run_file)
 
+    x, y = ispow4(Ngpu) ? (768, 384) : (544, 544)
+
                 """
 #!/bin/bash -l
 
@@ -58,7 +60,7 @@ export FI_CXI_SAFE_DEVMEM_COPY_THRESHOLD=16777216
 # export MPICH_GPU_SUPPORT_ENABLED=0
 export NCCL_BUFFSIZE=33554432
 export JULIA_CUDA_USE_COMPAT=false
-srun -n $(Nnodes) -c 32 -G $(Ngpu) --cpu-bind=verbose,cores $(job_dir)/launcher.sh $(Base.julia_cmd()[1]) --project=$(project_path) --compiled-modules=strict -O0 $(run_file)
+srun -n $(Nnodes) -c 32 -G $(Ngpu) --cpu-bind=verbose,cores $(job_dir)/launcher.sh $(Base.julia_cmd()[1]) --project=$(project_path) --compiled-modules=strict -O0 $(run_file) --grid-x $(x) --grid-y $(y) --grid-z 16
 """
 end
 
