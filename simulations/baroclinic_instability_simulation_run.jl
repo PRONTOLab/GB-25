@@ -1,5 +1,6 @@
+using Dates
 using GordonBell25: first_time_step!, time_step!, loop!, preamble
-using GordonBell25: baroclinic_instability_model
+using GordonBell25: baroclinic_instability_model, save_model_state
 using Oceananigans
 using Oceananigans.Architectures: ReactantState
 using Reactant
@@ -34,4 +35,15 @@ end
 Reactant.with_profiler("./") do
     rloop!(model, Ninner)
 end
+
+H = 8
+jobid = Dates.format(now(UTC), dateformat"yyyy-mm-ddTHH-MM-SS.sss")
+checkpoint_dir = joinpath(@__DIR__, "checkpoints", jobid)
+@info "Saving checkpoint..." now(UTC)
+@time "checkpoint save" begin
+    filepath = save_model_state(checkpoint_dir, model, arch;
+        label="final", field_names=[:T, :u, :v, :w], z_indices=[:bottom, :top])
+    @info "Checkpoint saved to $filepath"
+end
+
 @info "Done!"
