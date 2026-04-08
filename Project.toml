@@ -31,7 +31,7 @@ Serialization = "9e88b42a-f829-5b0c-bbe9-9e923198166b"
 SpecialFunctions = "276daf66-3868-5448-9aa4-cd146d93841b"
 
 [sources]
-Breeze = {rev = "dkz/feat-reactant-version", url = "https://github.com/NumericalEarth/Breeze.jl.git"}
+Breeze = {rev = "glw/hevi-imex-docs", url = "https://github.com/NumericalEarth/Breeze.jl.git"}
 NumericalEarth = {rev = "glw/manual-iterate", url = "https://github.com/NumericalEarth/NumericalEarth.jl.git"}
 Reactant = {rev = "main", url = "https://github.com/EnzymeAD/Reactant.jl.git"}
 Oceananigans = {rev = "pb/bf16-main", url = "https://github.com/CliMA/Oceananigans.jl"}
@@ -39,7 +39,7 @@ Oceananigans = {rev = "pb/bf16-main", url = "https://github.com/CliMA/Oceananiga
 [compat]
 ArgParse = "1.2.0"
 BFloat16s = "0.6.1"
-Breeze = "= 0.4.5"
+Breeze = "0.4"
 CUDA = "5.7.1"
 CairoMakie = "0.15.9"
 ClimaSeaIce = "= 0.4.5"
