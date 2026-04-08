@@ -298,7 +298,7 @@ end
 # ═══════════════════════════════════════════════════════════════════════════
 
 """
-    moist_baroclinic_wave_model(arch; Nλ=360, Nφ=170, Nz=30, H=30e3, Δt=nothing, halo=(5,5,5))
+    moist_baroclinic_wave_model(arch; Nλ=360, Nφ=160, Nz=64, H=30e3, Δt=nothing, halo=(8,8,8))
 
 Build a Breeze `AtmosphereModel` on a global LatitudeLongitudeGrid initialised
 with the DCMIP-2016 moist baroclinic wave (Test 1-1).
@@ -314,8 +314,9 @@ Components
   • `WENO(order=5)` advection (flux form)
   • `OneMomentCloudMicrophysics` (mixed-phase non-equilibrium with ice)
 
-Grid: 0°–360° longitude, ±85° latitude, 0–`H` m altitude.
-Default resolution ≈ 1° (Nλ=360, Nφ=170).
+Grid: 0°–360° longitude, ±80° latitude, 0–`H` m altitude.
+Default resolution ≈ 1° (Nλ=360, Nφ=160) with Nz=64 vertical levels and
+halo=(8,8,8) so WENO(5) and the spinup/sharded scripts agree on halo width.
 
 Time step: split-explicit substepping lets the outer Δt run at the advective
 CFL. When `Δt === nothing`, a conservative formula is used,
@@ -325,11 +326,11 @@ characterized; this default is intentionally conservative.
 """
 function moist_baroclinic_wave_model(arch;
                                      Nλ   = 360,
-                                     Nφ   = 170,
-                                     Nz   = 30,
+                                     Nφ   = 160,
+                                     Nz   = 64,
                                      H    = 30e3,
                                      Δt   = nothing,
-                                     halo = (5, 5, 5))
+                                     halo = (8, 8, 8))
 
     # Conservative split-explicit Δt scaling: 60 s at 1°, linear in Δx.
     Δt_value = isnothing(Δt) ? 60.0 * (360 / Nλ) : Δt
@@ -338,7 +339,7 @@ function moist_baroclinic_wave_model(arch;
                                  size = (Nλ, Nφ, Nz),
                                  halo,
                                  longitude = (0, 360),
-                                 latitude  = (-85, 85),
+                                 latitude  = (-80, 80),
                                  z = (0, H))
 
     coriolis = SphericalCoriolis()
