@@ -51,7 +51,12 @@ function simple_latitude_longitude_grid(arch, resolution, Nz)
 end
 
 function simple_latitude_longitude_grid(arch, Nx, Ny, Nz; halo=(8, 8, 8))
-    z = exponential_z_faces(; Nz, depth=4000, h=30) # may need changing for very large Nz
+    # Uniformly-spaced z so that `LatitudeLongitudeGrid` is `ZRegularLLG` and
+    # `Oceananigans.Fields.fractional_z_index` takes the constant-time path
+    # (no binary search). The binary-search path uses a dynamic-trip-count
+    # `while` loop that Reactant's MLIR pass manager currently fails to lower
+    # under sharding.
+    z = (-4000, 0)
 
     grid = LatitudeLongitudeGrid(arch; size=(Nx, Ny, Nz), halo, z,
         latitude = (-80, 80),
@@ -95,11 +100,31 @@ end
 
 @kernel function set_baroclinic_instability_kernel!(T, S, grid)
     i, j, k = @index(Global, NTuple)
+    λ = Oceananigans.Grids.λnode(i, j, k, grid, Center(), Center(), Center())
     φ = Oceananigans.Grids.φnode(i, j, k, grid, Center(), Center(), Center())
     z = Oceananigans.Grids.znode(i, j, k, grid, Center(), Center(), Center())
     @inbounds begin
         dTdz = 1e-3
-        T[i, j, k] = (30 + dTdz * z) * smooth_step(φ)
+
+        # Localized Gaussian temperature perturbation centred on the
+        # northern jet (λ₀=180°, φ₀=45°) with horizontal scale 5° and
+        # surface-trapped vertical scale 1 km. Seeds the most unstable
+        # baroclinic modes — without this the IC is exactly zonal and
+        # the symmetric state is fixed under the dynamics, so no eddies
+        # ever grow at FP64 precision.
+        λ₀, φ₀ = 180.0, 45.0
+        Δλ, Δφ = 5.0,  5.0
+        z_decay = 1000.0
+        ΔT_pert = 0.1
+        Tperturb = ΔT_pert * exp(-((λ - λ₀)^2 / (2Δλ^2) +
+                                    (φ - φ₀)^2 / (2Δφ^2))) *
+                              exp(z / z_decay)
+
+        # Weaker meridional temperature gradient (10 °C → equator vs 0 °C →
+        # poles, roughly 1/3 of the previous prefactor) to keep the
+        # geostrophically-balanced flow well below the gravity-wave CFL
+        # ceiling at the polar grid singularity.
+        T[i, j, k] = (10 + dTdz * z) * smooth_step(φ) + Tperturb
 
         dSdz = - 5e-3
         S[i, j, k] = dSdz * z

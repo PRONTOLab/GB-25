@@ -102,48 +102,47 @@ function set_baroclinic_instability_from_file!(model, path::String)
         error("Loaded S field size $(size(S_data)) does not match (Nx, Ny, Nz) = $expected from $path")
     end
 
-    target_size = size(model.tracers.T)[1:3]
-    if target_size == expected
-        # Same resolution as the checkpoint. The host→device path that works
-        # for both plain ReactantState and Distributed{ReactantState} is the
-        # same one Oceananigans' Reactant extension uses inside
-        # `set_to_function!`: build a CPU twin Field on a CPU twin of the
-        # *model* grid, `set!` the host array into it (set!(::Field, ::Array)
-        # works on CPU), then `copyto!(interior(target), interior(cpu_twin))`.
-        # The generic `set!(::Field, ::Array)` falls through to a broadcast
-        # `u .= v` which silently no-ops on a Reactant field, and
-        # `copyto!(interior(reactant_field), raw_array)` likewise traces but
-        # never executes.
-        cpu_grid = Oceananigans.Architectures.on_architecture(Oceananigans.CPU(), model.grid)
-        cpu_T = CenterField(cpu_grid)
-        cpu_S = CenterField(cpu_grid)
-        set!(cpu_T, T_data)
-        set!(cpu_S, S_data)
-        copyto!(interior(model.tracers.T), interior(cpu_T))
-        copyto!(interior(model.tracers.S), interior(cpu_S))
-    else
-        # Different resolution: build CPU source fields and interpolate. Note
-        # that Oceananigans `interpolate!` requires source and target on the
-        # same architecture, so this branch only works for CPU/GPU targets.
-        z_src = exponential_z_faces(; Nz=Nz_src, depth=4000, h=30)
-        source_grid = LatitudeLongitudeGrid(Oceananigans.CPU();
-            size = (Nx_src, Ny_src, Nz_src),
-            halo = (1, 1, 1),
-            z = z_src,
-            latitude = (-80, 80),
-            longitude = (0, 360),
-        )
+    # Workflow:
+    #   1. T_data, S_data are already loaded as CPU host arrays.
+    #   2. Build source Fields on the *model's* architecture (CPU/GPU/
+    #      ReactantState/Distributed) using a source grid sized to the
+    #      checkpoint, and copy the host data into them via a CPU twin —
+    #      this is the only host→device write pattern that works for
+    #      `ReactantField` (the generic `set!(::Field, ::Array)` falls
+    #      through to a broadcast that silently no-ops on Reactant).
+    #   3. `interpolate!` from the on-arch source Fields onto
+    #      `model.tracers.T/S`. Source and target live on the same
+    #      architecture, so Oceananigans' Reactant extension dispatches
+    #      to `_set_to_field!` / the device-side interpolate path.
+    arch = model.grid.architecture
 
-        T_src = CenterField(source_grid)
-        S_src = CenterField(source_grid)
-        set!(T_src, T_data)
-        set!(S_src, S_data)
-        Oceananigans.BoundaryConditions.fill_halo_regions!(T_src)
-        Oceananigans.BoundaryConditions.fill_halo_regions!(S_src)
+    # Uniform z so that the source grid is `ZRegularLLG` and
+    # `fractional_z_index` is constant-time (no binary search). The
+    # binary-search path uses a dynamic-trip-count `while` loop that
+    # Reactant's MLIR pass manager currently fails to lower under sharding.
+    source_grid = LatitudeLongitudeGrid(arch;
+        size = (Nx_src, Ny_src, Nz_src),
+        halo = (1, 1, 1),
+        z = (-4000, 0),
+        latitude = (-80, 80),
+        longitude = (0, 360),
+    )
 
-        Oceananigans.Fields.interpolate!(model.tracers.T, T_src)
-        Oceananigans.Fields.interpolate!(model.tracers.S, S_src)
-    end
+    cpu_source_grid = Oceananigans.Architectures.on_architecture(Oceananigans.CPU(), source_grid)
+    cpu_T_src = CenterField(cpu_source_grid)
+    cpu_S_src = CenterField(cpu_source_grid)
+    set!(cpu_T_src, T_data)
+    set!(cpu_S_src, S_data)
+    Oceananigans.BoundaryConditions.fill_halo_regions!(cpu_T_src)
+    Oceananigans.BoundaryConditions.fill_halo_regions!(cpu_S_src)
+
+    T_src = CenterField(source_grid)
+    S_src = CenterField(source_grid)
+    copyto!(interior(T_src), interior(cpu_T_src))
+    copyto!(interior(S_src), interior(cpu_S_src))
+
+    Oceananigans.Fields.interpolate!(model.tracers.T, T_src)
+    Oceananigans.Fields.interpolate!(model.tracers.S, S_src)
 
     return nothing
 end
