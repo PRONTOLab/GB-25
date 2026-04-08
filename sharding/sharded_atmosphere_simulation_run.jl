@@ -8,13 +8,12 @@ using GordonBell25: first_time_step!, time_step!, loop!, factors, is_distributed
 using Oceananigans
 
 const parsed_args = GordonBell25.parse_baroclinic_instability_args(;
-    grid_x_default = 64,
-    grid_y_default = 64,
-    grid_z_default = 16,
+    grid_x_default = 768,
+    grid_y_default = 384,
+    grid_z_default = 64,
 )
 
-default_float_type = GordonBell25.float_type_from_args(parsed_args)
-Oceananigans.defaults.FloatType = default_float_type
+Oceananigans.defaults.FloatType = Float32
 
 using Oceananigans.Units
 using Oceananigans.Architectures: ReactantState
@@ -78,8 +77,22 @@ Nz = parsed_args["grid-z"]
 Nλ = Tλ - 2H
 Nφ = Tφ - 2H
 
-@info "[$rank] Generating atmosphere model (Nλ=$Nλ, Nφ=$Nφ, Nz=$Nz)..." now(UTC)
-model = GordonBell25.moist_baroclinic_wave_model(arch; Nλ, Nφ, Nz, Δt=2.0, halo=(H, H, H))
+CFL_target = 0.5
+c_sound = 330.0        # m/s
+R_earth = 6371220.0    # m
+φ_cap = 85.0           # degrees; grid latitude extent (−85°, 85°)
+column_height = 30e3   # m; default column height in moist_baroclinic_wave_model
+
+Δz = column_height / Nz
+Δλ_rad = 2π / Nλ
+Δφ_rad = (2 * φ_cap) * (π / 180) / Nφ
+Δx_zonal = R_earth * cosd(φ_cap) * Δλ_rad
+Δy_merid = R_earth * Δφ_rad
+Δ_min = min(Δz, Δx_zonal, Δy_merid)
+Δt = CFL_target * Δ_min / c_sound
+
+@info "[$rank] Generating atmosphere model (Nλ=$Nλ, Nφ=$Nφ, Nz=$Nz, Δt=$(round(Δt; sigdigits=3))s)..." now(UTC)
+model = GordonBell25.moist_baroclinic_wave_model(arch; Nλ, Nφ, Nz, H=column_height, Δt, halo=(H, H, H))
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 
 @show model
@@ -95,32 +108,39 @@ if local_arch isa Oceananigans.ReactantState
     end
 end
 
-@info "[$rank] Compiling first_time_step!..." now(UTC)
 compile_options = CompileOptions(; sync=true, raise=true, strip_llvm_debuginfo=true, strip=["enzymexla.kernel_call", "(::Reactant.Compiler.LLVMFunc", "ka_with_reactant", "(::KernelAbstractions.Kernel", "var\"#_launch!;_launch!"])
-rfirst! = if local_arch isa Oceananigans.ReactantState
-     @compile compile_options=compile_options first_time_step!(model)
-else
-     first_time_step!
+
+profile_dir = joinpath(@__DIR__, "profiling", jobid_procid)
+
+@info "[$rank] Compiling first_time_step!..." now(UTC)
+mkpath(joinpath(profile_dir, "compile_first_time_step"))
+rfirst! = Reactant.with_profiler(joinpath(profile_dir, "compile_first_time_step")) do
+    if local_arch isa Oceananigans.ReactantState
+         @time "[$rank] compile first_time_step!" @compile compile_options=compile_options first_time_step!(model)
+    else
+         first_time_step!
+    end
 end
 
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 @info "[$rank] Compiling loop..." now(UTC)
 
-compiled_loop! = if local_arch isa Oceananigans.ReactantState
-     @compile compile_options=compile_options loop!(model, Ninner)
-else
-     loop!
+mkpath(joinpath(profile_dir, "compile_loop"))
+compiled_loop! = Reactant.with_profiler(joinpath(profile_dir, "compile_loop")) do
+    if local_arch isa Oceananigans.ReactantState
+         @time "[$rank] compile loop!" @compile compile_options=compile_options loop!(model, Ninner)
+    else
+         loop!
+    end
 end
 
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 
-profile_dir = joinpath(@__DIR__, "profiling", jobid_procid)
 mkpath(joinpath(profile_dir, "first_time_step"))
-@info "[$rank] allocations" GordonBell25.allocatorstats()
 @info "[$rank] Running first_time_step!..." now(UTC)
 Reactant.with_profiler(joinpath(profile_dir, "first_time_step")) do
-    Reactant.Profiler.annotate("bench"; metadata=Dict("step_num" => 1, "_r" => 1)) do
-        @time "[$rank] first time step" rfirst!(model)
+    Reactant.Profiler.annotate("first_time_step"; metadata=Dict("step_num" => 0, "_r" => 1)) do
+        @time "[$rank] first_time_step!" rfirst!(model)
     end
 end
 @info "[$rank] allocations" GordonBell25.allocatorstats()
