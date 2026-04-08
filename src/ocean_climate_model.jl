@@ -275,10 +275,78 @@ function ocean_climate_model_init(
 
     # ---- Coupled model ----
     radiation = Radiation(arch)
-    solver_stop_criteria = FixedIterations(5)
+    # Use UnrolledFixedIterations so that compute_interface_state dispatches
+    # to the @generated unrolled method below — works around the Reactant
+    # MLIR pass-manager failure on the while loop in ClimaOcean's default
+    # `compute_interface_state` under Distributed{ReactantState}.
+    solver_stop_criteria = UnrolledFixedIterations{5}()
     atmosphere_ocean_flux_formulation = SimilarityTheoryFluxes(; solver_stop_criteria)
     interfaces = ComponentInterfaces(atmosphere, ocean; radiation, atmosphere_ocean_flux_formulation)
     coupled_model = @gbprofile "OceanSeaIceModel" OceanSeaIceModel(ocean; atmosphere, radiation, interfaces)
 
     return coupled_model
+end
+
+#####
+##### `UnrolledFixedIterations{N}` — a stop criterion that lets us add a
+##### method of `compute_interface_state` whose body is statically unrolled.
+#####
+#
+# Reactant's MLIR pass manager fails to lower the `while iterating(...)` loop
+# in `ClimaOcean.OceanSeaIceModels.InterfaceComputations.compute_interface_state`
+# under `Distributed{ReactantState}`, blocking `loop!` of any coupled
+# `OceanSeaIceModel`. The same fix exists upstream as
+# `NumericalEarth#glw/manual-iterate` (commit 5bb5547 "manually iterate to
+# compute the interface state"): the while loop is replaced with a fixed
+# number of explicit `iterate_interface_state` calls.
+#
+# We are on `ClimaOcean 0.5.10`, not NumericalEarth, so rather than
+# overwriting ClimaOcean's `compute_interface_state` we add a new method via
+# dispatch. `SimilarityTheoryFluxes{FT, UF, R, B, S}` parameterises on the
+# stop-criterion type `S`, so we introduce a new `S` type and add a
+# `compute_interface_state` method specialised on it. ClimaOcean's existing
+# generic `compute_interface_state` (which contains the offending while
+# loop) is left untouched and is still used by anyone whose stop criterion
+# isn't `UnrolledFixedIterations`.
+#
+# Once Reactant lowers the dynamic-trip-count while-loop in the air-sea flux
+# kernel correctly under sharding, callers can switch back to
+# `FixedIterations(N)` and this whole section can be deleted.
+
+import ClimaOcean.OceanSeaIceModels.InterfaceComputations:
+    compute_interface_state, iterate_interface_state, SimilarityTheoryFluxes
+
+"""
+    UnrolledFixedIterations{N}()
+
+Stop criterion for `SimilarityTheoryFluxes` that runs exactly `N`
+`iterate_interface_state` calls per `compute_interface_state`. The matching
+`compute_interface_state` method below is `@generated` to unroll the calls
+at compile time, so Reactant never sees a dynamic-trip-count loop in the
+air-sea flux kernel.
+"""
+struct UnrolledFixedIterations{N} end
+
+const _UnrolledSTF{N} = SimilarityTheoryFluxes{<:Any, <:Any, <:Any, <:Any, <:UnrolledFixedIterations{N}} where {N}
+
+@generated function compute_interface_state(flux_formulation::_UnrolledSTF{N},
+                                             initial_interface_state,
+                                             atmosphere_state,
+                                             interior_state,
+                                             downwelling_radiation,
+                                             interface_properties,
+                                             atmosphere_properties,
+                                             interior_properties) where {N}
+    body = Expr(:block, :(Ψₛ = initial_interface_state))
+    for _ in 1:N
+        push!(body.args, :(Ψₛ = iterate_interface_state(flux_formulation, Ψₛ,
+                                                        atmosphere_state,
+                                                        interior_state,
+                                                        downwelling_radiation,
+                                                        interface_properties,
+                                                        atmosphere_properties,
+                                                        interior_properties)))
+    end
+    push!(body.args, :(return Ψₛ))
+    return body
 end

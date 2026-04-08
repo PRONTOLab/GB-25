@@ -15,3 +15,9 @@
 .claude/
 Manifest.toml
 *.log
+
+simulations/checkpoints/
+sharding/profiling/
+sharding/mlir_dumps/
+sharding/mlir_dumps_data_free/
+plugins/
