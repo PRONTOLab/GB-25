@@ -68,6 +68,9 @@ export LD_LIBRARY_PATH="/user-environment/linux-neoverse_v2/aws-ofi-nccl-1.17.1-
 
 ulimit -s unlimited
 
+# Disable core dumps: https://docs.cscs.ch/guides/gb2026/#disabling-core-dumps
+ulimit -S -c0
+
 # Setting `--cpu_bind` is explicitly discouraged:
 # <https://eth-cscs.github.io/cscs-docs/guides/gb2025/#slurm>.
 # We only set it to `verbose` to record what's going on.
