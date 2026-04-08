@@ -38,7 +38,7 @@ Reactant = {rev = "main", url = "https://github.com/EnzymeAD/Reactant.jl.git"}
 [compat]
 ArgParse = "1.2.0"
 BFloat16s = "0.6.1"
-Breeze = "= 0.4.5"
+Breeze = "0.4"
 CUDA = "5.7.1"
 CairoMakie = "0.15.9"
 ClimaSeaIce = "= 0.4.5"

@@ -13,7 +13,8 @@
 
 using KernelAbstractions: @kernel, @index
 using Breeze
-using Breeze: AtmosphereModel, CompressibleDynamics, ExplicitTimeStepping
+using Breeze: AtmosphereModel, CompressibleDynamics, ExplicitTimeStepping,
+              SplitExplicitTimeDiscretization, PressureProjectionDamping
 using Breeze: BulkDrag, BulkSensibleHeatFlux, BulkVaporFlux
 using Breeze.AtmosphereModels: dynamics_density, specific_prognostic_moisture
 using Breeze.Microphysics: NonEquilibriumCloudFormation
@@ -297,27 +298,41 @@ end
 # ═══════════════════════════════════════════════════════════════════════════
 
 """
-    moist_baroclinic_wave_model(arch; Nλ=360, Nφ=170, Nz=30, H=30e3, Δt=2.0, halo=(5,5,5))
+    moist_baroclinic_wave_model(arch; Nλ=360, Nφ=170, Nz=30, H=30e3, Δt=nothing, halo=(5,5,5))
 
 Build a Breeze `AtmosphereModel` on a global LatitudeLongitudeGrid initialised
 with the DCMIP-2016 moist baroclinic wave (Test 1-1).
 
 Components
-  • `CompressibleDynamics` with reference θ from the equatorial profile
+  • `CompressibleDynamics` with `SplitExplicitTimeDiscretization` (WS-RK3 +
+    acoustic substepping) and `PressureProjectionDamping(coefficient=0.5)` —
+    the DCMIP2016-baroclinic-wave coefficient. The Breeze 0.4.6 default of
+    `coefficient=0.1` is too weak for the moist BCW and silently produces
+    NaN-filled state after a few outer steps; 0.5 is the value the Breeze
+    docs (`appendix/bw_dt_sweep_results.md`) recommend for this problem.
   • `HydrostaticSphericalCoriolis`
   • `WENO(order=5)` advection (flux form)
   • `OneMomentCloudMicrophysics` (mixed-phase non-equilibrium with ice)
 
 Grid: 0°–360° longitude, ±85° latitude, 0–`H` m altitude.
 Default resolution ≈ 1° (Nλ=360, Nφ=170).
+
+Time step: split-explicit substepping lets the outer Δt run at the advective
+CFL. When `Δt === nothing`, a conservative formula is used,
+`Δt = 60 · (360 / Nλ)` s — i.e. 60 s at 1° (Nλ=360), halving on doubling the
+horizontal resolution. The actual stability boundary at Nz=64 is still being
+characterized; this default is intentionally conservative.
 """
 function moist_baroclinic_wave_model(arch;
                                      Nλ   = 360,
                                      Nφ   = 170,
                                      Nz   = 30,
                                      H    = 30e3,
-                                     Δt   = 2.0,
+                                     Δt   = nothing,
                                      halo = (5, 5, 5))
+
+    # Conservative split-explicit Δt scaling: 60 s at 1°, linear in Δx.
+    Δt_value = isnothing(Δt) ? 60.0 * (360 / Nλ) : Δt
 
     grid = LatitudeLongitudeGrid(arch;
                                  size = (Nλ, Nφ, Nz),
@@ -328,9 +343,11 @@ function moist_baroclinic_wave_model(arch;
 
     coriolis = SphericalCoriolis()
 
-    dynamics = CompressibleDynamics(ExplicitTimeStepping();
-                                   surface_pressure = p_ref,
-                                   reference_potential_temperature = theta_reference)
+    dynamics = CompressibleDynamics(
+        SplitExplicitTimeDiscretization(damping = PressureProjectionDamping(coefficient = 0.5));
+        surface_pressure = p_ref,
+        reference_potential_temperature = theta_reference,
+    )
 
     ext = Base.get_extension(Breeze, :BreezeCloudMicrophysicsExt)
     microphysics = ext.OneMomentCloudMicrophysics(;
@@ -353,7 +370,7 @@ function moist_baroclinic_wave_model(arch;
     model = AtmosphereModel(grid; dynamics, coriolis, advection, microphysics, boundary_conditions)
 
     FT = eltype(grid)
-    model.clock.last_Δt = FT(Δt)
+    model.clock.last_Δt = FT(Δt_value)
 
     set_moist_baroclinic_wave!(model)
 
