@@ -13,7 +13,7 @@ const parsed_args = GordonBell25.parse_baroclinic_instability_args(;
     grid_z_default = 8,
 )
 
-Oceananigans.defaults.FloatType = Float32
+Oceananigans.defaults.FloatType = GordonBell25.float_type_from_args(parsed_args)
 
 using Oceananigans.Units
 using Oceananigans.Architectures: ReactantState
@@ -60,7 +60,7 @@ if Ndev == 1
 else
     arch = Oceananigans.Distributed(arch; partition = Partition(Rx, Ry, 1))
     rank = if local_arch isa Oceananigans.ReactantState
-	    Reactant.Distributed.local_rank()
+        Reactant.Distributed.local_rank()
     else
        comm = MPI.COMM_WORLD
        MPI.Comm_rank(comm)

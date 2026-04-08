@@ -6,13 +6,30 @@ using Oceananigans
 using Oceananigans.Architectures: ReactantState
 
 PROFILE[] = true
-Oceananigans.defaults.FloatType = Float32
+
+const parsed_args = GordonBell25.parse_baroclinic_instability_args(;
+    grid_x_default = 64,
+    grid_y_default = 64,
+    grid_z_default = 8,
+)
+
+Oceananigans.defaults.FloatType = GordonBell25.float_type_from_args(parsed_args)
 
 preamble()
 
+Rx, Ry = factors(Ndev)
+
+H = 8
+Tλ = parsed_args["grid-x"] * Rx
+Tφ = parsed_args["grid-y"] * Ry
+Nz = parsed_args["grid-z"]
+
+Nλ = Tλ - 2H
+Nφ = Tφ - 2H
+
 @info "Generating atmosphere model..."
 arch = ReactantState()
-model = moist_baroclinic_wave_model(arch; Nλ=48, Nφ=24, Nz=10, Δt=2.0, halo=(8, 8, 8))
+model = moist_baroclinic_wave_model(arch; Nλ, Nφ, Nz, Δt=2.0, halo=(8, 8, 8))
 
 GC.gc(true); GC.gc(false); GC.gc(true)
 
