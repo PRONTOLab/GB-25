@@ -18,6 +18,10 @@ run_postfix = get(ENV, "GB25_RUN_POSTFIX", randstring(4))
     submit::Bool
 end
 
+# Helper function for checking whether an integer is a power of 4, useful for
+# some configurations.
+ispow4(n::Integer) = n > 0 && ispow2(n) && !iszero(n & 0x5555555555555555)
+
 function generate_and_submit(submit_job_writer, cfg::JobConfig; caller_file::String)
 
     if !isone(length(Base.ARGS))
@@ -71,6 +75,22 @@ function generate_and_submit(submit_job_writer, cfg::JobConfig; caller_file::Str
     run_file = joinpath(out_path, basename(input_file))
     cp(input_file, run_file)
 
+    # Capture repository state
+    git_describe = readchomp(`git -C $(project_path) --no-pager describe --tags --always --dirty`)
+    git_branch = readchomp(`git -C $(project_path) rev-parse --abbrev-ref HEAD`)
+    git_diff = read(`git -C $(project_path) --no-pager diff --no-ext-diff HEAD`, String)
+    open(joinpath(out_path, "run-info.toml"), "w") do io
+        print(io, """
+git_describe = "$(git_describe)"
+git_branch = "$(git_branch)"
+""")
+    end
+    if !isempty(git_diff)
+        open(joinpath(out_path, "git.diff"), "w") do io
+            print(io, git_diff)
+        end
+    end
+
     @info "User: $(cfg.username); Project: $(cfg.account)"
     @info "run_file=$(run_file)"
     @info "Writing all output to: $(out_path)"
@@ -83,7 +103,7 @@ function generate_and_submit(submit_job_writer, cfg::JobConfig; caller_file::Str
         run_id   = string(run_name, "_",
                           Dates.format(now(UTC), "ud"), "_ngpu",  ngpu_string)
 
-        job_name = "scaling_test_$(ngpu_string)"
+        job_name = "GB25_$(run_prefix)_$(run_postfix)"
 
         # !isinteger(cbrt(Ngpu)) && (@warn "problem size is not cubic")
         Nnodes = ceil(Int, Ngpu / cfg.gpus_per_node)
