@@ -36,7 +36,6 @@ Reactant.with_profiler("./") do
     rloop!(model, Ninner)
 end
 
-H = 8
 jobid = Dates.format(now(UTC), dateformat"yyyy-mm-ddTHH-MM-SS.sss")
 checkpoint_dir = joinpath(@__DIR__, "checkpoints", jobid)
 @info "Saving checkpoint..." now(UTC)
