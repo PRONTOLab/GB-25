@@ -31,7 +31,7 @@ Serialization = "9e88b42a-f829-5b0c-bbe9-9e923198166b"
 SpecialFunctions = "276daf66-3868-5448-9aa4-cd146d93841b"
 
 [sources]
-Breeze = {rev = "glw/hevi-imex-docs", url = "https://github.com/NumericalEarth/Breeze.jl.git"}
+Breeze = {rev = "glw/bw-stable-base", url = "https://github.com/NumericalEarth/Breeze.jl.git"}
 NumericalEarth = {rev = "glw/manual-iterate", url = "https://github.com/NumericalEarth/NumericalEarth.jl.git"}
 Reactant = {rev = "main", url = "https://github.com/EnzymeAD/Reactant.jl.git"}
 
