@@ -167,7 +167,8 @@ end
 checkpoint_dir = joinpath(@__DIR__, "checkpoints", jobid_procid)
 @info "[$rank] Saving sharded checkpoint..." now(UTC)
 @time "[$rank] checkpoint save" begin
-    filepath = GordonBell25.save_model_state(checkpoint_dir, model, arch; label="final")
+    filepath = GordonBell25.save_model_state(checkpoint_dir, model, arch;
+        label="final", field_names=[:w, :T], z_indices=[:bottom, :middle, :top])
     @info "[$rank] Checkpoint saved to $filepath"
 end
 

@@ -53,7 +53,8 @@ jobid = Dates.format(now(UTC), dateformat"yyyy-mm-ddTHH-MM-SS.sss")
 checkpoint_dir = joinpath(@__DIR__, "checkpoints", jobid)
 @info "Saving checkpoint..." now(UTC)
 @time "checkpoint save" begin
-    filepath = save_model_state(checkpoint_dir, model, arch; label="final")
+    filepath = save_model_state(checkpoint_dir, model, arch;
+        label="final", field_names=[:w, :T], z_indices=[:bottom, :middle, :top])
     @info "Checkpoint saved to $filepath"
 end
 
