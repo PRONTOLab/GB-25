@@ -26,7 +26,9 @@ perlmutter_config = JobConfig(; username, account, out_dir, time, cpus_per_task,
 function perlmutter_submit_job_writer(cfg::JobConfig, job_name, Nnodes, job_dir, Ngpu,
                                       resolution_fraction, project_path, run_file)
 
-    x, y = ispow4(Ngpu) ? (360, 180) : (256, 256)
+    x, y = ispow4(Ngpu) ? (360, 180) : (256, 256) # the largest grid that I know fits
+    # x, y = ispow4(Ngpu) ? (456, 228) : (320, 320) # think might also fit, but the test crashed for other reasons
+    # x, y = ispow4(Ngpu) ? (xxx, xxx) : (384, 384) # pretty sure this doesn't quite fit
 
 #SBATCH -q premium
                 """
