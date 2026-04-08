@@ -35,6 +35,8 @@ GordonBell25.preamble()
 using Libdl: dllist
 @show filter(contains("nccl"), dllist())
 
+const model_state_dump_path = joinpath(get(ENV, "SCRATCH", pwd()), "model_dumps", jobid_procid)
+
 Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
 Reactant.MLIR.IR.DUMP_MLIR_DIR[] = joinpath(@__DIR__, "mlir_dumps", jobid_procid)
 Reactant.Compiler.DEBUG_DISABLE_RESHARDING[] = true
@@ -140,6 +142,12 @@ Reactant.with_profiler(joinpath(profile_dir, "loop")) do
     end
 end
 
+let dump_path = mkpath(joinpath(model_state_dump_path, "loop1"))
+    @info "[$rank] loop1 dumping state to disk" now(UTC) dump_path
+    GordonBell25.save_model_state(dump_path, model, arch)
+    @info "[$rank] loop1 successfully dumped to disk" now(UTC)
+end
+
 mkpath(joinpath(profile_dir, "loop2"))
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 @info "[$rank] running second loop" now(UTC)
@@ -149,5 +157,11 @@ Reactant.with_profiler(joinpath(profile_dir, "loop2")) do
     end
 end
 @info "[$rank] allocations" GordonBell25.allocatorstats()
+
+let dump_path = mkpath(joinpath(model_state_dump_path, "loop2"))
+    @info "[$rank] loop2 dumping state to disk" now(UTC) dump_path
+    GordonBell25.save_model_state(dump_path, model, arch)
+    @info "[$rank] loop2 successfully dumped to disk" now(UTC)
+end
 
 @info "[$rank] Done!" now(UTC)
