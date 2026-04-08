@@ -267,7 +267,7 @@ end
 """
     load_checkpoint_metadata(dir)
 
-Read iteration, time, and field names from the first rank file found.
+Read iteration, time, field names, and z_indices from the first rank file found.
 """
 function load_checkpoint_metadata(dir)
     rank_files = filter(f -> startswith(f, "fields_rank") && endswith(f, ".dat"), readdir(dir))
@@ -275,29 +275,42 @@ function load_checkpoint_metadata(dir)
     state = open(joinpath(dir, first(sort(rank_files)))) do io
         Serialization.deserialize(io)
     end
-    return (iteration=state[:iteration], time=state[:time], field_names=state[:field_names])
+    return (
+        iteration   = state[:iteration],
+        time        = state[:time],
+        field_names = state[:field_names],
+        z_indices   = get(state, :z_indices, nothing),
+    )
 end
 
 """
     load_all_fields(dir; halo=0)
 
 Load every field from a checkpoint directory, optionally stripping `halo` cells
-from each side of each dimension. Skips individual fields that fail to load
-rather than aborting entirely.
+from each side of each horizontal dimension. When the checkpoint was saved with
+`z_indices`, halo stripping is only applied to x and y (dims 1-2) since the
+z levels are already explicitly selected.
+
+Skips individual fields that fail to load rather than aborting entirely.
 
 Returns `(metadata, field_data)` where
-`metadata` is a NamedTuple with `:iteration`, `:time`, `:field_names` and
-`field_data` is a `Dict{Symbol, Array}`.
+`metadata` is a NamedTuple with `:iteration`, `:time`, `:field_names`, `:z_indices`
+and `field_data` is a `Dict{Symbol, Array}`.
 """
 function load_all_fields(dir; halo::Int=0)
     meta = load_checkpoint_metadata(dir)
+    z_was_subsetted = meta.z_indices !== nothing
     data = Dict{Symbol, Array}()
     for name in meta.field_names
         try
             raw = load_global_field(dir, name)
             if halo > 0
                 interior_ranges = ntuple(ndims(raw)) do d
-                    (halo + 1):(size(raw, d) - halo)
+                    if z_was_subsetted && d >= 3
+                        1:size(raw, d)
+                    else
+                        (halo + 1):(size(raw, d) - halo)
+                    end
                 end
                 data[name] = raw[interior_ranges...]
             else
@@ -404,4 +417,3 @@ function visualize_checkpoint(dir::AbstractString;
     @info "Checkpoint plots saved to $output_dir" fields=length(paths)
     return paths
 end
-
