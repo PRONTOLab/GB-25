@@ -99,6 +99,10 @@ jobs:
             Project.toml
           retention-days: 90
           overwrite: false
+      - name: Download baroclinic instability initial-condition artifact
+        if: ${{ contains(inputs.sim_type, 'baroclinic_instability') && inputs.compile_or_run == 'run' }}
+        timeout-minutes: 30
+        run: julia --color=yes --project simulations/download_baroclinic_ic_artifact.jl
       - name: Ocean climate simulation
         timeout-minutes: 190
         env:
