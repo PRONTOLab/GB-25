@@ -8,9 +8,9 @@ using GordonBell25: first_time_step!, time_step!, loop!, factors, is_distributed
 using Oceananigans
 
 const parsed_args = GordonBell25.parse_baroclinic_instability_args(;
-    grid_x_default = 768,
-    grid_y_default = 384,
-    grid_z_default = 64,
+    grid_x_default = 64,
+    grid_y_default = 64,
+    grid_z_default = 8,
 )
 
 Oceananigans.defaults.FloatType = Float32
