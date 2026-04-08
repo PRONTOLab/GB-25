@@ -60,7 +60,7 @@ end
 
 @show Ndev
 
-Rx, Ry = factors(Ndev)
+Ry, Rx = factors(Ndev)
 if Ndev == 1
     rank = 0
 else
