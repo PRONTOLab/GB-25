@@ -26,6 +26,11 @@ alps_config = JobConfig(; username, account, out_dir, time, cpus_per_task, Ngpus
 function alps_submit_job_writer(cfg::JobConfig, job_name, Nnodes, job_dir, Ngpu,
                                 resolution_fraction, project_path, run_file)
 
+    # We want to preserve a 2:1 aspect ratio for the x:y dimensions in all runs,
+    # so we change the base x and y sizes for the grid depending on whether the
+    # number of GPUs is a power of 4 or not (we enforce above that Ngpu is
+    # always a power of 2).  The factors 1088 and 544 have been chose so that
+    # their product is close enough to 768x768
     x, y = ispow4(Ngpu) ? (1088, 544) : (768, 768)
 
     """
