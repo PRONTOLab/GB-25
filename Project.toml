@@ -33,7 +33,6 @@ SpecialFunctions = "276daf66-3868-5448-9aa4-cd146d93841b"
 [sources]
 Breeze = {rev = "dkz/feat-reactant-version", url = "https://github.com/NumericalEarth/Breeze.jl.git"}
 NumericalEarth = {rev = "glw/manual-iterate", url = "https://github.com/NumericalEarth/NumericalEarth.jl.git"}
-Oceananigans = {rev = "dkz/fix-ranges", url = "https://github.com/dkytezab/Oceananigans.jl.git"}
 Reactant = {rev = "main", url = "https://github.com/EnzymeAD/Reactant.jl.git"}
 
 [compat]
