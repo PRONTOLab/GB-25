@@ -1,35 +1,33 @@
+using GordonBell25
 using GordonBell25: first_time_step!, loop!, try_compile_code, preamble, TRY_COMPILE_FAILED
 using GordonBell25: moist_baroclinic_wave_model, PROFILE
-using CUDA
-using Reactant
 using Oceananigans
-using Oceananigans.Architectures: ReactantState
-
-PROFILE[] = true
 
 const parsed_args = GordonBell25.parse_baroclinic_instability_args(;
     grid_x_default = 64,
     grid_y_default = 64,
-    grid_z_default = 8,
+    grid_z_default = 16,
 )
 
-Oceananigans.defaults.FloatType = GordonBell25.float_type_from_args(parsed_args)
+default_float_type = GordonBell25.float_type_from_args(parsed_args)
+Oceananigans.defaults.FloatType = default_float_type
+
+using CUDA
+using Reactant
+using Oceananigans.Architectures: ReactantState
+
+PROFILE[] = true
 
 preamble()
 
-Rx, Ry = factors(Ndev)
-
 H = 8
-Tλ = parsed_args["grid-x"] * Rx
-Tφ = parsed_args["grid-y"] * Ry
+Nλ = parsed_args["grid-x"] - 2H
+Nφ = parsed_args["grid-y"] - 2H
 Nz = parsed_args["grid-z"]
 
-Nλ = Tλ - 2H
-Nφ = Tφ - 2H
-
-@info "Generating atmosphere model..."
+@info "Generating atmosphere model (Nλ=$Nλ, Nφ=$Nφ, Nz=$Nz)..."
 arch = ReactantState()
-model = moist_baroclinic_wave_model(arch; Nλ, Nφ, Nz, Δt=2.0, halo=(8, 8, 8))
+model = moist_baroclinic_wave_model(arch; Nλ, Nφ, Nz, Δt=2.0, halo=(H, H, H))
 
 GC.gc(true); GC.gc(false); GC.gc(true)
 
