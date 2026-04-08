@@ -26,10 +26,15 @@ GordonBell25.initialize(; single_gpu_per_process=false)
 
 Ry, Rx = GordonBell25.factors(Ndev)
 
-rarch = Oceananigans.Distributed(
-    Oceananigans.ReactantState();
-    partition = Partition(Rx, Ry, 1)
-)
+
+rarch = Oceananigans.ReactantState()
+
+if Ndev != 1
+    rarch = Oceananigans.Distributed(
+        rarch;
+        partition = Partition(Rx, Ry, 1)
+    )
+end
 
 rank = Reactant.Distributed.local_rank()
 
@@ -51,7 +56,10 @@ rmodel = GordonBell25.baroclinic_instability_model(rarch, Nx, Ny, Nz; model_kw..
 vmodel = GordonBell25.baroclinic_instability_model(varch, Nx, Ny, Nz; model_kw...)
 @show vmodel
 @show rmodel
-@assert rmodel.architecture isa Distributed
+
+if Ndev != 1
+  @assert rmodel.architecture isa Distributed
+end
 
 ui = 1e-3 .* rand(size(vmodel.velocities.u)...)
 vi = 1e-3 .* rand(size(vmodel.velocities.v)...)
