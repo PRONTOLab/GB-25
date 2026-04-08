@@ -99,6 +99,10 @@ jobs:
             Project.toml
           retention-days: 90
           overwrite: false
+      - name: Download ocean climate artifacts
+        if: ${{ contains(inputs.sim_type, 'ocean_climate') }}
+        timeout-minutes: 30
+        run: julia --color=yes --project simulations/download_sixth_degree_artifacts.jl
       - name: Ocean climate simulation
         timeout-minutes: 190
         env:
