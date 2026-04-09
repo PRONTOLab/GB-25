@@ -39,7 +39,7 @@ Reactant.MLIR.IR.DUMP_MLIR_DIR[] = joinpath(@__DIR__, "mlir_dumps", jobid_procid
 Reactant.Compiler.DEBUG_DISABLE_RESHARDING[] = true
 Reactant.Compiler.WHILE_CONCAT[] = true
 
-GordonBell25.initialize(; single_gpu_per_process=true)
+GordonBell25.initialize(; single_gpu_per_process=false)
 
 local_arch = Oceananigans.ReactantState()
 arch = local_arch
