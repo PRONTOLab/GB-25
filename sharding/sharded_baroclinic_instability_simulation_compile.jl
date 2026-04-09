@@ -26,7 +26,7 @@ preamble()
 GordonBell25.initialize(; single_gpu_per_process=false)
 @show Ndev = length(Reactant.devices())
 
-Ry, Rx = GordonBell25.factors(Ndev)
+Rx, Ry = GordonBell25.factors(Ndev)
 if Ndev == 1
     rank = 0
     arch = Oceananigans.ReactantState()

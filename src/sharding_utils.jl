@@ -23,27 +23,29 @@ function (sharding::TreeSharding)(
 end
 
 """
-    factors(N::Int) -> NTuple{2, Int}
+    factors(N::Int) -> Tuple{Int, Int}
 
-Determine two adjectent factors of `N`, useful for finding partitioning factors for sharding.
+Return `(Dx, Dy)` such that `Dx * Dy == N` and `Dx == 2*Dy`.
+Requires `N` to be even and `N ÷ 2` to be a perfect square.
+
+# Special cases
+
+Some values of `N` do not satisfy the general constraints but we
+still want to handle
+- `N = 4` (single node) → `(2, 2)`
+- `N = 9180` (ALPS full system size) → `(68, 135)`
 """
 function factors(N::Int)
-    d = log2(N) / 2
-    D = Int(exp2(ceil(Int, d)))
+    special_cases = Dict(4 => (2, 2), 9180 => (68, 135))
+    haskey(special_cases, N) && return special_cases[N]
 
-    alternate = 1
-    tries = 1
-    while (N % D != 0)
-        D -= tries * alternate
-        tries += 1
-        alternate *= -1
-    end
+    iseven(N) || throw(ArgumentError("N must be even; got N = $N"))
+    Nhalf = N ÷ 2
+    D = isqrt(Nhalf)
+    D^2 == Nhalf || throw(ArgumentError("N ÷ 2 = $Nhalf is not a perfect square"))
 
-    # Always make Dy >= Dx
-    Dx, Dy = extrema((D, N ÷ D))
-
-    Dx * Dy != N && error("The product $(Dx) * $(Dy) is not equal to the input argument $(N), there is a bug in this function!")
-
+    Dx = 2*D
+    Dy = D
     return Dx, Dy
 end
 
