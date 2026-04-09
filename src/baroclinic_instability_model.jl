@@ -168,8 +168,16 @@ function set_baroclinic_instability_from_file!(model, path::String)
         (T_src, S_src)
     end
 
-    @jit interpolate_3d!(model.tracers.T, Reactant.to_rarray(T_for_jit))
-    @jit interpolate_3d!(model.tracers.S, Reactant.to_rarray(S_for_jit))
+    src_sharding = if target_arch isa Oceananigans.DistributedComputations.Distributed
+        mesh = Sharding.unwrap_shardinfo(Reactant.ancestor(model.tracers.T).sharding).mesh
+        Sharding.Replicated(mesh)
+    else
+        Sharding.NoSharding()
+    end
+    to_ra(f) = Reactant.to_rarray(f; sharding=src_sharding)
+
+    @jit interpolate_3d!(model.tracers.T, to_ra(T_for_jit))
+    @jit interpolate_3d!(model.tracers.S, to_ra(S_for_jit))
 
     # println(@code_hlo interpolate_3d!(model.tracers.T, Reactant.to_rarray(ones(
     #                                                             eltype(model.tracers.T),
