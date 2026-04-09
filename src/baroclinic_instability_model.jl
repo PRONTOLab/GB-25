@@ -127,8 +127,8 @@ function set_baroclinic_instability_from_file!(model, path::String)
     Oceananigans.BoundaryConditions.fill_halo_regions!(T_src)
     Oceananigans.BoundaryConditions.fill_halo_regions!(S_src)
 
-    @jit resize_linear!(model.tracers.T, T_src)
-    @jit resize_linear!(model.tracers.S, S_src)
+    @jit resize_linear!(model.tracers.T, Reactant.to_rarray(T_src))
+    @jit resize_linear!(model.tracers.S, Reactant.to_rarray(S_src))
 
     return nothing
 end
