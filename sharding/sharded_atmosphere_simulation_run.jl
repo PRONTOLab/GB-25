@@ -91,7 +91,7 @@ column_height = 30e3   # m; default column height in moist_baroclinic_wave_model
 # and `interpolate!` scatters into the sharded target.
 # Falls back to analytic IC if the file is missing.
 _ic_path = joinpath(@__DIR__, "..", "simulations", "initial_conditions",
-                    "atmosphere_coarsened_1536x768x64.jld2")
+                    "atmosphere_coarsened_768x768x64.jld2")
 initial_conditions_path = isfile(_ic_path) ? _ic_path : nothing
 if initial_conditions_path !== nothing
     @info "[$rank] Initializing from file" initial_conditions_path
