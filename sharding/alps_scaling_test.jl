@@ -63,6 +63,9 @@ export FI_CXI_RX_MATCH_MODE=software
 # export FI_MR_CACHE_MONITOR=userfaultfd
 export NCCL_NCHANNELS_PER_NET_PEER=4
 
+# Tell NCLL to use fast network, this may solve some rendezvous failures
+export NCCL_SOCKET_IFNAME="hsn"
+
 # Equivalent to loading the `aws-ofi-nccl` module, without having to load it:
 # https://docs.cscs.ch/software/communication/nccl/#uenv
 export LD_LIBRARY_PATH="/user-environment/linux-neoverse_v2/aws-ofi-nccl-1.17.1-rpvjytyqpdw2taig4xibhrtgudie4a3q/lib:/user-environment/linux-neoverse_v2/libfabric-2.3.1-npwd54pnpalgjcizhpejkh7gwg4c7idu/lib:/user-environment/linux-neoverse_v2/aws-ofi-nccl-1.17.1-rpvjytyqpdw2taig4xibhrtgudie4a3q/lib"
