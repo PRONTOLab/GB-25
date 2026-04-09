@@ -102,25 +102,17 @@ function set_baroclinic_instability_from_file!(model, path::String)
         error("Loaded S field size $(size(S_data)) does not match (Nx, Ny, Nz) = $expected from $path")
     end
 
-    # Workflow:
-    #   1. T_data, S_data are already loaded as CPU host arrays.
-    #   2. Build source Fields on the *model's* architecture (CPU/GPU/
-    #      ReactantState/Distributed) using a source grid sized to the
-    #      checkpoint, and copy the host data into them via a CPU twin —
-    #      this is the only host→device write pattern that works for
-    #      `ReactantField` (the generic `set!(::Field, ::Array)` falls
-    #      through to a broadcast that silently no-ops on Reactant).
-    #   3. `interpolate!` from the on-arch source Fields onto
-    #      `model.tracers.T/S`. Source and target live on the same
-    #      architecture, so Oceananigans' Reactant extension dispatches
-    #      to `_set_to_field!` / the device-side interpolate path.
-    arch = model.grid.architecture
-
+    # Always build the source field on plain CPU. The pirated `interpolate!`
+    # method below (target::ShardedField, source on CPU) takes care of feeding
+    # this CPU source into a Reactant-sharded target via a one-shot @compile +
+    # free_exec dance. For non-sharded targets (plain CPU / CUDA / single-device
+    # Reactant) Oceananigans' stock `interpolate!` handles the CPU→arch case.
+    #
     # Uniform z so that the source grid is `ZRegularLLG` and
     # `fractional_z_index` is constant-time (no binary search). The
     # binary-search path uses a dynamic-trip-count `while` loop that
     # Reactant's MLIR pass manager currently fails to lower under sharding.
-    source_grid = LatitudeLongitudeGrid(arch;
+    source_grid = LatitudeLongitudeGrid(Oceananigans.CPU();
         size = (Nx_src, Ny_src, Nz_src),
         halo = (1, 1, 1),
         z = (-4000, 0),
@@ -128,37 +120,66 @@ function set_baroclinic_instability_from_file!(model, path::String)
         longitude = (0, 360),
     )
 
-    # Reactant's set!(::ReactantField, ::Array) silently no-ops, so for Reactant
-    # archs we go through a CPU twin and copyto! the interiors. For plain CPU/CUDA
-    # archs the generic set!(::Field, ::Array) handles host→device transfer
-    # directly, and the copyto!(SubArray{CuArray}, SubArray{Array}) path falls
-    # into a scalar GPU index loop, so we use set! instead.
-    is_reactant = arch isa Oceananigans.Architectures.ReactantState ||
-                  (arch isa Oceananigans.DistributedComputations.Distributed &&
-                   Oceananigans.Architectures.child_architecture(arch) isa Oceananigans.Architectures.ReactantState)
-
     T_src = CenterField(source_grid)
     S_src = CenterField(source_grid)
-
-    if is_reactant
-        cpu_source_grid = Oceananigans.Architectures.on_architecture(Oceananigans.CPU(), source_grid)
-        cpu_T_src = CenterField(cpu_source_grid)
-        cpu_S_src = CenterField(cpu_source_grid)
-        set!(cpu_T_src, T_data)
-        set!(cpu_S_src, S_data)
-        Oceananigans.BoundaryConditions.fill_halo_regions!(cpu_T_src)
-        Oceananigans.BoundaryConditions.fill_halo_regions!(cpu_S_src)
-        copyto!(interior(T_src), interior(cpu_T_src))
-        copyto!(interior(S_src), interior(cpu_S_src))
-    else
-        set!(T_src, T_data)
-        set!(S_src, S_data)
-        Oceananigans.BoundaryConditions.fill_halo_regions!(T_src)
-        Oceananigans.BoundaryConditions.fill_halo_regions!(S_src)
-    end
+    set!(T_src, T_data)
+    set!(S_src, S_data)
+    Oceananigans.BoundaryConditions.fill_halo_regions!(T_src)
+    Oceananigans.BoundaryConditions.fill_halo_regions!(S_src)
 
     Oceananigans.Fields.interpolate!(model.tracers.T, T_src)
     Oceananigans.Fields.interpolate!(model.tracers.S, S_src)
 
     return nothing
+end
+
+# ----------------------------------------------------------------------------
+# Sharded-Reactant interpolate! pirate
+#
+# Type aliases mirroring OceananigansReactantExt.{Grids,Fields} but defined
+# against core Oceananigans types so they're available without the extension
+# being loaded (the extension only loads its own copies; both refer to the
+# same underlying core types so dispatch is identical).
+const ShardedDistributedArch   = Oceananigans.DistributedComputations.Distributed{<:Oceananigans.Architectures.ReactantState}
+const ShardedGrid{FT,TX,TY,TZ} = Oceananigans.Grids.AbstractGrid{FT,TX,TY,TZ,<:ShardedDistributedArch}
+const ShardedField{LX,LY,LZ,O} = Oceananigans.Fields.Field{LX,LY,LZ,O,<:ShardedGrid}
+
+const CPUSourceGrid            = Oceananigans.Grids.AbstractGrid{<:Any,<:Any,<:Any,<:Any,<:Oceananigans.Architectures.CPU}
+const CPUSourceField{LX,LY,LZ,O} = Oceananigans.Fields.Field{LX,LY,LZ,O,<:CPUSourceGrid}
+
+# Mirrors the kernel-launch body of `Oceananigans.Fields.interpolate!` (see
+# Oceananigans.jl/src/Fields/interpolate.jl), without the
+# `to_arch != from_arch` assertion. Called both directly (from this method)
+# and as the body that Reactant traces under @compile.
+function _gb25_interpolate_kernel!(to_field, from_field)
+    to_grid   = to_field.grid
+    from_grid = from_field.grid
+    to_arch   = Oceananigans.Architectures.child_architecture(Oceananigans.Architectures.architecture(to_field))
+
+    from_location = Tuple(L() for L in Oceananigans.Fields.location(from_field))
+    to_location   = Tuple(L() for L in Oceananigans.Fields.location(to_field))
+
+    params = Oceananigans.Utils.KernelParameters(Oceananigans.Fields.interior_indices(to_field))
+
+    Oceananigans.Utils.launch!(to_arch, to_grid, params,
+        Oceananigans.Fields._interpolate!, to_field, to_grid, to_location,
+        from_field, from_grid, from_location)
+
+    Oceananigans.BoundaryConditions.fill_halo_regions!(to_field)
+    return to_field
+end
+
+# Type piracy on Oceananigans.Fields.interpolate! for the case
+#   target = sharded Reactant field (Distributed{ReactantState})
+#   source = plain CPU field
+# The stock method errors with `to_arch != from_arch`. We bypass that and run
+# the interpolation kernel under @compile so it lowers to a single XLA program;
+# the executable is freed immediately so the one-shot compile doesn't leak for
+# the rest of the session.
+function Oceananigans.Fields.interpolate!(target::ShardedField, source::CPUSourceField)
+    compiled = @compile sync = true raise = true _gb25_interpolate_kernel!(target, source)
+    compiled(target, source)
+    Reactant.XLA.free_exec(compiled.exec)
+    compiled.exec.exec = C_NULL
+    return target
 end
