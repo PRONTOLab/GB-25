@@ -36,7 +36,7 @@ still want to handle
 - `N = 9180` (ALPS full system size) → `(68, 135)`
 """
 function factors(N::Int)
-    special_cases = Dict(4 => (2, 2), 9180 => (68, 135))
+    special_cases = Dict(4 => (2, 2), 16 => (4, 4), 9180 => (68, 135))
     haskey(special_cases, N) && return special_cases[N]
 
     iseven(N) || throw(ArgumentError("N must be even; got N = $N"))
