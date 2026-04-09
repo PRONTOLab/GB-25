@@ -174,9 +174,6 @@ function set_baroclinic_instability_from_file!(model, path::String)
     else
         Sharding.NoSharding()
     end
-    # Pass plain interior arrays — `to_rarray(::Field; sharding=...)` would
-    # walk the Field's grid and try to shard its StepRangeLen lat/lon
-    # coordinate vectors, which is unsupported.
     to_ra(a::AbstractArray) = Reactant.to_rarray(a; sharding=src_sharding)
 
     @jit interpolate_3d!(model.tracers.T, to_ra(Array(interior(T_for_jit))))
@@ -237,7 +234,7 @@ end
 function Oceananigans.Fields.interpolate!(target::ShardedField, source::CPUSourceField)
     compiled = @compile sync = true raise = true _gb25_interpolate_kernel!(target, source)
     compiled(target, source)
-    Reactant.XLA.free_exec(compiled.exec)
+    Reactant.XLA.IFRT.free_exec(compiled.exec)
     compiled.exec.exec = C_NULL
     return target
 end
