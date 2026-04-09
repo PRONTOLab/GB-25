@@ -21,7 +21,7 @@ z = resize(x, (2, 3))   # mixed downsample / upsample
 ) where {T,N}
     output_shape = size(dst)
     Tf = float(T)
-    x = Tf.(src)
+    x = src
     for d in 1:N
         size(x, d) == output_shape[d] && continue
         m = size(x, d)
