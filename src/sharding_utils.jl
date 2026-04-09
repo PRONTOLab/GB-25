@@ -23,33 +23,29 @@ function (sharding::TreeSharding)(
 end
 
 """
-    factors(N::Int) -> NTuple{2, Int}
+    factors(N::Int) -> Tuple{Int, Int}
 
-Determine two adjectent factors of `N`, useful for finding partitioning factors for sharding.
+Return `(Dx, Dy)` such that `Dx * Dy == N` and `Dy == 2*Dx`.
+
+Requires `N` to be even and `N ÷ 2` to be a perfect square.
+
+# Special case
+`N = 9180` (ALPS full system size) returns `(68, 135)` directly since
+`9180 ÷ 2 = 4590` is not a perfect square, making it an exception to
+the general constraint.
 """
 function factors(N::Int)
-    # special case for alps full system size
-    if N==9180
-        return 68, 135
-    end
-        
-    d = log2(N) / 2
-    D = Int(exp2(ceil(Int, d)))
+    # ALPS full system size: 4590 is not a perfect square, handled separately
+    N == 9180 && return 68, 135
 
-    alternate = 1
-    tries = 1
-    while (N % D != 0)
-        D -= tries * alternate
-        tries += 1
-        alternate *= -1
-    end
+    iseven(N) || throw(ArgumentError("N must be even; got N = $N"))
 
-    # Always make Dy >= Dx
-    Dx, Dy = extrema((D, N ÷ D))
+    Nhalf = N ÷ 2
+    Dx = isqrt(Nhalf)
 
-    Dx * Dy != N && error("The product $(Dx) * $(Dy) is not equal to the input argument $(N), there is a bug in this function!")
+    Dx^2 == Nhalf || throw(ArgumentError("N ÷ 2 = $Nhalf is not a perfect square"))
 
-    return Dx, Dy
+    return Dx, 2Dx
 end
 
 function allocatorstats()
