@@ -490,17 +490,30 @@ function set_moist_baroclinic_wave_from_file!(model, path::String; H = 30e3)
     size(ρθ_data)  == expected_c  || error("ρθ size $(size(ρθ_data)) ≠ $expected_c from $path")
     size(ρqv_data) == expected_c  || error("ρqᵛ size $(size(ρqv_data)) ≠ $expected_c from $path")
 
-    # Build the source field on plain CPU. For sharded Reactant targets the
-    # type-pirated `interpolate!(::ShardedField, ::CPUSourceField)` below
-    # bypasses the `to_arch != from_arch` assertion in
-    # Oceananigans.Fields.interpolate! and runs the kernel under @compile.
-    # For plain CUDA / single-Reactant / Distributed{CPU/GPU} targets the
-    # type-pirated `interpolate!(::ArchField, ::CPUSourceField)` below
-    # likewise bypasses the assertion and just calls the kernel directly.
+    # Source-grid arch depends on the model arch:
+    #
+    #   - Reactant (single ReactantState or Distributed{ReactantState}):
+    #     source on plain CPU. set!(::ReactantField, ::Array) is a no-op,
+    #     so we can't write the host data into a Reactant source directly;
+    #     instead we hand the CPU source to the type-pirated interpolate!
+    #     methods below, which traces the cross-arch transfer in the
+    #     interpolation kernel itself (single-device) or under @compile
+    #     (sharded).
+    #
+    #   - Everything else (plain CPU, plain GPU/CUDA, Distributed{CPU/GPU}):
+    #     source on the model arch. set!(::Field, ::Array) handles the
+    #     host→device transfer, and the stock interpolate! handles
+    #     same-arch source→target.
     #
     # Uniform z so that the source grid is `ZRegularLLG` and
     # `fractional_z_index` is constant-time (no binary search).
-    source_grid = LatitudeLongitudeGrid(Oceananigans.CPU();
+    model_arch = model.grid.architecture
+    is_reactant_arch = model_arch isa Oceananigans.Architectures.ReactantState ||
+        (model_arch isa Oceananigans.DistributedComputations.Distributed &&
+         Oceananigans.Architectures.child_architecture(model_arch) isa Oceananigans.Architectures.ReactantState)
+    source_arch = is_reactant_arch ? Oceananigans.CPU() : model_arch
+
+    source_grid = LatitudeLongitudeGrid(source_arch;
         size = (Nλ_src, Nφ_src, Nz_src),
         halo = (1, 1, 1),
         z = (0, H),
@@ -607,22 +620,23 @@ function Oceananigans.Fields.interpolate!(target::SerialReactantField, source::C
 end
 
 # Type piracy on Oceananigans.Fields.interpolate! for the case
-#   target = plain CUDA / single-Reactant / Distributed{CPU/GPU} field
+#   target = single-device Reactant field (ReactantState)
 #   source = plain CPU field
-# Same kernel-launch as the stock method, just without the
-# `to_arch != from_arch` assertion. KernelAbstractions handles the cross-arch
-# case fine — the assertion is purely a safety net that we want to bypass
-# precisely because the IC checkpoint is small enough to live entirely on
-# the host.
-const NonShardedField{LX,LY,LZ,O} = Oceananigans.Fields.Field{
+# Reactant traces the cross-arch transfer in `_gb25_atmos_interpolate_kernel!`
+# implicitly when launching the KA kernel. The `to_arch != from_arch`
+# assertion in stock interpolate! would block it.
+const SingleReactantField{LX,LY,LZ,O} = Oceananigans.Fields.Field{
     LX, LY, LZ, O,
     <:Oceananigans.Grids.AbstractGrid{<:Any,<:Any,<:Any,<:Any,
-        <:Union{Oceananigans.Architectures.GPU,
-                Oceananigans.Architectures.ReactantState,
-                Oceananigans.DistributedComputations.Distributed{<:Oceananigans.Architectures.GPU},
-                Oceananigans.DistributedComputations.Distributed{<:Oceananigans.Architectures.CPU}}},
+        <:Oceananigans.Architectures.ReactantState},
 }
 
-function Oceananigans.Fields.interpolate!(target::NonShardedField, source::CPUSourceField)
+function Oceananigans.Fields.interpolate!(target::SingleReactantField, source::CPUSourceField)
     return _gb25_atmos_interpolate_kernel!(target, source)
 end
+
+# For plain CUDA / Distributed{CPU,GPU} targets we cannot pass a host Array
+# as a kernel argument to a GPU-compiled kernel. The loader builds the
+# source on the model arch in those cases, so source and target are on the
+# same arch and the stock `Oceananigans.Fields.interpolate!` is fine — no
+# pirate needed.
