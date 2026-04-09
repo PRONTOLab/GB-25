@@ -479,23 +479,10 @@ function set_moist_baroclinic_wave_from_file!(model, path::String; H = 30e3)
     size(ρθ_data)  == expected_c  || error("ρθ size $(size(ρθ_data)) ≠ $expected_c from $path")
     size(ρqv_data) == expected_c  || error("ρqᵛ size $(size(ρqv_data)) ≠ $expected_c from $path")
 
-    # Source-grid arch depends on the model arch:
-    #
-    #   - Reactant (single ReactantState or Distributed{ReactantState}):
-    #     source on plain CPU. set!(::ReactantField, ::Array) is a no-op,
-    #     so we can't write the host data into a Reactant source directly;
-    #     instead we hand the CPU source to the type-pirated interpolate!
-    #     methods below, which traces the cross-arch transfer in the
-    #     interpolation kernel itself (single-device) or under @compile
-    #     (sharded).
-    #
-    #   - Everything else (plain CPU, plain GPU/CUDA, Distributed{CPU/GPU}):
-    #     source on the model arch. set!(::Field, ::Array) handles the
-    #     host→device transfer, and the stock interpolate! handles
-    #     same-arch source→target.
-    #
-    # Uniform z so that the source grid is `ZRegularLLG` and
-    # `fractional_z_index` is constant-time (no binary search).
+    # Source always on CPU.  For Reactant targets the @jit interpolate_3d!
+    # path traces the CPU→Reactant transfer.  For plain CPU/GPU the stock
+    # Oceananigans.Fields.interpolate! handles same-arch source→target.
+    # Uniform z so the source grid is ZRegular (constant-time index lookup).
     model_arch = model.grid.architecture
     is_reactant_arch = model_arch isa Oceananigans.Architectures.ReactantState ||
         (model_arch isa Oceananigans.DistributedComputations.Distributed &&
@@ -536,21 +523,66 @@ function set_moist_baroclinic_wave_from_file!(model, path::String; H = 30e3)
     ρqv_target = model.moisture_density
 
     if is_reactant_arch
-        # Use the @jit resize_linear! path. resize_linear! is JAX-style
-        # linear resampling via static weight matrices + matmul, lowered to
-        # XLA primitives. It bypasses Oceananigans.Fields.interpolate! (and
-        # the binary-search index path that emits roundeven), and handles
-        # CPU-source → Reactant-target via Reactant's tracing.
-        @jit resize_linear!(ρ_target,   ρ_src)
-        @jit resize_linear!(ρu_target,  ρu_src)
-        @jit resize_linear!(ρv_target,  ρv_src)
-        @jit resize_linear!(ρw_target,  ρw_src)
-        @jit resize_linear!(ρθ_target,  ρθ_src)
-        @jit resize_linear!(ρqv_target, ρqv_src)
+        # interpolate_3d! is fast when the source dims are an integer factor
+        # of the target in every dimension. If not, do a CPU-side
+        # interpolation first onto an intermediate grid whose per-rank
+        # interior is an integer factor of the global target, then hand that
+        # to the Reactant @jit path.
+        target_arch = model_arch
+        Rx, Ry = if target_arch isa Oceananigans.DistributedComputations.Distributed
+            (target_arch.partition.x, target_arch.partition.y)
+        else
+            (1, 1)
+        end
+
+        src_total = size(parent(ρ_src))
+        dst_total = size(parent(ρ_target))
+        is_int_factor(s, t) = (t % s == 0) || (s % t == 0)
+        needs_cpu_interp = !all(is_int_factor.(src_total, dst_total))
+
+        Nλ_dst, Nφ_dst, Nz_dst = size(model.grid)
+        sources = if needs_cpu_interp
+            Nλ_int = Nλ_dst ÷ Rx
+            Nφ_int = Nφ_dst ÷ Ry
+            Nz_int = Nz_dst
+            int_grid = LatitudeLongitudeGrid(Oceananigans.CPU();
+                size = (Nλ_int, Nφ_int, Nz_int),
+                halo = (1, 1, 1),
+                z = (0, H),
+                latitude = (-80, 80),
+                longitude = (0, 360),
+            )
+            ρ_int   = CenterField(int_grid)
+            ρu_int  = XFaceField(int_grid)
+            ρv_int  = YFaceField(int_grid)
+            ρw_int  = ZFaceField(int_grid)
+            ρθ_int  = CenterField(int_grid)
+            ρqv_int = CenterField(int_grid)
+            for (dst_f, src_f) in ((ρ_int, ρ_src), (ρu_int, ρu_src),
+                                   (ρv_int, ρv_src), (ρw_int, ρw_src),
+                                   (ρθ_int, ρθ_src), (ρqv_int, ρqv_src))
+                Oceananigans.Fields.interpolate!(dst_f, src_f)
+                Oceananigans.BoundaryConditions.fill_halo_regions!(dst_f)
+            end
+            (ρ_int, ρu_int, ρv_int, ρw_int, ρθ_int, ρqv_int)
+        else
+            (ρ_src, ρu_src, ρv_src, ρw_src, ρθ_src, ρqv_src)
+        end
+
+        src_sharding = if target_arch isa Oceananigans.DistributedComputations.Distributed
+            mesh = Sharding.unwrap_shardinfo(Reactant.ancestor(ρ_target).sharding).mesh
+            Sharding.Replicated(mesh)
+        else
+            Sharding.NoSharding()
+        end
+        to_ra(f) = Reactant.to_rarray(f; sharding=src_sharding)
+
+        for (target_f, source_f) in zip(
+                (ρ_target, ρu_target, ρv_target, ρw_target, ρθ_target, ρqv_target),
+                sources)
+            @jit interpolate_3d!(target_f, to_ra(source_f))
+        end
     else
-        # Plain CPU / GPU / Distributed{CPU,GPU}: source and target are on
-        # the same arch (we built the source on `model_arch` above), so the
-        # stock interpolate! works.
         Oceananigans.Fields.interpolate!(ρ_target,   ρ_src)
         Oceananigans.Fields.interpolate!(ρu_target,  ρu_src)
         Oceananigans.Fields.interpolate!(ρv_target,  ρv_src)
