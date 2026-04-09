@@ -40,6 +40,7 @@ function factors(N::Int)
     special_cases = Dict(
         4 => (2, 2),
         16 => (4, 4),
+        9152 => (143, 64),
         9180 => (135, 68),
     )
     haskey(special_cases, N) && return special_cases[N]
