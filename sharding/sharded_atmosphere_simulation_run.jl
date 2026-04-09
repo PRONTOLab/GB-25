@@ -39,7 +39,7 @@ Reactant.MLIR.IR.DUMP_MLIR_DIR[] = joinpath(@__DIR__, "mlir_dumps", jobid_procid
 Reactant.Compiler.DEBUG_DISABLE_RESHARDING[] = true
 Reactant.Compiler.WHILE_CONCAT[] = true
 
-GordonBell25.initialize(; single_gpu_per_process=false)
+GordonBell25.initialize(; single_gpu_per_process=true)
 
 local_arch = Oceananigans.ReactantState()
 arch = local_arch
@@ -77,19 +77,12 @@ Nz = parsed_args["grid-z"]
 Nλ = Tλ - 2H
 Nφ = Tφ - 2H
 
-CFL_target = 0.5
-c_sound = 330.0        # m/s
-R_earth = 6371220.0    # m
-φ_cap = 85.0           # degrees; grid latitude extent (−85°, 85°)
 column_height = 30e3   # m; default column height in moist_baroclinic_wave_model
 
-Δz = column_height / Nz
-Δλ_rad = 2π / Nλ
-Δφ_rad = (2 * φ_cap) * (π / 180) / Nφ
-Δx_zonal = R_earth * cosd(φ_cap) * Δλ_rad
-Δy_merid = R_earth * Δφ_rad
-Δ_min = min(Δz, Δx_zonal, Δy_merid)
-Δt = CFL_target * Δ_min / c_sound
+# Vertical acoustic CFL is the binding constraint for ExplicitTimeStepping:
+# Δt < Δz / c_s ≈ (30 km / 64) / 340 m/s ≈ 1.38 s, independent of horizontal
+# resolution. Hardcode Δt below the limit and don't auto-derive.
+Δt = 1.0
 
 # File-based initialization. The artifact is downloaded by
 # `simulations/download_atmosphere_ic_artifact.jl` and lives in the
@@ -98,7 +91,7 @@ column_height = 30e3   # m; default column height in moist_baroclinic_wave_model
 # and `interpolate!` scatters into the sharded target.
 # Falls back to analytic IC if the file is missing.
 _ic_path = joinpath(@__DIR__, "..", "simulations", "initial_conditions",
-                    "atmosphere_no_microphysics_1deg_14day.jld2")
+                    "atmosphere_coarsened_768x768x64.jld2")
 initial_conditions_path = isfile(_ic_path) ? _ic_path : nothing
 if initial_conditions_path !== nothing
     @info "[$rank] Initializing from file" initial_conditions_path

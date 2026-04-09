@@ -1,12 +1,16 @@
 #=
-Download the cached 1° atmosphere initial-condition artifact from Dropbox.
+Download the atmosphere initial-condition artifact from Dropbox.
 
-  atmosphere_no_microphysics_1deg_14day.jld2  ≈ 85 MB
+  atmosphere_coarsened_768x768x64.jld2  ≈ 2.7 GB
 
-This is the 14-day spinup of the 1° (Nλ=360, Nφ=160, Nz=64)
-moist-baroclinic-wave model with `microphysics=nothing` and Δt=60 s. It is
-the input for the `initial_conditions_path` keyword of
-`GordonBell25.moist_baroclinic_wave_model`.
+This is a 768×768×64 coarsened checkpoint from a 1/8° (2880×1280×64)
+mixed-phase NE-1M microphysics spinup (ExplicitTimeStepping, Δt=1 s,
+30 sim minutes from a 1° dry 14-day spinup). Contains prognostic fields
+(ρ, ρu, ρv, ρw, ρθ, ρqᵛ) plus microphysical diagnostics (cloud liquid,
+cloud ice, vapor).
+
+The 768×768×64 size is chosen so that on-device interpolation to the
+target grid lands on clean integer multiples of the per-GPU shard size.
 
 The file is written to `simulations/initial_conditions/` next to this
 script and is skipped if already present.
@@ -17,8 +21,8 @@ Run:
 
 using Downloads
 
-const ARTIFACT_NAME = "atmosphere_no_microphysics_1deg_14day.jld2"
-const ARTIFACT_URL  = "https://www.dropbox.com/scl/fi/0w9hvr8dol7ferfrrn7mj/atmosphere_no_microphysics_1deg_14day.jld2?rlkey=htnm5b8wy89jrt0eu67cbilcc&dl=1"
+const ARTIFACT_NAME = "atmosphere_coarsened_768x768x64.jld2"
+const ARTIFACT_URL  = "https://www.dropbox.com/scl/fi/d3j99fa2uf12ty9g4q9im/atmosphere_coarsened_768x768x64.jld2?rlkey=c2bo7ehn9yguskn6ione0g55x&dl=1"
 
 function download_artifact_if_missing(name::AbstractString, url::AbstractString, dest_dir::AbstractString)
     mkpath(dest_dir)

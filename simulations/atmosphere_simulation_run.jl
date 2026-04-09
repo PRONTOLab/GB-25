@@ -33,7 +33,7 @@ arch = ReactantState()
 # `simulations/download_atmosphere_ic_artifact.jl` and lives next to this
 # script in `simulations/initial_conditions/`.
 # Falls back to analytic IC if the file is missing.
-_ic_path = joinpath(@__DIR__, "initial_conditions", "atmosphere_no_microphysics_1deg_14day.jld2")
+_ic_path = joinpath(@__DIR__, "initial_conditions", "atmosphere_coarsened_768x768x64.jld2")
 initial_conditions_path = isfile(_ic_path) ? _ic_path : nothing
 if initial_conditions_path !== nothing
     @info "Initializing from file" initial_conditions_path
