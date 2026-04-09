@@ -101,7 +101,7 @@ end
 
 @info "[$rank] Generating atmosphere model (Nλ=$Nλ, Nφ=$Nφ, Nz=$Nz, Δt=$(round(Δt; sigdigits=3))s)..." now(UTC)
 model = GordonBell25.moist_baroclinic_wave_model(arch; Nλ, Nφ, Nz, H=column_height, Δt,
-                                                 halo=(H, H, H),
+                                                 halo=(H, H, 4),
                                                  initial_conditions_path)
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 
