@@ -302,20 +302,19 @@ end
 
 """
     moist_baroclinic_wave_model(arch; Nλ=360, Nφ=160, Nz=64, H=30e3, Δt=nothing,
-                                halo=(8,8,8), timestepper=:split_explicit, ...)
+                                halo=(8,8,8), time_discretization=ExplicitTimeStepping(), ...)
 
 Build a Breeze `AtmosphereModel` on a global LatitudeLongitudeGrid initialised
 with the DCMIP-2016 moist baroclinic wave (Test 1-1).
 
-Timestepper options (`timestepper` keyword):
-  • `:split_explicit` (default) — `SplitExplicitTimeDiscretization` with
-    `PressureProjectionDamping(coefficient=0.5)`. The Breeze 0.4.6 default of
-    `coefficient=0.1` is too weak for the moist BCW and silently produces
-    NaN-filled state after a few outer steps; 0.5 is the value the Breeze
-    docs (`appendix/bw_dt_sweep_results.md`) recommend for this problem.
-    The outer Δt follows the advective CFL.
-  • `:explicit` — `ExplicitTimeStepping()`, no acoustic substepping.
-    Δt must satisfy the acoustic CFL (binding constraint is Δz / c_s).
+Time discretization options (`time_discretization` keyword):
+  • `ExplicitTimeStepping()` (default) — no acoustic substepping. Δt must
+    satisfy the acoustic CFL (binding constraint is Δz / c_s ≈ 1.4 s for
+    Nz=64, H=30 km).
+  • `SplitExplicitTimeDiscretization(damping = PressureProjectionDamping(coefficient=0.5))` —
+    WS-RK3 + acoustic substepping. The outer Δt follows the advective CFL.
+    Use `coefficient=0.5` for the moist BCW (the Breeze 0.4.6 default of
+    0.1 is too weak and silently produces NaN-filled state).
 
 Other components:
   • `HydrostaticSphericalCoriolis`
@@ -327,8 +326,8 @@ Default resolution ≈ 1° (Nλ=360, Nφ=160) with Nz=64 vertical levels and
 halo=(8,8,8) so WENO(5) and the spinup/sharded scripts agree on halo width.
 
 Time step: when `Δt === nothing`, a conservative formula is used:
-  split_explicit: `Δt = 60 · (360 / Nλ)` s (advective CFL).
-  explicit:       `Δt = 0.5 · Δz / 330` s  (acoustic CFL, c_s ≈ 330 m/s).
+  ExplicitTimeStepping:           `Δt = 0.5 · Δz / 330` s   (acoustic CFL).
+  SplitExplicitTimeDiscretization: `Δt = 60 · (360 / Nλ)` s (advective CFL).
 """
 function moist_baroclinic_wave_model(arch;
                                      Nλ           = 360,
@@ -337,13 +336,13 @@ function moist_baroclinic_wave_model(arch;
                                      H            = 30e3,
                                      Δt           = nothing,
                                      halo         = (8, 8, 8),
-                                     timestepper  = :split_explicit,
+                                     time_discretization = ExplicitTimeStepping(),
                                      with_microphysics = true,
                                      cloud_formation_τ_relax::Union{Nothing,Real} = nothing,
                                      initial_conditions_path::Union{Nothing,String} = nothing)
 
     if isnothing(Δt)
-        if timestepper === :split_explicit
+        if time_discretization isa SplitExplicitTimeDiscretization
             Δt_value = 60.0 * (360 / Nλ)
         else
             Δt_value = 0.5 * (H / Nz) / 330.0
@@ -361,22 +360,11 @@ function moist_baroclinic_wave_model(arch;
 
     coriolis = SphericalCoriolis()
 
-    dynamics = if timestepper === :split_explicit
-        CompressibleDynamics(
-            SplitExplicitTimeDiscretization(
-                damping = PressureProjectionDamping(coefficient = 0.5));
-            surface_pressure = p_ref,
-            reference_potential_temperature = theta_reference,
-        )
-    elseif timestepper === :explicit
-        CompressibleDynamics(
-            ExplicitTimeStepping();
-            surface_pressure = p_ref,
-            reference_potential_temperature = theta_reference,
-        )
-    else
-        error("Unknown timestepper: $timestepper. Use :split_explicit or :explicit.")
-    end
+    dynamics = CompressibleDynamics(
+        time_discretization;
+        surface_pressure = p_ref,
+        reference_potential_temperature = theta_reference,
+    )
 
     microphysics = if with_microphysics
         ext = Base.get_extension(Breeze, :BreezeCloudMicrophysicsExt)
