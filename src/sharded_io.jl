@@ -129,7 +129,7 @@ Returns updated `(local_arrays, local_slices, global_shape)`.
 function _apply_slice(local_arrays, local_slices, global_shape, dim::Int, idx::Vector{Int})
     ndim = length(global_shape)
     new_arrays = map(local_arrays) do a
-        slicers = [1:size(a, d) for d in 1:ndim]
+        slicers = Any[1:size(a, d) for d in 1:ndim]
         slicers[dim] = idx
         a[slicers...]
     end
