@@ -2,7 +2,7 @@
 Download the cached 1/4° baroclinic instability initial-condition artifact
 from Dropbox.
 
-  baroclinic_100day_quarter_degree.jld2  ≈ 1.2 GB
+  baroclinic_100day_768x768x64.jld2  ≈ 600 MB
 
 The file is the input for the `initial_conditions_path` keyword of
 `GordonBell25.baroclinic_instability_model`. It is the result of a
@@ -18,8 +18,8 @@ Run:
 
 using Downloads
 
-const ARTIFACT_NAME = "baroclinic_100day_quarter_degree.jld2"
-const ARTIFACT_URL  = "https://www.dropbox.com/scl/fi/gvsl13t0ctflz4304ke1g/baroclinic_100day_quarter_degree.jld2?rlkey=3tbr7567kl55fi17np79di9cs&dl=1"
+const ARTIFACT_NAME = "baroclinic_100day_768x768x64.jld2"
+const ARTIFACT_URL  = "https://www.dropbox.com/scl/fi/5wuj85ted46vjx11upsrm/baroclinic_100day_768x768x64.jld2?rlkey=1a06b8638ju4tpzvjj8uy7bf2&dl=1"
 
 function download_artifact_if_missing(name::AbstractString, url::AbstractString, dest_dir::AbstractString)
     mkpath(dest_dir)
