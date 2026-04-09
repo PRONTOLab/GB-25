@@ -2,6 +2,14 @@ using Dates, Random
 
 username = ENV["USER"]
 
+function snapshot_project!(snapshot_path::AbstractString, project_path::AbstractString)
+    cp(project_path, snapshot_path; force=true)
+
+    # The benchmark snapshot should be self-contained, but it does not need git metadata.
+    rm(joinpath(snapshot_path, ".git"); recursive=true, force=true)
+    return snapshot_path
+end
+
 run_prefix = get(ENV, "GB25_RUN_PREFIX", "runs")
 run_postfix = get(ENV, "GB25_RUN_POSTFIX", randstring(4))
 
@@ -38,9 +46,9 @@ function generate_and_submit(submit_job_writer, cfg::JobConfig; caller_file::Str
         error("File $(input_file) does not exist")
     end
     # Some filesystems don't like colons in directory names
+    project_path = dirname(@__DIR__)
     timestamp = replace(string(now(UTC)), ':' => '-')
     out_path = joinpath(cfg.out_dir, run_prefix, "$(timestamp)_$(run_postfix)")
-    project_path = dirname(@__DIR__)
 
     manifest_file = let
         dir = readdir(project_path)
@@ -61,15 +69,13 @@ function generate_and_submit(submit_job_writer, cfg::JobConfig; caller_file::Str
 
     mkpath(out_path)
 
-    # Copy environment files and run files for future reference.
-    for filename in ("Project.toml", manifest_file, "LocalPreferences.toml")
-        if filename == "LocalPreferences.toml" && !isfile(joinpath("..", filename))
-            continue
-        end
-        cp(joinpath("..", filename), joinpath(out_path, filename))
-    end
-    run_file = joinpath(out_path, basename(input_file))
-    cp(input_file, run_file)
+    # Snapshot the entire repository so submitted jobs do not depend on later edits
+    # to the live checkout.
+    snapshot_project_path = joinpath(out_path, basename(project_path))
+    snapshot_project!(snapshot_project_path, project_path)
+
+    # Run the snapshotted copy of the selected script.
+    run_file = joinpath(snapshot_project_path, relpath(input_file, project_path))
 
     # Capture repository state
     git_describe = readchomp(`git -C $(project_path) --no-pager describe --tags --always --dirty`)
@@ -149,7 +155,7 @@ echo "[\${SLURM_JOB_ID}.\${SLURM_PROCID}] Process exited with code \${?}"
             print(io, submit_job_writer(cfg::JobConfig, job_name::String,
                                         Nnodes::Int, job_dir::String, Ngpu::Int,
                                         resolution_fraction::Int,
-                                        project_path::String, run_file::String))
+                                        snapshot_project_path::String, run_file::String))
         end
         if cfg.submit
             run(`sbatch $(sbatch_name)`)
