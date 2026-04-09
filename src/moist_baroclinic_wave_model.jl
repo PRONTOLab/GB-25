@@ -13,7 +13,8 @@
 
 using KernelAbstractions: @kernel, @index
 using Breeze
-using Breeze: AtmosphereModel, CompressibleDynamics, ExplicitTimeStepping
+using Breeze: AtmosphereModel, CompressibleDynamics, ExplicitTimeStepping,
+              SplitExplicitTimeDiscretization, PressureProjectionDamping
 using Breeze: BulkDrag, BulkSensibleHeatFlux, BulkVaporFlux
 using Breeze.AtmosphereModels: dynamics_density, specific_prognostic_moisture
 using Breeze.Microphysics: NonEquilibriumCloudFormation, BulkMicrophysics
@@ -299,18 +300,23 @@ end
 # ═══════════════════════════════════════════════════════════════════════════
 
 """
-    moist_baroclinic_wave_model(arch; Nλ=360, Nφ=160, Nz=64, H=30e3, Δt=nothing, halo=(8,8,8))
+    moist_baroclinic_wave_model(arch; Nλ=360, Nφ=160, Nz=64, H=30e3, Δt=nothing,
+                                halo=(8,8,8), timestepper=:split_explicit, ...)
 
 Build a Breeze `AtmosphereModel` on a global LatitudeLongitudeGrid initialised
 with the DCMIP-2016 moist baroclinic wave (Test 1-1).
 
-Components
-  • `CompressibleDynamics` with `SplitExplicitTimeDiscretization` (WS-RK3 +
-    acoustic substepping) and `PressureProjectionDamping(coefficient=0.5)` —
-    the DCMIP2016-baroclinic-wave coefficient. The Breeze 0.4.6 default of
+Timestepper options (`timestepper` keyword):
+  • `:split_explicit` (default) — `SplitExplicitTimeDiscretization` with
+    `PressureProjectionDamping(coefficient=0.5)`. The Breeze 0.4.6 default of
     `coefficient=0.1` is too weak for the moist BCW and silently produces
     NaN-filled state after a few outer steps; 0.5 is the value the Breeze
     docs (`appendix/bw_dt_sweep_results.md`) recommend for this problem.
+    The outer Δt follows the advective CFL.
+  • `:explicit` — `ExplicitTimeStepping()`, no acoustic substepping.
+    Δt must satisfy the acoustic CFL (binding constraint is Δz / c_s).
+
+Other components:
   • `HydrostaticSphericalCoriolis`
   • `WENO(order=5)` advection (flux form)
   • `OneMomentCloudMicrophysics` (mixed-phase non-equilibrium with ice)
@@ -319,11 +325,9 @@ Grid: 0°–360° longitude, ±80° latitude, 0–`H` m altitude.
 Default resolution ≈ 1° (Nλ=360, Nφ=160) with Nz=64 vertical levels and
 halo=(8,8,8) so WENO(5) and the spinup/sharded scripts agree on halo width.
 
-Time step: split-explicit substepping lets the outer Δt run at the advective
-CFL. When `Δt === nothing`, a conservative formula is used,
-`Δt = 60 · (360 / Nλ)` s — i.e. 60 s at 1° (Nλ=360), halving on doubling the
-horizontal resolution. The actual stability boundary at Nz=64 is still being
-characterized; this default is intentionally conservative.
+Time step: when `Δt === nothing`, a conservative formula is used:
+  split_explicit: `Δt = 60 · (360 / Nλ)` s (advective CFL).
+  explicit:       `Δt = 0.5 · Δz / 330` s  (acoustic CFL, c_s ≈ 330 m/s).
 """
 function moist_baroclinic_wave_model(arch;
                                      Nλ           = 360,
@@ -332,11 +336,19 @@ function moist_baroclinic_wave_model(arch;
                                      H            = 30e3,
                                      Δt           = nothing,
                                      halo         = (8, 8, 8),
+                                     timestepper  = :split_explicit,
                                      with_microphysics = true,
                                      initial_conditions_path::Union{Nothing,String} = nothing)
 
-    # Conservative split-explicit Δt scaling: 60 s at 1°, linear in Δx.
-    Δt_value = isnothing(Δt) ? 60.0 * (360 / Nλ) : Δt
+    if isnothing(Δt)
+        if timestepper === :split_explicit
+            Δt_value = 60.0 * (360 / Nλ)
+        else
+            Δt_value = 0.5 * (H / Nz) / 330.0
+        end
+    else
+        Δt_value = Δt
+    end
 
     grid = LatitudeLongitudeGrid(arch;
                                  size = (Nλ, Nφ, Nz),
@@ -347,11 +359,22 @@ function moist_baroclinic_wave_model(arch;
 
     coriolis = SphericalCoriolis()
 
-    dynamics = CompressibleDynamics(
-        ExplicitTimeStepping();
-        surface_pressure = p_ref,
-        reference_potential_temperature = theta_reference,
-    )
+    dynamics = if timestepper === :split_explicit
+        CompressibleDynamics(
+            SplitExplicitTimeDiscretization(
+                damping = PressureProjectionDamping(coefficient = 0.5));
+            surface_pressure = p_ref,
+            reference_potential_temperature = theta_reference,
+        )
+    elseif timestepper === :explicit
+        CompressibleDynamics(
+            ExplicitTimeStepping();
+            surface_pressure = p_ref,
+            reference_potential_temperature = theta_reference,
+        )
+    else
+        error("Unknown timestepper: $timestepper. Use :split_explicit or :explicit.")
+    end
 
     microphysics = if with_microphysics
         ext = Base.get_extension(Breeze, :BreezeCloudMicrophysicsExt)

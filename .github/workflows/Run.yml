@@ -7,9 +7,11 @@ on:
       - '.github/workflows/CompileOrRun.yml'
       - 'sharding/sharded_baroclinic_instability_simulation_run.jl'
       - 'sharding/sharded_atmosphere_simulation_run.jl'
+      - 'sharding/sharded_atmosphere_explicit_simulation_run.jl'
       - 'simulations/baroclinic_instability_simulation_run.jl'
       - 'simulations/ocean_climate_simulation_run.jl'
       - 'simulations/atmosphere_simulation_run.jl'
+      - 'simulations/atmosphere_explicit_simulation_run.jl'
       - 'Project.toml'
       - 'src/**'
   push:
@@ -22,9 +24,11 @@ on:
       - '.github/workflows/CompileOrRun.yml'
       - 'sharding/sharded_baroclinic_instability_simulation_run.jl'
       - 'sharding/sharded_atmosphere_simulation_run.jl'
+      - 'sharding/sharded_atmosphere_explicit_simulation_run.jl'
       - 'simulations/baroclinic_instability_simulation_run.jl'
       - 'simulations/ocean_climate_simulation_run.jl'
       - 'simulations/atmosphere_simulation_run.jl'
+      - 'simulations/atmosphere_explicit_simulation_run.jl'
       - 'Project.toml'
       - 'src/**'
   workflow_dispatch:
@@ -45,6 +49,7 @@ jobs:
       matrix:
         sim_type:
           - 'atmosphere'
+          - 'atmosphere_explicit'
           # - 'baroclinic_instability'
           # - 'ocean_climate'
         julia_version:
@@ -55,7 +60,7 @@ jobs:
     uses: ./.github/workflows/CompileOrRun.yml
     with:
       sim_type: ${{ matrix.sim_type }}
-      grid_type: ${{ matrix.sim_type == 'baroclinic_instability' && 'simple_lat_lon' || matrix.sim_type == 'atmosphere' && 'lat_lon' || 'gaussian_islands' }}
+      grid_type: ${{ matrix.sim_type == 'baroclinic_instability' && 'simple_lat_lon' || contains(matrix.sim_type, 'atmosphere') && 'lat_lon' || 'gaussian_islands' }}
       sharded: false
       run_dir: 'simulations'
       julia_version: ${{ matrix.julia_version }}
@@ -72,12 +77,13 @@ jobs:
       matrix:
         sim_type:
           - 'sharded_atmosphere'
+          - 'sharded_atmosphere_explicit'
           # - 'sharded_baroclinic_instability'
         os: ['ubuntu-24.04', 'ubuntu-22.04-arm']
     uses: ./.github/workflows/CompileOrRun.yml
     with:
       sim_type: ${{ matrix.sim_type }}
-      grid_type: ${{ matrix.sim_type == 'sharded_atmosphere' && 'lat_lon' || 'simple_lat_lon' }}
+      grid_type: ${{ contains(matrix.sim_type, 'sharded_atmosphere') && 'lat_lon' || 'simple_lat_lon' }}
       sharded: true
       run_dir: 'sharding'
       julia_version: '1.11'
