@@ -332,7 +332,6 @@ function moist_baroclinic_wave_model(arch;
                                      H            = 30e3,
                                      Δt           = nothing,
                                      halo         = (8, 8, 8),
-                                     damping      = PressureProjectionDamping(coefficient = 0.5),
                                      with_microphysics = true,
                                      initial_conditions_path::Union{Nothing,String} = nothing)
 
