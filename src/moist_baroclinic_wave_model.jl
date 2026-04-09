@@ -493,12 +493,16 @@ function set_moist_baroclinic_wave_from_file!(model, path::String; H = 30e3)
     ρθ_src  = CenterField(source_grid)
     ρqv_src = CenterField(source_grid)
 
-    copyto!(interior(ρ_src),   interior(cpu_ρ_src))
-    copyto!(interior(ρu_src),  interior(cpu_ρu_src))
-    copyto!(interior(ρv_src),  interior(cpu_ρv_src))
-    copyto!(interior(ρw_src),  interior(cpu_ρw_src))
-    copyto!(interior(ρθ_src),  interior(cpu_ρθ_src))
-    copyto!(interior(ρqv_src), interior(cpu_ρqv_src))
+    # Broadcast assignment over `parent` arrays so the host→device copy goes
+    # through CUDA.jl's bulk copyto! / Reactant's TracedArray dispatch instead
+    # of Base's element-wise `copyto_unaliased!` (which scalar-indexes a
+    # CuArray view and errors out under `Scalar indexing is disallowed`).
+    parent(ρ_src)   .= parent(cpu_ρ_src)
+    parent(ρu_src)  .= parent(cpu_ρu_src)
+    parent(ρv_src)  .= parent(cpu_ρv_src)
+    parent(ρw_src)  .= parent(cpu_ρw_src)
+    parent(ρθ_src)  .= parent(cpu_ρθ_src)
+    parent(ρqv_src) .= parent(cpu_ρqv_src)
 
     ρ_target   = dynamics_density(model.dynamics)
     ρu_target  = model.momentum.ρu
