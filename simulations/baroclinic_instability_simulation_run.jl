@@ -15,7 +15,7 @@ Oceananigans.defaults.FloatType = Float32
 @info "Generating model..."
 arch = ReactantState()
 #arch = Distributed(ReactantState(), partition=Partition(2, 2, 1))
-initial_conditions_path = joinpath(@__DIR__, "initial_conditions", "baroclinic_100day_768x768x64.jld2")
+initial_conditions_path = joinpath(@__DIR__, "initial_conditions", "baroclinic_100day_quarter_degree.jld2")
 model = baroclinic_instability_model(arch, resolution=8, Δt=60, Nz=10; initial_conditions_path)
 
 GC.gc(true); GC.gc(false); GC.gc(true)
