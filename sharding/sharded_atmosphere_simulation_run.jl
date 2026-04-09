@@ -91,19 +91,15 @@ column_height = 30e3   # m; default column height in moist_baroclinic_wave_model
 Δ_min = min(Δz, Δx_zonal, Δy_merid)
 Δt = CFL_target * Δ_min / c_sound
 
-@info "[$rank] Generating atmosphere model (Nλ=$Nλ, Nφ=$Nφ, Nz=$Nz, Δt=$(round(Δt; sigdigits=3))s)..." now(UTC)
+# File-based initialization. The artifact is downloaded by
+# `simulations/download_atmosphere_ic_artifact.jl` and lives in the
+# sibling `simulations/initial_conditions/` directory. Under sharding the
+# loader builds the source field on the *single-rank* child architecture
+# and `interpolate!` scatters into the sharded target.
+initial_conditions_path = joinpath(@__DIR__, "..", "simulations", "initial_conditions",
+                                   "atmosphere_no_microphysics_1deg_14day.jld2")
 
-# Optional file-based initialization. Set the env var ATMOS_IC_PATH to a JLD2
-# checkpoint produced by the spinup driver (or downloaded via
-# `simulations/download_atmosphere_ic_artifact.jl`) to skip the analytic IC.
-# Under sharding the loader builds the source field on the *single-rank*
-# child architecture and `interpolate!` scatters into the sharded target.
-const ATMOS_IC_PATH = get(ENV, "ATMOS_IC_PATH", "")
-initial_conditions_path = isempty(ATMOS_IC_PATH) ? nothing : ATMOS_IC_PATH
-if initial_conditions_path !== nothing
-    @info "[$rank] Initializing from file" initial_conditions_path
-end
-
+@info "[$rank] Generating atmosphere model (Nλ=$Nλ, Nφ=$Nφ, Nz=$Nz, Δt=$(round(Δt; sigdigits=3))s)..." now(UTC) initial_conditions_path
 model = GordonBell25.moist_baroclinic_wave_model(arch; Nλ, Nφ, Nz, H=column_height, Δt,
                                                  halo=(H, H, H),
                                                  initial_conditions_path)
