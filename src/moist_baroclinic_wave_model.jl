@@ -17,7 +17,7 @@ using Breeze: AtmosphereModel, CompressibleDynamics, ExplicitTimeStepping,
               SplitExplicitTimeDiscretization, PressureProjectionDamping
 using Breeze: BulkDrag, BulkSensibleHeatFlux, BulkVaporFlux
 using Breeze.AtmosphereModels: dynamics_density, specific_prognostic_moisture
-using Breeze.Microphysics: NonEquilibriumCloudFormation, BulkMicrophysics
+using Breeze.Microphysics: NonEquilibriumCloudFormation
 using Oceananigans.Coriolis: HydrostaticSphericalCoriolis
 using Oceananigans.BoundaryConditions: FieldBoundaryConditions
 using Oceananigans.Architectures: ReactantState
@@ -27,7 +27,6 @@ using CloudMicrophysics
 using SpecialFunctions
 using CUDA
 using Reactant
-using Reactant: @jit
 using JLD2
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -301,22 +300,18 @@ end
 # ═══════════════════════════════════════════════════════════════════════════
 
 """
-    moist_baroclinic_wave_model(arch; Nλ=360, Nφ=160, Nz=64, H=30e3, Δt=nothing,
-                                halo=(8,8,8), time_discretization=ExplicitTimeStepping(), ...)
+    moist_baroclinic_wave_model(arch; Nλ=360, Nφ=160, Nz=64, H=30e3, Δt=nothing, halo=(8,8,8))
 
 Build a Breeze `AtmosphereModel` on a global LatitudeLongitudeGrid initialised
 with the DCMIP-2016 moist baroclinic wave (Test 1-1).
 
-Time discretization options (`time_discretization` keyword):
-  • `ExplicitTimeStepping()` (default) — no acoustic substepping. Δt must
-    satisfy the acoustic CFL (binding constraint is Δz / c_s ≈ 1.4 s for
-    Nz=64, H=30 km).
-  • `SplitExplicitTimeDiscretization(damping = PressureProjectionDamping(coefficient=0.5))` —
-    WS-RK3 + acoustic substepping. The outer Δt follows the advective CFL.
-    Use `coefficient=0.5` for the moist BCW (the Breeze 0.4.6 default of
-    0.1 is too weak and silently produces NaN-filled state).
-
-Other components:
+Components
+  • `CompressibleDynamics` with `SplitExplicitTimeDiscretization` (WS-RK3 +
+    acoustic substepping) and `PressureProjectionDamping(coefficient=0.5)` —
+    the DCMIP2016-baroclinic-wave coefficient. The Breeze 0.4.6 default of
+    `coefficient=0.1` is too weak for the moist BCW and silently produces
+    NaN-filled state after a few outer steps; 0.5 is the value the Breeze
+    docs (`appendix/bw_dt_sweep_results.md`) recommend for this problem.
   • `HydrostaticSphericalCoriolis`
   • `WENO(order=5)` advection (flux form)
   • `OneMomentCloudMicrophysics` (mixed-phase non-equilibrium with ice)
@@ -325,31 +320,23 @@ Grid: 0°–360° longitude, ±80° latitude, 0–`H` m altitude.
 Default resolution ≈ 1° (Nλ=360, Nφ=160) with Nz=64 vertical levels and
 halo=(8,8,8) so WENO(5) and the spinup/sharded scripts agree on halo width.
 
-Time step: when `Δt === nothing`, a conservative formula is used:
-  ExplicitTimeStepping:           `Δt = 0.5 · Δz / 330` s   (acoustic CFL).
-  SplitExplicitTimeDiscretization: `Δt = 60 · (360 / Nλ)` s (advective CFL).
+Time step: split-explicit substepping lets the outer Δt run at the advective
+CFL. When `Δt === nothing`, a conservative formula is used,
+`Δt = 60 · (360 / Nλ)` s — i.e. 60 s at 1° (Nλ=360), halving on doubling the
+horizontal resolution. The actual stability boundary at Nz=64 is still being
+characterized; this default is intentionally conservative.
 """
 function moist_baroclinic_wave_model(arch;
-                                     Nλ           = 360,
-                                     Nφ           = 160,
-                                     Nz           = 64,
-                                     H            = 30e3,
-                                     Δt           = nothing,
-                                     halo         = (8, 8, 8),
-                                     time_discretization = ExplicitTimeStepping(),
-                                     with_microphysics = true,
-                                     cloud_formation_τ_relax::Union{Nothing,Real} = nothing,
+                                     Nλ   = 360,
+                                     Nφ   = 160,
+                                     Nz   = 64,
+                                     H    = 30e3,
+                                     Δt   = nothing,
+                                     halo = (8, 8, 8),
                                      initial_conditions_path::Union{Nothing,String} = nothing)
 
-    if isnothing(Δt)
-        if time_discretization isa SplitExplicitTimeDiscretization
-            Δt_value = 60.0 * (360 / Nλ)
-        else
-            Δt_value = 0.5 * (H / Nz) / 330.0
-        end
-    else
-        Δt_value = Δt
-    end
+    # Conservative split-explicit Δt scaling: 60 s at 1°, linear in Δx.
+    Δt_value = isnothing(Δt) ? 60.0 * (360 / Nλ) : Δt
 
     grid = LatitudeLongitudeGrid(arch;
                                  size = (Nλ, Nφ, Nz),
@@ -361,48 +348,16 @@ function moist_baroclinic_wave_model(arch;
     coriolis = SphericalCoriolis()
 
     dynamics = CompressibleDynamics(
-        time_discretization;
+        SplitExplicitTimeDiscretization(damping = PressureProjectionDamping(coefficient = 0.5));
         surface_pressure = p_ref,
         reference_potential_temperature = theta_reference,
     )
 
-    microphysics = if with_microphysics
-        ext = Base.get_extension(Breeze, :BreezeCloudMicrophysicsExt)
-        # Mixed-phase NE 1M: both liquid and ice as phase indicators (matches
-        # Breeze's own examples/moist_baroclinic_wave.jl). If
-        # `cloud_formation_τ_relax` is set, override the default condensate
-        # formation rate (1/τ_relax) — useful for relaxing the microphysics
-        # CFL constraint by stretching the relaxation timescale.
-        cloud_formation = if cloud_formation_τ_relax === nothing
-            NonEquilibriumCloudFormation(nothing, nothing)
-        else
-            FT = Oceananigans.defaults.FloatType
-            rate = FT(1) / FT(cloud_formation_τ_relax)
-            cf = Breeze.Microphysics.ConstantRateCondensateFormation{FT}(rate)
-            NonEquilibriumCloudFormation(cf, cf)
-        end
-        ext.OneMomentCloudMicrophysics(; cloud_formation)
-    else
-        nothing
-    end
+    ext = Base.get_extension(Breeze, :BreezeCloudMicrophysicsExt)
+    microphysics = ext.OneMomentCloudMicrophysics(;
+        cloud_formation = NonEquilibriumCloudFormation(nothing, :ice))
 
-    # Bounds-preserving WENO for moisture/cloud/precip tracers (rico.jl pattern):
-    # plain WENO can produce small negatives in qᵛ et al, which then feed back
-    # through microphysics tendencies and blow up. Clamp to [0, 1] at the
-    # advection step.
-    weno     = WENO(order = 5)
-    weno_pos = WENO(order = 5, bounds = (0, 1))
-    momentum_advection = weno
-    scalar_advection = if with_microphysics
-        (ρθ   = weno,
-         ρqᵛ  = weno_pos,
-         ρqᶜˡ = weno_pos,
-         ρqᶜⁱ = weno_pos,
-         ρqʳ  = weno_pos,
-         ρqˢ  = weno_pos)
-    else
-        weno
-    end
+    advection = WENO(order = 5)
 
     # Prescribed-SST bulk surface flux boundary conditions
     Cᴰ = 1e-3   # constant bulk exchange coefficient
@@ -416,8 +371,7 @@ function moist_baroclinic_wave_model(arch;
 
     boundary_conditions = (; ρu=ρu_bcs, ρv=ρv_bcs, ρe=ρe_bcs, ρqᵛ=ρqᵛ_bcs)
 
-    model = AtmosphereModel(grid; dynamics, coriolis, momentum_advection, scalar_advection,
-                            microphysics, boundary_conditions)
+    model = AtmosphereModel(grid; dynamics, coriolis, advection, microphysics, boundary_conditions)
 
     FT = eltype(grid)
     model.clock.last_Δt = FT(Δt_value)
@@ -479,23 +433,35 @@ function set_moist_baroclinic_wave_from_file!(model, path::String; H = 30e3)
     size(ρθ_data)  == expected_c  || error("ρθ size $(size(ρθ_data)) ≠ $expected_c from $path")
     size(ρqv_data) == expected_c  || error("ρqᵛ size $(size(ρqv_data)) ≠ $expected_c from $path")
 
-    # Source always on CPU.  For Reactant targets the @jit interpolate_3d!
-    # path traces the CPU→Reactant transfer.  For plain CPU/GPU the stock
-    # Oceananigans.Fields.interpolate! handles same-arch source→target.
-    # Uniform z so the source grid is ZRegular (constant-time index lookup).
-    model_arch = model.grid.architecture
-    is_reactant_arch = model_arch isa Oceananigans.Architectures.ReactantState ||
-        (model_arch isa Oceananigans.DistributedComputations.Distributed &&
-         Oceananigans.Architectures.child_architecture(model_arch) isa Oceananigans.Architectures.ReactantState)
-    source_arch = is_reactant_arch ? Oceananigans.CPU() : model_arch
+    arch = model.grid.architecture
 
-    source_grid = LatitudeLongitudeGrid(source_arch;
-        size = (Nλ_src, Nφ_src, Nz_src),
-        halo = (1, 1, 1),
-        z = (0, H),
-        latitude = (-80, 80),
+    source_grid = LatitudeLongitudeGrid(arch;
+        size      = (Nλ_src, Nφ_src, Nz_src),
+        halo      = (1, 1, 1),
         longitude = (0, 360),
+        latitude  = (-80, 80),
+        z         = (0, H),
     )
+
+    cpu_source_grid = Oceananigans.Architectures.on_architecture(Oceananigans.CPU(), source_grid)
+
+    cpu_ρ_src   = CenterField(cpu_source_grid)
+    cpu_ρu_src  = XFaceField(cpu_source_grid)
+    cpu_ρv_src  = YFaceField(cpu_source_grid)
+    cpu_ρw_src  = ZFaceField(cpu_source_grid)
+    cpu_ρθ_src  = CenterField(cpu_source_grid)
+    cpu_ρqv_src = CenterField(cpu_source_grid)
+
+    set!(cpu_ρ_src,   ρ_data)
+    set!(cpu_ρu_src,  ρu_data)
+    set!(cpu_ρv_src,  ρv_data)
+    set!(cpu_ρw_src,  ρw_data)
+    set!(cpu_ρθ_src,  ρθ_data)
+    set!(cpu_ρqv_src, ρqv_data)
+
+    for f in (cpu_ρ_src, cpu_ρu_src, cpu_ρv_src, cpu_ρw_src, cpu_ρθ_src, cpu_ρqv_src)
+        Oceananigans.BoundaryConditions.fill_halo_regions!(f)
+    end
 
     ρ_src   = CenterField(source_grid)
     ρu_src  = XFaceField(source_grid)
@@ -504,16 +470,12 @@ function set_moist_baroclinic_wave_from_file!(model, path::String; H = 30e3)
     ρθ_src  = CenterField(source_grid)
     ρqv_src = CenterField(source_grid)
 
-    set!(ρ_src,   ρ_data)
-    set!(ρu_src,  ρu_data)
-    set!(ρv_src,  ρv_data)
-    set!(ρw_src,  ρw_data)
-    set!(ρθ_src,  ρθ_data)
-    set!(ρqv_src, ρqv_data)
-
-    for f in (ρ_src, ρu_src, ρv_src, ρw_src, ρθ_src, ρqv_src)
-        Oceananigans.BoundaryConditions.fill_halo_regions!(f)
-    end
+    copyto!(interior(ρ_src),   interior(cpu_ρ_src))
+    copyto!(interior(ρu_src),  interior(cpu_ρu_src))
+    copyto!(interior(ρv_src),  interior(cpu_ρv_src))
+    copyto!(interior(ρw_src),  interior(cpu_ρw_src))
+    copyto!(interior(ρθ_src),  interior(cpu_ρθ_src))
+    copyto!(interior(ρqv_src), interior(cpu_ρqv_src))
 
     ρ_target   = dynamics_density(model.dynamics)
     ρu_target  = model.momentum.ρu
@@ -522,74 +484,12 @@ function set_moist_baroclinic_wave_from_file!(model, path::String; H = 30e3)
     ρθ_target  = model.formulation.potential_temperature_density
     ρqv_target = model.moisture_density
 
-    if is_reactant_arch
-        # interpolate_3d! is fast when the source dims are an integer factor
-        # of the target in every dimension. If not, do a CPU-side
-        # interpolation first onto an intermediate grid whose per-rank
-        # interior is an integer factor of the global target, then hand that
-        # to the Reactant @jit path.
-        target_arch = model_arch
-        Rx, Ry = if target_arch isa Oceananigans.DistributedComputations.Distributed
-            (target_arch.partition.x, target_arch.partition.y)
-        else
-            (1, 1)
-        end
-
-        src_total = size(parent(ρ_src))
-        dst_total = size(parent(ρ_target))
-        is_int_factor(s, t) = (t % s == 0) || (s % t == 0)
-        needs_cpu_interp = !all(is_int_factor.(src_total, dst_total))
-
-        Nλ_dst, Nφ_dst, Nz_dst = size(model.grid)
-        sources = if needs_cpu_interp
-            Nλ_int = Nλ_dst ÷ Rx
-            Nφ_int = Nφ_dst ÷ Ry
-            Nz_int = Nz_dst
-            int_grid = LatitudeLongitudeGrid(Oceananigans.CPU();
-                size = (Nλ_int, Nφ_int, Nz_int),
-                halo = (1, 1, 1),
-                z = (0, H),
-                latitude = (-80, 80),
-                longitude = (0, 360),
-            )
-            ρ_int   = CenterField(int_grid)
-            ρu_int  = XFaceField(int_grid)
-            ρv_int  = YFaceField(int_grid)
-            ρw_int  = ZFaceField(int_grid)
-            ρθ_int  = CenterField(int_grid)
-            ρqv_int = CenterField(int_grid)
-            for (dst_f, src_f) in ((ρ_int, ρ_src), (ρu_int, ρu_src),
-                                   (ρv_int, ρv_src), (ρw_int, ρw_src),
-                                   (ρθ_int, ρθ_src), (ρqv_int, ρqv_src))
-                Oceananigans.Fields.interpolate!(dst_f, src_f)
-                Oceananigans.BoundaryConditions.fill_halo_regions!(dst_f)
-            end
-            (ρ_int, ρu_int, ρv_int, ρw_int, ρθ_int, ρqv_int)
-        else
-            (ρ_src, ρu_src, ρv_src, ρw_src, ρθ_src, ρqv_src)
-        end
-
-        src_sharding = if target_arch isa Oceananigans.DistributedComputations.Distributed
-            mesh = Sharding.unwrap_shardinfo(Reactant.ancestor(ρ_target).sharding).mesh
-            Sharding.Replicated(mesh)
-        else
-            Sharding.NoSharding()
-        end
-        to_ra(f) = Reactant.to_rarray(Array(Oceananigans.interior(f)); sharding=src_sharding)
-
-        for (target_f, source_f) in zip(
-                (ρ_target, ρu_target, ρv_target, ρw_target, ρθ_target, ρqv_target),
-                sources)
-            @jit interpolate_3d!(target_f, to_ra(source_f))
-        end
-    else
-        Oceananigans.Fields.interpolate!(ρ_target,   ρ_src)
-        Oceananigans.Fields.interpolate!(ρu_target,  ρu_src)
-        Oceananigans.Fields.interpolate!(ρv_target,  ρv_src)
-        Oceananigans.Fields.interpolate!(ρw_target,  ρw_src)
-        Oceananigans.Fields.interpolate!(ρθ_target,  ρθ_src)
-        Oceananigans.Fields.interpolate!(ρqv_target, ρqv_src)
-    end
+    Oceananigans.Fields.interpolate!(ρ_target,   ρ_src)
+    Oceananigans.Fields.interpolate!(ρu_target,  ρu_src)
+    Oceananigans.Fields.interpolate!(ρv_target,  ρv_src)
+    Oceananigans.Fields.interpolate!(ρw_target,  ρw_src)
+    Oceananigans.Fields.interpolate!(ρθ_target,  ρθ_src)
+    Oceananigans.Fields.interpolate!(ρqv_target, ρqv_src)
 
     return nothing
 end
