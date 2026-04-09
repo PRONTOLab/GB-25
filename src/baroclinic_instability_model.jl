@@ -176,8 +176,17 @@ function set_baroclinic_instability_from_file!(model, path::String)
     end
     to_ra(a::AbstractArray) = Reactant.to_rarray(a; sharding=src_sharding)
 
-    @jit interpolate_3d!(model.tracers.T, to_ra(Array(interior(T_for_jit))))
-    @jit interpolate_3d!(model.tracers.S, to_ra(Array(interior(S_for_jit))))
+    function interpolate_both_fields!(
+        T, S, T_src, S_src
+    )
+        interpolate_3d!(T, T_src)
+        interpolate_3d!(S, S_src)
+        return nothing
+    end
+
+    T_src = to_ra(Array(interior(T_for_jit)))
+    S_src = to_ra(Array(interior(S_for_jit)))
+    @jit interpolate_both_fields!(model.tracers.T, model.tracers.S, T_src, S_src)
 
     # println(@code_hlo interpolate_3d!(model.tracers.T, Reactant.to_rarray(ones(
     #                                                             eltype(model.tracers.T),
