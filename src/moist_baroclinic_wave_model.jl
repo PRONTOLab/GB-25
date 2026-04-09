@@ -575,7 +575,7 @@ function set_moist_baroclinic_wave_from_file!(model, path::String; H = 30e3)
         else
             Sharding.NoSharding()
         end
-        to_ra(f) = Reactant.to_rarray(Oceananigans.interior(f); sharding=src_sharding)
+        to_ra(f) = Reactant.to_rarray(Array(Oceananigans.interior(f)); sharding=src_sharding)
 
         for (target_f, source_f) in zip(
                 (ρ_target, ρu_target, ρv_target, ρw_target, ρθ_target, ρqv_target),
