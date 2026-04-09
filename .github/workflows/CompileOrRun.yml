@@ -101,6 +101,11 @@ jobs:
             Project.toml
           retention-days: 90
           overwrite: false
+      - name: Download atmosphere IC artifact
+        if: ${{ contains(inputs.sim_type, 'atmosphere') }}
+        timeout-minutes: 10
+        run: |
+          julia --color=yes --project -O0 simulations/download_atmosphere_ic_artifact.jl
       - name: Ocean climate simulation
         timeout-minutes: 190
         env:

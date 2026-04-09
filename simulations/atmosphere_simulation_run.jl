@@ -32,9 +32,16 @@ arch = ReactantState()
 # File-based initialization. The artifact is downloaded by
 # `simulations/download_atmosphere_ic_artifact.jl` and lives next to this
 # script in `simulations/initial_conditions/`.
-initial_conditions_path = joinpath(@__DIR__, "initial_conditions", "atmosphere_no_microphysics_1deg_14day.jld2")
+# Falls back to analytic IC if the file is missing.
+_ic_path = joinpath(@__DIR__, "initial_conditions", "atmosphere_no_microphysics_1deg_14day.jld2")
+initial_conditions_path = isfile(_ic_path) ? _ic_path : nothing
+if initial_conditions_path !== nothing
+    @info "Initializing from file" initial_conditions_path
+else
+    @warn "IC file not found at $_ic_path — using analytic IC"
+end
 
-@info "Generating atmosphere model (Nλ=$Nλ, Nφ=$Nφ, Nz=$Nz)..." initial_conditions_path
+@info "Generating atmosphere model (Nλ=$Nλ, Nφ=$Nφ, Nz=$Nz)..."
 model = moist_baroclinic_wave_model(arch; Nλ, Nφ, Nz, Δt=2.0, halo=(H, H, H),
                                     initial_conditions_path)
 
