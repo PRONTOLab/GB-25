@@ -33,10 +33,15 @@ Requires `N` to be even and `N ÷ 2` to be a perfect square.
 Some values of `N` do not satisfy the general constraints but we
 still want to handle
 - `N = 4` (single node) → `(2, 2)`
-- `N = 9180` (ALPS full system size) → `(68, 135)`
+- `N = 16` → `(4, 4)`
+- `N = 9180` (ALPS full system size) → `(135, 68)`
 """
 function factors(N::Int)
-    special_cases = Dict(4 => (2, 2), 9180 => (68, 135))
+    special_cases = Dict(
+        4 => (2, 2),
+        16 => (4, 4),
+        9180 => (135, 68),
+    )
     haskey(special_cases, N) && return special_cases[N]
 
     iseven(N) || throw(ArgumentError("N must be even; got N = $N"))
