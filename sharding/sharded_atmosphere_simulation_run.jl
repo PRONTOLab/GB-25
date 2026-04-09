@@ -82,7 +82,7 @@ column_height = 30e3   # m; default column height in moist_baroclinic_wave_model
 # Vertical acoustic CFL is the binding constraint for ExplicitTimeStepping:
 # Δt < Δz / c_s ≈ (30 km / 64) / 340 m/s ≈ 1.38 s, independent of horizontal
 # resolution. Hardcode Δt below the limit and don't auto-derive.
-Δt = 1.0
+Δt = 0.5
 
 # File-based initialization. The artifact is downloaded by
 # `simulations/download_atmosphere_ic_artifact.jl` and lives in the
