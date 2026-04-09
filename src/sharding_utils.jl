@@ -29,14 +29,15 @@ Return `(Dx, Dy)` such that `Dx * Dy == N` and `Dy == 2*Dx`.
 
 Requires `N` to be even and `N ÷ 2` to be a perfect square.
 
-# Special case
-`N = 9180` (ALPS full system size) returns `(68, 135)` directly since
-`9180 ÷ 2 = 4590` is not a perfect square, making it an exception to
-the general constraint.
+# Special cases
+Some values of `N` do not satisfy the general constraints but we
+still want to handle
+- `N = 4` (single node) → `(2, 2)`
+- `N = 9180` (ALPS full system size) → `(68, 135)`
 """
 function factors(N::Int)
-    # ALPS full system size: 4590 is not a perfect square, handled separately
-    N == 9180 && return 68, 135
+    special_cases = Dict(4 => (2, 2), 9180 => (68, 135))
+    haskey(special_cases, N) && return special_cases[N]
 
     iseven(N) || throw(ArgumentError("N must be even; got N = $N"))
 
