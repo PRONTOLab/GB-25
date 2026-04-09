@@ -3,10 +3,17 @@ using Dates, Random
 username = ENV["USER"]
 
 function snapshot_project!(snapshot_path::AbstractString, project_path::AbstractString)
-    cp(project_path, snapshot_path; force=true)
+    mkpath(snapshot_path)
 
-    # The benchmark snapshot should be self-contained, but it does not need git metadata.
-    rm(joinpath(snapshot_path, ".git"); recursive=true, force=true)
+    tracked_files = split(readchomp(`git -C $(project_path) ls-files`), '\n')
+    for relpath in tracked_files
+        isempty(relpath) && continue
+        src = joinpath(project_path, relpath)
+        dst = joinpath(snapshot_path, relpath)
+        mkpath(dirname(dst))
+        cp(src, dst; force=true)
+    end
+
     return snapshot_path
 end
 
