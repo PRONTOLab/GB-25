@@ -479,25 +479,18 @@ function set_moist_baroclinic_wave_from_file!(model, path::String; H = 30e3)
     size(ρθ_data)  == expected_c  || error("ρθ size $(size(ρθ_data)) ≠ $expected_c from $path")
     size(ρqv_data) == expected_c  || error("ρqᵛ size $(size(ρqv_data)) ≠ $expected_c from $path")
 
-    # Build the source field on a *single-rank* arch — for a Distributed{X}
-    # model arch we use the inner child_architecture so the IC is held by
-    # one device and `interpolate!` does the scatter into the sharded target.
-    # At 8000 GPUs the sharded model state cannot fit on a single machine,
-    # but the IC checkpoint always can — that's the point of building the
-    # source on the non-distributed inner arch.
-    model_arch = model.grid.architecture
-    source_arch = if model_arch isa Oceananigans.DistributedComputations.Distributed
-        model_arch.child_architecture
-    else
-        model_arch
-    end
+    # Build the source grid on the *model's* architecture, exactly matching
+    # the PR #290 (glw/spinup-init) ocean pattern. For Distributed{X} this
+    # builds a Distributed source that mirrors the target partition so each
+    # rank's `interpolate!` is purely local.
+    arch = model.grid.architecture
 
-    source_grid = LatitudeLongitudeGrid(source_arch;
-        size      = (Nλ_src, Nφ_src, Nz_src),
-        halo      = (1, 1, 1),
+    source_grid = LatitudeLongitudeGrid(arch;
+        size = (Nλ_src, Nφ_src, Nz_src),
+        halo = (1, 1, 1),
+        z = (0, H),
+        latitude = (-80, 80),
         longitude = (0, 360),
-        latitude  = (-80, 80),
-        z         = (0, H),
     )
 
     cpu_source_grid = Oceananigans.Architectures.on_architecture(Oceananigans.CPU(), source_grid)
@@ -527,22 +520,17 @@ function set_moist_baroclinic_wave_from_file!(model, path::String; H = 30e3)
     ρθ_src  = CenterField(source_grid)
     ρqv_src = CenterField(source_grid)
 
-    # Use copyto! over the raw underlying arrays (parent of the OffsetArray
-    # data wrap) so the host→device transfer goes through CUDA.jl's bulk DMA
-    # copyto!(::CuArray, ::Array) and Reactant's TracedArray copyto, instead
-    # of:
-    #   1) `copyto!(interior(...), interior(...))` which on vanilla CUDA
-    #      falls into Base's element-wise copyto_unaliased! and errors out
-    #      under `Scalar indexing is disallowed`, and
-    #   2) `parent(arch_field) .= parent(cpu_field)` which tries to launch
-    #      a GPU broadcast kernel that takes the host Array as a non-bitstype
-    #      kernel argument.
-    copyto!(parent(parent(ρ_src)),   parent(parent(cpu_ρ_src)))
-    copyto!(parent(parent(ρu_src)),  parent(parent(cpu_ρu_src)))
-    copyto!(parent(parent(ρv_src)),  parent(parent(cpu_ρv_src)))
-    copyto!(parent(parent(ρw_src)),  parent(parent(cpu_ρw_src)))
-    copyto!(parent(parent(ρθ_src)),  parent(parent(cpu_ρθ_src)))
-    copyto!(parent(parent(ρqv_src)), parent(parent(cpu_ρqv_src)))
+    # interior() copyto pattern, identical to PR #290's ocean loader. This
+    # works under Reactant (TracedArray has its own copyto dispatch). On
+    # vanilla CUDA, Base's `copyto!(::SubArray{CuArray}, ::SubArray{Array})`
+    # falls through to scalar indexing — vanilla-CUDA file-init from this
+    # path is not supported, only Reactant.
+    copyto!(interior(ρ_src),   interior(cpu_ρ_src))
+    copyto!(interior(ρu_src),  interior(cpu_ρu_src))
+    copyto!(interior(ρv_src),  interior(cpu_ρv_src))
+    copyto!(interior(ρw_src),  interior(cpu_ρw_src))
+    copyto!(interior(ρθ_src),  interior(cpu_ρθ_src))
+    copyto!(interior(ρqv_src), interior(cpu_ρqv_src))
 
     ρ_target   = dynamics_density(model.dynamics)
     ρu_target  = model.momentum.ρu
