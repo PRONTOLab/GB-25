@@ -504,16 +504,22 @@ function set_moist_baroclinic_wave_from_file!(model, path::String; H = 30e3)
     ρθ_src  = CenterField(source_grid)
     ρqv_src = CenterField(source_grid)
 
-    # Broadcast assignment over `parent` arrays so the host→device copy goes
-    # through CUDA.jl's bulk copyto! / Reactant's TracedArray dispatch instead
-    # of Base's element-wise `copyto_unaliased!` (which scalar-indexes a
-    # CuArray view and errors out under `Scalar indexing is disallowed`).
-    parent(ρ_src)   .= parent(cpu_ρ_src)
-    parent(ρu_src)  .= parent(cpu_ρu_src)
-    parent(ρv_src)  .= parent(cpu_ρv_src)
-    parent(ρw_src)  .= parent(cpu_ρw_src)
-    parent(ρθ_src)  .= parent(cpu_ρθ_src)
-    parent(ρqv_src) .= parent(cpu_ρqv_src)
+    # Use copyto! over the raw underlying arrays (parent of the OffsetArray
+    # data wrap) so the host→device transfer goes through CUDA.jl's bulk DMA
+    # copyto!(::CuArray, ::Array) and Reactant's TracedArray copyto, instead
+    # of:
+    #   1) `copyto!(interior(...), interior(...))` which on vanilla CUDA
+    #      falls into Base's element-wise copyto_unaliased! and errors out
+    #      under `Scalar indexing is disallowed`, and
+    #   2) `parent(arch_field) .= parent(cpu_field)` which tries to launch
+    #      a GPU broadcast kernel that takes the host Array as a non-bitstype
+    #      kernel argument.
+    copyto!(parent(parent(ρ_src)),   parent(parent(cpu_ρ_src)))
+    copyto!(parent(parent(ρu_src)),  parent(parent(cpu_ρu_src)))
+    copyto!(parent(parent(ρv_src)),  parent(parent(cpu_ρv_src)))
+    copyto!(parent(parent(ρw_src)),  parent(parent(cpu_ρw_src)))
+    copyto!(parent(parent(ρθ_src)),  parent(parent(cpu_ρθ_src)))
+    copyto!(parent(parent(ρqv_src)), parent(parent(cpu_ρqv_src)))
 
     ρ_target   = dynamics_density(model.dynamics)
     ρu_target  = model.momentum.ρu
