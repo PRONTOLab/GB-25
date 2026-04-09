@@ -1,9 +1,10 @@
 #=
 Download the atmosphere initial-condition artifact from Dropbox.
 
-  atmosphere_coarsened_768x768x64.jld2  ≈ 2.7 GB
+  atmosphere_coarsened_1536x768x64.jld2  ≈ 5.4 GB
 
-This is a 768×768×64 coarsened checkpoint from a 1/8° (2880×1280×64)
+This is a 1536×768×64 coarsened checkpoint (2:1 aspect preserving
+zonal resolution) from a 1/8° (2880×1280×64)
 mixed-phase NE-1M microphysics spinup (ExplicitTimeStepping, Δt=1 s,
 30 sim minutes from a 1° dry 14-day spinup). Contains prognostic fields
 (ρ, ρu, ρv, ρw, ρθ, ρqᵛ) plus microphysical diagnostics (cloud liquid,
@@ -21,8 +22,8 @@ Run:
 
 using Downloads
 
-const ARTIFACT_NAME = "atmosphere_coarsened_768x768x64.jld2"
-const ARTIFACT_URL  = "https://www.dropbox.com/scl/fi/d3j99fa2uf12ty9g4q9im/atmosphere_coarsened_768x768x64.jld2?rlkey=c2bo7ehn9yguskn6ione0g55x&dl=1"
+const ARTIFACT_NAME = "atmosphere_coarsened_1536x768x64.jld2"
+const ARTIFACT_URL  = "https://www.dropbox.com/scl/fi/xxydkjyquq6ryxhohfsc9/atmosphere_coarsened_1536x768x64.jld2?rlkey=5dd443o583kunnwsl6er75yb5&dl=1"
 
 function download_artifact_if_missing(name::AbstractString, url::AbstractString, dest_dir::AbstractString)
     mkpath(dest_dir)
