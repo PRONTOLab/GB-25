@@ -338,6 +338,7 @@ function moist_baroclinic_wave_model(arch;
                                      halo         = (8, 8, 8),
                                      timestepper  = :split_explicit,
                                      with_microphysics = true,
+                                     cloud_formation_τ_relax::Union{Nothing,Real} = nothing,
                                      initial_conditions_path::Union{Nothing,String} = nothing)
 
     if isnothing(Δt)
@@ -379,9 +380,19 @@ function moist_baroclinic_wave_model(arch;
     microphysics = if with_microphysics
         ext = Base.get_extension(Breeze, :BreezeCloudMicrophysicsExt)
         # Mixed-phase NE 1M: both liquid and ice as phase indicators (matches
-        # Breeze's own examples/moist_baroclinic_wave.jl).
-        ext.OneMomentCloudMicrophysics(;
-            cloud_formation = NonEquilibriumCloudFormation(nothing, nothing))
+        # Breeze's own examples/moist_baroclinic_wave.jl). If
+        # `cloud_formation_τ_relax` is set, override the default condensate
+        # formation rate (1/τ_relax) — useful for relaxing the microphysics
+        # CFL constraint by stretching the relaxation timescale.
+        cloud_formation = if cloud_formation_τ_relax === nothing
+            NonEquilibriumCloudFormation(nothing, nothing)
+        else
+            FT = Oceananigans.defaults.FloatType
+            rate = FT(1) / FT(cloud_formation_τ_relax)
+            cf = Breeze.Microphysics.ConstantRateCondensateFormation{FT}(rate)
+            NonEquilibriumCloudFormation(cf, cf)
+        end
+        ext.OneMomentCloudMicrophysics(; cloud_formation)
     else
         nothing
     end
