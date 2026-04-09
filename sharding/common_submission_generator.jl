@@ -18,10 +18,6 @@ run_postfix = get(ENV, "GB25_RUN_POSTFIX", randstring(4))
     submit::Bool
 end
 
-# Helper function for checking whether an integer is a power of 4, useful for
-# some configurations.
-ispow4(n::Integer) = n > 0 && ispow2(n) && !iszero(n & 0x5555555555555555)
-
 function generate_and_submit(submit_job_writer, cfg::JobConfig; caller_file::String)
 
     if !isone(length(Base.ARGS))
