@@ -28,6 +28,11 @@ end
 Determine two adjectent factors of `N`, useful for finding partitioning factors for sharding.
 """
 function factors(N::Int)
+    # special case for alps full system size
+    if N==9180
+        return 68, 135
+    end
+        
     d = log2(N) / 2
     D = Int(exp2(ceil(Int, d)))
 
