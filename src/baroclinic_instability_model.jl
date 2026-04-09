@@ -140,8 +140,8 @@ function set_baroclinic_instability_from_file!(model, path::String)
     end
     # Compare TOTAL field sizes (interior + halos), not interior — Reactant's
     # `resize_linear!` operates on the full parent arrays.
-    src_total = size(parent(T_src))
-    dst_total = size(parent(model.tracers.T))
+    src_total = size(Oceananigans.interior(T_src))
+    dst_total = size(Oceananigans.interior(model.tracers.T))
     is_int_factor(s, t) = (t % s == 0) || (s % t == 0)
     needs_cpu_interp = !all(is_int_factor.(src_total, dst_total))
 
