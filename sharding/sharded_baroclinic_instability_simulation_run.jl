@@ -87,8 +87,11 @@ Nz = parsed_args["grid-z"]
 Nx = Tx - 2H
 Ny = Ty - 2H
 
-@info "[$rank] Generating model (Nx=$Nx, Ny=$Ny)..." now(UTC)
-model = GordonBell25.baroclinic_instability_model(arch, Nx, Ny, Nz; halo=(H, H, H), Δt=1)
+initial_conditions_path = joinpath(@__DIR__, "..", "simulations", "initial_conditions", "baroclinic_ic_quarter_degree.jld2")
+
+@info "[$rank] Generating model (Nx=$Nx, Ny=$Ny)..." now(UTC) initial_conditions_path
+model = GordonBell25.baroclinic_instability_model(arch, Nx, Ny, Nz; halo=(H, H, H), Δt=1,
+                                                  initial_conditions_path)
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 
 @show model
