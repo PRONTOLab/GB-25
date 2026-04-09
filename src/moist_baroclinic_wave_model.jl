@@ -589,7 +589,19 @@ end
 function Oceananigans.Fields.interpolate!(target::ShardedField, source::CPUSourceField)
     compiled = @compile sync = true raise = true _gb25_atmos_interpolate_kernel!(target, source)
     compiled(target, source)
-    Reactant.XLA.free_exec(compiled.exec)
+    Reactant.XLA.IFRT.free_exec(compiled.exec)
+    compiled.exec.exec = C_NULL
+    return target
+end
+
+# Same pirate for serial (non-distributed) ReactantState targets.
+const SerialReactantGrid{FT,TX,TY,TZ}   = Oceananigans.Grids.AbstractGrid{FT,TX,TY,TZ,<:Oceananigans.Architectures.ReactantState}
+const SerialReactantField{LX,LY,LZ,O}   = Oceananigans.Fields.Field{LX,LY,LZ,O,<:SerialReactantGrid}
+
+function Oceananigans.Fields.interpolate!(target::SerialReactantField, source::CPUSourceField)
+    compiled = @compile sync = true raise = true _gb25_atmos_interpolate_kernel!(target, source)
+    compiled(target, source)
+    Reactant.XLA.IFRT.free_exec(compiled.exec)
     compiled.exec.exec = C_NULL
     return target
 end
