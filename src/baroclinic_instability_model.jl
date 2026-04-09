@@ -127,8 +127,49 @@ function set_baroclinic_instability_from_file!(model, path::String)
     Oceananigans.BoundaryConditions.fill_halo_regions!(T_src)
     Oceananigans.BoundaryConditions.fill_halo_regions!(S_src)
 
-    @jit resize_linear!(model.tracers.T, Reactant.to_rarray(T_src))
-    @jit resize_linear!(model.tracers.S, Reactant.to_rarray(S_src))
+    # Reactant `resize_linear!` is fast when the source dims are an integer
+    # factor of the parent (target) grid in every dimension. If not, do a CPU-
+    # side interpolation first onto an intermediate grid of size
+    # (Nx/Rx, Ny/Ry, Nz) — which is by construction an integer factor of the
+    # global target — and feed that to the Reactant resize.
+    target_arch = Oceananigans.Architectures.architecture(model.grid)
+    Rx, Ry = if target_arch isa Oceananigans.DistributedComputations.Distributed
+        (target_arch.partition.x, target_arch.partition.y)
+    else
+        (1, 1)
+    end
+    # Compare TOTAL field sizes (interior + halos), not interior — Reactant's
+    # `resize_linear!` operates on the full parent arrays.
+    src_total = size(parent(T_src))
+    dst_total = size(parent(model.tracers.T))
+    is_int_factor(s, t) = (t % s == 0) || (s % t == 0)
+    needs_cpu_interp = !all(is_int_factor.(src_total, dst_total))
+
+    Nx_dst, Ny_dst, Nz_dst = size(model.grid)
+    T_for_jit, S_for_jit = if needs_cpu_interp
+        Nx_int = Nx_dst ÷ Rx
+        Ny_int = Ny_dst ÷ Ry
+        Nz_int = Nz_dst
+        intermediate_grid = LatitudeLongitudeGrid(Oceananigans.CPU();
+            size = (Nx_int, Ny_int, Nz_int),
+            halo = (1, 1, 1),
+            z = (-4000, 0),
+            latitude = (-80, 80),
+            longitude = (0, 360),
+        )
+        T_int = CenterField(intermediate_grid)
+        S_int = CenterField(intermediate_grid)
+        Oceananigans.Fields.interpolate!(T_int, T_src)
+        Oceananigans.Fields.interpolate!(S_int, S_src)
+        Oceananigans.BoundaryConditions.fill_halo_regions!(T_int)
+        Oceananigans.BoundaryConditions.fill_halo_regions!(S_int)
+        (T_int, S_int)
+    else
+        (T_src, S_src)
+    end
+
+    @jit resize_linear!(model.tracers.T, Reactant.to_rarray(T_for_jit))
+    @jit resize_linear!(model.tracers.S, Reactant.to_rarray(S_for_jit))
 
     return nothing
 end
