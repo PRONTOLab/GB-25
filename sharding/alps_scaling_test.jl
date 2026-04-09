@@ -18,7 +18,7 @@ time     = "00:30:00"
 # We also try to pick the those numbers which are as close as possible to powers of 2,
 # and such that the sum of all the numbers is less than 2*8192 (so they can be run simultaneously).
 # Also 9180 is chosen specifically because it is the alps system size
-Ngpus     = [4, 8, 32, 72, 128, 288, 512, 2048, 3872, 8192, 9180]
+Ngpus     = [4, 8, 18, 32, 72, 128, 288, 512, 968, 2048, 3872, 8192, 9180]
 
 type     = "weak"
 
