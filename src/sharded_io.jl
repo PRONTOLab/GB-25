@@ -67,29 +67,33 @@ function local_shards_to_host(arr::AbstractArray{T,N}) where {T,N}
 end
 
 """
-    resolve_z_indices(nz, spec)
+    resolve_z_indices(nz, spec; halo=0)
 
-Convert a z-level specification into concrete indices.
+Convert a z-level specification into concrete indices into the full data array
+(which may include `halo` cells on each side).
 
-- `nothing`                     → `1:nz` (all levels)
-- `Vector{Int}`                 → used directly (bounds-checked)
-- `Vector{Symbol}` with `:bottom`, `:middle`/`:mid`, `:top`
-                                → mapped to `1`, `nz÷2`, `nz`
+Symbolic names refer to **interior** positions:
+- `:bottom`      → `halo + 1`
+- `:middle`/`:mid` → `halo + interior_nz ÷ 2`
+- `:top`         → `halo + interior_nz`  (i.e. `nz - halo`)
+
+Integer specs are treated as interior-relative and shifted by `halo`.
 """
-function resolve_z_indices(nz::Int, spec)
+function resolve_z_indices(nz::Int, spec; halo::Int=0)
+    nz_interior = nz - 2 * halo
     spec === nothing && return collect(1:nz)
     if eltype(spec) <: Integer
-        all(1 .<= spec .<= nz) || error("z_indices out of range [1, $nz]: $spec")
-        return sort(unique(collect(spec)))
+        all(1 .<= spec .<= nz_interior) || error("z_indices out of range [1, $nz_interior]: $spec")
+        return sort(unique([i + halo for i in spec]))
     elseif eltype(spec) <: Symbol
         indices = Int[]
         for s in spec
             if s === :bottom
-                push!(indices, 1)
+                push!(indices, halo + 1)
             elseif s === :middle || s === :mid
-                push!(indices, max(1, nz ÷ 2))
+                push!(indices, halo + max(1, nz_interior ÷ 2))
             elseif s === :top
-                push!(indices, nz)
+                push!(indices, halo + nz_interior)
             else
                 error("Unknown z level: $s. Use :bottom, :middle, or :top")
             end
@@ -119,7 +123,7 @@ Files are written as `fields_rank{R}.dat` containing a Dict with:
 """
 function save_sharded_fields(dir, fields::NamedTuple, rank::Int;
                              iteration=nothing, time=nothing,
-                             z_indices=nothing)
+                             z_indices=nothing, halo_z::Int=0)
     mkpath(dir)
     filepath = joinpath(dir, "fields_rank$(rank).dat")
 
@@ -135,7 +139,7 @@ function save_sharded_fields(dir, fields::NamedTuple, rank::Int;
 
         if z_indices !== nothing && length(global_shape) >= 3
             nz = global_shape[3]
-            zidx = resolve_z_indices(nz, z_indices)
+            zidx = resolve_z_indices(nz, z_indices; halo=halo_z)
             local_arrays = [a[:, :, zidx] for a in local_arrays]
             nz_new = length(zidx)
             local_slices = map(local_slices) do s
@@ -189,12 +193,28 @@ function extract_model_fields(model; field_names=nothing)
 end
 
 """
+    _model_grid(model)
+
+Extract the Oceananigans grid from a model, handling `OceanSeaIceModel` wrappers.
+"""
+function _model_grid(model)
+    hasproperty(model, :grid) && return model.grid
+    if hasproperty(model, :ocean)
+        om = model.ocean
+        hasproperty(om, :model) && hasproperty(om.model, :grid) && return om.model.grid
+    end
+    return nothing
+end
+
+"""
     save_model_state(dir, model, arch; label="checkpoint",
                      field_names=nothing, z_indices=nothing)
 
-Save model fields to per-rank files. Returns the filepath on success,
-or `nothing` if an error occurred (logged as a warning so the simulation
-is not interrupted).
+Save model fields to per-rank files. Automatically detects the grid's halo
+size so that symbolic z_indices (`:bottom`, `:top`) refer to interior cells.
+
+Returns the filepath on success, or `nothing` if an error occurred (logged
+as a warning so the simulation is not interrupted).
 
 - `field_names`: `nothing` for all fields, or a collection of `Symbol`s.
 - `z_indices`:   `nothing` for all levels, integer indices, or symbolic
@@ -213,13 +233,16 @@ function save_model_state(dir, model, arch;
     try
         fields = extract_model_fields(model; field_names)
 
+        grid = _model_grid(model)
+        halo_z = grid !== nothing ? Oceananigans.halo_size(grid)[3] : 0
+
         iter_val = try; Int(Array(model.clock.iteration)[1]); catch; nothing; end
         time_val = try; Float64(Array(model.clock.time)[1]); catch; nothing; end
 
         outdir = joinpath(dir, label)
         filepath = save_sharded_fields(outdir, fields, rank;
                                        iteration=iter_val, time=time_val,
-                                       z_indices)
+                                       z_indices, halo_z)
         return filepath
     catch e
         @error "Checkpoint save failed (rank $rank), continuing simulation" exception=(e, catch_backtrace())
