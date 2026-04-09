@@ -128,18 +128,34 @@ function set_baroclinic_instability_from_file!(model, path::String)
         longitude = (0, 360),
     )
 
-    cpu_source_grid = Oceananigans.Architectures.on_architecture(Oceananigans.CPU(), source_grid)
-    cpu_T_src = CenterField(cpu_source_grid)
-    cpu_S_src = CenterField(cpu_source_grid)
-    set!(cpu_T_src, T_data)
-    set!(cpu_S_src, S_data)
-    Oceananigans.BoundaryConditions.fill_halo_regions!(cpu_T_src)
-    Oceananigans.BoundaryConditions.fill_halo_regions!(cpu_S_src)
+    # Reactant's set!(::ReactantField, ::Array) silently no-ops, so for Reactant
+    # archs we go through a CPU twin and copyto! the interiors. For plain CPU/CUDA
+    # archs the generic set!(::Field, ::Array) handles host→device transfer
+    # directly, and the copyto!(SubArray{CuArray}, SubArray{Array}) path falls
+    # into a scalar GPU index loop, so we use set! instead.
+    is_reactant = arch isa Oceananigans.Architectures.ReactantState ||
+                  (arch isa Oceananigans.DistributedComputations.Distributed &&
+                   Oceananigans.Architectures.child_architecture(arch) isa Oceananigans.Architectures.ReactantState)
 
     T_src = CenterField(source_grid)
     S_src = CenterField(source_grid)
-    copyto!(interior(T_src), interior(cpu_T_src))
-    copyto!(interior(S_src), interior(cpu_S_src))
+
+    if is_reactant
+        cpu_source_grid = Oceananigans.Architectures.on_architecture(Oceananigans.CPU(), source_grid)
+        cpu_T_src = CenterField(cpu_source_grid)
+        cpu_S_src = CenterField(cpu_source_grid)
+        set!(cpu_T_src, T_data)
+        set!(cpu_S_src, S_data)
+        Oceananigans.BoundaryConditions.fill_halo_regions!(cpu_T_src)
+        Oceananigans.BoundaryConditions.fill_halo_regions!(cpu_S_src)
+        copyto!(interior(T_src), interior(cpu_T_src))
+        copyto!(interior(S_src), interior(cpu_S_src))
+    else
+        set!(T_src, T_data)
+        set!(S_src, S_data)
+        Oceananigans.BoundaryConditions.fill_halo_regions!(T_src)
+        Oceananigans.BoundaryConditions.fill_halo_regions!(S_src)
+    end
 
     Oceananigans.Fields.interpolate!(model.tracers.T, T_src)
     Oceananigans.Fields.interpolate!(model.tracers.S, S_src)
