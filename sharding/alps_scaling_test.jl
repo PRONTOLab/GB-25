@@ -12,14 +12,12 @@ account  = "g209"
 submit   = true #false
 run_name = "reactant_"
 time     = "00:30:00"
-
 # We want to preserve a 2:1 aspect ratio for the x:y dimensions in all runs
 # so we pick Ngpu from the set of numbers 8*n^2 where n is any integer.
 # We also try to pick the those numbers which are as close as possible to powers of 2,
 # and such that the sum of all the numbers is less than 2*8192 (so they can be run simultaneously).
 # Also 9180 is chosen specifically because it is the alps system size
 Ngpus     = [4, 8, 18, 32, 72, 128, 288, 512, 968, 2048, 3872, 8192, 9180]
-
 type     = "weak"
 
 gpus_per_node = 4
