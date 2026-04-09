@@ -520,17 +520,31 @@ function set_moist_baroclinic_wave_from_file!(model, path::String; H = 30e3)
     ρθ_src  = CenterField(source_grid)
     ρqv_src = CenterField(source_grid)
 
-    # interior() copyto pattern, identical to PR #290's ocean loader. This
-    # works under Reactant (TracedArray has its own copyto dispatch). On
-    # vanilla CUDA, Base's `copyto!(::SubArray{CuArray}, ::SubArray{Array})`
-    # falls through to scalar indexing — vanilla-CUDA file-init from this
-    # path is not supported, only Reactant.
-    copyto!(interior(ρ_src),   interior(cpu_ρ_src))
-    copyto!(interior(ρu_src),  interior(cpu_ρu_src))
-    copyto!(interior(ρv_src),  interior(cpu_ρv_src))
-    copyto!(interior(ρw_src),  interior(cpu_ρw_src))
-    copyto!(interior(ρθ_src),  interior(cpu_ρθ_src))
-    copyto!(interior(ρqv_src), interior(cpu_ρqv_src))
+    # Move the host data to the model's arch storage type via
+    # `on_architecture`, then broadcast-assign over `parent(parent(...))`
+    # so the host→device transfer is a single bulk copy regardless of
+    # backend:
+    #   - vanilla CUDA: on_architecture(GPU, host) → CuArray; CuArray←CuArray
+    #     broadcast goes through CUDA.jl's bulk DMA copyto.
+    #   - Reactant:     on_architecture(ReactantState, host) → ConcreteIFRTArray;
+    #     TracedArray broadcast under @compile.
+    #   - Distributed{X}: on_architecture(Distributed{X}, host) → distributed
+    #     storage matching the model partition.
+    # The previous `copyto!(interior(...), interior(...))` pattern (PR #290)
+    # works on Reactant but on vanilla CUDA falls into Base's element-wise
+    # `copyto_unaliased!` and trips `Scalar indexing is disallowed`.
+    function _copy_host_to_field!(arch_field, cpu_field)
+        host = parent(parent(cpu_field))
+        on_arch = Oceananigans.Architectures.on_architecture(arch, host)
+        parent(parent(arch_field)) .= on_arch
+        return nothing
+    end
+    _copy_host_to_field!(ρ_src,   cpu_ρ_src)
+    _copy_host_to_field!(ρu_src,  cpu_ρu_src)
+    _copy_host_to_field!(ρv_src,  cpu_ρv_src)
+    _copy_host_to_field!(ρw_src,  cpu_ρw_src)
+    _copy_host_to_field!(ρθ_src,  cpu_ρθ_src)
+    _copy_host_to_field!(ρqv_src, cpu_ρqv_src)
 
     ρ_target   = dynamics_density(model.dynamics)
     ρu_target  = model.momentum.ρu
