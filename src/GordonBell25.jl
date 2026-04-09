@@ -14,5 +14,6 @@ include("sharding_utils.jl")
 include("sharded_io.jl")
 include("correctness.jl")
 include("precompile.jl")
+include("interpolate.jl")
 
 end # module
