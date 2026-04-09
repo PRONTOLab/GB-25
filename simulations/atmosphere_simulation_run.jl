@@ -29,7 +29,18 @@ Ninner = ConcreteRNumber(2)
 
 @info "Generating atmosphere model (Nλ=$Nλ, Nφ=$Nφ, Nz=$Nz)..."
 arch = ReactantState()
-model = moist_baroclinic_wave_model(arch; Nλ, Nφ, Nz, Δt=2.0, halo=(H, H, H))
+
+# Optional file-based initialization. Set the env var ATMOS_IC_PATH to a JLD2
+# checkpoint produced by the spinup driver (or downloaded via
+# `simulations/download_atmosphere_ic_artifact.jl`) to skip the analytic IC.
+const ATMOS_IC_PATH = get(ENV, "ATMOS_IC_PATH", "")
+initial_conditions_path = isempty(ATMOS_IC_PATH) ? nothing : ATMOS_IC_PATH
+if initial_conditions_path !== nothing
+    @info "Initializing from file" initial_conditions_path
+end
+
+model = moist_baroclinic_wave_model(arch; Nλ, Nφ, Nz, Δt=2.0, halo=(H, H, H),
+                                    initial_conditions_path)
 
 GC.gc(true); GC.gc(false); GC.gc(true)
 
