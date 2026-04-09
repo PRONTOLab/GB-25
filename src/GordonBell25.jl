@@ -8,6 +8,7 @@ export load_global_field, load_checkpoint_metadata, load_all_fields, extract_mod
 include("arg_parsing.jl")
 include("model_utils.jl")
 include("timestepping_utils.jl")
+include("interpolate.jl")
 include("data_free_ocean_climate_model.jl")
 include("baroclinic_instability_model.jl")
 include("moist_baroclinic_wave_model.jl")

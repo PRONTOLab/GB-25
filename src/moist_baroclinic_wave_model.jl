@@ -27,6 +27,7 @@ using CloudMicrophysics
 using SpecialFunctions
 using CUDA
 using Reactant
+using Reactant: @jit
 using JLD2
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -546,97 +547,29 @@ function set_moist_baroclinic_wave_from_file!(model, path::String; H = 30e3)
     ρθ_target  = model.formulation.potential_temperature_density
     ρqv_target = model.moisture_density
 
-    Oceananigans.Fields.interpolate!(ρ_target,   ρ_src)
-    Oceananigans.Fields.interpolate!(ρu_target,  ρu_src)
-    Oceananigans.Fields.interpolate!(ρv_target,  ρv_src)
-    Oceananigans.Fields.interpolate!(ρw_target,  ρw_src)
-    Oceananigans.Fields.interpolate!(ρθ_target,  ρθ_src)
-    Oceananigans.Fields.interpolate!(ρqv_target, ρqv_src)
+    if is_reactant_arch
+        # Use the @jit resize_linear! path. resize_linear! is JAX-style
+        # linear resampling via static weight matrices + matmul, lowered to
+        # XLA primitives. It bypasses Oceananigans.Fields.interpolate! (and
+        # the binary-search index path that emits roundeven), and handles
+        # CPU-source → Reactant-target via Reactant's tracing.
+        @jit resize_linear!(ρ_target,   ρ_src)
+        @jit resize_linear!(ρu_target,  ρu_src)
+        @jit resize_linear!(ρv_target,  ρv_src)
+        @jit resize_linear!(ρw_target,  ρw_src)
+        @jit resize_linear!(ρθ_target,  ρθ_src)
+        @jit resize_linear!(ρqv_target, ρqv_src)
+    else
+        # Plain CPU / GPU / Distributed{CPU,GPU}: source and target are on
+        # the same arch (we built the source on `model_arch` above), so the
+        # stock interpolate! works.
+        Oceananigans.Fields.interpolate!(ρ_target,   ρ_src)
+        Oceananigans.Fields.interpolate!(ρu_target,  ρu_src)
+        Oceananigans.Fields.interpolate!(ρv_target,  ρv_src)
+        Oceananigans.Fields.interpolate!(ρw_target,  ρw_src)
+        Oceananigans.Fields.interpolate!(ρθ_target,  ρθ_src)
+        Oceananigans.Fields.interpolate!(ρqv_target, ρqv_src)
+    end
 
     return nothing
 end
-
-# ----------------------------------------------------------------------------
-# Sharded-Reactant interpolate! pirate
-#
-# Type aliases mirroring OceananigansReactantExt.{Grids,Fields} but defined
-# against core Oceananigans types so they're available without the extension
-# being loaded (the extension only loads its own copies; both refer to the
-# same underlying core types so dispatch is identical).
-const ShardedDistributedArch     = Oceananigans.DistributedComputations.Distributed{<:Oceananigans.Architectures.ReactantState}
-const ShardedGrid{FT,TX,TY,TZ}   = Oceananigans.Grids.AbstractGrid{FT,TX,TY,TZ,<:ShardedDistributedArch}
-const ShardedField{LX,LY,LZ,O}   = Oceananigans.Fields.Field{LX,LY,LZ,O,<:ShardedGrid}
-
-const CPUSourceGrid              = Oceananigans.Grids.AbstractGrid{<:Any,<:Any,<:Any,<:Any,<:Oceananigans.Architectures.CPU}
-const CPUSourceField{LX,LY,LZ,O} = Oceananigans.Fields.Field{LX,LY,LZ,O,<:CPUSourceGrid}
-
-# Mirrors the kernel-launch body of `Oceananigans.Fields.interpolate!` (see
-# Oceananigans.jl/src/Fields/interpolate.jl), without the
-# `to_arch != from_arch` assertion. Called as the body that Reactant traces
-# under @compile.
-function _gb25_atmos_interpolate_kernel!(to_field, from_field)
-    to_grid   = to_field.grid
-    from_grid = from_field.grid
-    to_arch   = Oceananigans.Architectures.child_architecture(Oceananigans.Architectures.architecture(to_field))
-
-    from_location = Tuple(L() for L in Oceananigans.Fields.location(from_field))
-    to_location   = Tuple(L() for L in Oceananigans.Fields.location(to_field))
-
-    params = Oceananigans.Utils.KernelParameters(Oceananigans.Fields.interior_indices(to_field))
-
-    Oceananigans.Utils.launch!(to_arch, to_grid, params,
-        Oceananigans.Fields._interpolate!, to_field, to_grid, to_location,
-        from_field, from_grid, from_location)
-
-    Oceananigans.BoundaryConditions.fill_halo_regions!(to_field)
-    return to_field
-end
-
-# Type piracy on Oceananigans.Fields.interpolate! for the case
-#   target = sharded Reactant field (Distributed{ReactantState})
-#   source = plain CPU field
-# The stock method errors with `to_arch != from_arch`. We bypass that and run
-# the interpolation kernel under @compile so it lowers to a single XLA program;
-# the executable is freed immediately so the one-shot compile doesn't leak for
-# the rest of the session.
-function Oceananigans.Fields.interpolate!(target::ShardedField, source::CPUSourceField)
-    compiled = @compile sync = true raise = true _gb25_atmos_interpolate_kernel!(target, source)
-    compiled(target, source)
-    Reactant.XLA.IFRT.free_exec(compiled.exec)
-    compiled.exec.exec = C_NULL
-    return target
-end
-
-# Same pirate for serial (non-distributed) ReactantState targets.
-const SerialReactantGrid{FT,TX,TY,TZ}   = Oceananigans.Grids.AbstractGrid{FT,TX,TY,TZ,<:Oceananigans.Architectures.ReactantState}
-const SerialReactantField{LX,LY,LZ,O}   = Oceananigans.Fields.Field{LX,LY,LZ,O,<:SerialReactantGrid}
-
-function Oceananigans.Fields.interpolate!(target::SerialReactantField, source::CPUSourceField)
-    compiled = @compile sync = true raise = true _gb25_atmos_interpolate_kernel!(target, source)
-    compiled(target, source)
-    Reactant.XLA.IFRT.free_exec(compiled.exec)
-    compiled.exec.exec = C_NULL
-    return target
-end
-
-# Type piracy on Oceananigans.Fields.interpolate! for the case
-#   target = single-device Reactant field (ReactantState)
-#   source = plain CPU field
-# Reactant traces the cross-arch transfer in `_gb25_atmos_interpolate_kernel!`
-# implicitly when launching the KA kernel. The `to_arch != from_arch`
-# assertion in stock interpolate! would block it.
-const SingleReactantField{LX,LY,LZ,O} = Oceananigans.Fields.Field{
-    LX, LY, LZ, O,
-    <:Oceananigans.Grids.AbstractGrid{<:Any,<:Any,<:Any,<:Any,
-        <:Oceananigans.Architectures.ReactantState},
-}
-
-function Oceananigans.Fields.interpolate!(target::SingleReactantField, source::CPUSourceField)
-    return _gb25_atmos_interpolate_kernel!(target, source)
-end
-
-# For plain CUDA / Distributed{CPU,GPU} targets we cannot pass a host Array
-# as a kernel argument to a GPU-compiled kernel. The loader builds the
-# source on the model arch in those cases, so source and target are on the
-# same arch and the stock `Oceananigans.Fields.interpolate!` is fine — no
-# pirate needed.
