@@ -7,7 +7,7 @@ using Oceananigans.Units
 using Oceananigans.Architectures: ReactantState
 using Reactant
 
-const CHECKPOINT = "/teamspace/studios/this_studio/ocean/GB-25/simulations/checkpoints/ocean_spinup_TS_quarter_degree_2026-04-08T16-52-46.jld2"
+const CHECKPOINT = joinpath(@__DIR__, "initial_conditions", "baroclinic_ic_quarter_degree.jld2")
 
 const Nx, Ny, Nz = 1536, 768, 64
 const Δt         = 4minutes
