@@ -10,6 +10,12 @@ function snapshot_project!(snapshot_path::AbstractString, project_path::Abstract
     return snapshot_path
 end
 
+function precompile_snapshot!(snapshot_project_path::AbstractString)
+    @info "Precompiling snapshot project on the login node" snapshot_project_path
+    run(`$(Base.julia_cmd()[1]) --project=$(snapshot_project_path) --compiled-modules=yes -O0 -e 'using Pkg; Pkg.precompile(); using GordonBell25'`)
+    return nothing
+end
+
 run_prefix = get(ENV, "GB25_RUN_PREFIX", "runs")
 run_postfix = get(ENV, "GB25_RUN_POSTFIX", randstring(4))
 
@@ -71,8 +77,11 @@ function generate_and_submit(submit_job_writer, cfg::JobConfig; caller_file::Str
 
     # Snapshot the entire repository so submitted jobs do not depend on later edits
     # to the live checkout.
+    # Note: Also need to precompile there since Julia pkgimages are tied to the
+    # source tree location they were built from. 
     snapshot_project_path = joinpath(out_path, basename(project_path))
     snapshot_project!(snapshot_project_path, project_path)
+    precompile_snapshot!(snapshot_project_path)
 
     # Run the snapshotted copy of the selected script.
     run_file = joinpath(snapshot_project_path, relpath(input_file, project_path))
