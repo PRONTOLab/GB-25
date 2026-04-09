@@ -23,10 +23,12 @@ using Oceananigans.Coriolis: HydrostaticSphericalCoriolis
 using Oceananigans.BoundaryConditions: FieldBoundaryConditions
 using Oceananigans.Architectures: ReactantState
 using Oceananigans.Grids: λnode, φnode, znode
+using Oceananigans.Fields: CenterField, XFaceField, YFaceField, ZFaceField
 using CloudMicrophysics
 using SpecialFunctions
 using CUDA
 using Reactant
+using JLD2
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Physical constants
@@ -333,7 +335,8 @@ function moist_baroclinic_wave_model(arch;
                                      Δt           = nothing,
                                      halo         = (8, 8, 8),
                                      damping      = PressureProjectionDamping(coefficient = 0.5),
-                                     with_microphysics = true)
+                                     with_microphysics = true,
+                                     initial_conditions_path::Union{Nothing,String} = nothing)
 
     # Conservative split-explicit Δt scaling: 60 s at 1°, linear in Δx.
     Δt_value = isnothing(Δt) ? 60.0 * (360 / Nλ) : Δt
@@ -399,7 +402,131 @@ function moist_baroclinic_wave_model(arch;
     FT = eltype(grid)
     model.clock.last_Δt = FT(Δt_value)
 
-    set_moist_baroclinic_wave!(model)
+    if initial_conditions_path === nothing
+        set_moist_baroclinic_wave!(model)
+    else
+        set_moist_baroclinic_wave_from_file!(model, initial_conditions_path; H = H)
+    end
 
     return model
+end
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Initial conditions from a JLD2 checkpoint
+# ═══════════════════════════════════════════════════════════════════════════
+
+"""
+    set_moist_baroclinic_wave_from_file!(model, path::String; H = 30e3)
+
+Load the prognostic state (`ρ, ρu, ρv, ρw, ρθ, ρqᵛ`) from a JLD2 checkpoint
+written by the spinup driver and copy it onto `model`. Mirrors the
+`set_baroclinic_instability_from_file!` pattern from PR #290 (`glw/spinup-init`)
+and is sharded/Reactant-compatible.
+
+Workflow:
+
+  1. The host arrays in the JLD2 file have shapes matching the cell-centered
+     and staggered Field types of `AtmosphereModel`:
+     - `ρ`, `ρθ`, `ρqᵛ` → `(Nλ, Nφ, Nz)`     CenterField
+     - `ρu`             → `(Nλ, Nφ, Nz)`     XFaceField
+     - `ρv`             → `(Nλ, Nφ+1, Nz)`   YFaceField
+     - `ρw`             → `(Nλ, Nφ, Nz+1)`   ZFaceField
+  2. Build source `Field`s on the *model's* architecture sized to the
+     checkpoint via a CPU-twin grid (this is the only host→device write
+     pattern that works for `ReactantField` — `set!(::Field, ::Array)`
+     falls through to a broadcast that silently no-ops on Reactant). The
+     source grid is `ZRegular` (uniform `z = (0, H)`) so
+     `fractional_z_index` is constant-time and Reactant's MLIR pass
+     manager can lower the `interpolate!` paths under sharding.
+  3. `interpolate!` from the on-arch source `Field`s onto the model
+     prognostic `Field`s. Same-resolution and cross-resolution both go
+     through the same dispatch.
+"""
+function set_moist_baroclinic_wave_from_file!(model, path::String; H = 30e3)
+    Nλ_src, Nφ_src, Nz_src, ρ_data, ρu_data, ρv_data, ρw_data, ρθ_data, ρqv_data =
+        JLD2.jldopen(path, "r") do file
+            (file["Nλ"], file["Nφ"], file["Nz"],
+             file["ρ"], file["ρu"], file["ρv"], file["ρw"],
+             file["ρθ"], file["ρqᵛ"])
+        end
+
+    # Sanity-check expected shapes against the staggering convention.
+    expected_c  = (Nλ_src, Nφ_src,     Nz_src    )  # Center
+    expected_xf = (Nλ_src, Nφ_src,     Nz_src    )  # XFace (periodic in λ → same as Center)
+    expected_yf = (Nλ_src, Nφ_src + 1, Nz_src    )  # YFace
+    expected_zf = (Nλ_src, Nφ_src,     Nz_src + 1)  # ZFace
+    size(ρ_data)   == expected_c  || error("ρ size $(size(ρ_data)) ≠ $expected_c from $path")
+    size(ρu_data)  == expected_xf || error("ρu size $(size(ρu_data)) ≠ $expected_xf from $path")
+    size(ρv_data)  == expected_yf || error("ρv size $(size(ρv_data)) ≠ $expected_yf from $path")
+    size(ρw_data)  == expected_zf || error("ρw size $(size(ρw_data)) ≠ $expected_zf from $path")
+    size(ρθ_data)  == expected_c  || error("ρθ size $(size(ρθ_data)) ≠ $expected_c from $path")
+    size(ρqv_data) == expected_c  || error("ρqᵛ size $(size(ρqv_data)) ≠ $expected_c from $path")
+
+    arch = model.grid.architecture
+
+    # Source grid sized to the checkpoint, on the model's architecture.
+    # Uniform z so `fractional_z_index` is constant-time (Reactant-friendly
+    # under sharding — the binary-search z path uses a dynamic-trip-count
+    # `while` loop that the MLIR lowering currently fails on).
+    source_grid = LatitudeLongitudeGrid(arch;
+        size      = (Nλ_src, Nφ_src, Nz_src),
+        halo      = (1, 1, 1),
+        longitude = (0, 360),
+        latitude  = (-80, 80),
+        z         = (0, H),
+    )
+
+    # CPU twin of the source grid for the host→device write step.
+    cpu_source_grid = Oceananigans.Architectures.on_architecture(Oceananigans.CPU(), source_grid)
+
+    cpu_ρ_src   = CenterField(cpu_source_grid)
+    cpu_ρu_src  = XFaceField(cpu_source_grid)
+    cpu_ρv_src  = YFaceField(cpu_source_grid)
+    cpu_ρw_src  = ZFaceField(cpu_source_grid)
+    cpu_ρθ_src  = CenterField(cpu_source_grid)
+    cpu_ρqv_src = CenterField(cpu_source_grid)
+
+    set!(cpu_ρ_src,   ρ_data)
+    set!(cpu_ρu_src,  ρu_data)
+    set!(cpu_ρv_src,  ρv_data)
+    set!(cpu_ρw_src,  ρw_data)
+    set!(cpu_ρθ_src,  ρθ_data)
+    set!(cpu_ρqv_src, ρqv_data)
+
+    for f in (cpu_ρ_src, cpu_ρu_src, cpu_ρv_src, cpu_ρw_src, cpu_ρθ_src, cpu_ρqv_src)
+        Oceananigans.BoundaryConditions.fill_halo_regions!(f)
+    end
+
+    # On-arch source fields. `copyto!(interior(arch_field), interior(cpu_field))`
+    # is the host→device write pattern that survives ReactantField dispatch.
+    ρ_src   = CenterField(source_grid)
+    ρu_src  = XFaceField(source_grid)
+    ρv_src  = YFaceField(source_grid)
+    ρw_src  = ZFaceField(source_grid)
+    ρθ_src  = CenterField(source_grid)
+    ρqv_src = CenterField(source_grid)
+
+    copyto!(interior(ρ_src),   interior(cpu_ρ_src))
+    copyto!(interior(ρu_src),  interior(cpu_ρu_src))
+    copyto!(interior(ρv_src),  interior(cpu_ρv_src))
+    copyto!(interior(ρw_src),  interior(cpu_ρw_src))
+    copyto!(interior(ρθ_src),  interior(cpu_ρθ_src))
+    copyto!(interior(ρqv_src), interior(cpu_ρqv_src))
+
+    # Model prognostic targets.
+    ρ_target   = dynamics_density(model.dynamics)
+    ρu_target  = model.momentum.ρu
+    ρv_target  = model.momentum.ρv
+    ρw_target  = model.momentum.ρw
+    ρθ_target  = model.formulation.potential_temperature_density
+    ρqv_target = model.moisture_density
+
+    Oceananigans.Fields.interpolate!(ρ_target,   ρ_src)
+    Oceananigans.Fields.interpolate!(ρu_target,  ρu_src)
+    Oceananigans.Fields.interpolate!(ρv_target,  ρv_src)
+    Oceananigans.Fields.interpolate!(ρw_target,  ρw_src)
+    Oceananigans.Fields.interpolate!(ρθ_target,  ρθ_src)
+    Oceananigans.Fields.interpolate!(ρqv_target, ρqv_src)
+
+    return nothing
 end
