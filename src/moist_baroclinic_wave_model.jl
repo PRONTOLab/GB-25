@@ -13,8 +13,7 @@
 
 using KernelAbstractions: @kernel, @index
 using Breeze
-using Breeze: AtmosphereModel, CompressibleDynamics, ExplicitTimeStepping,
-              SplitExplicitTimeDiscretization, PressureProjectionDamping
+using Breeze: AtmosphereModel, CompressibleDynamics, ExplicitTimeStepping
 using Breeze: BulkDrag, BulkSensibleHeatFlux, BulkVaporFlux
 using Breeze.AtmosphereModels: dynamics_density, specific_prognostic_moisture
 using Breeze.Microphysics: NonEquilibriumCloudFormation
@@ -345,7 +344,7 @@ function moist_baroclinic_wave_model(arch;
     coriolis = SphericalCoriolis()
 
     dynamics = CompressibleDynamics(
-        SplitExplicitTimeDiscretization(damping = PressureProjectionDamping(coefficient = 0.5));
+        ExplicitTimeStepping();
         surface_pressure = p_ref,
         reference_potential_temperature = theta_reference,
     )
