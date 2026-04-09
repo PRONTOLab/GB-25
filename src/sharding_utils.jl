@@ -42,11 +42,14 @@ function factors(N::Int)
     iseven(N) || throw(ArgumentError("N must be even; got N = $N"))
 
     Nhalf = N ÷ 2
-    Dx = isqrt(Nhalf)
+    D = isqrt(Nhalf)
 
-    Dx^2 == Nhalf || throw(ArgumentError("N ÷ 2 = $Nhalf is not a perfect square"))
+    D^2 == Nhalf || throw(ArgumentError("N ÷ 2 = $Nhalf is not a perfect square"))
 
-    return Dx, 2Dx
+    Dx = 2*D
+    Dy = D
+
+    return Dx, Dy
 end
 
 function allocatorstats()
