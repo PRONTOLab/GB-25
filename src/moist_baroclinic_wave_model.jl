@@ -456,9 +456,20 @@ function set_moist_baroclinic_wave_from_file!(model, path::String; H = 30e3)
     size(ρθ_data)  == expected_c  || error("ρθ size $(size(ρθ_data)) ≠ $expected_c from $path")
     size(ρqv_data) == expected_c  || error("ρqᵛ size $(size(ρqv_data)) ≠ $expected_c from $path")
 
-    arch = model.grid.architecture
+    # Build the source field on a *single-rank* arch — for a Distributed{X}
+    # model arch we use the inner child_architecture so the IC is held by
+    # one device and `interpolate!` does the scatter into the sharded target.
+    # At 8000 GPUs the sharded model state cannot fit on a single machine,
+    # but the IC checkpoint always can — that's the point of building the
+    # source on the non-distributed inner arch.
+    model_arch = model.grid.architecture
+    source_arch = if model_arch isa Oceananigans.DistributedComputations.Distributed
+        model_arch.child_architecture
+    else
+        model_arch
+    end
 
-    source_grid = LatitudeLongitudeGrid(arch;
+    source_grid = LatitudeLongitudeGrid(source_arch;
         size      = (Nλ_src, Nφ_src, Nz_src),
         halo      = (1, 1, 1),
         longitude = (0, 360),
