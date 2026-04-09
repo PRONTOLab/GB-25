@@ -15,7 +15,7 @@ function baroclinic_instability_model(arch; resolution, Nz, kw...)
 end
 
 function baroclinic_instability_model(arch, Nx, Ny, Nz; Δt,
-    initial_conditions_path::Union{Nothing,String} = nothing,
+    initial_conditions_path::Union{Nothing,String} = joinpath(dirname(@__DIR__), "simulations", "initial_conditions", "baroclinic_ic_quarter_degree.jld2"),
     halo = (8, 8, 8),
     grid_type = :simple_lat_lon, # :gaussian_islands
 
