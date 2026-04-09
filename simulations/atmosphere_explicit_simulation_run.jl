@@ -30,15 +30,19 @@ Ninner = ConcreteRNumber(2)
 column_height = 30e3
 Δt = 0.5 * (column_height / Nz) / 330.0
 
-@info "Generating atmosphere model — EXPLICIT timestepper (Nλ=$Nλ, Nφ=$Nφ, Nz=$Nz, Δt=$(round(Δt; sigdigits=3))s)..."
 arch = ReactantState()
 
-const ATMOS_IC_PATH = get(ENV, "ATMOS_IC_PATH", "")
-initial_conditions_path = isempty(ATMOS_IC_PATH) ? nothing : ATMOS_IC_PATH
+# IC file produced by `simulations/download_atmosphere_ic_artifact.jl`.
+# Falls back to analytic IC if the file is missing.
+_ic_path = joinpath(@__DIR__, "initial_conditions", "atmosphere_no_microphysics_1deg_14day.jld2")
+initial_conditions_path = isfile(_ic_path) ? _ic_path : nothing
 if initial_conditions_path !== nothing
     @info "Initializing from file" initial_conditions_path
+else
+    @warn "IC file not found at $_ic_path — using analytic IC"
 end
 
+@info "Generating atmosphere model — EXPLICIT timestepper (Nλ=$Nλ, Nφ=$Nφ, Nz=$Nz, Δt=$(round(Δt; sigdigits=3))s)..."
 model = moist_baroclinic_wave_model(arch; Nλ, Nφ, Nz, Δt, halo=(H, H, H),
                                     timestepper=:explicit,
                                     initial_conditions_path)
@@ -66,7 +70,12 @@ checkpoint_dir = joinpath(@__DIR__, "checkpoints", jobid)
 @info "Saving checkpoint..." now(UTC)
 @time "checkpoint save" begin
     filepath = save_model_state(checkpoint_dir, model, arch;
-        label="final", field_names=[:w, :T], z_indices=[:bottom, :middle, :top])
+        label="final", slices=[
+            (:T, :xy, [:bottom, :top]),
+            (:w, :xy, [:bottom, :top]),
+            (:T, :xz, [:middle]),
+            (:T, :yz, [:middle]),
+        ])
     @info "Checkpoint saved to $filepath"
 end
 

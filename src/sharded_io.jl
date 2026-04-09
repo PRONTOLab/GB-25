@@ -67,94 +67,174 @@ function local_shards_to_host(arr::AbstractArray{T,N}) where {T,N}
 end
 
 """
-    resolve_z_indices(nz, spec; halo=0)
+    resolve_dim_indices(n, spec; halo=0)
 
-Convert a z-level specification into concrete indices into the full data array
-(which may include `halo` cells on each side).
+Convert a dimension-level specification into concrete indices into the full
+data array (which may include `halo` cells on each side).
 
 Symbolic names refer to **interior** positions:
-- `:bottom`      → `halo + 1`
-- `:middle`/`:mid` → `halo + interior_nz ÷ 2`
-- `:top`         → `halo + interior_nz`  (i.e. `nz - halo`)
+- `:bottom`/`:first`  → `halo + 1`
+- `:middle`/`:mid`    → `halo + interior_n ÷ 2`
+- `:top`/`:last`      → `halo + interior_n`
 
-Integer specs are treated as interior-relative and shifted by `halo`.
+Integer specs are interior-relative and shifted by `halo`.
 """
-function resolve_z_indices(nz::Int, spec; halo::Int=0)
-    nz_interior = nz - 2 * halo
-    spec === nothing && return collect(1:nz)
+function resolve_dim_indices(n::Int, spec; halo::Int=0)
+    n_interior = n - 2 * halo
+    spec === nothing && return collect(1:n)
     if eltype(spec) <: Integer
-        all(1 .<= spec .<= nz_interior) || error("z_indices out of range [1, $nz_interior]: $spec")
+        all(1 .<= spec .<= n_interior) || error("indices out of range [1, $n_interior]: $spec")
         return sort(unique([i + halo for i in spec]))
     elseif eltype(spec) <: Symbol
         indices = Int[]
         for s in spec
-            if s === :bottom
+            if s === :bottom || s === :first
                 push!(indices, halo + 1)
             elseif s === :middle || s === :mid
-                push!(indices, halo + max(1, nz_interior ÷ 2))
-            elseif s === :top
-                push!(indices, halo + nz_interior)
+                push!(indices, halo + max(1, n_interior ÷ 2))
+            elseif s === :top || s === :last
+                push!(indices, halo + n_interior)
             else
-                error("Unknown z level: $s. Use :bottom, :middle, or :top")
+                error("Unknown level: $s. Use :bottom/:first, :middle/:mid, or :top/:last")
             end
         end
         return sort(unique(indices))
     end
-    error("z_indices must be nothing, a vector of Ints, or a vector of Symbols")
+    error("spec must be nothing, a vector of Ints, or a vector of Symbols")
+end
+
+const resolve_z_indices = resolve_dim_indices
+
+"""
+    slice_dim(plane::Symbol) → Int
+
+Map a slice plane to the dimension that gets indexed (the "through" dimension):
+- `:xy` → 3  (fix z, keep x-y)
+- `:xz` → 2  (fix y, keep x-z)
+- `:yz` → 1  (fix x, keep y-z)
+"""
+function slice_dim(plane::Symbol)
+    plane === :xy && return 3
+    plane === :xz && return 2
+    plane === :yz && return 1
+    error("Unknown slice plane: $plane. Use :xy, :xz, or :yz.")
+end
+
+"""
+    _apply_slice(local_arrays, local_slices, global_shape, dim, idx)
+
+Slice `local_arrays` along dimension `dim` at indices `idx`.
+Returns updated `(local_arrays, local_slices, global_shape)`.
+"""
+function _apply_slice(local_arrays, local_slices, global_shape, dim::Int, idx::Vector{Int})
+    ndim = length(global_shape)
+    new_arrays = map(local_arrays) do a
+        slicers = [1:size(a, d) for d in 1:ndim]
+        slicers[dim] = idx
+        a[slicers...]
+    end
+    n_new = length(idx)
+    new_slices = map(local_slices) do s
+        out = collect(s)
+        out[dim] = 1:n_new
+        Tuple(out)
+    end
+    new_shape = ntuple(d -> d == dim ? n_new : global_shape[d], ndim)
+    return new_arrays, new_slices, new_shape
 end
 
 """
     save_sharded_fields(dir, fields::NamedTuple, rank::Int;
-                        iteration=nothing, time=nothing, z_indices=nothing)
+                        iteration=nothing, time=nothing,
+                        z_indices=nothing, halo_z::Int=0,
+                        slices=nothing, halo_sizes::NTuple{3,Int}=(0,0,0))
 
-Save the local shards of each field to a per-rank file using Julia Serialization.
-Each rank writes only its own addressable data — no cross-process communication.
+Save the local shards of each field to a per-rank file.
 
-`z_indices` selects which vertical levels to keep. Accepts `nothing` (all),
-a vector of integer indices, or symbolic levels `[:bottom, :middle, :top]`.
+Two mutually exclusive slicing modes:
 
-Writes atomically via a temp file to avoid truncated checkpoints if the
-process is killed mid-write.
+**Legacy (`z_indices`)**: apply the same z-slice to every field.
 
-Files are written as `fields_rank{R}.dat` containing a Dict with:
-- `:iteration`, `:time` — simulation metadata
-- `:z_indices` — which vertical levels were saved (or `nothing` for all)
-- For each field name: `(local_arrays, local_slices, global_shape)`
+**New (`slices`)**: a vector of `(field_name, plane, level_spec)` tuples
+specifying per-field, per-plane slices. Each entry produces a separate
+saved array keyed as `Symbol("\$(field)_\$(plane)")`:
+- `plane` ∈ `{:xy, :xz, :yz}` — which 2-D cross-section to keep.
+- `level_spec` — symbolic (`:bottom`, `:middle`, `:top`) or integer indices
+  along the sliced-through dimension, same as the legacy `z_indices`.
+
+Writes atomically via a temp file.
 """
 function save_sharded_fields(dir, fields::NamedTuple, rank::Int;
                              iteration=nothing, time=nothing,
-                             z_indices=nothing, halo_z::Int=0)
+                             z_indices=nothing, halo_z::Int=0,
+                             slices=nothing, halo_sizes::NTuple{3,Int}=(0,0,0))
     mkpath(dir)
     filepath = joinpath(dir, "fields_rank$(rank).dat")
 
     state = Dict{Symbol,Any}(
         :iteration => iteration,
         :time => time,
-        :field_names => collect(keys(fields)),
     )
 
-    for (name, field_data) in pairs(fields)
-        arr = Reactant.ancestor(field_data)
-        local_arrays, local_slices, global_shape = local_shards_to_host(arr)
+    if slices !== nothing
+        saved_keys = Symbol[]
+        slice_meta = []
 
-        if z_indices !== nothing && length(global_shape) >= 3
-            nz = global_shape[3]
-            zidx = resolve_z_indices(nz, z_indices; halo=halo_z)
-            local_arrays = [a[:, :, zidx] for a in local_arrays]
-            nz_new = length(zidx)
-            local_slices = map(local_slices) do s
-                (s[1:2]..., 1:nz_new)
+        for (field_name, plane, level_spec) in slices
+            haskey(fields, field_name) || begin
+                @warn "Field :$field_name not in fields, skipping slice ($field_name, $plane, $level_spec)"
+                continue
             end
-            global_shape = (global_shape[1], global_shape[2], nz_new)
-            state[:z_indices] = zidx
+
+            arr = Reactant.ancestor(fields[field_name])
+            local_arrays, local_slices, global_shape = local_shards_to_host(arr)
+
+            dim = slice_dim(plane)
+            resolved_idx = Int[]
+            if length(global_shape) >= dim
+                h = halo_sizes[dim]
+                n = global_shape[dim]
+                resolved_idx = resolve_dim_indices(n, level_spec; halo=h)
+                local_arrays, local_slices, global_shape = _apply_slice(
+                    local_arrays, local_slices, global_shape, dim, resolved_idx)
+            end
+
+            key = Symbol("$(field_name)_$(plane)")
+            serializable_slices = [Tuple((first(r), last(r)) for r in s) for s in local_slices]
+            state[key] = (;
+                local_arrays,
+                local_slices = serializable_slices,
+                global_shape,
+            )
+            push!(saved_keys, key)
+            push!(slice_meta, (field=field_name, plane=plane, dim=dim, indices=resolved_idx))
         end
 
-        serializable_slices = [Tuple((first(r), last(r)) for r in s) for s in local_slices]
-        state[name] = (;
-            local_arrays,
-            local_slices = serializable_slices,
-            global_shape,
-        )
+        state[:field_names] = saved_keys
+        state[:slices] = [(; m.field, m.plane, m.dim) for m in slice_meta]
+
+    else
+        state[:field_names] = collect(keys(fields))
+
+        for (name, field_data) in pairs(fields)
+            arr = Reactant.ancestor(field_data)
+            local_arrays, local_slices, global_shape = local_shards_to_host(arr)
+
+            if z_indices !== nothing && length(global_shape) >= 3
+                nz = global_shape[3]
+                zidx = resolve_dim_indices(nz, z_indices; halo=halo_z)
+                local_arrays, local_slices, global_shape = _apply_slice(
+                    local_arrays, local_slices, global_shape, 3, zidx)
+                state[:z_indices] = zidx
+            end
+
+            serializable_slices = [Tuple((first(r), last(r)) for r in s) for s in local_slices]
+            state[name] = (;
+                local_arrays,
+                local_slices = serializable_slices,
+                global_shape,
+            )
+        end
     end
 
     tmppath = filepath * ".tmp"
@@ -208,22 +288,32 @@ end
 
 """
     save_model_state(dir, model, arch; label="checkpoint",
-                     field_names=nothing, z_indices=nothing)
+                     field_names=nothing, z_indices=nothing, slices=nothing)
 
 Save model fields to per-rank files. Automatically detects the grid's halo
-size so that symbolic z_indices (`:bottom`, `:top`) refer to interior cells.
+sizes so that symbolic levels (`:bottom`, `:top`, etc.) refer to interior cells.
 
-Returns the filepath on success, or `nothing` if an error occurred (logged
-as a warning so the simulation is not interrupted).
+Two slicing modes (mutually exclusive):
 
-- `field_names`: `nothing` for all fields, or a collection of `Symbol`s.
-- `z_indices`:   `nothing` for all levels, integer indices, or symbolic
-                 levels `[:bottom, :middle, :top]`.
+**Legacy** (`field_names` + `z_indices`): save the listed fields, optionally
+sub-setting along z.
+
+**New** (`slices`): a vector of `(field_name, plane, level_spec)` tuples
+for arbitrary per-field cross-sections.  Example:
+
+    slices = [
+        (:T, :xy, [:bottom, :top]),   # T at z=bottom and z=top
+        (:T, :xz, [:middle]),         # T at y=middle  (lon-z cross-section)
+        (:w, :yz, [:middle]),         # w at x=middle  (lat-z cross-section)
+    ]
+
+Returns the filepath on success, or `nothing` on error.
 """
 function save_model_state(dir, model, arch;
                           label="checkpoint",
                           field_names=nothing,
-                          z_indices=nothing)
+                          z_indices=nothing,
+                          slices=nothing)
     rank = if arch isa Oceananigans.Distributed
         arch.local_rank
     else
@@ -231,18 +321,27 @@ function save_model_state(dir, model, arch;
     end
 
     try
-        fields = extract_model_fields(model; field_names)
-
         grid = _model_grid(model)
-        halo_z = grid !== nothing ? Oceananigans.halo_size(grid)[3] : 0
+        hs = grid !== nothing ? Oceananigans.halo_size(grid) : (0, 0, 0)
+        halo_sizes = (hs[1], hs[2], hs[3])
 
         iter_val = try; Int(Array(model.clock.iteration)[1]); catch; nothing; end
         time_val = try; Float64(Array(model.clock.time)[1]); catch; nothing; end
 
         outdir = joinpath(dir, label)
-        filepath = save_sharded_fields(outdir, fields, rank;
-                                       iteration=iter_val, time=time_val,
-                                       z_indices, halo_z)
+
+        if slices !== nothing
+            slice_fields = unique([s[1] for s in slices])
+            fields = extract_model_fields(model; field_names=slice_fields)
+            filepath = save_sharded_fields(outdir, fields, rank;
+                                           iteration=iter_val, time=time_val,
+                                           slices, halo_sizes)
+        else
+            fields = extract_model_fields(model; field_names)
+            filepath = save_sharded_fields(outdir, fields, rank;
+                                           iteration=iter_val, time=time_val,
+                                           z_indices, halo_z=halo_sizes[3])
+        end
         return filepath
     catch e
         @error "Checkpoint save failed (rank $rank), continuing simulation" exception=(e, catch_backtrace())
@@ -289,7 +388,9 @@ end
 """
     load_checkpoint_metadata(dir)
 
-Read iteration, time, field names, and z_indices from the first rank file found.
+Read iteration, time, field names, slice metadata, and z_indices from the
+first rank file found. Works with both legacy (z_indices) and new (slices)
+checkpoint formats.
 """
 function load_checkpoint_metadata(dir)
     rank_files = filter(f -> startswith(f, "fields_rank") && endswith(f, ".dat"), readdir(dir))
@@ -302,36 +403,51 @@ function load_checkpoint_metadata(dir)
         time        = state[:time],
         field_names = state[:field_names],
         z_indices   = get(state, :z_indices, nothing),
+        slices      = get(state, :slices, nothing),
     )
 end
 
 """
     load_all_fields(dir; halo=0)
 
-Load every field from a checkpoint directory, optionally stripping `halo` cells
-from each side of each horizontal dimension. When the checkpoint was saved with
-`z_indices`, halo stripping is only applied to x and y (dims 1-2) since the
-z levels are already explicitly selected.
+Load every field/slice from a checkpoint directory, optionally stripping
+`halo` cells from each side of non-sliced dimensions.
 
-Skips individual fields that fail to load rather than aborting entirely.
+For **legacy** checkpoints (saved with `z_indices`): strips x/y halos; z is
+already subsetted so left as-is.
 
-Returns `(metadata, field_data)` where
-`metadata` is a NamedTuple with `:iteration`, `:time`, `:field_names`, `:z_indices`
-and `field_data` is a `Dict{Symbol, Array}`.
+For **new** checkpoints (saved with `slices`): strips halos on the two
+retained dimensions (the sliced-through dimension is already subsetted).
+
+Returns `(metadata, field_data)` where `field_data` is a `Dict{Symbol, Array}`.
 """
 function load_all_fields(dir; halo::Int=0)
     meta = load_checkpoint_metadata(dir)
-    z_was_subsetted = meta.z_indices !== nothing
+    slice_info = meta.slices
     data = Dict{Symbol, Array}()
+
     for name in meta.field_names
         try
             raw = load_global_field(dir, name)
             if halo > 0
-                interior_ranges = ntuple(ndims(raw)) do d
-                    if z_was_subsetted && d >= 3
-                        1:size(raw, d)
-                    else
-                        (halo + 1):(size(raw, d) - halo)
+                if slice_info !== nothing
+                    si = findfirst(s -> Symbol("$(s.field)_$(s.plane)") === name, slice_info)
+                    sliced_dim = si !== nothing ? slice_info[si].dim : nothing
+                    interior_ranges = ntuple(ndims(raw)) do d
+                        if sliced_dim !== nothing && d == sliced_dim
+                            1:size(raw, d)
+                        else
+                            (halo + 1):(size(raw, d) - halo)
+                        end
+                    end
+                else
+                    z_was_subsetted = meta.z_indices !== nothing
+                    interior_ranges = ntuple(ndims(raw)) do d
+                        if z_was_subsetted && d >= 3
+                            1:size(raw, d)
+                        else
+                            (halo + 1):(size(raw, d) - halo)
+                        end
                     end
                 end
                 data[name] = raw[interior_ranges...]

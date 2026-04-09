@@ -61,7 +61,12 @@ checkpoint_dir = joinpath(@__DIR__, "checkpoints", jobid)
 @info "Saving checkpoint..." now(UTC)
 @time "checkpoint save" begin
     filepath = save_model_state(checkpoint_dir, model, arch;
-        label="final", field_names=[:w, :T], z_indices=[:bottom, :middle, :top])
+        label="final", slices=[
+            (:T, :xy, [:bottom, :top]),
+            (:w, :xy, [:bottom, :top]),
+            (:T, :xz, [:middle]),
+            (:T, :yz, [:middle]),
+        ])
     @info "Checkpoint saved to $filepath"
 end
 

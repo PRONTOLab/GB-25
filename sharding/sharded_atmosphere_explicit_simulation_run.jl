@@ -93,12 +93,18 @@ column_height = 30e3   # m; default column height in moist_baroclinic_wave_model
 
 @info "[$rank] Generating atmosphere model — EXPLICIT timestepper (Nλ=$Nλ, Nφ=$Nφ, Nz=$Nz, Δt=$(round(Δt; sigdigits=3))s)..." now(UTC)
 
-const ATMOS_IC_PATH = get(ENV, "ATMOS_IC_PATH", "")
-initial_conditions_path = isempty(ATMOS_IC_PATH) ? nothing : ATMOS_IC_PATH
+# IC file produced by `simulations/download_atmosphere_ic_artifact.jl`.
+# Falls back to analytic IC if the file is missing.
+_ic_path = joinpath(@__DIR__, "..", "simulations", "initial_conditions",
+                    "atmosphere_no_microphysics_1deg_14day.jld2")
+initial_conditions_path = isfile(_ic_path) ? _ic_path : nothing
 if initial_conditions_path !== nothing
     @info "[$rank] Initializing from file" initial_conditions_path
+else
+    @warn "[$rank] IC file not found at $_ic_path — using analytic IC"
 end
 
+@info "[$rank] Generating atmosphere model — EXPLICIT timestepper (Nλ=$Nλ, Nφ=$Nφ, Nz=$Nz, Δt=$(round(Δt; sigdigits=3))s)..." now(UTC)
 model = GordonBell25.moist_baroclinic_wave_model(arch; Nλ, Nφ, Nz, H=column_height, Δt,
                                                  halo=(H, H, H),
                                                  timestepper=:explicit,
@@ -178,7 +184,12 @@ checkpoint_dir = joinpath(@__DIR__, "checkpoints", jobid_procid)
 @info "[$rank] Saving sharded checkpoint..." now(UTC)
 @time "[$rank] checkpoint save" begin
     filepath = GordonBell25.save_model_state(checkpoint_dir, model, arch;
-        label="final", field_names=[:w, :T], z_indices=[:bottom, :middle, :top])
+        label="final", slices=[
+            (:T, :xy, [:bottom, :top]),
+            (:w, :xy, [:bottom, :top]),
+            (:T, :xz, [:middle]),
+            (:T, :yz, [:middle]),
+        ])
     @info "[$rank] Checkpoint saved to $filepath"
 end
 
