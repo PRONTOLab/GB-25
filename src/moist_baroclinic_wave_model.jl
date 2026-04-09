@@ -535,8 +535,8 @@ function set_moist_baroclinic_wave_from_file!(model, path::String; H = 30e3)
             (1, 1)
         end
 
-        src_total = size(parent(ρ_src))
-        dst_total = size(parent(ρ_target))
+        src_total = size(Oceananigans.interior(ρ_src))
+        dst_total = size(Oceananigans.interior(ρ_target))
         is_int_factor(s, t) = (t % s == 0) || (s % t == 0)
         needs_cpu_interp = !all(is_int_factor.(src_total, dst_total))
 
