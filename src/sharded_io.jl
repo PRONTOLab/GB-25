@@ -174,6 +174,7 @@ function save_sharded_fields(dir, fields::NamedTuple, rank::Int;
     state = Dict{Symbol,Any}(
         :iteration => iteration,
         :time => time,
+        :halo_sizes => halo_sizes,
     )
 
     if slices !== nothing
@@ -340,7 +341,8 @@ function save_model_state(dir, model, arch;
             fields = extract_model_fields(model; field_names)
             filepath = save_sharded_fields(outdir, fields, rank;
                                            iteration=iter_val, time=time_val,
-                                           z_indices, halo_z=halo_sizes[3])
+                                           z_indices, halo_z=halo_sizes[3],
+                                           halo_sizes)
         end
         return filepath
     catch e
@@ -404,14 +406,21 @@ function load_checkpoint_metadata(dir)
         field_names = state[:field_names],
         z_indices   = get(state, :z_indices, nothing),
         slices      = get(state, :slices, nothing),
+        halo_sizes  = get(state, :halo_sizes, nothing),
     )
 end
 
 """
-    load_all_fields(dir; halo=0)
+    load_all_fields(dir; halo=nothing)
 
-Load every field/slice from a checkpoint directory, optionally stripping
-`halo` cells from each side of non-sliced dimensions.
+Load every field/slice from a checkpoint directory, stripping halo cells from
+non-sliced dimensions.
+
+`halo` accepts:
+- `nothing` (default) — reads `halo_sizes` stored in the checkpoint; if absent,
+  no stripping is performed.
+- `Int` — uniform halo applied to all three spatial dimensions.
+- `NTuple{3,Int}` — per-dimension `(Hx, Hy, Hz)` halo sizes.
 
 For **legacy** checkpoints (saved with `z_indices`): strips x/y halos; z is
 already subsetted so left as-is.
@@ -421,32 +430,50 @@ retained dimensions (the sliced-through dimension is already subsetted).
 
 Returns `(metadata, field_data)` where `field_data` is a `Dict{Symbol, Array}`.
 """
-function load_all_fields(dir; halo::Int=0)
+function load_all_fields(dir; halo::Union{Nothing, Int, NTuple{3,Int}}=nothing)
     meta = load_checkpoint_metadata(dir)
     slice_info = meta.slices
+
+    hs = if halo isa NTuple{3,Int}
+        halo
+    elseif halo isa Int
+        (halo, halo, halo)
+    elseif meta.halo_sizes !== nothing
+        Tuple(meta.halo_sizes)
+    else
+        (0, 0, 0)
+    end
+    strip = any(h -> h > 0, hs)
+
     data = Dict{Symbol, Array}()
 
     for name in meta.field_names
         try
             raw = load_global_field(dir, name)
-            if halo > 0
+            if strip
                 if slice_info !== nothing
                     si = findfirst(s -> Symbol("$(s.field)_$(s.plane)") === name, slice_info)
                     sliced_dim = si !== nothing ? slice_info[si].dim : nothing
                     interior_ranges = ntuple(ndims(raw)) do d
+                        h = d <= 3 ? hs[d] : 0
                         if sliced_dim !== nothing && d == sliced_dim
                             1:size(raw, d)
+                        elseif h > 0
+                            (h + 1):(size(raw, d) - h)
                         else
-                            (halo + 1):(size(raw, d) - halo)
+                            1:size(raw, d)
                         end
                     end
                 else
                     z_was_subsetted = meta.z_indices !== nothing
                     interior_ranges = ntuple(ndims(raw)) do d
+                        h = d <= 3 ? hs[d] : 0
                         if z_was_subsetted && d >= 3
                             1:size(raw, d)
+                        elseif h > 0
+                            (h + 1):(size(raw, d) - h)
                         else
-                            (halo + 1):(size(raw, d) - halo)
+                            1:size(raw, d)
                         end
                     end
                 end
