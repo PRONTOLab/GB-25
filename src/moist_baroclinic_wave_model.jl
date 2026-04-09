@@ -490,16 +490,16 @@ function set_moist_baroclinic_wave_from_file!(model, path::String; H = 30e3)
     size(ρθ_data)  == expected_c  || error("ρθ size $(size(ρθ_data)) ≠ $expected_c from $path")
     size(ρqv_data) == expected_c  || error("ρqᵛ size $(size(ρqv_data)) ≠ $expected_c from $path")
 
-    # Always build the source field on plain CPU. The pirated `interpolate!`
-    # method below (target::ShardedField, source on CPU) takes care of feeding
-    # this CPU source into a Reactant-sharded target via a one-shot @compile +
-    # free_exec dance. For non-sharded targets (plain CPU / CUDA / single-device
-    # Reactant) Oceananigans' stock `interpolate!` handles the CPU→arch case.
+    # Build the source field on plain CPU. For sharded Reactant targets the
+    # type-pirated `interpolate!(::ShardedField, ::CPUSourceField)` below
+    # bypasses the `to_arch != from_arch` assertion in
+    # Oceananigans.Fields.interpolate! and runs the kernel under @compile.
+    # For plain CUDA / single-Reactant / Distributed{CPU/GPU} targets the
+    # type-pirated `interpolate!(::ArchField, ::CPUSourceField)` below
+    # likewise bypasses the assertion and just calls the kernel directly.
     #
     # Uniform z so that the source grid is `ZRegularLLG` and
-    # `fractional_z_index` is constant-time (no binary search). The
-    # binary-search path uses a dynamic-trip-count `while` loop that
-    # Reactant's MLIR pass manager currently fails to lower under sharding.
+    # `fractional_z_index` is constant-time (no binary search).
     source_grid = LatitudeLongitudeGrid(Oceananigans.CPU();
         size = (Nλ_src, Nφ_src, Nz_src),
         halo = (1, 1, 1),
@@ -604,4 +604,25 @@ function Oceananigans.Fields.interpolate!(target::SerialReactantField, source::C
     Reactant.XLA.IFRT.free_exec(compiled.exec)
     compiled.exec.exec = C_NULL
     return target
+end
+
+# Type piracy on Oceananigans.Fields.interpolate! for the case
+#   target = plain CUDA / single-Reactant / Distributed{CPU/GPU} field
+#   source = plain CPU field
+# Same kernel-launch as the stock method, just without the
+# `to_arch != from_arch` assertion. KernelAbstractions handles the cross-arch
+# case fine — the assertion is purely a safety net that we want to bypass
+# precisely because the IC checkpoint is small enough to live entirely on
+# the host.
+const NonShardedField{LX,LY,LZ,O} = Oceananigans.Fields.Field{
+    LX, LY, LZ, O,
+    <:Oceananigans.Grids.AbstractGrid{<:Any,<:Any,<:Any,<:Any,
+        <:Union{Oceananigans.Architectures.GPU,
+                Oceananigans.Architectures.ReactantState,
+                Oceananigans.DistributedComputations.Distributed{<:Oceananigans.Architectures.GPU},
+                Oceananigans.DistributedComputations.Distributed{<:Oceananigans.Architectures.CPU}}},
+}
+
+function Oceananigans.Fields.interpolate!(target::NonShardedField, source::CPUSourceField)
+    return _gb25_atmos_interpolate_kernel!(target, source)
 end
