@@ -174,10 +174,13 @@ function set_baroclinic_instability_from_file!(model, path::String)
     else
         Sharding.NoSharding()
     end
-    to_ra(f) = Reactant.to_rarray(f; sharding=src_sharding)
+    # Pass plain interior arrays — `to_rarray(::Field; sharding=...)` would
+    # walk the Field's grid and try to shard its StepRangeLen lat/lon
+    # coordinate vectors, which is unsupported.
+    to_ra(a::AbstractArray) = Reactant.to_rarray(a; sharding=src_sharding)
 
-    @jit interpolate_3d!(model.tracers.T, to_ra(T_for_jit))
-    @jit interpolate_3d!(model.tracers.S, to_ra(S_for_jit))
+    @jit interpolate_3d!(model.tracers.T, to_ra(Array(interior(T_for_jit))))
+    @jit interpolate_3d!(model.tracers.S, to_ra(Array(interior(S_for_jit))))
 
     # println(@code_hlo interpolate_3d!(model.tracers.T, Reactant.to_rarray(ones(
     #                                                             eltype(model.tracers.T),
