@@ -89,7 +89,7 @@ function interpolate_3d!(dst::AbstractArray{T1,3}, x::AbstractArray{T2,3}) where
         window_dilations=ones(Int64, 3),
         base_dilations=ones(Int64, 3),
         padding_low=zeros(Int64, 3),
-        padding_high=Int64[sx, sy, sy] .- 1,
+        padding_high=Int64[sx, sy, sz] .- 1,
         output_shape=Int64[nx*sx, ny*sy, nz*sz]
     ) |> only
 
