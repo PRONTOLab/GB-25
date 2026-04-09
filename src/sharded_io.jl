@@ -1,7 +1,6 @@
 using Reactant
 using Oceananigans
 using Serialization
-using CairoMakie
 
 """
     local_shards_to_host(arr)
@@ -344,99 +343,4 @@ function load_all_fields(dir; halo::Int=0)
         end
     end
     return meta, data
-end
-
-"""
-    visualize_checkpoint(dir; halo=0, longitude=(0,360), latitude=(-85,85),
-                         z=(0, 30_000), output_dir=nothing)
-
-Load a checkpoint from `dir`, plot horizontal slices (bottom, mid, top) for each
-field as a separate PNG, and return the list of output paths.
-
-Keyword arguments:
-- `halo`: number of halo cells to strip from each side (default 0)
-- `longitude`: `(lo, hi)` range in degrees (default `(0, 360)`)
-- `latitude`: `(lo, hi)` range in degrees (default `(-85, 85)`)
-- `z`: `(lo, hi)` vertical range in metres (default `(0, 30_000)`)
-- `output_dir`: directory for PNGs (defaults to `<parent of dir>/plots`)
-"""
-function visualize_checkpoint(dir::AbstractString;
-                              halo::Int=0,
-                              longitude::Tuple=(0, 360),
-                              latitude::Tuple=(-85, 85),
-                              z::Tuple=(0, 30_000),
-                              output_dir=nothing)
-    meta, field_data = load_all_fields(dir; halo)
-    isempty(field_data) && error("No fields found in $dir")
-
-    if output_dir === nothing
-        output_dir = joinpath(dirname(dir), "plots")
-    end
-    mkpath(output_dir)
-
-    iter_str = meta.iteration === nothing ? "?" : string(meta.iteration)
-    time_str = meta.time === nothing ? "?" : string(meta.time)
-    suptitle = "iter=$iter_str  t=$(time_str) s"
-
-    paths = String[]
-    for name in meta.field_names
-        haskey(field_data, name) || continue
-        try
-            arr = field_data[name]
-            if ndims(arr) >= 3
-                nλ, nφ, nz = size(arr, 1), size(arr, 2), size(arr, 3)
-            elseif ndims(arr) == 2
-                nλ, nφ, nz = size(arr, 1), size(arr, 2), 1
-                arr = reshape(arr, nλ, nφ, 1)
-            else
-                continue
-            end
-
-            lons = range(longitude[1], longitude[2], length=nλ)
-            lats = range(latitude[1],  latitude[2],  length=nφ)
-            zs   = range(z[1], z[2], length=max(nz, 2))
-
-            ks = unique(clamp.([1, max(1, nz ÷ 2), nz], 1, nz))
-            labels = [nz == 1 ? "z-slice $k" : "z ≈ $(round(Int, zs[k])) m" for k in ks]
-            slices = [arr[:, :, k] for k in ks]
-            ncols = length(ks)
-
-            finite_vals = filter(isfinite, vcat(vec.(slices)...))
-            if isempty(finite_vals)
-                @warn "Skipping field $name: all values are NaN/Inf"
-                continue
-            end
-            vmin = minimum(finite_vals)
-            vmax = maximum(finite_vals)
-            if vmin ≈ vmax
-                vmin -= one(vmin)
-                vmax += one(vmax)
-            end
-
-            fig = CairoMakie.Figure(; size=(320 * ncols, 340), fontsize=12)
-            local hm
-            for (col, (k, lbl, sl)) in enumerate(zip(ks, labels, slices))
-                ax = CairoMakie.Axis(fig[1, col];
-                          title=lbl,
-                          xlabel="Longitude [°]",
-                          ylabel= col == 1 ? "Latitude [°]" : "",
-                          aspect=CairoMakie.DataAspect())
-                safe_slice = replace(sl, NaN => zero(eltype(sl)))
-                hm = CairoMakie.heatmap!(ax, lons, lats, safe_slice;
-                              colorrange=(vmin, vmax), colormap=:balance)
-            end
-            CairoMakie.Colorbar(fig[1, ncols + 1], hm; width=12)
-            CairoMakie.Label(fig[0, 1:ncols+1], "$name    $suptitle";
-                              fontsize=14, font=:bold)
-
-            outpath = joinpath(output_dir, "$(name).png")
-            CairoMakie.save(outpath, fig; px_per_unit=2)
-            push!(paths, outpath)
-        catch e
-            @warn "Failed to plot field :$name, skipping" exception=(e, catch_backtrace())
-        end
-    end
-
-    @info "Checkpoint plots saved to $output_dir" fields=length(paths)
-    return paths
 end

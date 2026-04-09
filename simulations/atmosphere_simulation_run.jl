@@ -1,7 +1,7 @@
 using GordonBell25
 using GordonBell25: first_time_step!, time_step!, loop!, preamble
 using GordonBell25: moist_baroclinic_wave_model
-using GordonBell25: save_model_state, visualize_checkpoint
+using GordonBell25: save_model_state
 using Oceananigans
 
 const parsed_args = GordonBell25.parse_baroclinic_instability_args(;
@@ -56,12 +56,6 @@ checkpoint_dir = joinpath(@__DIR__, "checkpoints", jobid)
     filepath = save_model_state(checkpoint_dir, model, arch;
         label="final", field_names=[:w, :T], z_indices=[:bottom, :middle, :top])
     @info "Checkpoint saved to $filepath"
-end
-
-checkpoint_data_dir = joinpath(checkpoint_dir, "final")
-@info "Visualizing checkpoint..." now(UTC)
-@time "checkpoint visualize" begin
-    visualize_checkpoint(checkpoint_data_dir; halo=H)
 end
 
 @info "Done!"

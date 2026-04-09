@@ -16,7 +16,7 @@ using Breeze
 using Breeze: AtmosphereModel, CompressibleDynamics, ExplicitTimeStepping
 using Breeze: BulkDrag, BulkSensibleHeatFlux, BulkVaporFlux
 using Breeze.AtmosphereModels: dynamics_density, specific_prognostic_moisture
-using Breeze.Microphysics: NonEquilibriumCloudFormation
+using Breeze.Microphysics: NonEquilibriumCloudFormation, BulkMicrophysics
 using Oceananigans.Coriolis: HydrostaticSphericalCoriolis
 using Oceananigans.BoundaryConditions: FieldBoundaryConditions
 using Oceananigans.Architectures: ReactantState
@@ -324,12 +324,14 @@ horizontal resolution. The actual stability boundary at Nz=64 is still being
 characterized; this default is intentionally conservative.
 """
 function moist_baroclinic_wave_model(arch;
-                                     Nλ   = 360,
-                                     Nφ   = 160,
-                                     Nz   = 64,
-                                     H    = 30e3,
-                                     Δt   = nothing,
-                                     halo = (8, 8, 8))
+                                     Nλ           = 360,
+                                     Nφ           = 160,
+                                     Nz           = 64,
+                                     H            = 30e3,
+                                     Δt           = nothing,
+                                     halo         = (8, 8, 8),
+                                     damping      = PressureProjectionDamping(coefficient = 0.5),
+                                     with_microphysics = true)
 
     # Conservative split-explicit Δt scaling: 60 s at 1°, linear in Δx.
     Δt_value = isnothing(Δt) ? 60.0 * (360 / Nλ) : Δt
@@ -349,11 +351,33 @@ function moist_baroclinic_wave_model(arch;
         reference_potential_temperature = theta_reference,
     )
 
-    ext = Base.get_extension(Breeze, :BreezeCloudMicrophysicsExt)
-    microphysics = ext.OneMomentCloudMicrophysics(;
-        cloud_formation = NonEquilibriumCloudFormation(nothing, :ice))
+    microphysics = if with_microphysics
+        ext = Base.get_extension(Breeze, :BreezeCloudMicrophysicsExt)
+        # Mixed-phase NE 1M: both liquid and ice as phase indicators (matches
+        # Breeze's own examples/moist_baroclinic_wave.jl).
+        ext.OneMomentCloudMicrophysics(;
+            cloud_formation = NonEquilibriumCloudFormation(nothing, nothing))
+    else
+        nothing
+    end
 
-    advection = WENO(order = 5)
+    # Bounds-preserving WENO for moisture/cloud/precip tracers (rico.jl pattern):
+    # plain WENO can produce small negatives in qᵛ et al, which then feed back
+    # through microphysics tendencies and blow up. Clamp to [0, 1] at the
+    # advection step.
+    weno     = WENO(order = 5)
+    weno_pos = WENO(order = 5, bounds = (0, 1))
+    momentum_advection = weno
+    scalar_advection = if with_microphysics
+        (ρθ   = weno,
+         ρqᵛ  = weno_pos,
+         ρqᶜˡ = weno_pos,
+         ρqᶜⁱ = weno_pos,
+         ρqʳ  = weno_pos,
+         ρqˢ  = weno_pos)
+    else
+        weno
+    end
 
     # Prescribed-SST bulk surface flux boundary conditions
     Cᴰ = 1e-3   # constant bulk exchange coefficient
@@ -367,7 +391,8 @@ function moist_baroclinic_wave_model(arch;
 
     boundary_conditions = (; ρu=ρu_bcs, ρv=ρv_bcs, ρe=ρe_bcs, ρqᵛ=ρqᵛ_bcs)
 
-    model = AtmosphereModel(grid; dynamics, coriolis, advection, microphysics, boundary_conditions)
+    model = AtmosphereModel(grid; dynamics, coriolis, momentum_advection, scalar_advection,
+                            microphysics, boundary_conditions)
 
     FT = eltype(grid)
     model.clock.last_Δt = FT(Δt_value)
