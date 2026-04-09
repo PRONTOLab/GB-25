@@ -68,9 +68,14 @@ function interpolate_3d!(dst::AbstractArray{T1,3}, x::AbstractArray{T2,3}) where
     #    x = reshape(x, (1, 3, 5))
     #    x = jnp.broadcast_to(x, (nx, sx, ny, sy, nz, sz))
     x = x isa Oceananigans.Field ? Reactant.ReactantCore.materialize_traced_array(Oceananigans.interior(x)) : x
-    x = Reactant.Ops.broadcast_in_dim(x, Int[1, 3, 5], Int[nx, sx, ny, sy, nz, sz])
-    #    x = jnp.reshape(x, (nx * sx, ny * sy, nz * sz))
-    x = reshape(x, (nx * sx, ny * sy, nz * sz))
+    # Block (nearest-neighbor) upsample. Julia's `reshape` is column-major, so
+    # to get block replication after the reshape we need the replication axes
+    # to be the FAST-varying ones. Place src dims at output dims [2,4,6] and
+    # the replication dims at [1,3,5] (shape [sx,nx,sy,ny,sz,nz]); then
+    # reshape to (sx*nx, sy*ny, sz*nz) yields each src cell repeated sx×sy×sz
+    # consecutively along each axis (= block-replicated upsample).
+    x = Reactant.Ops.broadcast_in_dim(x, Int[2, 4, 6], Int[sx, nx, sy, ny, sz, nz])
+    x = reshape(x, (sx * nx, sy * ny, sz * nz))
 
     #    summed = lax.reduce_window(
     #        x,
