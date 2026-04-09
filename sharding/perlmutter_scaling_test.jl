@@ -11,6 +11,7 @@ out_dir = joinpath(ENV["SCRATCH"], "GB25")
 submit   = true
 run_name = "r_react_"
 time     = "01:00:00"
+
 # We want to preserve a 2:1 aspect ratio for the x:y dimensions in all runs
 # so we pick Ngpus from the set of numbers 8*n^2 where n is any integer.
 # We also try to pick the those numbers which are as close as possible to powers of 2,
