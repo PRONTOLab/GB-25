@@ -168,8 +168,14 @@ function set_baroclinic_instability_from_file!(model, path::String)
         (T_src, S_src)
     end
 
-    @jit resize_linear!(model.tracers.T, Reactant.to_rarray(T_for_jit))
-    @jit resize_linear!(model.tracers.S, Reactant.to_rarray(S_for_jit))
+    @jit interpolate_3d!(model.tracers.T, Reactant.to_rarray(T_for_jit))
+    @jit interpolate_3d!(model.tracers.S, Reactant.to_rarray(S_for_jit))
+
+    # println(@code_hlo interpolate_3d!(model.tracers.T, Reactant.to_rarray(ones(
+    #                                                             eltype(model.tracers.T),
+    #                                                             size(model.tracers.T) .÷ 2
+    #                                                                           ))))
+    # println(@code_hlo interpolate_3d!(model.tracers.S, Reactant.to_rarray(S_src)))
 
     return nothing
 end
