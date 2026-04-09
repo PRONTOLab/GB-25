@@ -25,7 +25,7 @@ end
 """
     factors(N::Int) -> Tuple{Int, Int}
 
-Return `(Dx, Dy)` such that `Dx * Dy == N` and `Dy == 2*Dx`.
+Return `(Dx, Dy)` such that `Dx * Dy == N` and `Dx == 2*Dy`.
 
 Requires `N` to be even and `N ÷ 2` to be a perfect square.
 
