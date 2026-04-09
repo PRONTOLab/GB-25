@@ -26,7 +26,7 @@ if !is_distributed_env_present()
     MPI.Init()
 end
 
-const CHECKPOINT = joinpath(@__DIR__, "initial_conditions", "baroclinic_ic_quarter_degree.jld2")
+const CHECKPOINT = joinpath(@__DIR__, "initial_conditions", "baroclinic_100day_quarter_degree.jld2")
 const Nx, Ny, Nz = 1536, 768, 64
 const Δt = 4minutes
 
