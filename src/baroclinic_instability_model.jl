@@ -109,9 +109,9 @@ end
 
 function set_baroclinic_instability_from_file!(model, path::String, mode::NeareastNeighbor)
     grid = model.grid
-    
     model_size = size(grid)
     halos = halo_size(grid)
+    FT = eltype(model.tracers.T)
 
     Nx_src, Ny_src, Nz_src, T_data, S_data = JLD2.jldopen(path, "r") do file
         (file["Nx"], file["Ny"], file["Nz"], file["T"], file["S"])
@@ -123,21 +123,89 @@ function set_baroclinic_instability_from_file!(model, path::String, mode::Nearea
 
     @info "src size: $((Nx_src, Ny_src, Nz_src))"
 
-    Rx = (model_size[1] + 2halos[1]) / Nx_src
-    Ry = (model_size[2] + 2halos[2]) / Ny_src
+    Nx_par = model_size[1] + 2halos[1]
+    Ny_par = model_size[2] + 2halos[2]
+    Hz = halos[3]
+    Rx = Nx_par / Nx_src
+    Ry = Ny_par / Ny_src
 
     @info "model $((Rx, Ry)) times larger than initial condition in x, y, respectively"
-
-    Px = 1:model_size[1]+2halos[1]
-    Py = 1:model_size[2]+2halos[2]
-    Pz = 1:model_size[3]
 
     Sp = parent(model.tracers.S)
     Tp = parent(model.tracers.T)
 
-    @jit raise=true launch!(architecture(grid), grid, KernelParameters(Px, Py, Pz), _nearest_neighbor_data_copy!, Sp, Tp, Rx, Ry, halos[3], S_data, T_data)
+    if architecture(grid) isa ShardedDistributedArch
+        # Distributed Reactant: build ConcreteIFRTArray from per-rank local data only,
+        # without any cross-process communication or full-array allocation.
+        arch = architecture(grid)
+        ri, rj, _ = arch.local_index
+        Nx_local, Ny_local = model_size[1], model_size[2]
+
+        # Source dimensions owned by this rank
+        src_nx, src_ny, _ = Oceananigans.DistributedComputations.local_size(arch, (Nx_src, Ny_src, Nz_src))
+
+        # Offset into the global source array for this rank (0 when not partitioned)
+        src_i₁ = 1 + (arch.partition.x === nothing ? 0 : sum(Oceananigans.DistributedComputations.local_sizes(Nx_src, arch.partition.x)[1:ri-1]))
+        src_j₁ = 1 + (arch.partition.y === nothing ? 0 : sum(Oceananigans.DistributedComputations.local_sizes(Ny_src, arch.partition.y)[1:rj-1]))
+
+        # Local source slices for this rank
+        T_src_local = T_data[src_i₁:(src_i₁+src_nx-1), src_j₁:(src_j₁+src_ny-1), :]
+        S_src_local = S_data[src_i₁:(src_i₁+src_nx-1), src_j₁:(src_j₁+src_ny-1), :]
+
+        # Nearest-neighbor upsampling from this rank's source slice to its local interior
+        Rx_local = Nx_local / src_nx
+        Ry_local = Ny_local / src_ny
+
+        # Build the local parent (interior nearest-neighbor filled, halos zeroed).
+        # Halos will be properly set by fill_halo_regions! before first use.
+        function build_local_parent(src_local)
+            par = zeros(FT, Nx_par, Ny_par, Nz_src + 2Hz)
+            for li in 1:Nx_local
+                src_i = clamp(ceil(Int, li / Rx_local), 1, src_nx)
+                for lj in 1:Ny_local
+                    src_j = clamp(ceil(Int, lj / Ry_local), 1, src_ny)
+                    for lk in 1:Nz_src
+                        par[li + Hx, lj + Hy, lk + Hz] = FT(src_local[src_i, src_j, lk])
+                    end
+                end
+            end
+            return par
+        end
+
+        T_ancestor = Reactant.ancestor(Tp)
+        reactant_sharding = Sharding.unwrap_shardinfo(T_ancestor.sharding)
+        global_parent_shape = size(T_ancestor)
+
+        new_T = ConcreteIFRTArray([build_local_parent(T_src_local)], global_parent_shape; sharding=reactant_sharding)
+        new_S = ConcreteIFRTArray([build_local_parent(S_src_local)], global_parent_shape; sharding=reactant_sharding)
+
+        @jit myassign!(Tp, new_T)
+        @jit myassign!(Sp, new_S)
+    else
+        Px = 1:Nx_par
+        Py = 1:Ny_par
+        Pz = 1:model_size[3]
+        @jit raise=true launch!(architecture(grid), grid, KernelParameters(Px, Py, Pz),
+                                _nearest_neighbor_data_copy!, Sp, Tp, Rx, Ry, Hz, S_data, T_data)
+    end
 
     return nothing
+end
+
+function myassign!(dst, src)
+    dst .= src
+    return nothing
+end
+
+function nearest_interpolate(T, shape)
+    Nx, Ny, Nz = size(T)
+    Tx, Ty, Tz = shape
+    Sx, Sy, Sz = Tx÷Nx, Ty÷Ny, Tz÷Nz
+
+    T = @opcall broadcast_in_dim(T, Int[1, 3, 5], Int[Nx, Sx, Ny, Sy, Nz, Sz])
+    T = @opcall reshape(T, Int[Tx, Ty, Tz])
+
+    return T
 end
 
 function set_baroclinic_instability_from_file!(model, path::String, mode::LinearInterpolation)
