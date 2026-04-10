@@ -26,26 +26,35 @@ end
     factors(N::Int) -> Tuple{Int, Int}
 
 Return `(Dx, Dy)` such that `Dx * Dy == N` and `Dx == 2*Dy`.
+
 Requires `N` to be even and `N ÷ 2` to be a perfect square.
 
 # Special cases
-
 Some values of `N` do not satisfy the general constraints but we
 still want to handle
 - `N = 4` (single node) → `(2, 2)`
-- `N = 9180` (ALPS full system size) → `(68, 135)`
+- `N = 16` → `(4, 4)`
+- `N = 9180` (ALPS full system size) → `(135, 68)`
 """
 function factors(N::Int)
-    special_cases = Dict(4 => (2, 2), 16 => (4, 4), 9152 => (143, 64), 9180 => (135, 68))
+    special_cases = Dict(
+        4 => (2, 2),
+        16 => (4, 4),
+        9152 => (143, 64),
+        9180 => (135, 68),
+    )
     haskey(special_cases, N) && return special_cases[N]
 
     iseven(N) || throw(ArgumentError("N must be even; got N = $N"))
+
     Nhalf = N ÷ 2
     D = isqrt(Nhalf)
+
     D^2 == Nhalf || throw(ArgumentError("N ÷ 2 = $Nhalf is not a perfect square"))
 
     Dx = 2*D
     Dy = D
+
     return Dx, Dy
 end
 

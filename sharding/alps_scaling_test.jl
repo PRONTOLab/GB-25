@@ -12,12 +12,14 @@ account  = "g209"
 submit   = true #false
 run_name = "reactant_"
 time     = "00:30:00"
+
 # We want to preserve a 2:1 aspect ratio for the x:y dimensions in all runs
 # so we pick Ngpu from the set of numbers 8*n^2 where n is any integer.
 # We also try to pick the those numbers which are as close as possible to powers of 2,
 # and such that the sum of all the numbers is less than 2*8192 (so they can be run simultaneously).
 # Also 9180 is chosen specifically because it is the alps system size
-Ngpus     = [4, 8, 16, 32, 72, 128, 288, 512, 968, 2048, 3872, 8192, 9180]
+Ngpus     = [4, 8, 16, 32, 72, 128, 288, 512, 968, 2048, 3872, 8192, 9152]
+
 type     = "weak"
 
 gpus_per_node = 4
@@ -65,7 +67,7 @@ export NCCL_NCHANNELS_PER_NET_PEER=4
 
 # Tell NCLL to use fast network, this may solve some rendezvous failures
 export NCCL_SOCKET_IFNAME="hsn"
-
+    
 # Equivalent to loading the `aws-ofi-nccl` module, without having to load it:
 # https://docs.cscs.ch/software/communication/nccl/#uenv
 export LD_LIBRARY_PATH="/user-environment/linux-neoverse_v2/aws-ofi-nccl-1.17.1-rpvjytyqpdw2taig4xibhrtgudie4a3q/lib:/user-environment/linux-neoverse_v2/libfabric-2.3.1-npwd54pnpalgjcizhpejkh7gwg4c7idu/lib:/user-environment/linux-neoverse_v2/aws-ofi-nccl-1.17.1-rpvjytyqpdw2taig4xibhrtgudie4a3q/lib"
