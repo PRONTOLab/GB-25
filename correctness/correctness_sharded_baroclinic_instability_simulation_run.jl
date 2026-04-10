@@ -1,3 +1,6 @@
+# single node CPU command
+#julia --project=. -O0 --threads=16 correctness/correctness_sharded_baroclinic_instability_simulation_run.jl --float-type=Float64 --target-float-type=Float32 --dimension=first
+
 using GordonBell25
 using Oceananigans
 
@@ -10,7 +13,7 @@ const parsed_args = GordonBell25.parse_baroclinic_instability_args(;
 default_float_type = GordonBell25.float_type_from_args(parsed_args)
 Oceananigans.defaults.FloatType = default_float_type
 using Reactant
-
+Reactant.set_default_backend("cpu")
 if !GordonBell25.is_distributed_env_present()
     using MPI
     MPI.Init()
@@ -24,7 +27,8 @@ atol = 0
 GordonBell25.initialize(; single_gpu_per_process=false)
 @show Ndev = length(Reactant.devices())
 
-Rx, Ry = GordonBell25.factors(Ndev)
+# Single-device runs should stay on the unsharded path.
+Rx, Ry = Ndev == 1 ? (1, 1) : GordonBell25.factors(Ndev)
 
 
 rarch = Oceananigans.ReactantState()
@@ -66,7 +70,7 @@ vi = 1e-3 .* rand(size(vmodel.velocities.v)...)
 set!(vmodel, u=ui, v=vi)
 GordonBell25.sync_states!(rmodel, vmodel)
 
-compile_options = CompileOptions(; sync=true, raise=true, strip_llvm_debuginfo=true, strip=["enzymexla.kernel_call", "(::Reactant.Compiler.LLVMFunc", "ka_with_reactant", "(::KernelAbstractions.Kernel", "var\"#_launch!;_launch!"], multifloat=GordonBell25.multifloat_from_args(parsed_args))
+compile_options = CompileOptions(; sync=true, raise=true, strip_llvm_debuginfo=true, strip=:all, multifloat=GordonBell25.multifloat_from_args(parsed_args))
 
 @info "At the beginning:"
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
