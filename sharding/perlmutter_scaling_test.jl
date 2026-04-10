@@ -30,9 +30,16 @@ perlmutter_config = JobConfig(; username, account, out_dir, time, cpus_per_task,
 function perlmutter_submit_job_writer(cfg::JobConfig, job_name, Nnodes, job_dir, Ngpu,
                                       resolution_fraction, project_path, run_file)
 
-    x, y = (256,256) # the largest grid that I know fits
-    # x, y = (320, 320) # think might also fit, but the test crashed for other reasons
-    # x, y = (384, 384) # pretty sure this doesn't quite fit
+    # # grid sizes for sharded_baroclinic_instability_simulation_run.jl
+    # x, y, z = (256,256, 128) # the largest grid that I know fits
+    # x, y, z = (320, 320, 128) # think might also fit, but the test crashed for other reasons
+    # x, y, z = (384, 384, 128) # pretty sure this doesn't quite fit
+
+    # grid sizes for sharded_atmosphere_simulation_run.jl
+    # x, y, z = (568, 568, 64)
+    # x, y, z = (640, 640, 64) # seems to fit on 1 node
+    x, y, z = (672, 672, 64)
+    # x, y, z = (768, 768, 64) # daniel is pretty sure that this will be too big
 
 #SBATCH -q premium
                 """
@@ -78,7 +85,7 @@ export JULIA_CUDA_USE_COMPAT=false
 srun -n $(Nnodes) -c 32 -G $(Ngpu) --cpu-bind=verbose,cores \
     $(job_dir)/launcher.sh \
     $(Base.julia_cmd()[1]) --project=$(project_path) --compiled-modules=strict -O0 \
-    $(run_file) --grid-x $(x) --grid-y $(y) --grid-z 128
+    $(run_file) --grid-x $(x) --grid-y $(y) --grid-z $(z)
 """
 end
 
