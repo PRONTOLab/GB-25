@@ -77,7 +77,8 @@ function make_compile_options(parsed_args)
 end
 
 function init_harness(parsed_args)
-    default_float_type = GordonBell25.float_type_from_string(parsed_args["float-type"])
+    # Keep tolerance semantics identical to correctness_sharded_baroclinic_instability_simulation_run.jl.
+    default_float_type = GordonBell25.float_type_from_args(parsed_args)
     Oceananigans.defaults.FloatType = default_float_type
 
     Reactant.set_default_backend("cpu")
@@ -224,6 +225,7 @@ end
 
 function prepare_state_for_compile!(h::DebugHarness, stage::Symbol, scratch; loop_count::Int)
     for dep in STAGE_DEPS[stage]
+        @info "Preparing prerequisite for compile" stage dep
         ensure_compiled!(h, dep; loop_count)
         run_compiled_stage!(h, dep, scratch.rmodel, scratch.vmodel; count = loop_count)
     end
@@ -237,6 +239,7 @@ function ensure_compiled!(h::DebugHarness, stage::Symbol; loop_count::Int=h.pars
     scratch = build_model_pair(h)
     prepare_state_for_compile!(h, stage, scratch; loop_count)
 
+    @info "Compiling stage thunk" stage key
     thunk = if stage == :initialize
         @compile compile_options = h.compile_options Oceananigans.initialize!(scratch.rmodel)
     elseif stage == :update_state
@@ -288,6 +291,7 @@ function check_stage!(
     time_step_count::Int=1,
     loop_count::Int=h.parsed_args["loop-count"],
     compare_initial::Bool=true,
+    compare_after_prereqs::Bool=true,
     throw_error::Bool=true,
 )
     pair = build_model_pair(h)
@@ -300,7 +304,18 @@ function check_stage!(
     end
 
     for dep in STAGE_DEPS[stage]
+        @info "Running prerequisite stage" stage dep
         run_compiled_stage!(h, dep, pair.rmodel, pair.vmodel; count = loop_count)
+    end
+
+    if compare_after_prereqs && !isempty(STAGE_DEPS[stage])
+        compare_models!(
+            h,
+            pair.rmodel,
+            pair.vmodel;
+            label = "After prerequisites for $(stage):",
+            throw_error,
+        )
     end
 
     if stage == :time_step
