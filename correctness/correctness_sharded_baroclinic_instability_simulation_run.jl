@@ -72,27 +72,43 @@ GordonBell25.sync_states!(rmodel, vmodel)
 
 compile_options = CompileOptions(; sync=true, raise=true, strip_llvm_debuginfo=true, strip=:all, multifloat=GordonBell25.multifloat_from_args(parsed_args))
 
+function timed_phase(label, f)
+    @info "$label [start]"
+    t0 = time()
+    result = f()
+    @info "$label [done]" elapsed_s = round(time() - t0; digits=3)
+    return result
+end
+
 @info "At the beginning:"
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
-@jit compile_options=compile_options Oceananigans.initialize!(rmodel)
+timed_phase("Reactant initialize!(rmodel)") do
+    @jit compile_options=compile_options Oceananigans.initialize!(rmodel)
+end
 Oceananigans.initialize!(vmodel)
 
-@jit compile_options=compile_options Oceananigans.TimeSteppers.update_state!(rmodel)
+timed_phase("Reactant update_state!(rmodel)") do
+    @jit compile_options=compile_options Oceananigans.TimeSteppers.update_state!(rmodel)
+end
 Oceananigans.TimeSteppers.update_state!(vmodel)
 
 @info "After initialization and update state:"
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
 GordonBell25.sync_states!(rmodel, vmodel)
-rfirst! = @compile compile_options=compile_options GordonBell25.first_time_step!(rmodel)
+rfirst! = timed_phase("Compile first_time_step!(rmodel)") do
+    @compile compile_options=compile_options GordonBell25.first_time_step!(rmodel)
+end
 @showtime rfirst!(rmodel)
 @showtime GordonBell25.first_time_step!(vmodel)
 
 @info "After first time step:"
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
-rstep! = @compile compile_options=compile_options GordonBell25.time_step!(rmodel)
+rstep! = timed_phase("Compile time_step!(rmodel)") do
+    @compile compile_options=compile_options GordonBell25.time_step!(rmodel)
+end
 
 @info "Warm up:"
 @showtime rstep!(rmodel)
@@ -122,7 +138,9 @@ GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, at
 
 Nt = 100
 rNt = ConcreteRNumber(Nt)
-rloop! = @compile compile_options=compile_options GordonBell25.loop!(rmodel, rNt)
+rloop! = timed_phase("Compile loop!(rmodel, rNt)") do
+    @compile compile_options=compile_options GordonBell25.loop!(rmodel, rNt)
+end
 @showtime rloop!(rmodel, rNt)
 @showtime GordonBell25.loop!(vmodel, Nt)
 
