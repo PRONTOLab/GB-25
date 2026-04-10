@@ -124,6 +124,8 @@ function set_baroclinic_instability_from_file!(model, path::String, mode::Nearea
     Rx = (model_size[1] + halos[1]) / Nx_src
     Ry = (model_size[2] + halos[2]) / Ny_src
 
+    @info "model $((Rx, Ry)) times larger than initial condition in x, y, respectively"
+
     Px = 1:model_size[1]
     Py = 1:model_size[2]
     Pz = 1:model_size[3]
