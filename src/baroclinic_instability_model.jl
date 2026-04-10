@@ -91,7 +91,7 @@ function baroclinic_instability_model(arch, Nx, Ny, Nz; Δt,
     model.clock.last_Δt = Δt
 
     if initial_conditions_path !== nothing
-        @jit raise=true set_baroclinic_instability_from_file!(model, initial_conditions_path, interpolation_mode)
+        set_baroclinic_instability_from_file!(model, initial_conditions_path, interpolation_mode)
     end
 
     return model
@@ -135,7 +135,7 @@ function set_baroclinic_instability_from_file!(model, path::String, mode::Nearea
     Sp = parent(model.tracers.S)
     Tp = parent(model.tracers.T)
 
-    launch!(architecture(grid), grid, KernelParameters(Px, Py, Pz), _nearest_neighbor_data_copy!, Sp, Tp, Rx, Ry, halos[3], S_data, T_data)
+    @jit raise=true launch!(architecture(grid), grid, KernelParameters(Px, Py, Pz), _nearest_neighbor_data_copy!, Sp, Tp, Rx, Ry, halos[3], S_data, T_data)
 
     return nothing
 end
