@@ -72,7 +72,7 @@ GordonBell25.sync_states!(rmodel, vmodel)
 
 compile_options = CompileOptions(; sync=true, raise=true, strip_llvm_debuginfo=true, strip=:all, multifloat=GordonBell25.multifloat_from_args(parsed_args))
 
-function timed_phase(label, f)
+function timed_phase(f, label)
     @info "$label [start]"
     t0 = time()
     result = f()
