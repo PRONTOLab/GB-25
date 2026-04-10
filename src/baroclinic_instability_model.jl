@@ -1,4 +1,7 @@
 using Oceananigans.Grids: halo_size
+using Oceananigans.Utils: launch!
+using Oceananigans.Architectures: architecture
+using KernelAbstractions: @kernel, @index
 
 struct NeareastNeighbor end
 struct LinearInterpolation end
