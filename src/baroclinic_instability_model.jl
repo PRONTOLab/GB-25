@@ -1,5 +1,5 @@
 using Oceananigans.Grids: halo_size
-using Oceananigans.Utils: launch!
+using Oceananigans.Utils: launch!, KernelParameters
 using Oceananigans.Architectures: architecture
 using KernelAbstractions: @kernel, @index
 
@@ -131,7 +131,7 @@ function set_baroclinic_instability_from_file!(model, path::String, mode::Nearea
     Sp = parent(model.tracers.S)
     Tp = parent(model.tracers.T)
 
-    launch!(architecture(grid), grid, (Px, Py, Pz), _nearest_neighbor_data_copy!, Sp, Tp, Rx, Ry, S_data, T_data)
+    launch!(architecture(grid), grid, KernelParameters(Px, Py, Pz), _nearest_neighbor_data_copy!, Sp, Tp, Rx, Ry, S_data, T_data)
 
     return nothing
 end
