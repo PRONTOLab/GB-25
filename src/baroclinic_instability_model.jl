@@ -1,3 +1,5 @@
+using Oceananigans.Grids: halo_size
+
 struct NeareastNeighbor end
 struct LinearInterpolation end
 
