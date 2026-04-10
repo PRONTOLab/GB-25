@@ -97,13 +97,13 @@ function baroclinic_instability_model(arch, Nx, Ny, Nz; Δt,
     return model
 end
 
-@kernel function _nearest_neighbor_data_copy!(Sp, Tp, Rx, Ry, S_data, T_data)
+@kernel function _nearest_neighbor_data_copy!(Sp, Tp, Rx, Ry, Hz, S_data, T_data)
     i, j, k = @index(Global, NTuple)
     i′ = ceil(Int, i / Rx)
     j′ = ceil(Int, j / Ry)
     @inbounds begin
-        Sp[i, j, k] = S_data[i′, j′, k]
-        Tp[i, j, k] = T_data[i′, j′, k]
+        Sp[i, j, k+Hz] = S_data[i′, j′, k]
+        Tp[i, j, k+Hz] = T_data[i′, j′, k]
     end
 end
 
@@ -121,19 +121,21 @@ function set_baroclinic_instability_from_file!(model, path::String, mode::Nearea
         throw("The grid levels and the data levels need to be the same!")
     end
 
+    @info "src size: $((Nx_src, Ny_src, Nz_src))"
+
     Rx = (model_size[1] + 2halos[1]) / Nx_src
     Ry = (model_size[2] + 2halos[2]) / Ny_src
 
     @info "model $((Rx, Ry)) times larger than initial condition in x, y, respectively"
 
-    Px = 1:model_size[1]
-    Py = 1:model_size[2]
+    Px = 1:model_size[1]+2halos[1]
+    Py = 1:model_size[2]+2halos[2]
     Pz = 1:model_size[3]
 
     Sp = parent(model.tracers.S)
     Tp = parent(model.tracers.T)
 
-    launch!(architecture(grid), grid, KernelParameters(Px, Py, Pz), _nearest_neighbor_data_copy!, Sp, Tp, Rx, Ry, S_data, T_data)
+    launch!(architecture(grid), grid, KernelParameters(Px, Py, Pz), _nearest_neighbor_data_copy!, Sp, Tp, Rx, Ry, halos[3], S_data, T_data)
 
     return nothing
 end
