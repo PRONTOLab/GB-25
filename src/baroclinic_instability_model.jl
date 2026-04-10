@@ -201,7 +201,7 @@ function set_baroclinic_instability_from_file!(model, path::String, mode::Nearea
 
         rassign! = @compile myassign!(Tp, new_T)
         rassign!(Tp, new_T)
-        rassign!(Tp, new_S)
+        rassign!(Sp, new_S)
     else
         Px = 1:Nx_par
         Py = 1:Ny_par
