@@ -108,8 +108,10 @@ end
 end
 
 function set_baroclinic_instability_from_file!(model, path::String, mode::NeareastNeighbor)
-    model_size = size(model.grid)
-    halos = halo_size(model.grid)
+    grid = model.grid
+    
+    model_size = size(grid)
+    halos = halo_size(grid)
 
     Nx_src, Ny_src, Nz_src, T_data, S_data = JLD2.jldopen(path, "r") do file
         (file["Nx"], file["Ny"], file["Nz"], file["T"], file["S"])
