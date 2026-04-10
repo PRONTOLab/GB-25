@@ -94,8 +94,8 @@ end
 
 @kernel function _nearest_neighbor_data_copy!(Sp, Tp, Rx, Ry, S_data, T_data)
     i, j, k = @index(Global, NTuple)
-    i′ = ceil(i / Rx)
-    j′ = ceil(j / Ry)
+    i′ = ceil(Int, i / Rx)
+    j′ = ceil(Int, j / Ry)
     @inbounds begin
         Sp[i, j, k] = S_data[i′, j′, k]
         Tp[i, j, k] = T_data[i′, j′, k]
@@ -116,7 +116,6 @@ function set_baroclinic_instability_from_file!(model, path::String, mode::Nearea
 
     Rx = (model_size[1] + halos[1]) / Nx_src
     Ry = (model_size[2] + halos[2]) / Ny_src
-    Rz = 1 # Has to have the same vertical resolution!
 
     Px = 1:model_size[1]
     Py = 1:model_size[2]
