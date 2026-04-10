@@ -121,8 +121,8 @@ function set_baroclinic_instability_from_file!(model, path::String, mode::Nearea
         throw("The grid levels and the data levels need to be the same!")
     end
 
-    Rx = (model_size[1] + halos[1]) / Nx_src
-    Ry = (model_size[2] + halos[2]) / Ny_src
+    Rx = (model_size[1] + 2halos[1]) / Nx_src
+    Ry = (model_size[2] + 2halos[2]) / Ny_src
 
     @info "model $((Rx, Ry)) times larger than initial condition in x, y, respectively"
 
