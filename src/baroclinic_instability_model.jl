@@ -1,3 +1,6 @@
+struct NeareastNeighbor end
+struct LinearInterpolation end
+
 @inline function initial_buoyancy(λ, φ, z)
     N² = 4e-6  # [s⁻²] buoyancy frequency / stratification
     Δb = 0.005 # [m/s²] buoyancy difference
@@ -8,7 +11,6 @@
     return N² * z + Δb * μ + 1e-2 * Δb * randn()
 end
 
-
 function baroclinic_instability_model(arch; resolution, Nz, kw...)
     Nx, Ny = resolution_to_points(resolution)
     return baroclinic_instability_model(arch, Nx, Ny, Nz; kw...)
@@ -17,6 +19,7 @@ end
 function baroclinic_instability_model(arch, Nx, Ny, Nz; Δt,
     initial_conditions_path::Union{Nothing,String} = joinpath(dirname(@__DIR__), "simulations", "initial_conditions", "baroclinic_100day_quarter_degree.jld2"),
     halo = (8, 8, 8),
+    interpolation_mode = NeareastNeighbor(),
     grid_type = :simple_lat_lon, # :gaussian_islands
 
     # Fewer substeps can be used at higher resolutions
@@ -83,13 +86,51 @@ function baroclinic_instability_model(arch, Nx, Ny, Nz; Δt,
     model.clock.last_Δt = Δt
 
     if initial_conditions_path !== nothing
-        set_baroclinic_instability_from_file!(model, initial_conditions_path)
+        set_baroclinic_instability_from_file!(model, initial_conditions_path, interpolation_mode)
     end
 
     return model
 end
 
-function set_baroclinic_instability_from_file!(model, path::String)
+@kernel function _nearest_neighbor_data_copy!(Sp, Tp, Rx, Ry, S_data, T_data)
+    i, j, k = @index(Global, NTuple)
+    i′ = ceil(i / Rx)
+    j′ = ceil(j / Ry)
+    @inbounds begin
+        Sp[i, j, k] = S_data[i′, j′, k]
+        Tp[i, j, k] = T_data[i′, j′, k]
+    end
+end
+
+function set_baroclinic_instability_from_file!(model, path::String, mode::NeareastNeighbor)
+    model_size = size(model.grid)
+    halos = halo_size(model.grid)
+
+    Nx_src, Ny_src, Nz_src, T_data, S_data = JLD2.jldopen(path, "r") do file
+        (file["Nx"], file["Ny"], file["Nz"], file["T"], file["S"])
+    end
+
+    if Nz_src != model_size[3]
+        @throw "The grid levels and the data levels need to be the same!"
+    end
+
+    Rx = (model_size[1] + halos[1]) / Nx_src
+    Ry = (model_size[2] + halos[2]) / Ny_src
+    Rz = 1 # Has to have the same vertical resolution!
+
+    Px = 1:model_size[1]
+    Py = 1:model_size[2]
+    Pz = 1:model_size[3]
+
+    Sp = parent(model.tracers.S)
+    Tp = parent(model.tracers.T)
+
+    launch!(architecture(grid), grid, (Px, Py, Pz), _nearest_neighbor_data_copy!, Sp, Tp, Rx, Ry, S_data, T_data)
+
+    return nothing
+end
+
+function set_baroclinic_instability_from_file!(model, path::String, mode::LinearInterpolation)
     Nx_src, Ny_src, Nz_src, T_data, S_data = JLD2.jldopen(path, "r") do file
         (file["Nx"], file["Ny"], file["Nz"], file["T"], file["S"])
     end
