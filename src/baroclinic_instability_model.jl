@@ -111,7 +111,7 @@ function set_baroclinic_instability_from_file!(model, path::String, mode::Nearea
     end
 
     if Nz_src != model_size[3]
-        @throw "The grid levels and the data levels need to be the same!"
+        throw("The grid levels and the data levels need to be the same!")
     end
 
     Rx = (model_size[1] + halos[1]) / Nx_src
