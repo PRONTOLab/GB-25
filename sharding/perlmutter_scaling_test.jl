@@ -16,7 +16,7 @@ time     = "01:00:00"
 # so we pick Ngpus from the set of numbers 8*n^2 where n is any integer.
 # We also try to pick the those numbers which are as close as possible to powers of 2,
 # and such that the sum of all the numbers is less than 2*8192 (so they can be run simultaneously).
-Ngpus     = [4, 8, 32, 72, 128, 288, 512, 968, 2048, 3872, 8192]
+Ngpus     = [4, 8, 32, 72, 128, 288, 512, 968, 2048, 3872, 6136]
 Ngpus     = [4]
 
 type     = "weak"
