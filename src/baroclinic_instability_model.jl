@@ -91,7 +91,7 @@ function baroclinic_instability_model(arch, Nx, Ny, Nz; Δt,
     model.clock.last_Δt = Δt
 
     if initial_conditions_path !== nothing
-        set_baroclinic_instability_from_file!(model, initial_conditions_path, interpolation_mode)
+        @jit set_baroclinic_instability_from_file!(model, initial_conditions_path, interpolation_mode)
     end
 
     return model
