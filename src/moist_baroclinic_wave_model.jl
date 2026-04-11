@@ -468,6 +468,12 @@ function set_moist_baroclinic_wave_from_file!(model, path::String; H = 30e3, int
              file["ρθ"], file["ρqᵛ"])
         end
 
+    ρqcl_data, ρqci_data = JLD2.jldopen(path, "r") do file
+        ρqcl = haskey(file, "micro_ρqᶜˡ") ? file["micro_ρqᶜˡ"] : nothing
+        ρqci = haskey(file, "micro_ρqᶜⁱ") ? file["micro_ρqᶜⁱ"] : nothing
+        (ρqcl, ρqci)
+    end
+
     expected_c  = (Nλ_src, Nφ_src,     Nz_src    )
     expected_xf = (Nλ_src, Nφ_src,     Nz_src    )
     expected_yf = (Nλ_src, Nφ_src + 1, Nz_src    )
@@ -491,6 +497,15 @@ function set_moist_baroclinic_wave_from_file!(model, path::String; H = 30e3, int
         (ρθ_data,  model.formulation.potential_temperature_density),
         (ρqv_data, model.moisture_density),
     ]
+
+    if ρqcl_data !== nothing
+        push!(pairs, (ρqcl_data, model.microphysical_fields[:ρqᶜˡ]))
+        @info "Loading micro_ρqᶜˡ from IC file" extrema=extrema(ρqcl_data)
+    end
+    if ρqci_data !== nothing
+        push!(pairs, (ρqci_data, model.microphysical_fields[:ρqᶜⁱ]))
+        @info "Loading micro_ρqᶜⁱ from IC file" extrema=extrema(ρqci_data)
+    end
 
     for (src_array, target_field) in pairs
         target_data = Reactant.ancestor(target_field)
@@ -518,9 +533,9 @@ end
 """
     set_moist_baroclinic_wave_from_file_vanilla!(model, path::String; H = 30e3)
 
-Load the prognostic state (`ρ, ρu, ρv, ρw, ρθ, ρqᵛ`) from a JLD2 checkpoint
-and nearest-neighbor interpolate onto the model fields using a KernelAbstractions
-kernel.  Works on CPU (and GPU) without Reactant.
+Load the prognostic state (`ρ, ρu, ρv, ρw, ρθ, ρqᵛ` and optionally `ρqᶜˡ, ρqᶜⁱ`)
+from a JLD2 checkpoint and nearest-neighbor interpolate onto the model fields using
+a KernelAbstractions kernel.  Works on CPU (and GPU) without Reactant.
 """
 function set_moist_baroclinic_wave_from_file_vanilla!(model, path::String; H = 30e3, interpolation_type = :nearest)
     interpolation_type === :nearest || error("Vanilla IC loader only supports :nearest interpolation, got :$interpolation_type")
@@ -530,6 +545,12 @@ function set_moist_baroclinic_wave_from_file_vanilla!(model, path::String; H = 3
              file["ρ"], file["ρu"], file["ρv"], file["ρw"],
              file["ρθ"], file["ρqᵛ"])
         end
+
+    ρqcl_data, ρqci_data = JLD2.jldopen(path, "r") do file
+        ρqcl = haskey(file, "micro_ρqᶜˡ") ? file["micro_ρqᶜˡ"] : nothing
+        ρqci = haskey(file, "micro_ρqᶜⁱ") ? file["micro_ρqᶜⁱ"] : nothing
+        (ρqcl, ρqci)
+    end
 
     expected_c  = (Nλ_src, Nφ_src,     Nz_src    )
     expected_xf = (Nλ_src, Nφ_src,     Nz_src    )
@@ -554,6 +575,15 @@ function set_moist_baroclinic_wave_from_file_vanilla!(model, path::String; H = 3
         (FT.(ρθ_data),  model.formulation.potential_temperature_density),
         (FT.(ρqv_data), model.moisture_density),
     ]
+
+    if ρqcl_data !== nothing
+        push!(pairs, (FT.(ρqcl_data), model.microphysical_fields[:ρqᶜˡ]))
+        @info "Loading micro_ρqᶜˡ from IC file" extrema=extrema(ρqcl_data)
+    end
+    if ρqci_data !== nothing
+        push!(pairs, (FT.(ρqci_data), model.microphysical_fields[:ρqᶜⁱ]))
+        @info "Loading micro_ρqᶜⁱ from IC file" extrema=extrema(ρqci_data)
+    end
 
     for (src_array, target_field) in pairs
         Nx_src_f, Ny_src_f, Nz_src_f = size(src_array)
