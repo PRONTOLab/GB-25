@@ -486,7 +486,11 @@ function set_moist_baroclinic_wave_from_file!(model, path::String; H = 30e3)
         @info "InterpolateArray" field=nameof(typeof(target_field)) src=size(src_array) dst=target_size halo
         result = InterpolateArray(FT.(src_array), target_size, sharding,
                                   InterpolationType.Linear, halo)
-        copyto!(target_data, result)
+        # Directly swap the IFRT buffer instead of copyto!, which compiles an XLA
+        # program that fails in multi-node distributed runs because ifrt_copy_array
+        # attempts to address non-local devices.
+        target_data.data     = result.data
+        target_data.sharding = result.sharding
     end
 
     return nothing
