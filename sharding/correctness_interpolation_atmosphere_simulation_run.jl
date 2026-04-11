@@ -59,7 +59,7 @@ Ndev = if rarch isa Oceananigans.ReactantState
 # ═══════════════════════════════════════════════════════════════════════════════
 
 ic_path = joinpath(pkgdir(GordonBell25), "simulations", "initial_conditions",
-                   "atmosphere_coarsened_32x16x8.jld2")
+                   "atmosphere_coarsened_1536x768x64.jld2")
 if !isfile(ic_path)
     error("IC file not found at $ic_path — this test requires file-based ICs")
 end
