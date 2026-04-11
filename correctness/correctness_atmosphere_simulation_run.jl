@@ -31,6 +31,7 @@ model_kw = (;
     Nz   = parsed_args["grid-z"],
     halo = (8, 8, 8),
     Δt   = 1e-9,
+    initial_conditions_path = nothing,
 )
 
 rarch = Oceananigans.Architectures.ReactantState()
