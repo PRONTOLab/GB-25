@@ -296,6 +296,14 @@ function set_moist_baroclinic_wave!(model)
     end
 end
 
+@kernel function _nn_atmos_field_copy!(field, src_data, Nx_src, Ny_src, Nz_src, Nx_dst, Ny_dst, Nz_dst)
+    i, j, k = @index(Global, NTuple)
+    i′ = clamp(ceil(Int, i * Nx_src / Nx_dst), 1, Nx_src)
+    j′ = clamp(ceil(Int, j * Ny_src / Ny_dst), 1, Ny_src)
+    k′ = clamp(ceil(Int, k * Nz_src / Nz_dst), 1, Nz_src)
+    @inbounds field[i, j, k] = src_data[i′, j′, k′]
+end
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Model constructor
 # ═══════════════════════════════════════════════════════════════════════════
@@ -425,7 +433,12 @@ function moist_baroclinic_wave_model(arch;
     if initial_conditions_path === nothing
         set_moist_baroclinic_wave!(model)
     else
-        set_moist_baroclinic_wave_from_file!(model, initial_conditions_path; H = H)
+        grid_arch = model.grid.architecture
+        if grid_arch isa ReactantState || grid_arch isa ShardedDistributedArch
+            set_moist_baroclinic_wave_from_file!(model, initial_conditions_path; H = H)
+        else
+            set_moist_baroclinic_wave_from_file_vanilla!(model, initial_conditions_path; H = H)
+        end
     end
 
     return model
@@ -485,12 +498,74 @@ function set_moist_baroclinic_wave_from_file!(model, path::String; H = 30e3)
 
         @info "InterpolateArray" field=nameof(typeof(target_field)) src=size(src_array) dst=target_size halo
         result = InterpolateArray(FT.(src_array), target_size, sharding,
-                                  InterpolationType.Linear, halo)
+                                  InterpolationType.Nearest, halo)
         # Directly swap the IFRT buffer instead of copyto!, which compiles an XLA
         # program that fails in multi-node distributed runs because ifrt_copy_array
         # attempts to address non-local devices.
         target_data.data     = result.data
         target_data.sharding = result.sharding
+    end
+
+    return nothing
+end
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Initial conditions from a JLD2 checkpoint — vanilla Oceananigans
+# ═══════════════════════════════════════════════════════════════════════════
+
+"""
+    set_moist_baroclinic_wave_from_file_vanilla!(model, path::String; H = 30e3)
+
+Load the prognostic state (`ρ, ρu, ρv, ρw, ρθ, ρqᵛ`) from a JLD2 checkpoint
+and nearest-neighbor interpolate onto the model fields using a KernelAbstractions
+kernel.  Works on CPU (and GPU) without Reactant.
+"""
+function set_moist_baroclinic_wave_from_file_vanilla!(model, path::String; H = 30e3)
+    Nλ_src, Nφ_src, Nz_src, ρ_data, ρu_data, ρv_data, ρw_data, ρθ_data, ρqv_data =
+        JLD2.jldopen(path, "r") do file
+            (file["Nλ"], file["Nφ"], file["Nz"],
+             file["ρ"], file["ρu"], file["ρv"], file["ρw"],
+             file["ρθ"], file["ρqᵛ"])
+        end
+
+    expected_c  = (Nλ_src, Nφ_src,     Nz_src    )
+    expected_xf = (Nλ_src, Nφ_src,     Nz_src    )
+    expected_yf = (Nλ_src, Nφ_src + 1, Nz_src    )
+    expected_zf = (Nλ_src, Nφ_src,     Nz_src + 1)
+    size(ρ_data)   == expected_c  || error("ρ size $(size(ρ_data)) ≠ $expected_c from $path")
+    size(ρu_data)  == expected_xf || error("ρu size $(size(ρu_data)) ≠ $expected_xf from $path")
+    size(ρv_data)  == expected_yf || error("ρv size $(size(ρv_data)) ≠ $expected_yf from $path")
+    size(ρw_data)  == expected_zf || error("ρw size $(size(ρw_data)) ≠ $expected_zf from $path")
+    size(ρθ_data)  == expected_c  || error("ρθ size $(size(ρθ_data)) ≠ $expected_c from $path")
+    size(ρqv_data) == expected_c  || error("ρqᵛ size $(size(ρqv_data)) ≠ $expected_c from $path")
+
+    grid = model.grid
+    arch = Oceananigans.architecture(grid)
+    FT   = eltype(grid)
+
+    pairs = [
+        (FT.(ρ_data),   dynamics_density(model.dynamics)),
+        (FT.(ρu_data),  model.momentum.ρu),
+        (FT.(ρv_data),  model.momentum.ρv),
+        (FT.(ρw_data),  model.momentum.ρw),
+        (FT.(ρθ_data),  model.formulation.potential_temperature_density),
+        (FT.(ρqv_data), model.moisture_density),
+    ]
+
+    for (src_array, target_field) in pairs
+        Nx_src_f, Ny_src_f, Nz_src_f = size(src_array)
+        Nx_dst, Ny_dst, Nz_dst = size(Oceananigans.interior(target_field))
+
+        Px = 1:Nx_dst
+        Py = 1:Ny_dst
+        Pz = 1:Nz_dst
+
+        @info "NN interpolate" field=nameof(typeof(target_field)) src=size(src_array) dst=(Nx_dst, Ny_dst, Nz_dst)
+        Oceananigans.Utils.launch!(arch, grid, (Px, Py, Pz),
+            _nn_atmos_field_copy!, target_field, src_array,
+            Nx_src_f, Ny_src_f, Nz_src_f, Nx_dst, Ny_dst, Nz_dst)
+
+        Oceananigans.BoundaryConditions.fill_halo_regions!(target_field)
     end
 
     return nothing
