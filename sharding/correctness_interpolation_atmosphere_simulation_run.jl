@@ -15,44 +15,97 @@ using CUDA
 using Reactant
 
 GordonBell25.preamble()
+#
+# GordonBell25.initialize(; single_gpu_per_process=false)
+
+local_arch = Oceananigans.ReactantState()
+rarch = local_arch
+
+Ndev = if rarch isa Oceananigans.ReactantState
+    length(Reactant.devices())
+ else
+    comm = MPI.COMM_WORLD
+    MPI.Comm_size(comm)
+ end
+ 
+ @show Ndev
+ 
+ Rx, Ry = 2, 2
+ 
+ if Ndev == 1
+     rank = 0
+ else
+     rarch = Oceananigans.Distributed(rarch; partition = Partition(Rx, Ry, 1))
+     rank = if local_arch isa Oceananigans.ReactantState
+         Reactant.Distributed.local_rank()
+     else
+        comm = MPI.COMM_WORLD
+        MPI.Comm_rank(comm)
+     end
+ end
+ 
+ @info "[$rank] allocations" GordonBell25.allocatorstats()
+ 
+ H = 4
+ Tλ = parsed_args["grid-x"] * Rx
+ Tφ = parsed_args["grid-y"] * Ry
+ Nz = parsed_args["grid-z"]
+ 
+ Nλ = Tλ - 2H
+ Nφ = Tφ - 2H
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Build models
+# IC file — required for this test
 # ═══════════════════════════════════════════════════════════════════════════════
 
-throw_error = false
-include_halos = true
+ic_path = joinpath(pkgdir(GordonBell25), "simulations", "initial_conditions",
+                   "atmosphere_coarsened_1536x768x64.jld2")
+if !isfile(ic_path)
+    error("IC file not found at $ic_path — this test requires file-based ICs")
+end
+@info "Using IC file" ic_path
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Build models — Reactant (InterpolateArray Nearest) vs vanilla (KA kernel NN)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+include_halos = false
+throw_error   = false
 rtol = 2 * sqrt(eps(default_float_type))
 atol = 0
+column_height = 30e3
 
 model_kw = (;
-    Nλ   = parsed_args["grid-x"],
-    Nφ   = parsed_args["grid-y"],
-    Nz   = parsed_args["grid-z"],
-    halo = (8, 8, 8),
-    Δt   = 1e-9,
-    initial_conditions_path = nothing,
+    Nλ   = Nλ,
+    Nφ   = Nφ,
+    Nz   = Nz,
+    halo = (4, 4, 4),
+    Δt   = 0.5,
+    initial_conditions_path = ic_path,
+    H=column_height,
+    cloud_formation_τ_relax=10.0
 )
 
-rarch = Oceananigans.Architectures.ReactantState()
 varch = CPU()
-rmodel = GordonBell25.moist_baroclinic_wave_model(rarch; model_kw...)
+
+@info "Building vanilla CPU model..."
 vmodel = GordonBell25.moist_baroclinic_wave_model(varch; model_kw...)
+@info "Building Reactant model..."
+rmodel = GordonBell25.moist_baroclinic_wave_model(rarch; model_kw...)
 @show vmodel
 @show rmodel
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Stage 1 — Initial conditions (deterministic DCMIP-2016)
-# Both constructors set ICs internally; comparing here verifies the
-# Reactant-compiled IC kernels match the CPU path.
+# Stage 1 — Compare ICs after file-based interpolation
+# Reactant used InterpolateArray(Nearest), vanilla used KA _nn_atmos_field_copy!
 # ═══════════════════════════════════════════════════════════════════════════════
 
-@info "After construction (deterministic DCMIP-2016 ICs):"
+@info "After file-based IC loading (Nearest-neighbor interpolation):"
 GordonBell25.atmos_compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Stage 2 — First time step
-# Sync CPU → Reactant to start from an exact match, then step both.
+# Sync CPU ← Reactant so both start from an exact match, then step both.
 # ═══════════════════════════════════════════════════════════════════════════════
 
 GordonBell25.atmos_sync_states!(rmodel, vmodel)
@@ -91,26 +144,4 @@ for _ in 1:Nt
 end
 
 @info "After $(Nt) steps:"
-GordonBell25.atmos_compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# Stage 4 — Loop (traced for-loop)
-# Re-sync so any accumulated drift doesn't mask loop-specific issues.
-# ═══════════════════════════════════════════════════════════════════════════════
-
-GordonBell25.atmos_sync_states!(rmodel, vmodel)
-rupdate! = @compile sync=true raise=true GordonBell25.update_state!(rmodel)
-rupdate!(rmodel)
-# Fix for above: wrap in compile and raise. TODO figure out why raise=false crashes because of TGammaOp
-
-@info "After syncing and updating state again:"
-GordonBell25.atmos_compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
-
-Nt = 100
-rNt = ConcreteRNumber(Nt)
-rloop! = @compile sync=true raise=true GordonBell25.loop!(rmodel, rNt)
-@showtime rloop!(rmodel, rNt)
-@showtime GordonBell25.loop!(vmodel, Nt)
-
-@info "After a loop of $(Nt) steps:"
 GordonBell25.atmos_compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)

@@ -50,6 +50,7 @@ model_kw = (;
     Nλ, Nφ, Nz,
     halo = (H, H, H),
     Δt   = 1e-9,
+    initial_conditions_path=nothing,
 )
 
 varch = CPU()
