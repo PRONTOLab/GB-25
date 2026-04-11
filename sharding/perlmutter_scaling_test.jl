@@ -30,9 +30,9 @@ perlmutter_config = JobConfig(; username, account, out_dir, time, cpus_per_task,
 function perlmutter_submit_job_writer(cfg::JobConfig, job_name, Nnodes, job_dir, Ngpu,
                                       resolution_fraction, project_path, run_file)
 
-    x, y = (256,256) # the largest grid that I know fits
-    # x, y = (320, 320) # think might also fit, but the test crashed for other reasons
-    # x, y = (384, 384) # pretty sure this doesn't quite fit
+    x, y = (256,256) # fits easily
+    # x, y = (320, 320) # should fit fine, peak in use 21GB on 512 GPU
+    # x, y = (384, 384) # seems to run fine in most cases, but might be close, has immediate returned before, peak in use nearly 30GB on 288GPU
 
 #SBATCH -q premium
                 """
