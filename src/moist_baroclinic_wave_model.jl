@@ -556,12 +556,8 @@ function set_moist_baroclinic_wave_from_file_vanilla!(model, path::String; H = 3
         Nx_src_f, Ny_src_f, Nz_src_f = size(src_array)
         Nx_dst, Ny_dst, Nz_dst = size(Oceananigans.interior(target_field))
 
-        Px = 1:Nx_dst
-        Py = 1:Ny_dst
-        Pz = 1:Nz_dst
-
         @info "NN interpolate" field=nameof(typeof(target_field)) src=size(src_array) dst=(Nx_dst, Ny_dst, Nz_dst)
-        Oceananigans.Utils.launch!(arch, grid, (Px, Py, Pz),
+        Oceananigans.Utils.launch!(arch, grid, :xyz,
             _nn_atmos_field_copy!, target_field, src_array,
             Nx_src_f, Ny_src_f, Nz_src_f, Nx_dst, Ny_dst, Nz_dst)
 

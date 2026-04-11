@@ -88,10 +88,10 @@ model_kw = (;
 
 varch = CPU()
 
-@info "Building Reactant model..."
-rmodel = GordonBell25.moist_baroclinic_wave_model(rarch; model_kw...)
 @info "Building vanilla CPU model..."
 vmodel = GordonBell25.moist_baroclinic_wave_model(varch; model_kw...)
+@info "Building Reactant model..."
+rmodel = GordonBell25.moist_baroclinic_wave_model(rarch; model_kw...)
 @show vmodel
 @show rmodel
 
