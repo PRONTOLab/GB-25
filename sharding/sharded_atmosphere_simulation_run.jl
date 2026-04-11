@@ -91,19 +91,15 @@ column_height = 30e3   # m; default column height in moist_baroclinic_wave_model
 # and `interpolate!` scatters into the sharded target.
 # Falls back to analytic IC if the file is missing.
 
-### UNCOMMENT FOR OLD INITIALIZATION
+_ic_path = joinpath(pkgdir(GordonBell25), "simulations", "initial_conditions",
+                    "atmosphere_coarsened_1536x768x64.jld2")
+initial_conditions_path = isfile(_ic_path) ? _ic_path : nothing
 
-# _ic_path = joinpath(pkgdir(GordonBell25), "simulations", "initial_conditions",
-#                     "atmosphere_coarsened_1536x768x64.jld2")
-# initial_conditions_path = isfile(_ic_path) ? _ic_path : nothing
-
-# if initial_conditions_path !== nothing
-#     @info "[$rank] Initializing from file" initial_conditions_path
-# else
-#     @warn "[$rank] IC file not found at $_ic_path — using analytic IC"
-# end
-
-initial_conditions_path = nothing
+if initial_conditions_path !== nothing
+    @info "[$rank] Initializing from file" initial_conditions_path
+else
+    @warn "[$rank] IC file not found at $_ic_path — using analytic IC"
+end
 
 @info "[$rank] Generating atmosphere model (Nλ=$Nλ, Nφ=$Nφ, Nz=$Nz, Δt=$(round(Δt; sigdigits=3))s)..." now(UTC)
 model = GordonBell25.moist_baroclinic_wave_model(arch; Nλ, Nφ, Nz, H=column_height, Δt,
