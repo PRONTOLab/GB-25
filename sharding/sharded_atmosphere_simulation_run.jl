@@ -125,16 +125,16 @@ compile_options = CompileOptions(; sync=true, raise=true, strip_llvm_debuginfo=t
 
 profile_dir = joinpath(@__DIR__, "profiling", jobid_procid)
 
-# @info "[$rank] Compiling first_time_step!..." now(UTC)
-# mkpath(joinpath(profile_dir, "compile_first_time_step"))
-# rfirst! = begin
-# #  Reactant.with_profiler(joinpath(profile_dir, "compile_first_time_step")) do
-#     if local_arch isa Oceananigans.ReactantState
-#          @time "[$rank] compile first_time_step!" @compile compile_options=compile_options first_time_step!(model)
-#     else
-#          first_time_step!
-#     end
-# end
+@info "[$rank] Compiling first_time_step!..." now(UTC)
+mkpath(joinpath(profile_dir, "compile_first_time_step"))
+rfirst! = begin
+#  Reactant.with_profiler(joinpath(profile_dir, "compile_first_time_step")) do
+    if local_arch isa Oceananigans.ReactantState
+         @time "[$rank] compile first_time_step!" @compile compile_options=compile_options first_time_step!(model)
+    else
+         first_time_step!
+    end
+end
 
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 @info "[$rank] Compiling loop..." now(UTC)
@@ -151,14 +151,14 @@ end
 
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 
-# mkpath(joinpath(profile_dir, "first_time_step"))
-# @info "[$rank] Running first_time_step!..." now(UTC)
-# # Reactant.with_profiler(joinpath(profile_dir, "first_time_step")) do
-# #     Reactant.Profiler.annotate("first_time_step"; metadata=Dict("step_num" => 0, "_r" => 1)) do
-#         @time "[$rank] first_time_step!" rfirst!(model)
-#     # end
-# # end
-# @info "[$rank] allocations" GordonBell25.allocatorstats()
+mkpath(joinpath(profile_dir, "first_time_step"))
+@info "[$rank] Running first_time_step!..." now(UTC)
+# Reactant.with_profiler(joinpath(profile_dir, "first_time_step")) do
+#     Reactant.Profiler.annotate("first_time_step"; metadata=Dict("step_num" => 0, "_r" => 1)) do
+        @time "[$rank] first_time_step!" rfirst!(model)
+    # end
+# end
+@info "[$rank] allocations" GordonBell25.allocatorstats()
 
 mkpath(joinpath(profile_dir, "loop"))
 @info "[$rank] allocations" GordonBell25.allocatorstats()
@@ -213,7 +213,7 @@ mkpath(output_dir)
 
 # ─── Outer loop ───────────────────────────────────────────────────────
 
-const Nouter = 2
+const Nouter = 1200
 Ninner_val = 256
 
 
