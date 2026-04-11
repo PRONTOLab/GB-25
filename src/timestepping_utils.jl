@@ -1,6 +1,6 @@
 using Reactant
 using Oceananigans
-import Oceananigans.TimeSteppers: time_step!, update_state!
+import Oceananigans.TimeSteppers: time_step!, update_state!, maybe_prepare_first_time_step!
 using Oceananigans.Models: AbstractModel
 using Oceananigans.TimeSteppers: QuasiAdamsBashforth2TimeStepper
 using Reactant_jll: libReactantExtra
@@ -40,6 +40,8 @@ function first_time_step!(model)
     end
     return nothing
 end
+
+maybe_prepare_first_time_step!(::AtmosphereModel, callbacks) = nothing
 
 function first_time_step!(model::AtmosphereModel)
     Reactant.Profiler.annotate("first_time_step") do
