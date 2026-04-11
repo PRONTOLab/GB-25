@@ -36,8 +36,8 @@ function perlmutter_submit_job_writer(cfg::JobConfig, job_name, Nnodes, job_dir,
     # # x, y, z = (384, 384, 128) # pretty sure this doesn't quite fit
 
     # # grid sizes for sharded_atmosphere_simulation_run.jl
-    # x, y, z = (568, 568, 64)
-    x, y, z = (640, 640, 64) # gives Peak In Use: 30.446 GiB
+    # x, y, z = (576, 576, 64) # might be better off doing something like this, should be about 23GB
+    x, y, z = (640, 640, 64) # gives Peak In Use: 30.446 GiB might be risky
     # x, y, z = (672, 672, 64) # allocates about 30GB/GPU, probably don't want to go much higher
 
 #SBATCH -q premium
