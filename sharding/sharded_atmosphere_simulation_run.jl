@@ -5,6 +5,8 @@ ENV["JULIA_DEBUG"] = "Reactant_jll,Reactant"
 
 using GordonBell25
 using GordonBell25: first_time_step!, time_step!, loop!, factors, is_distributed_env_present
+using Breeze.AtmosphereModels: dynamics_density
+using Oceananigans.TimeSteppers: update_state!
 using Oceananigans
 
 const parsed_args = GordonBell25.parse_baroclinic_instability_args(;
@@ -93,6 +95,8 @@ column_height = 30e3   # m; default column height in moist_baroclinic_wave_model
 
 _ic_path = joinpath(pkgdir(GordonBell25), "simulations", "initial_conditions",
                     "atmosphere_coarsened_1536x768x64.jld2")
+# _ic_path = joinpath(pkgdir(GordonBell25), "simulations", "initial_conditions",
+#                     "atmosphere_no_microphysics_1deg_14day.jld2")
 initial_conditions_path = isfile(_ic_path) ? _ic_path : nothing
 
 if initial_conditions_path !== nothing
@@ -100,18 +104,20 @@ if initial_conditions_path !== nothing
 else
     @warn "[$rank] IC file not found at $_ic_path — using analytic IC"
 end
+# initial_conditions_path = nothing
 
 @info "[$rank] Generating atmosphere model (Nλ=$Nλ, Nφ=$Nφ, Nz=$Nz, Δt=$(round(Δt; sigdigits=3))s)..." now(UTC)
 model = GordonBell25.moist_baroclinic_wave_model(arch; Nλ, Nφ, Nz, H=column_height, Δt,
                                                  halo=(H, H, 4),
-                                                 cloud_formation_τ_relax=10.0,
+                                                 with_microphysics=false,
+                                                 # cloud_formation_τ_relax=100.0,
                                                  initial_conditions_path=initial_conditions_path,
-                                                 interpolation_type=:linear)
+                                                 interpolation_type=:nearest)
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 
 @show model
 
-Ninner = 256
+Ninner = 64
 
 if local_arch isa Oceananigans.ReactantState
     Ninner = if Ndev == 1
@@ -131,7 +137,7 @@ mkpath(joinpath(profile_dir, "compile_first_time_step"))
 rfirst! = begin
 #  Reactant.with_profiler(joinpath(profile_dir, "compile_first_time_step")) do
     if local_arch isa Oceananigans.ReactantState
-         @time "[$rank] compile first_time_step!" @compile compile_options=compile_options first_time_step!(model)
+         @time "[$rank] compile first_time_step!" @compile compile_options=compile_options update_state!(model, compute_tendencies=false)
     else
          first_time_step!
     end
@@ -170,6 +176,43 @@ mkpath(joinpath(profile_dir, "loop"))
 #     end
 # end
 
+function local_nan_check(rank, label, model)
+    @info "[$rank] NaN check: $label" now(UTC)
+    for (name, field) in [
+        ("ρ",   dynamics_density(model.dynamics)),
+        ("ρu",  model.momentum.ρu),
+        ("ρv",  model.momentum.ρv),
+        ("ρw",  model.momentum.ρw),
+        ("ρθ",  model.formulation.potential_temperature_density),
+        ("ρqᵛ", model.moisture_density),
+    ]
+        ifrt_arr = Reactant.ancestor(field)
+        local_shards = Reactant.XLA.IFRT.disassemble_into_single_device_arrays(ifrt_arr.data, true)
+        total_nan = 0
+        total_len = 0
+        lo = Inf
+        hi = -Inf
+        for shard in local_shards
+            shard_size = reverse(size(shard))
+            buf = Base.Array{eltype(ifrt_arr)}(undef, shard_size...)
+            Reactant.XLA.to_host(shard, buf, Reactant.Sharding.NoSharding())
+            total_len += length(buf)
+            for v in buf
+                if isnan(v)
+                    total_nan += 1
+                else
+                    lo = min(lo, v)
+                    hi = max(hi, v)
+                end
+            end
+        end
+        ex = total_len == total_nan ? (NaN, NaN) : (lo, hi)
+        @info "[$rank] $name  local_size=$total_len  extrema=$ex  NaN=$total_nan/$total_len"
+    end
+end
+
+local_nan_check(rank, "after first loop", model)
+
 mkpath(joinpath(profile_dir, "loop2"))
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 @info "[$rank] running second loop" now(UTC)
@@ -179,6 +222,8 @@ mkpath(joinpath(profile_dir, "loop2"))
 #     end
 # end
 @info "[$rank] allocations" GordonBell25.allocatorstats()
+
+local_nan_check(rank, "after second loop", model)
 
 # checkpoint_dir = joinpath(@__DIR__, "checkpoints", jobid_procid)
 # @info "[$rank] Saving sharded checkpoint..." now(UTC)
@@ -244,6 +289,8 @@ for k in 1:Nouter
             slices = output_slices)
     end
     @info "[$rank] saved block $k" block_dir
+
+    local_nan_check(rank, "block $k", model)
 
     flush(stderr); flush(stdout)
 end

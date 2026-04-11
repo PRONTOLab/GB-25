@@ -498,11 +498,12 @@ function set_moist_baroclinic_wave_from_file!(model, path::String; H = 30e3, int
         (ρqv_data, model.moisture_density),
     ]
 
-    if ρqcl_data !== nothing
+    has_microphysics = hasproperty(model, :microphysical_fields) && !isempty(model.microphysical_fields)
+    if ρqcl_data !== nothing && has_microphysics && haskey(model.microphysical_fields, :ρqᶜˡ)
         push!(pairs, (ρqcl_data, model.microphysical_fields[:ρqᶜˡ]))
         @info "Loading micro_ρqᶜˡ from IC file" extrema=extrema(ρqcl_data)
     end
-    if ρqci_data !== nothing
+    if ρqci_data !== nothing && has_microphysics && haskey(model.microphysical_fields, :ρqᶜⁱ)
         push!(pairs, (ρqci_data, model.microphysical_fields[:ρqᶜⁱ]))
         @info "Loading micro_ρqᶜⁱ from IC file" extrema=extrema(ρqci_data)
     end
@@ -514,8 +515,12 @@ function set_moist_baroclinic_wave_from_file!(model, path::String; H = 30e3, int
 
         @info "InterpolateArray" field=nameof(typeof(target_field)) src=size(src_array) dst=target_size halo
         itype = interpolation_type === :nearest ? InterpolationType.Nearest : InterpolationType.Linear
+        # Pass halo=(0,0,0): the source array has no halos (raw IC data), and
+        # target halos will be filled by fill_halo_regions! after interpolation.
+        halo = (4, 4, 4)
         result = InterpolateArray(FT.(src_array), target_size, sharding,
-                                  itype, halo)
+                              itype, halo;
+                              active_size = size(Oceananigans.interior(target_field)))
         # Directly swap the IFRT buffer instead of copyto!, which compiles an XLA
         # program that fails in multi-node distributed runs because ifrt_copy_array
         # attempts to address non-local devices.
@@ -576,11 +581,12 @@ function set_moist_baroclinic_wave_from_file_vanilla!(model, path::String; H = 3
         (FT.(ρqv_data), model.moisture_density),
     ]
 
-    if ρqcl_data !== nothing
+    has_micro = hasproperty(model, :microphysical_fields) && !isempty(model.microphysical_fields)
+    if ρqcl_data !== nothing && has_micro && haskey(model.microphysical_fields, :ρqᶜˡ)
         push!(pairs, (FT.(ρqcl_data), model.microphysical_fields[:ρqᶜˡ]))
         @info "Loading micro_ρqᶜˡ from IC file" extrema=extrema(ρqcl_data)
     end
-    if ρqci_data !== nothing
+    if ρqci_data !== nothing && has_micro && haskey(model.microphysical_fields, :ρqᶜⁱ)
         push!(pairs, (FT.(ρqci_data), model.microphysical_fields[:ρqᶜⁱ]))
         @info "Loading micro_ρqᶜⁱ from IC file" extrema=extrema(ρqci_data)
     end
