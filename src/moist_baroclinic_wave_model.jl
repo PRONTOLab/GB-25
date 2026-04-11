@@ -589,9 +589,15 @@ function set_moist_baroclinic_wave_from_file_vanilla!(model, path::String; H = 3
         Nx_src_f, Ny_src_f, Nz_src_f = size(src_array)
         Nx_dst, Ny_dst, Nz_dst = size(Oceananigans.interior(target_field))
 
+        # Move host-side source array to the model's architecture so the kernel
+        # can read it from device code (no-op on CPU; host→device copy on GPU).
+        # Without this, `_nn_atmos_field_copy!` fails to compile on CUDA with
+        # "Argument 4 ... is of type Array{Float32, 3}, which is not a bitstype".
+        src_dev = Oceananigans.on_architecture(arch, src_array)
+
         @info "NN interpolate" field=nameof(typeof(target_field)) src=size(src_array) dst=(Nx_dst, Ny_dst, Nz_dst)
         Oceananigans.Utils.launch!(arch, grid, :xyz,
-            _nn_atmos_field_copy!, target_field, src_array,
+            _nn_atmos_field_copy!, target_field, src_dev,
             Nx_src_f, Ny_src_f, Nz_src_f, Nx_dst, Ny_dst, Nz_dst)
 
         Oceananigans.BoundaryConditions.fill_halo_regions!(target_field)
