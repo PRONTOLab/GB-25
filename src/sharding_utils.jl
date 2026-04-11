@@ -38,6 +38,7 @@ still want to handle
 """
 function factors(N::Int)
     special_cases = Dict(
+        1 => (1, 1),
         4 => (2, 2),
         16 => (4, 4),
         9152 => (143, 64),
@@ -70,7 +71,7 @@ end
 
 function initialize(; kwargs...)
     # TODO: improve the condition by checking the device we're on?
-    if !(get(ENV, "CI", "false") == "true" || contains(get(ENV, "XLA_FLAGS", ""), "--xla_force_host_platform_device_count") || gethostname() == "hydra")
+    if !(get(ENV, "CI", "false") == "true" || contains(get(ENV, "XLA_FLAGS", ""), "--xla_force_host_platform_device_count"))
         Reactant.Distributed.initialize(; kwargs...)
     end
 end
