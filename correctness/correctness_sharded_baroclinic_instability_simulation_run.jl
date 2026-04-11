@@ -54,8 +54,8 @@ model_kw = (
 varch = CPU()
 rmodel = GordonBell25.baroclinic_instability_model(rarch, Nx, Ny, Nz; model_kw...)
 vmodel = GordonBell25.baroclinic_instability_model(varch, Nx, Ny, Nz; model_kw...)
-@show vmodel
-@show rmodel
+# @show vmodel
+# @show rmodel
 
 if Ndev != 1
   @assert rmodel.architecture isa Distributed
@@ -69,16 +69,16 @@ GordonBell25.sync_states!(rmodel, vmodel)
 compile_options = CompileOptions(; sync=true, raise=true, strip_llvm_debuginfo=true, strip=:all, multifloat=GordonBell25.multifloat_from_args(parsed_args))
 
 @info "At the beginning:"
-GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
+# GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
-@jit compile_options=compile_options Oceananigans.initialize!(rmodel)
+# @jit compile_options=compile_options Oceananigans.initialize!(rmodel)
 Oceananigans.initialize!(vmodel)
 
-@jit compile_options=compile_options Oceananigans.TimeSteppers.update_state!(rmodel)
+# @jit compile_options=compile_options Oceananigans.TimeSteppers.update_state!(rmodel)
 Oceananigans.TimeSteppers.update_state!(vmodel)
 
-@info "After initialization and update state:"
-GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
+# @info "After initialization and update state:"
+# GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 GordonBell25.sync_states!(rmodel, vmodel)
 
 rfirst! = @compile compile_options=compile_options GordonBell25.first_time_step!(rmodel)
