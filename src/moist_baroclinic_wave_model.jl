@@ -347,7 +347,8 @@ function moist_baroclinic_wave_model(arch;
                                      time_discretization = ExplicitTimeStepping(),
                                      with_microphysics = true,
                                      cloud_formation_τ_relax::Union{Nothing,Real} = nothing,
-                                     initial_conditions_path::Union{Nothing,String} = nothing)
+                                     initial_conditions_path::Union{Nothing,String} = nothing,
+                                     interpolation_type = :nearest)
 
     if isnothing(Δt)
         if time_discretization isa SplitExplicitTimeDiscretization
@@ -435,9 +436,9 @@ function moist_baroclinic_wave_model(arch;
     else
         grid_arch = model.grid.architecture
         if grid_arch isa ReactantState || grid_arch isa ShardedDistributedArch
-            set_moist_baroclinic_wave_from_file!(model, initial_conditions_path; H = H)
+            set_moist_baroclinic_wave_from_file!(model, initial_conditions_path; H = H, interpolation_type)
         else
-            set_moist_baroclinic_wave_from_file_vanilla!(model, initial_conditions_path; H = H)
+            set_moist_baroclinic_wave_from_file_vanilla!(model, initial_conditions_path; H = H, interpolation_type)
         end
     end
 
@@ -459,7 +460,7 @@ field's backing `ConcreteIFRTArray`, so this works identically for single-device
 and distributed (sharded) Reactant architectures — including face fields whose
 per-rank parent shape matches center fields on distributed grids.
 """
-function set_moist_baroclinic_wave_from_file!(model, path::String; H = 30e3)
+function set_moist_baroclinic_wave_from_file!(model, path::String; H = 30e3, interpolation_type = :nearest)
     Nλ_src, Nφ_src, Nz_src, ρ_data, ρu_data, ρv_data, ρw_data, ρθ_data, ρqv_data =
         JLD2.jldopen(path, "r") do file
             (file["Nλ"], file["Nφ"], file["Nz"],
@@ -497,8 +498,9 @@ function set_moist_baroclinic_wave_from_file!(model, path::String; H = 30e3)
         sharding    = target_data.sharding
 
         @info "InterpolateArray" field=nameof(typeof(target_field)) src=size(src_array) dst=target_size halo
+        itype = interpolation_type === :nearest ? InterpolationType.Nearest : InterpolationType.Linear
         result = InterpolateArray(FT.(src_array), target_size, sharding,
-                                  InterpolationType.Nearest, halo)
+                                  itype, halo)
         # Directly swap the IFRT buffer instead of copyto!, which compiles an XLA
         # program that fails in multi-node distributed runs because ifrt_copy_array
         # attempts to address non-local devices.
@@ -520,7 +522,8 @@ Load the prognostic state (`ρ, ρu, ρv, ρw, ρθ, ρqᵛ`) from a JLD2 checkp
 and nearest-neighbor interpolate onto the model fields using a KernelAbstractions
 kernel.  Works on CPU (and GPU) without Reactant.
 """
-function set_moist_baroclinic_wave_from_file_vanilla!(model, path::String; H = 30e3)
+function set_moist_baroclinic_wave_from_file_vanilla!(model, path::String; H = 30e3, interpolation_type = :nearest)
+    interpolation_type === :nearest || error("Vanilla IC loader only supports :nearest interpolation, got :$interpolation_type")
     Nλ_src, Nφ_src, Nz_src, ρ_data, ρu_data, ρv_data, ρw_data, ρθ_data, ρqv_data =
         JLD2.jldopen(path, "r") do file
             (file["Nλ"], file["Nφ"], file["Nz"],
