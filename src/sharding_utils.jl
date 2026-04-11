@@ -38,6 +38,7 @@ still want to handle
 """
 function factors(N::Int)
     special_cases = Dict(
+        1 => (1, 1)
         4 => (2, 2),
         16 => (4, 4),
         9152 => (143, 64),

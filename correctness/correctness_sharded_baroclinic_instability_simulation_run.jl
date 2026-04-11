@@ -28,7 +28,7 @@ GordonBell25.initialize(; single_gpu_per_process=false)
 @show Ndev = length(Reactant.devices())
 
 # Single-device runs should stay on the unsharded path.
-Rx, Ry = Ndev == 1 ? (1, 1) : GordonBell25.factors(Ndev)
+Rx, Ry = GordonBell25.factors(Ndev)
 
 
 rarch = Oceananigans.ReactantState()
