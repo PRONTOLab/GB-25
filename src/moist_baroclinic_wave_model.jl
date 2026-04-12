@@ -20,9 +20,9 @@ using Breeze.AtmosphereModels: dynamics_density, specific_prognostic_moisture
 using Breeze.Microphysics: NonEquilibriumCloudFormation, BulkMicrophysics
 using Oceananigans.Coriolis: HydrostaticSphericalCoriolis
 using Oceananigans.BoundaryConditions: FieldBoundaryConditions
-using Oceananigans.Architectures: ReactantState
-using Oceananigans.Grids: λnode, φnode, znode
-using Oceananigans.Fields: CenterField, XFaceField, YFaceField, ZFaceField
+using Oceananigans.Architectures: ReactantState, CPU
+using Oceananigans.Grids: λnode, φnode, znode, Center, Face, LatitudeLongitudeGrid
+using Oceananigans.Fields: CenterField, XFaceField, YFaceField, ZFaceField, Field
 using CloudMicrophysics
 using SpecialFunctions
 using CUDA
@@ -346,6 +346,10 @@ function moist_baroclinic_wave_model(arch;
                                      halo         = (8, 8, 8),
                                      time_discretization = ExplicitTimeStepping(),
                                      with_microphysics = true,
+                                     with_surface_fluxes = true,
+                                     with_advection = true,
+                                     with_coriolis = true,
+                                     sst_anomaly = 0,
                                      cloud_formation_τ_relax::Union{Nothing,Real} = nothing,
                                      initial_conditions_path::Union{Nothing,String} = nothing,
                                      interpolation_type = :nearest)
@@ -367,7 +371,7 @@ function moist_baroclinic_wave_model(arch;
                                  latitude  = (-80, 80),
                                  z = (0, H))
 
-    coriolis = SphericalCoriolis()
+    coriolis = with_coriolis ? SphericalCoriolis() : nothing
 
     dynamics = CompressibleDynamics(
         time_discretization;
@@ -375,13 +379,28 @@ function moist_baroclinic_wave_model(arch;
         reference_potential_temperature = theta_reference,
     )
 
-    microphysics = if with_microphysics
+    microphysics = if with_microphysics isa Symbol
+        # Named microphysics variants for ablation testing
+        if with_microphysics === :warm_1m
+            # Warm-phase 1M: liquid cloud formation only, no ice
+            ext = Base.get_extension(Breeze, :BreezeCloudMicrophysicsExt)
+            FT = Oceananigans.defaults.FloatType
+            if cloud_formation_τ_relax === nothing
+                cloud_formation = NonEquilibriumCloudFormation(nothing, nothing)  # defaults, but ice path inactive
+            else
+                rate = FT(1) / FT(cloud_formation_τ_relax)
+                cf = Breeze.Microphysics.ConstantRateCondensateFormation{FT}(rate)
+                cloud_formation = NonEquilibriumCloudFormation(cf, nothing)  # liquid only
+            end
+            ext.OneMomentCloudMicrophysics(; cloud_formation)
+        elseif with_microphysics === :kessler
+            # DCMIP2016 Kessler warm-rain scheme (no ice at all)
+            Breeze.Microphysics.DCMIP2016KesslerMicrophysics()
+        else
+            error("Unknown microphysics type: $with_microphysics")
+        end
+    elseif with_microphysics
         ext = Base.get_extension(Breeze, :BreezeCloudMicrophysicsExt)
-        # Mixed-phase NE 1M: both liquid and ice as phase indicators (matches
-        # Breeze's own examples/moist_baroclinic_wave.jl). If
-        # `cloud_formation_τ_relax` is set, override the default condensate
-        # formation rate (1/τ_relax) — useful for relaxing the microphysics
-        # CFL constraint by stretching the relaxation timescale.
         cloud_formation = if cloud_formation_τ_relax === nothing
             NonEquilibriumCloudFormation(nothing, nothing)
         else
@@ -399,31 +418,40 @@ function moist_baroclinic_wave_model(arch;
     # plain WENO can produce small negatives in qᵛ et al, which then feed back
     # through microphysics tendencies and blow up. Clamp to [0, 1] at the
     # advection step.
-    weno     = WENO(order = 5)
-    weno_pos = WENO(order = 5, bounds = (0, 1))
-    momentum_advection = weno
-    scalar_advection = if with_microphysics
-        (ρθ   = weno,
-         ρqᵛ  = weno_pos,
-         ρqᶜˡ = weno_pos,
-         ρqᶜⁱ = weno_pos,
-         ρqʳ  = weno_pos,
-         ρqˢ  = weno_pos)
+    if with_advection
+        weno     = WENO(order = 5)
+        weno_pos = WENO(order = 5, bounds = (0, 1))
+        momentum_advection = weno
+        scalar_advection = if with_microphysics
+            (ρθ   = weno,
+             ρqᵛ  = weno_pos,
+             ρqᶜˡ = weno_pos,
+             ρqᶜⁱ = weno_pos,
+             ρqʳ  = weno_pos,
+             ρqˢ  = weno_pos)
+        else
+            weno
+        end
     else
-        weno
+        momentum_advection = nothing
+        scalar_advection = nothing
     end
 
     # Prescribed-SST bulk surface flux boundary conditions
-    Cᴰ = 1e-3   # constant bulk exchange coefficient
-    Uᵍ = 1e-2   # gustiness [m/s]
-    T₀ = surface_temperature
+    boundary_conditions = if with_surface_fluxes
+        Cᴰ = 1e-3   # constant bulk exchange coefficient
+        Uᵍ = 1e-2   # gustiness [m/s]
+        T₀ = (λ, φ) -> surface_temperature(λ, φ) + sst_anomaly
 
-    ρu_bcs = FieldBoundaryConditions(bottom = BulkDrag(coefficient=Cᴰ, gustiness=Uᵍ, surface_temperature=T₀))
-    ρv_bcs = FieldBoundaryConditions(bottom = BulkDrag(coefficient=Cᴰ, gustiness=Uᵍ, surface_temperature=T₀))
-    ρe_bcs = FieldBoundaryConditions(bottom = BulkSensibleHeatFlux(coefficient=Cᴰ, gustiness=Uᵍ, surface_temperature=T₀))
-    ρqᵛ_bcs = FieldBoundaryConditions(bottom = BulkVaporFlux(coefficient=Cᴰ, gustiness=Uᵍ, surface_temperature=T₀))
+        ρu_bcs = FieldBoundaryConditions(bottom = BulkDrag(coefficient=Cᴰ, gustiness=Uᵍ, surface_temperature=T₀))
+        ρv_bcs = FieldBoundaryConditions(bottom = BulkDrag(coefficient=Cᴰ, gustiness=Uᵍ, surface_temperature=T₀))
+        ρe_bcs = FieldBoundaryConditions(bottom = BulkSensibleHeatFlux(coefficient=Cᴰ, gustiness=Uᵍ, surface_temperature=T₀))
+        ρqᵛ_bcs = FieldBoundaryConditions(bottom = BulkVaporFlux(coefficient=Cᴰ, gustiness=Uᵍ, surface_temperature=T₀))
 
-    boundary_conditions = (; ρu=ρu_bcs, ρv=ρv_bcs, ρe=ρe_bcs, ρqᵛ=ρqᵛ_bcs)
+        (; ρu=ρu_bcs, ρv=ρv_bcs, ρe=ρe_bcs, ρqᵛ=ρqᵛ_bcs)
+    else
+        NamedTuple()
+    end
 
     model = AtmosphereModel(grid; dynamics, coriolis, momentum_advection, scalar_advection,
                             microphysics, boundary_conditions)
@@ -507,20 +535,48 @@ function set_moist_baroclinic_wave_from_file!(model, path::String; H = 30e3, int
         @info "Loading micro_ρqᶜⁱ from IC file" extrema=extrema(ρqci_data)
     end
 
+    # Build a temporary CPU grid at source resolution so we can create proper
+    # fields with halos filled by Oceananigans (periodic in λ, bounded in φ/z).
+    src_grid = LatitudeLongitudeGrid(CPU();
+        size = (Nλ_src, Nφ_src, Nz_src),
+        halo = halo,
+        latitude  = (-90, 90),
+        longitude = (-180, 180),
+        z = (0, H))
+
     for (src_array, target_field) in pairs
         target_data = Reactant.ancestor(target_field)
         target_size = size(target_data)
         sharding    = target_data.sharding
 
-        @info "InterpolateArray" field=nameof(typeof(target_field)) src=size(src_array) dst=target_size halo
+        # 1. Create a source field on the CPU grid with matching location,
+        #    set its interior from the JLD2 data, and fill halos properly.
+        loc = Oceananigans.location(target_field)
+        iloc = map(L -> L(), loc)  # instantiate: (Center, Face, Center) → (Center(), Face(), Center())
+        src_field = Field(iloc, src_grid)
+        Oceananigans.interior(src_field) .= FT.(src_array)
+        Oceananigans.BoundaryConditions.fill_halo_regions!(src_field)
+        src_parent = parent(src_field)
+
+        # 2. Trim src_parent to Reactant's parent convention.
+        #    Vanilla: total_length(Face, Bounded, N, H) = N + 1 + 2H
+        #    Reactant: reactant_total_length(Face, Bounded, N, H) = N + 2H
+        #    So we drop the last row in face+bounded dimensions.
+        topo = Oceananigans.topology(src_grid)
+        trim(d) = loc[d] === Face && topo[d] === Bounded
+        rx = trim(1) ? (1:size(src_parent,1)-1) : Colon()
+        ry = trim(2) ? (1:size(src_parent,2)-1) : Colon()
+        rz = trim(3) ? (1:size(src_parent,3)-1) : Colon()
+        src_reactant = view(src_parent, rx, ry, rz)
+
+        @info "InterpolateArray" field=nameof(typeof(target_field)) loc src_parent=size(src_parent) src_reactant=size(src_reactant) dst=target_size halo
+
         itype = interpolation_type === :nearest ? InterpolationType.Nearest : InterpolationType.Linear
-        result = InterpolateArray(FT.(src_array), target_size, sharding,
-                                  itype, halo)
-        # Directly swap the IFRT buffer instead of copyto!, which compiles an XLA
-        # program that fails in multi-node distributed runs because ifrt_copy_array
-        # attempts to address non-local devices.
+        result = InterpolateArray(src_reactant, target_size, sharding, itype, halo)
         target_data.data     = result.data
         target_data.sharding = result.sharding
+
+        Oceananigans.BoundaryConditions.fill_halo_regions!(target_field)
     end
 
     return nothing
