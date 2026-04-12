@@ -540,7 +540,7 @@ function set_moist_baroclinic_wave_from_file!(model, path::String; H = 30e3, int
     src_grid = LatitudeLongitudeGrid(CPU();
         size = (Nλ_src, Nφ_src, Nz_src),
         halo = halo,
-        latitude  = (-90, 90),
+        latitude  = (-80, 80),
         longitude = (-180, 180),
         z = (0, H))
 
@@ -632,7 +632,7 @@ function set_moist_baroclinic_wave_from_file_vanilla!(model, path::String; H = 3
     src_grid = LatitudeLongitudeGrid(CPU();
         size = (Nλ_src, Nφ_src, Nz_src),
         halo = halo,
-        latitude  = (-90, 90),
+        latitude  = (-80, 80),
         longitude = (-180, 180),
         z = (0, H))
 
