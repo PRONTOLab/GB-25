@@ -5,7 +5,7 @@ using Oceananigans
 const parsed_args = GordonBell25.parse_baroclinic_instability_args(;
     grid_x_default = 64,
     grid_y_default = 64,
-    grid_z_default = 16,
+    grid_z_default = 64,
 )
 
 default_float_type = GordonBell25.float_type_from_args(parsed_args)
@@ -70,7 +70,7 @@ end
 @info "Using IC file" ic_path
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Build models — Reactant (InterpolateArray Nearest) vs vanilla (KA kernel NN)
+# Build models — Reactant (InterpolateArray Linear) vs vanilla (interpolate!)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 include_halos = false
@@ -85,7 +85,8 @@ model_kw = (;
     Nz   = Nz,
     halo = (4, 4, 4),
     Δt   = 0.5,
-    initial_conditions_path = ic_path,  # 1° file IC — test interpolation correctness
+    initial_conditions_path = ic_path,
+    interpolation_type = :linear,
     H=column_height,
     cloud_formation_τ_relax=10.0,
     sst_anomaly = parse(Float64, get(ENV, "SST_ANOMALY", "0")),
@@ -102,10 +103,10 @@ rmodel = GordonBell25.moist_baroclinic_wave_model(rarch; model_kw...)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Stage 1 — Compare ICs after file-based interpolation
-# Reactant used InterpolateArray(Nearest), vanilla used KA _nn_atmos_field_copy!
+# Reactant used InterpolateArray(Linear), vanilla used Oceananigans interpolate!
 # ═══════════════════════════════════════════════════════════════════════════════
 
-@info "After file-based IC loading (Nearest-neighbor interpolation):"
+@info "After file-based IC loading (linear interpolation):"
 GordonBell25.atmos_compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
 # ═══════════════════════════════════════════════════════════════════════════════
