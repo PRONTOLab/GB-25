@@ -69,16 +69,17 @@ GordonBell25.sync_states!(rmodel, vmodel)
 compile_options = CompileOptions(; sync=true, raise=true, strip_llvm_debuginfo=true, strip=:all, multifloat=GordonBell25.multifloat_from_args(parsed_args))
 
 @info "At the beginning:"
-# GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
+GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
+# Keep rmodel initialization/update on the CPU-reference side and copy state/caches over
+# to avoid paying this extra compile path before the kernels we want to debug.
 # @jit compile_options=compile_options Oceananigans.initialize!(rmodel)
 Oceananigans.initialize!(vmodel)
 
 # @jit compile_options=compile_options Oceananigans.TimeSteppers.update_state!(rmodel)
 Oceananigans.TimeSteppers.update_state!(vmodel)
 
-# cheat a bit but see if its still the same
-GordonBell25.sync_states!(rmodel, vmodel)
+GordonBell25.sync_states_and_caches!(rmodel, vmodel)
 @info "After initialization and update state:"
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
@@ -111,8 +112,9 @@ end
 @info "After $(Nt) steps:"
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
-GordonBell25.sync_states!(rmodel, vmodel)
-@jit Oceananigans.TimeSteppers.update_state!(rmodel)
+# Keep update_state on the CPU reference path and mirror the resulting state/caches.
+Oceananigans.TimeSteppers.update_state!(vmodel)
+GordonBell25.sync_states_and_caches!(rmodel, vmodel)
 
 @info "After syncing and updating state again:"
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)

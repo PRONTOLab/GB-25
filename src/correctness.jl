@@ -90,15 +90,61 @@ function compare_states(m1, m2; rtol=sqrt(eps(eltype(m1.grid))), atol=0,
 end
 
 function sync_states!(m1, m2)
-    Ψ1 = Oceananigans.fields(m1)
-    Ψ2 = Oceananigans.fields(m2)
-    for name in keys(Ψ1)
-        ψ1 = parent(Ψ1[name])
-        x, y, z = size(ψ1)
-        ψ2 = parent(Ψ2[name])
-        ψ2 = view(ψ2, 1:x, 1:y, 1:z)
-        copyto!(ψ1, Array(ψ2))
+    _sync_field_containers!(Oceananigans.fields(m1), Oceananigans.fields(m2))
+    return nothing
+end
+
+@inline function _trim_to_dest_shape(dest, src)
+    ndims(dest) == ndims(src) || return src
+    ranges = ntuple(d -> Base.OneTo(size(dest, d)), ndims(dest))
+    return view(src, ranges...)
+end
+
+function _sync_field_containers!(dst_fields, src_fields)
+    for name in keys(dst_fields)
+        haskey(src_fields, name) || continue
+        dst = parent(dst_fields[name])
+        src = parent(src_fields[name])
+        src = _trim_to_dest_shape(dst, src)
+        copyto!(dst, Array(src))
     end
+    return nothing
+end
+
+function sync_caches!(m1, m2)
+    _sync_field_containers!(m1.timestepper.Gⁿ, m2.timestepper.Gⁿ)
+    _sync_field_containers!(m1.timestepper.G⁻, m2.timestepper.G⁻)
+
+    if m1.free_surface isa Oceananigans.SplitExplicitFreeSurface &&
+       m2.free_surface isa Oceananigans.SplitExplicitFreeSurface
+        names = (:U, :V, :η)
+        Φ1 = NamedTuple(name => getproperty(m1.free_surface.filtered_state, name) for name in names)
+        Φ2 = NamedTuple(name => getproperty(m2.free_surface.filtered_state, name) for name in names)
+        _sync_field_containers!(Φ1, Φ2)
+    end
+
+    if m1.closure isa Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity &&
+       m2.closure isa Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity
+        names = (:κu, :κc, :κe, :Le, :Jᵇ)
+        Φ1 = NamedTuple(name => getproperty(m1.diffusivity_fields, name) for name in names)
+        Φ2 = NamedTuple(name => getproperty(m2.diffusivity_fields, name) for name in names)
+        _sync_field_containers!(Φ1, Φ2)
+    end
+
+    if m1.closure isa Oceananigans.TurbulenceClosures.TKEDissipationVerticalDiffusivity &&
+       m2.closure isa Oceananigans.TurbulenceClosures.TKEDissipationVerticalDiffusivity
+        names = (:κu, :κc, :κe, :κϵ, :Le, :Lϵ)
+        Φ1 = NamedTuple(name => getproperty(m1.diffusivity_fields, name) for name in names)
+        Φ2 = NamedTuple(name => getproperty(m2.diffusivity_fields, name) for name in names)
+        _sync_field_containers!(Φ1, Φ2)
+    end
+
+    return nothing
+end
+
+function sync_states_and_caches!(m1, m2)
+    sync_states!(m1, m2)
+    sync_caches!(m1, m2)
     return nothing
 end
 
