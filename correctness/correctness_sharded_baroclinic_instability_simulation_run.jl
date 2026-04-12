@@ -77,9 +77,10 @@ Oceananigans.initialize!(vmodel)
 # @jit compile_options=compile_options Oceananigans.TimeSteppers.update_state!(rmodel)
 Oceananigans.TimeSteppers.update_state!(vmodel)
 
-# @info "After initialization and update state:"
-# GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
+# cheat a bit but see if its still the same
 GordonBell25.sync_states!(rmodel, vmodel)
+@info "After initialization and update state:"
+GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
 rfirst! = @compile compile_options=compile_options GordonBell25.first_time_step!(rmodel)
 @showtime rfirst!(rmodel)
