@@ -71,23 +71,48 @@ compile_options = CompileOptions(; sync=true, raise=true, strip_llvm_debuginfo=t
 @info "At the beginning:"
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
-# Keep rmodel initialization/update on the CPU-reference side and copy state/caches over
-# to avoid paying this extra compile path before the kernels we want to debug.
-# @jit compile_options=compile_options Oceananigans.initialize!(rmodel)
+# Inline first_time_step!(model, Δt) as:
+#   initialize!(model)
+#   update_state!(model)
+#   time_step!(model, Δt)
+#
+# Debug strategy:
+# - run each stage on vmodel (CPU reference),
+# - run only the selected stage on rmodel,
+# - copy vmodel -> rmodel for non-selected stages to avoid extra compile paths.
+first_stage = Symbol(get(ENV, "GB_FIRST_TIME_STEP_STAGE", "time_step"))
+valid_stages = (:initialize, :update_state, :time_step)
+first_stage in valid_stages || error("GB_FIRST_TIME_STEP_STAGE=$(first_stage) is invalid. Use one of $(valid_stages).")
+@info "Inlining first_time_step! with target rmodel stage: $(first_stage)"
+
 Oceananigans.initialize!(vmodel)
-
-# @jit compile_options=compile_options Oceananigans.TimeSteppers.update_state!(rmodel)
-Oceananigans.TimeSteppers.update_state!(vmodel)
-
-GordonBell25.sync_states_and_caches!(rmodel, vmodel)
-@info "After initialization and update state:"
+if first_stage === :initialize
+    rinit! = @compile compile_options=compile_options Oceananigans.initialize!(rmodel)
+    @showtime rinit!(rmodel)
+else
+    GordonBell25.sync_states_and_caches!(rmodel, vmodel)
+end
+@info "After inlined stage: initialize!"
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
-rfirst! = @compile compile_options=compile_options GordonBell25.first_time_step!(rmodel)
-@showtime rfirst!(rmodel)
-@showtime GordonBell25.first_time_step!(vmodel)
+Oceananigans.TimeSteppers.update_state!(vmodel)
+if first_stage === :update_state
+    rupdate! = @compile compile_options=compile_options Oceananigans.TimeSteppers.update_state!(rmodel)
+    @showtime rupdate!(rmodel)
+else
+    GordonBell25.sync_states_and_caches!(rmodel, vmodel)
+end
+@info "After inlined stage: update_state!"
+GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
-@info "After first time step:"
+@showtime GordonBell25.time_step!(vmodel)
+if first_stage === :time_step
+    rfirst_stage! = @compile compile_options=compile_options GordonBell25.time_step!(rmodel)
+    @showtime rfirst_stage!(rmodel)
+else
+    GordonBell25.sync_states_and_caches!(rmodel, vmodel)
+end
+@info "After inlined stage: time_step! (first_time_step complete)"
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
 rstep! = @compile compile_options=compile_options GordonBell25.time_step!(rmodel)
