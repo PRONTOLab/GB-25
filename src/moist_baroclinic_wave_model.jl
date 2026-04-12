@@ -590,11 +590,10 @@ end
     set_moist_baroclinic_wave_from_file_vanilla!(model, path::String; H = 30e3)
 
 Load the prognostic state (`ρ, ρu, ρv, ρw, ρθ, ρqᵛ` and optionally `ρqᶜˡ, ρqᶜⁱ`)
-from a JLD2 checkpoint and nearest-neighbor interpolate onto the model fields using
-a KernelAbstractions kernel.  Works on CPU (and GPU) without Reactant.
+from a JLD2 checkpoint and interpolate onto the model fields using
+Oceananigans' `interpolate!`.  Works on CPU (and GPU) without Reactant.
 """
-function set_moist_baroclinic_wave_from_file_vanilla!(model, path::String; H = 30e3, interpolation_type = :nearest)
-    interpolation_type === :nearest || error("Vanilla IC loader only supports :nearest interpolation, got :$interpolation_type")
+function set_moist_baroclinic_wave_from_file_vanilla!(model, path::String; H = 30e3, halo = (4, 4, 4), interpolation_type = :nearest)
     Nλ_src, Nφ_src, Nz_src, ρ_data, ρu_data, ρv_data, ρw_data, ρθ_data, ρqv_data =
         JLD2.jldopen(path, "r") do file
             (file["Nλ"], file["Nφ"], file["Nz"],
@@ -608,55 +607,44 @@ function set_moist_baroclinic_wave_from_file_vanilla!(model, path::String; H = 3
         (ρqcl, ρqci)
     end
 
-    expected_c  = (Nλ_src, Nφ_src,     Nz_src    )
-    expected_xf = (Nλ_src, Nφ_src,     Nz_src    )
-    expected_yf = (Nλ_src, Nφ_src + 1, Nz_src    )
-    expected_zf = (Nλ_src, Nφ_src,     Nz_src + 1)
-    size(ρ_data)   == expected_c  || error("ρ size $(size(ρ_data)) ≠ $expected_c from $path")
-    size(ρu_data)  == expected_xf || error("ρu size $(size(ρu_data)) ≠ $expected_xf from $path")
-    size(ρv_data)  == expected_yf || error("ρv size $(size(ρv_data)) ≠ $expected_yf from $path")
-    size(ρw_data)  == expected_zf || error("ρw size $(size(ρw_data)) ≠ $expected_zf from $path")
-    size(ρθ_data)  == expected_c  || error("ρθ size $(size(ρθ_data)) ≠ $expected_c from $path")
-    size(ρqv_data) == expected_c  || error("ρqᵛ size $(size(ρqv_data)) ≠ $expected_c from $path")
-
     grid = model.grid
     arch = Oceananigans.architecture(grid)
     FT   = eltype(grid)
 
     pairs = [
-        (FT.(ρ_data),   dynamics_density(model.dynamics)),
-        (FT.(ρu_data),  model.momentum.ρu),
-        (FT.(ρv_data),  model.momentum.ρv),
-        (FT.(ρw_data),  model.momentum.ρw),
-        (FT.(ρθ_data),  model.formulation.potential_temperature_density),
-        (FT.(ρqv_data), model.moisture_density),
+        (ρ_data,   dynamics_density(model.dynamics)),
+        (ρu_data,  model.momentum.ρu),
+        (ρv_data,  model.momentum.ρv),
+        (ρw_data,  model.momentum.ρw),
+        (ρθ_data,  model.formulation.potential_temperature_density),
+        (ρqv_data, model.moisture_density),
     ]
 
     if ρqcl_data !== nothing
-        push!(pairs, (FT.(ρqcl_data), model.microphysical_fields[:ρqᶜˡ]))
+        push!(pairs, (ρqcl_data, model.microphysical_fields[:ρqᶜˡ]))
         @info "Loading micro_ρqᶜˡ from IC file" extrema=extrema(ρqcl_data)
     end
     if ρqci_data !== nothing
-        push!(pairs, (FT.(ρqci_data), model.microphysical_fields[:ρqᶜⁱ]))
+        push!(pairs, (ρqci_data, model.microphysical_fields[:ρqᶜⁱ]))
         @info "Loading micro_ρqᶜⁱ from IC file" extrema=extrema(ρqci_data)
     end
 
+    src_grid = LatitudeLongitudeGrid(CPU();
+        size = (Nλ_src, Nφ_src, Nz_src),
+        halo = halo,
+        latitude  = (-90, 90),
+        longitude = (-180, 180),
+        z = (0, H))
+
     for (src_array, target_field) in pairs
-        Nx_src_f, Ny_src_f, Nz_src_f = size(src_array)
-        Nx_dst, Ny_dst, Nz_dst = size(Oceananigans.interior(target_field))
+        loc = Oceananigans.location(target_field)
+        iloc = map(L -> L(), loc)
+        src_field = Field(iloc, src_grid)
+        Oceananigans.interior(src_field) .= FT.(src_array)
+        Oceananigans.BoundaryConditions.fill_halo_regions!(src_field)
 
-        # Move host-side source array to the model's architecture so the kernel
-        # can read it from device code (no-op on CPU; host→device copy on GPU).
-        # Without this, `_nn_atmos_field_copy!` fails to compile on CUDA with
-        # "Argument 4 ... is of type Array{Float32, 3}, which is not a bitstype".
-        src_dev = Oceananigans.on_architecture(arch, src_array)
-
-        @info "NN interpolate" field=nameof(typeof(target_field)) src=size(src_array) dst=(Nx_dst, Ny_dst, Nz_dst)
-        Oceananigans.Utils.launch!(arch, grid, :xyz,
-            _nn_atmos_field_copy!, target_field, src_dev,
-            Nx_src_f, Ny_src_f, Nz_src_f, Nx_dst, Ny_dst, Nz_dst)
-
-        Oceananigans.BoundaryConditions.fill_halo_regions!(target_field)
+        @info "interpolate!" field=nameof(typeof(target_field)) loc src=size(Oceananigans.interior(src_field)) dst=size(Oceananigans.interior(target_field))
+        Oceananigans.Fields.interpolate!(target_field, src_field)
     end
 
     return nothing
