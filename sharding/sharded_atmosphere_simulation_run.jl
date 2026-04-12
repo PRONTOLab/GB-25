@@ -112,10 +112,16 @@ model = GordonBell25.moist_baroclinic_wave_model(arch; Nλ, Nφ, Nz, H=column_he
                                                  with_microphysics=false,
                                                  # cloud_formation_τ_relax=100.0,
                                                  initial_conditions_path=initial_conditions_path,
-                                                 interpolation_type=:nearest)
+                                                 interpolation_type=:linear)
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 
 @show model
+
+@info "[$rank] Post-construction field extrema:"
+for (name, field) in pairs(Oceananigans.fields(model))
+    data = Array(parent(field))
+    @info "[$rank]   $name: extrema = $(extrema(data)), any_nan = $(any(isnan, data))"
+end
 
 Ninner = 64
 
@@ -259,7 +265,7 @@ mkpath(output_dir)
 
 # ─── Outer loop ───────────────────────────────────────────────────────
 
-const Nouter = 1200
+const Nouter = 4
 Ninner_val = 256
 
 

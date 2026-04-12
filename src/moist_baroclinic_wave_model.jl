@@ -485,6 +485,8 @@ function set_moist_baroclinic_wave_from_file!(model, path::String; H = 30e3, int
     size(ρθ_data)  == expected_c  || error("ρθ size $(size(ρθ_data)) ≠ $expected_c from $path")
     size(ρqv_data) == expected_c  || error("ρqᵛ size $(size(ρqv_data)) ≠ $expected_c from $path")
 
+    @info "Source data extrema" ρ=extrema(ρ_data) ρu=extrema(ρu_data) ρv=extrema(ρv_data) ρw=extrema(ρw_data) ρθ=extrema(ρθ_data) ρqᵛ=extrema(ρqv_data)
+
     grid = model.grid
     halo = Oceananigans.halo_size(grid)
     FT   = eltype(grid)
@@ -508,22 +510,22 @@ function set_moist_baroclinic_wave_from_file!(model, path::String; H = 30e3, int
         @info "Loading micro_ρqᶜⁱ from IC file" extrema=extrema(ρqci_data)
     end
 
+    itype = interpolation_type === :nearest ? InterpolationType.Nearest : InterpolationType.Linear
+
     for (src_array, target_field) in pairs
         target_data = Reactant.ancestor(target_field)
         target_size = size(target_data)
         sharding    = target_data.sharding
 
-        @info "InterpolateArray" field=nameof(typeof(target_field)) src=size(src_array) dst=target_size halo
-        itype = interpolation_type === :nearest ? InterpolationType.Nearest : InterpolationType.Linear
-        # Pass halo=(0,0,0): the source array has no halos (raw IC data), and
-        # target halos will be filled by fill_halo_regions! after interpolation.
-        halo = (4, 4, 4)
-        result = InterpolateArray(FT.(src_array), target_size, sharding,
-                              itype, halo;
-                              active_size = size(Oceananigans.interior(target_field)))
-        # Directly swap the IFRT buffer instead of copyto!, which compiles an XLA
-        # program that fails in multi-node distributed runs because ifrt_copy_array
-        # attempts to address non-local devices.
+        loc = Oceananigans.Fields.location(target_field)
+        face_dims = ntuple(d -> loc[d] === Oceananigans.Grids.Face, 3)
+
+        padded = prepare_source_for_interpolation(src_array, halo, face_dims, FT)
+
+        @info "FaceInterpolateArray" field=nameof(typeof(target_field)) src_raw=size(src_array) src_padded=size(padded) dst=target_size halo face_dims src_extrema=extrema(padded)
+        result = FaceInterpolateArray(padded, target_size, sharding,
+                                      itype, halo;
+                                      face_dims)
         target_data.data     = result.data
         target_data.sharding = result.sharding
     end
