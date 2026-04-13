@@ -32,7 +32,7 @@ SpecialFunctions = "276daf66-3868-5448-9aa4-cd146d93841b"
 [sources]
 Breeze = {rev = "glw/bw-stable-no-patch", url = "https://github.com/NumericalEarth/Breeze.jl.git"}
 NumericalEarth = {rev = "glw/manual-iterate", url = "https://github.com/NumericalEarth/NumericalEarth.jl.git"}
-Oceananigans = {rev = "4f171451abf7de2bf18630aaf1deef8cbf855ed4", url = "https://github.com/CliMA/Oceananigans.jl.git"}
+Oceananigans = {rev = "glw/nccl-distributed-solver", url = "https://github.com/CliMA/Oceananigans.jl.git"}
 Reactant = {rev = "main", url = "https://github.com/EnzymeAD/Reactant.jl.git"}
 
 [compat]
