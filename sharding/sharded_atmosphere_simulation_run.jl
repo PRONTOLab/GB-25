@@ -84,7 +84,7 @@ column_height = 30e3   # m; default column height in moist_baroclinic_wave_model
 # Vertical acoustic CFL is the binding constraint for ExplicitTimeStepping:
 # Δt < Δz / c_s ≈ (30 km / 64) / 340 m/s ≈ 1.38 s, independent of horizontal
 # resolution. Hardcode Δt below the limit and don't auto-derive.
-Δt = 0.01
+Δt = 0.001
 
 # File-based initialization. The artifact is downloaded by
 # `simulations/download_atmosphere_ic_artifact.jl` and lives in the
@@ -270,18 +270,102 @@ for k in 1:Nwarmup
     @info @sprintf("[%d] warmup %d/%d  wall=%.1fs  sim=%.1fs  total_wall=%.0fs",
                     rank, k, Nwarmup, wall_block, sim_time, total_wall)
 
+    #=
     block_dir = joinpath(output_dir, @sprintf("warmup_%04d", k))
     @time "[$rank] save warmup $k" begin
         GordonBell25.save_model_state(block_dir, model, arch;
             label = "output", slices = output_slices)
     end
     @info "[$rank] saved warmup $k" block_dir
+    =#
+
     flush(stderr); flush(stdout)
 end
 
+block_dir = joinpath(output_dir, "warmup_1")
+GordonBell25.save_model_state(block_dir, model, arch; label = "output", slices = output_slices)
+
 local_nan_check(rank, "after warmup (8 blocks)", model)
 
-# ─── Phase 4: Ramp Δt to 0.05, long production run ───────────────────
+# ─── Phase 4: Ramp Δt to 0.005, long production run ───────────────────
+Δt_r = make_dt(0.005, local_arch, arch, Ndev)
+@info "[$rank] Phase 4: bumped Δt to 0.05 (no recompile)" now(UTC)
+
+const Nouter = 2000
+const Ncalls_per_block = 4   # 4 × 64 = 256 steps per block
+steps_per_block = Ncalls_per_block * 64
+
+@info "[$rank] Starting production: $Nouter blocks × $steps_per_block steps (Δt=0.05)" now(UTC)
+
+wall_start = time_ns()
+for k in 1:Nouter
+    t0 = time_ns()
+    for _ in 1:Ncalls_per_block
+        compiled_loop!(model, Ninner, Δt_r)
+    end
+    wall_block = (time_ns() - t0) / 1e9
+    sim_time   = steps_per_block * k * 0.05
+    total_wall = (time_ns() - wall_start) / 1e9
+    sypd       = (steps_per_block * 0.05) / (365.25 * 86400 * wall_block) * 365.25
+
+    @info @sprintf("[%d] block %d/%d  wall=%.1fs  sim=%.1fs  SYPD=%.5f  total_wall=%.0fs",
+                    rank, k, Nouter, wall_block, sim_time, sypd, total_wall)
+
+    #=
+    block_dir = joinpath(output_dir, @sprintf("block_%04d", k))
+    @time "[$rank] save block $k" begin
+        GordonBell25.save_model_state(block_dir, model, arch;
+            label = "output", slices = output_slices)
+    end
+    @info "[$rank] saved block $k" block_dir
+    =#
+
+    flush(stderr); flush(stdout)
+end
+
+block_dir = joinpath(output_dir, "block_1")
+GordonBell25.save_model_state(block_dir, model, arch; label = "output", slices = output_slices)
+
+# ─── Phase 5: Ramp Δt to 0.01, long production run ───────────────────
+Δt_r = make_dt(0.01, local_arch, arch, Ndev)
+@info "[$rank] Phase 4: bumped Δt to 0.05 (no recompile)" now(UTC)
+
+const Nouter = 2000
+const Ncalls_per_block = 4   # 4 × 64 = 256 steps per block
+steps_per_block = Ncalls_per_block * 64
+
+@info "[$rank] Starting production: $Nouter blocks × $steps_per_block steps (Δt=0.05)" now(UTC)
+
+wall_start = time_ns()
+for k in 1:Nouter
+    t0 = time_ns()
+    for _ in 1:Ncalls_per_block
+        compiled_loop!(model, Ninner, Δt_r)
+    end
+    wall_block = (time_ns() - t0) / 1e9
+    sim_time   = steps_per_block * k * 0.05
+    total_wall = (time_ns() - wall_start) / 1e9
+    sypd       = (steps_per_block * 0.05) / (365.25 * 86400 * wall_block) * 365.25
+
+    @info @sprintf("[%d] block %d/%d  wall=%.1fs  sim=%.1fs  SYPD=%.5f  total_wall=%.0fs",
+                    rank, k, Nouter, wall_block, sim_time, sypd, total_wall)
+
+    #=
+    block_dir = joinpath(output_dir, @sprintf("block_%04d", k))
+    @time "[$rank] save block $k" begin
+        GordonBell25.save_model_state(block_dir, model, arch;
+            label = "output", slices = output_slices)
+    end
+    @info "[$rank] saved block $k" block_dir
+    =#
+
+    flush(stderr); flush(stdout)
+end
+
+block_dir = joinpath(output_dir, "block_2")
+GordonBell25.save_model_state(block_dir, model, arch; label = "output", slices = output_slices)
+
+# ─── Phase 5: Ramp Δt to 0.01, long production run ───────────────────
 Δt_r = make_dt(0.05, local_arch, arch, Ndev)
 @info "[$rank] Phase 4: bumped Δt to 0.05 (no recompile)" now(UTC)
 
@@ -305,13 +389,13 @@ for k in 1:Nouter
     @info @sprintf("[%d] block %d/%d  wall=%.1fs  sim=%.1fs  SYPD=%.5f  total_wall=%.0fs",
                     rank, k, Nouter, wall_block, sim_time, sypd, total_wall)
 
-    block_dir = joinpath(output_dir, @sprintf("block_%04d", k))
+    block_dir = joinpath(output_dir, @sprintf("block_3_%04d", k))
     @time "[$rank] save block $k" begin
         GordonBell25.save_model_state(block_dir, model, arch;
             label = "output", slices = output_slices)
     end
     @info "[$rank] saved block $k" block_dir
+
     flush(stderr); flush(stdout)
 end
 
-@info "[$rank] Done!" now(UTC)
