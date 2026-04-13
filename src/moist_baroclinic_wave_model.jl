@@ -435,8 +435,8 @@ function moist_baroclinic_wave_model(arch;
     # through microphysics tendencies and blow up. Clamp to [0, 1] at the
     # advection step.
     if with_advection
-        weno     = WENO(order = 5)
-        weno_pos = WENO(order = 5, bounds = (0, 1))
+        weno     = WENO(order = 3)
+        weno_pos = WENO(order = 3, bounds = (0, 1))
         momentum_advection = weno
         scalar_advection = if with_microphysics
             (ρθ   = weno,
@@ -469,7 +469,8 @@ function moist_baroclinic_wave_model(arch;
         NamedTuple()
     end
 
-    closure = area_scaled_biharmonic_viscosity(eltype(grid))
+    # closure = area_scaled_biharmonic_viscosity(eltype(grid))
+    closure = nothing
 
     model = AtmosphereModel(grid; dynamics, closure, coriolis, momentum_advection, scalar_advection,
                             microphysics, boundary_conditions)
@@ -560,7 +561,7 @@ function set_moist_baroclinic_wave_from_file!(model, path::String; H = 30e3, int
         size = (Nλ_src, Nφ_src, Nz_src),
         halo = halo,
         latitude  = (-80, 80),
-        longitude = (-180, 180),
+        longitude = (0, 360),
         z = (0, H))
 
     itype = interpolation_type === :nearest ? InterpolationType.Nearest : InterpolationType.Linear
@@ -643,22 +644,24 @@ function set_moist_baroclinic_wave_from_file_vanilla!(model, path::String; H = 3
         @info "Loading micro_ρqᶜⁱ from IC file" extrema=extrema(ρqci_data)
     end
 
-    src_grid = LatitudeLongitudeGrid(CPU();
+    src_grid = LatitudeLongitudeGrid(arch;
         size = (Nλ_src, Nφ_src, Nz_src),
         halo = halo,
         latitude  = (-80, 80),
-        longitude = (-180, 180),
+        longitude = (0, 360),
         z = (0, H))
 
     for (src_array, target_field) in pairs
         loc = Oceananigans.location(target_field)
         iloc = map(L -> L(), loc)
         src_field = Field(iloc, src_grid)
-        Oceananigans.interior(src_field) .= FT.(src_array)
+        src_on_arch = arch isa CPU ? FT.(src_array) : CuArray(FT.(src_array))
+        Oceananigans.interior(src_field) .= src_on_arch
         Oceananigans.BoundaryConditions.fill_halo_regions!(src_field)
 
         @info "interpolate!" field=nameof(typeof(target_field)) loc src=size(Oceananigans.interior(src_field)) dst=size(Oceananigans.interior(target_field))
         Oceananigans.Fields.interpolate!(target_field, src_field)
+        Oceananigans.BoundaryConditions.fill_halo_regions!(target_field)
     end
 
     return nothing

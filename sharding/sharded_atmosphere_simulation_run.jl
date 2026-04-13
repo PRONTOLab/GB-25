@@ -84,7 +84,7 @@ column_height = 30e3   # m; default column height in moist_baroclinic_wave_model
 # Vertical acoustic CFL is the binding constraint for ExplicitTimeStepping:
 # Δt < Δz / c_s ≈ (30 km / 64) / 340 m/s ≈ 1.38 s, independent of horizontal
 # resolution. Hardcode Δt below the limit and don't auto-derive.
-Δt = 0.5
+Δt = 0.01
 
 # File-based initialization. The artifact is downloaded by
 # `simulations/download_atmosphere_ic_artifact.jl` and lives in the
@@ -94,7 +94,11 @@ column_height = 30e3   # m; default column height in moist_baroclinic_wave_model
 # Falls back to analytic IC if the file is missing.
 
 _ic_path = joinpath(pkgdir(GordonBell25), "simulations", "initial_conditions",
-                    "atmosphere_coarsened_1536x768x64.jld2")
+                    "cascade_checkpoint.jld2")
+# _ic_path = joinpath(pkgdir(GordonBell25), "simulations", "initial_conditions",
+#                     "quarter_deg_day1_cloud_tau30.jld2")
+# _ic_path = joinpath(pkgdir(GordonBell25), "simulations", "initial_conditions",
+#                     "atmosphere_coarsened_1536x768x64.jld2")
 # _ic_path = joinpath(pkgdir(GordonBell25), "simulations", "initial_conditions",
 #                     "atmosphere_no_microphysics_1deg_14day.jld2")
 initial_conditions_path = isfile(_ic_path) ? _ic_path : nothing
@@ -116,6 +120,19 @@ model = GordonBell25.moist_baroclinic_wave_model(arch; Nλ, Nφ, Nz, H=column_he
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 
 @show model
+
+# ─── Save immediately after construction (post-interpolation) ─────────
+post_interp_dir = joinpath(@__DIR__, "output", jobid_procid, "after_interpolation")
+mkpath(post_interp_dir)
+_interp_fields = [:ρ, :ρu, :ρv, :ρw, :ρθ, :ρqᵛ]
+_interp_levels = [1, 2, 4, 8, 16]
+_interp_slices = [(f, :xy, _interp_levels) for f in _interp_fields]
+@time "[$rank] save after interpolation" begin
+    GordonBell25.save_model_state(post_interp_dir, model, arch;
+        label = "output",
+        slices = _interp_slices)
+end
+@info "[$rank] saved after interpolation" post_interp_dir
 
 Ninner = 64
 
@@ -212,6 +229,18 @@ function local_nan_check(rank, label, model)
 end
 
 local_nan_check(rank, "after first loop", model)
+
+first_loop_output_dir = joinpath(@__DIR__, "output", jobid_procid, "after_first_loop")
+mkpath(first_loop_output_dir)
+_xy_fields = [:u, :v, :w, :θ, :qᵛ]
+_xy_levels = [1, 2, 4, 8, 16]
+_first_loop_slices = [(f, :xy, _xy_levels) for f in _xy_fields]
+@time "[$rank] save after first loop" begin
+    GordonBell25.save_model_state(first_loop_output_dir, model, arch;
+        label = "output",
+        slices = _first_loop_slices)
+end
+@info "[$rank] saved after first loop" first_loop_output_dir
 
 mkpath(joinpath(profile_dir, "loop2"))
 @info "[$rank] allocations" GordonBell25.allocatorstats()
