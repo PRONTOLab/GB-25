@@ -5,6 +5,8 @@ ENV["JULIA_DEBUG"] = "Reactant_jll,Reactant"
 
 using GordonBell25
 using GordonBell25: first_time_step!, time_step!, loop!, factors, is_distributed_env_present
+using Breeze.AtmosphereModels: dynamics_density
+using Oceananigans.TimeSteppers: update_state!
 using Oceananigans
 
 const parsed_args = GordonBell25.parse_baroclinic_instability_args(;
@@ -82,7 +84,7 @@ column_height = 30e3   # m; default column height in moist_baroclinic_wave_model
 # Vertical acoustic CFL is the binding constraint for ExplicitTimeStepping:
 # Δt < Δz / c_s ≈ (30 km / 64) / 340 m/s ≈ 1.38 s, independent of horizontal
 # resolution. Hardcode Δt below the limit and don't auto-derive.
-Δt = 0.5
+Δt = 0.01
 
 # File-based initialization. The artifact is downloaded by
 # `simulations/download_atmosphere_ic_artifact.jl` and lives in the
@@ -92,7 +94,13 @@ column_height = 30e3   # m; default column height in moist_baroclinic_wave_model
 # Falls back to analytic IC if the file is missing.
 
 _ic_path = joinpath(pkgdir(GordonBell25), "simulations", "initial_conditions",
-                    "atmosphere_no_microphysics_1deg_14day.jld2")
+                    "cascade_checkpoint.jld2")
+# _ic_path = joinpath(pkgdir(GordonBell25), "simulations", "initial_conditions",
+#                     "quarter_deg_day1_cloud_tau30.jld2")
+# _ic_path = joinpath(pkgdir(GordonBell25), "simulations", "initial_conditions",
+#                     "atmosphere_coarsened_1536x768x64.jld2")
+# _ic_path = joinpath(pkgdir(GordonBell25), "simulations", "initial_conditions",
+#                     "atmosphere_no_microphysics_1deg_14day.jld2")
 initial_conditions_path = isfile(_ic_path) ? _ic_path : nothing
 
 if initial_conditions_path !== nothing
@@ -100,18 +108,21 @@ if initial_conditions_path !== nothing
 else
     @warn "[$rank] IC file not found at $_ic_path — using analytic IC"
 end
+# initial_conditions_path = nothing
 
 @info "[$rank] Generating atmosphere model (Nλ=$Nλ, Nφ=$Nφ, Nz=$Nz, Δt=$(round(Δt; sigdigits=3))s)..." now(UTC)
 model = GordonBell25.moist_baroclinic_wave_model(arch; Nλ, Nφ, Nz, H=column_height, Δt,
                                                  halo=(H, H, 4),
-                                                 cloud_formation_τ_relax=10.0,
+                                                 with_microphysics=false,
+                                                 # cloud_formation_τ_relax=100.0,
                                                  initial_conditions_path=initial_conditions_path,
+                                                 sst_anomaly = 2,
                                                  interpolation_type=:linear)
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 
 @show model
 
-Ninner = 256
+Ninner = 64
 
 if local_arch isa Oceananigans.ReactantState
     Ninner = if Ndev == 1
@@ -122,6 +133,30 @@ if local_arch isa Oceananigans.ReactantState
     end
 end
 
+function make_dt(val, local_arch, arch, Ndev)
+    if local_arch isa Oceananigans.ReactantState
+        if Ndev == 1
+            ConcreteRNumber(Float32(val))
+        else
+            sharding = Sharding.NamedSharding(arch.connectivity, ())
+            ConcreteRNumber(Float32(val); sharding)
+        end
+    else
+        Float32(val)
+    end
+end
+
+Δt_r = make_dt(Δt, local_arch, arch, Ndev)
+
+function loop_with_dt!(model, Ninner, Δt)
+    Reactant.Profiler.annotate("loop") do
+        @trace track_numbers=false for _ = 1:Ninner
+            Oceananigans.TimeSteppers.time_step!(model, Δt)
+        end
+    end
+    return nothing
+end
+
 compile_options = CompileOptions(; sync=true, raise=true, strip_llvm_debuginfo=true, strip=:all)
 
 profile_dir = joinpath(@__DIR__, "profiling", jobid_procid)
@@ -129,80 +164,75 @@ profile_dir = joinpath(@__DIR__, "profiling", jobid_procid)
 @info "[$rank] Compiling first_time_step!..." now(UTC)
 mkpath(joinpath(profile_dir, "compile_first_time_step"))
 rfirst! = begin
-#  Reactant.with_profiler(joinpath(profile_dir, "compile_first_time_step")) do
     if local_arch isa Oceananigans.ReactantState
-         @time "[$rank] compile first_time_step!" @compile compile_options=compile_options first_time_step!(model)
+         @time "[$rank] compile first_time_step!" @compile compile_options=compile_options update_state!(model, compute_tendencies=false)
     else
          first_time_step!
     end
 end
 
 @info "[$rank] allocations" GordonBell25.allocatorstats()
-@info "[$rank] Compiling loop..." now(UTC)
+@info "[$rank] Compiling loop (Ninner=64)..." now(UTC)
 
 mkpath(joinpath(profile_dir, "compile_loop"))
 compiled_loop! = begin
-#  Reactant.with_profiler(joinpath(profile_dir, "compile_loop")) do
     if local_arch isa Oceananigans.ReactantState
-         @time "[$rank] compile loop!" @compile compile_options=compile_options loop!(model, Ninner)
+         @time "[$rank] compile loop!" @compile compile_options=compile_options loop_with_dt!(model, Ninner, Δt_r)
     else
-         loop!
+         (model, N, dt) -> loop!(model, N)
     end
 end
 
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 
+# ─── first_time_step! (update_state!) ─────────────────────────────────
 mkpath(joinpath(profile_dir, "first_time_step"))
 @info "[$rank] Running first_time_step!..." now(UTC)
-# Reactant.with_profiler(joinpath(profile_dir, "first_time_step")) do
-#     Reactant.Profiler.annotate("first_time_step"; metadata=Dict("step_num" => 0, "_r" => 1)) do
-        @time "[$rank] first_time_step!" rfirst!(model)
-    # end
-# end
+@time "[$rank] first_time_step!" rfirst!(model)
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 
-mkpath(joinpath(profile_dir, "loop"))
-@info "[$rank] allocations" GordonBell25.allocatorstats()
-@info "[$rank] running loop" now(UTC)
-# Reactant.with_profiler(joinpath(profile_dir, "loop")) do
-#     Reactant.Profiler.annotate("bench"; metadata=Dict("step_num" => 1, "_r" => 1)) do
-        @time "[$rank] loop" compiled_loop!(model, Ninner)
-#     end
-# end
-
-mkpath(joinpath(profile_dir, "loop2"))
-@info "[$rank] allocations" GordonBell25.allocatorstats()
-@info "[$rank] running second loop" now(UTC)
-# Reactant.with_profiler(joinpath(profile_dir, "loop2")) do
-#     Reactant.Profiler.annotate("bench"; metadata=Dict("step_num" => 1, "_r" => 1)) do
-        @time "[$rank] second loop" compiled_loop!(model, Ninner)
-#     end
-# end
-@info "[$rank] allocations" GordonBell25.allocatorstats()
-
-# checkpoint_dir = joinpath(@__DIR__, "checkpoints", jobid_procid)
-# @info "[$rank] Saving sharded checkpoint..." now(UTC)
-# @time "[$rank] checkpoint save" begin
-#     filepath = GordonBell25.save_model_state(checkpoint_dir, model, arch;
-#         label="final", slices=[
-#             (:T, :xy, [:bottom, :top]),
-#             (:w, :xy, [:bottom, :top]),
-#             (:T, :xz, [:middle]),
-#             (:T, :yz, [:middle]),
-#         ])
-#     @info "[$rank] Checkpoint saved to $filepath"
-# end
+# ─── NaN check helper ─────────────────────────────────────────────────
+function local_nan_check(rank, label, model)
+    @info "[$rank] NaN check: $label" now(UTC)
+    for (name, field) in [
+        ("ρ",   dynamics_density(model.dynamics)),
+        ("ρu",  model.momentum.ρu),
+        ("ρv",  model.momentum.ρv),
+        ("ρw",  model.momentum.ρw),
+        ("ρθ",  model.formulation.potential_temperature_density),
+        ("ρqᵛ", model.moisture_density),
+    ]
+        ifrt_arr = Reactant.ancestor(field)
+        local_shards = Reactant.XLA.IFRT.disassemble_into_single_device_arrays(ifrt_arr.data, true)
+        total_nan = 0
+        total_len = 0
+        lo = Inf
+        hi = -Inf
+        for shard in local_shards
+            shard_size = reverse(size(shard))
+            buf = Base.Array{eltype(ifrt_arr)}(undef, shard_size...)
+            Reactant.XLA.to_host(shard, buf, Reactant.Sharding.NoSharding())
+            total_len += length(buf)
+            for v in buf
+                if isnan(v)
+                    total_nan += 1
+                else
+                    lo = min(lo, v)
+                    hi = max(hi, v)
+                end
+            end
+        end
+        ex = total_len == total_nan ? (NaN, NaN) : (lo, hi)
+        @info "[$rank] $name  local_size=$total_len  extrema=$ex  NaN=$total_nan/$total_len"
+    end
+end
 
 # ─── Output specification ─────────────────────────────────────────────
-#
-# xy slices at z-levels 1, 2, 4, 8, 16 for: u, v, w, θ, qᵛ, qᶜˡ, qᶜⁱ
-# yz slice at i=1 for: w, qᶜˡ, qᶜⁱ
-
 xy_fields = [:u, :v, :w, :θ, :qᵛ, :qᶜˡ, :qᶜⁱ]
 xy_levels = [1, 2, 4, 8, 16]
 
 yz_fields = [:w, :qᶜˡ, :qᶜⁱ]
-yz_index  = [1]  # i = 1
+yz_index  = [1]
 
 output_slices = vcat(
     [(f, :xy, xy_levels) for f in xy_fields],
@@ -212,39 +242,75 @@ output_slices = vcat(
 output_dir = joinpath(@__DIR__, "output", jobid_procid)
 mkpath(output_dir)
 
-# ─── Outer loop ───────────────────────────────────────────────────────
+# ─── Phase 1: First loop — 64 steps at Δt=0.01 ──────────────────────
+@info "[$rank] Phase 1: first loop (64 steps, Δt=0.01)" now(UTC)
+@time "[$rank] first loop" compiled_loop!(model, Ninner, Δt_r)
 
-const Nouter = 1200
-Ninner_val = 256
+local_nan_check(rank, "after first loop", model)
 
+# ─── Phase 2: Second loop — 64 steps at Δt=0.01 ─────────────────────
+@info "[$rank] Phase 2: second loop (64 steps, Δt=0.01)" now(UTC)
+@time "[$rank] second loop" compiled_loop!(model, Ninner, Δt_r)
 
-@info "[$rank] Starting outer loop: $Nouter blocks × $Ninner_val inner steps (Δt=$Δt)" now(UTC)
+# ─── Phase 3: 8 warmup blocks × 256 steps (4×64) at Δt=0.01, with saves
+const Nwarmup = 8
+const Ncalls_per_block_warmup = 4   # 4 × 64 = 256 steps per block
+
+@info "[$rank] Phase 3: $Nwarmup warmup blocks × $(Ncalls_per_block_warmup*64) steps (Δt=0.01)" now(UTC)
+wall_start = time_ns()
+for k in 1:Nwarmup
+    t0 = time_ns()
+    for _ in 1:Ncalls_per_block_warmup
+        compiled_loop!(model, Ninner, Δt_r)
+    end
+    wall_block = (time_ns() - t0) / 1e9
+    sim_time   = Ncalls_per_block_warmup * 64 * k * Δt
+    total_wall = (time_ns() - wall_start) / 1e9
+
+    @info @sprintf("[%d] warmup %d/%d  wall=%.1fs  sim=%.1fs  total_wall=%.0fs",
+                    rank, k, Nwarmup, wall_block, sim_time, total_wall)
+
+    block_dir = joinpath(output_dir, @sprintf("warmup_%04d", k))
+    @time "[$rank] save warmup $k" begin
+        GordonBell25.save_model_state(block_dir, model, arch;
+            label = "output", slices = output_slices)
+    end
+    @info "[$rank] saved warmup $k" block_dir
+    flush(stderr); flush(stdout)
+end
+
+local_nan_check(rank, "after warmup (8 blocks)", model)
+
+# ─── Phase 4: Ramp Δt to 0.05, long production run ───────────────────
+Δt_r = make_dt(0.05, local_arch, arch, Ndev)
+@info "[$rank] Phase 4: bumped Δt to 0.05 (no recompile)" now(UTC)
+
+const Nouter = 2000
+const Ncalls_per_block = 4   # 4 × 64 = 256 steps per block
+steps_per_block = Ncalls_per_block * 64
+
+@info "[$rank] Starting production: $Nouter blocks × $steps_per_block steps (Δt=0.05)" now(UTC)
 
 wall_start = time_ns()
 for k in 1:Nouter
     t0 = time_ns()
-
-    # Execute compiled loop block
-    compiled_loop!(model, Ninner)
-    compiled_loop!(model, Ninner)
-
+    for _ in 1:Ncalls_per_block
+        compiled_loop!(model, Ninner, Δt_r)
+    end
     wall_block = (time_ns() - t0) / 1e9
-    sim_time   = 2Ninner_val * k * Δt
+    sim_time   = steps_per_block * k * 0.05
     total_wall = (time_ns() - wall_start) / 1e9
-    sypd       = (2Ninner_val * Δt) / (365.25 * 86400 * wall_block) * 365.25
+    sypd       = (steps_per_block * 0.05) / (365.25 * 86400 * wall_block) * 365.25
 
-    @info @sprintf("[%d] block %d/%d wall=%.1fs sim=%.1fs SYPD=%.5f total_wall=%.0fs",
+    @info @sprintf("[%d] block %d/%d  wall=%.1fs  sim=%.1fs  SYPD=%.5f  total_wall=%.0fs",
                     rank, k, Nouter, wall_block, sim_time, sypd, total_wall)
 
-    # Save output slices
     block_dir = joinpath(output_dir, @sprintf("block_%04d", k))
     @time "[$rank] save block $k" begin
         GordonBell25.save_model_state(block_dir, model, arch;
-            label = "output",
-            slices = output_slices)
+            label = "output", slices = output_slices)
     end
     @info "[$rank] saved block $k" block_dir
-
     flush(stderr); flush(stdout)
 end
 
