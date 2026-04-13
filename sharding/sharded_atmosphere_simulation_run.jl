@@ -110,17 +110,56 @@ else
 end
 # initial_conditions_path = nothing
 
+# ─── NaN check helper ─────────────────────────────────────────────────
+function local_nan_check(rank, label, model)
+    @info "[$rank] NaN check: $label" now(UTC)
+    for (name, field) in [
+        ("ρ",   dynamics_density(model.dynamics)),
+        ("ρu",  model.momentum.ρu),
+        ("ρv",  model.momentum.ρv),
+        ("ρw",  model.momentum.ρw),
+        ("ρθ",  model.formulation.potential_temperature_density),
+        ("ρqᵛ", model.moisture_density),
+    ]
+        ifrt_arr = Reactant.ancestor(field)
+        local_shards = Reactant.XLA.IFRT.disassemble_into_single_device_arrays(ifrt_arr.data, true)
+        total_nan = 0
+        total_len = 0
+        lo = Inf
+        hi = -Inf
+        for shard in local_shards
+            shard_size = reverse(size(shard))
+            buf = Base.Array{eltype(ifrt_arr)}(undef, shard_size...)
+            Reactant.XLA.to_host(shard, buf, Reactant.Sharding.NoSharding())
+            total_len += length(buf)
+            for v in buf
+                if isnan(v)
+                    total_nan += 1
+                else
+                    lo = min(lo, v)
+                    hi = max(hi, v)
+                end
+            end
+        end
+        ex = total_len == total_nan ? (NaN, NaN) : (lo, hi)
+        @info "[$rank] $name  local_size=$total_len  extrema=$ex  NaN=$total_nan/$total_len"
+    end
+end
+
+
 @info "[$rank] Generating atmosphere model (Nλ=$Nλ, Nφ=$Nφ, Nz=$Nz, Δt=$(round(Δt; sigdigits=3))s)..." now(UTC)
 model = GordonBell25.moist_baroclinic_wave_model(arch; Nλ, Nφ, Nz, H=column_height, Δt,
                                                  halo=(H, H, 4),
                                                  with_microphysics=true,
-                                                 cloud_formation_τ_relax=120.0,
+                                                 cloud_formation_τ_relax=1200.0,
                                                  initial_conditions_path=initial_conditions_path,
                                                  sst_anomaly = 2,
                                                  interpolation_type=:linear)
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 
 @show model
+
+local_nan_check(rank, "after generating model", model)
 
 Ninner = 64
 
@@ -191,42 +230,6 @@ mkpath(joinpath(profile_dir, "first_time_step"))
 @time "[$rank] first_time_step!" rfirst!(model)
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 
-# ─── NaN check helper ─────────────────────────────────────────────────
-function local_nan_check(rank, label, model)
-    @info "[$rank] NaN check: $label" now(UTC)
-    for (name, field) in [
-        ("ρ",   dynamics_density(model.dynamics)),
-        ("ρu",  model.momentum.ρu),
-        ("ρv",  model.momentum.ρv),
-        ("ρw",  model.momentum.ρw),
-        ("ρθ",  model.formulation.potential_temperature_density),
-        ("ρqᵛ", model.moisture_density),
-    ]
-        ifrt_arr = Reactant.ancestor(field)
-        local_shards = Reactant.XLA.IFRT.disassemble_into_single_device_arrays(ifrt_arr.data, true)
-        total_nan = 0
-        total_len = 0
-        lo = Inf
-        hi = -Inf
-        for shard in local_shards
-            shard_size = reverse(size(shard))
-            buf = Base.Array{eltype(ifrt_arr)}(undef, shard_size...)
-            Reactant.XLA.to_host(shard, buf, Reactant.Sharding.NoSharding())
-            total_len += length(buf)
-            for v in buf
-                if isnan(v)
-                    total_nan += 1
-                else
-                    lo = min(lo, v)
-                    hi = max(hi, v)
-                end
-            end
-        end
-        ex = total_len == total_nan ? (NaN, NaN) : (lo, hi)
-        @info "[$rank] $name  local_size=$total_len  extrema=$ex  NaN=$total_nan/$total_len"
-    end
-end
-
 # ─── Output specification ─────────────────────────────────────────────
 xy_fields = [:u, :v, :w, :θ, :qᵛ, :qᶜˡ, :qᶜⁱ]
 xy_levels = [1, 2, 4, 8, 16]
@@ -254,7 +257,8 @@ local_nan_check(rank, "after first loop", model)
 
 # ─── Phase 3: 8 warmup blocks × 256 steps (4×64) at Δt=0.01, with saves
 const Nwarmup = 8
-const Ncalls_per_block_warmup = 4   # 4 × 64 = 256 steps per block
+# const Ncalls_per_block_warmup = 4   # 4 × 64 = 256 steps per block
+const Ncalls_per_block_warmup = 8
 
 @info "[$rank] Phase 3: $Nwarmup warmup blocks × $(Ncalls_per_block_warmup*64) steps (Δt=0.01)" now(UTC)
 wall_start = time_ns()
