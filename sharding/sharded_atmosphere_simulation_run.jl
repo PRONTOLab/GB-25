@@ -112,7 +112,7 @@ model = GordonBell25.moist_baroclinic_wave_model(arch; Nλ, Nφ, Nz, H=column_he
                                                  with_microphysics=false,
                                                  # cloud_formation_τ_relax=100.0,
                                                  initial_conditions_path=initial_conditions_path,
-                                                 interpolation_type=:nearest)
+                                                 interpolation_type=:linear)
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 
 @show model

@@ -79,6 +79,255 @@ function interpolate_3d!(dst::AbstractArray{T1,3}, x::AbstractArray{T2,3}) where
 end
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# Source array preparation for FaceInterpolateArray
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# Prepares a raw source array (no halos) for FaceInterpolateArray by adding
+# halo padding: periodic wrapping for x, zero-gradient for y/z.
+#
+# The source is NOT trimmed — face+bounded dims retain all N+1 faces so that
+# boundary values are available for interpolation near the domain edge.
+# FaceInterpolateArray uses `bounded_dims` to adjust the scale factor instead.
+
+function prepare_source_for_interpolation(
+    src_array::AbstractArray{<:Any,3}, halo::NTuple{3,Int},
+    face_dims::NTuple{3,Bool}, ::Type{FT},
+) where {FT}
+    data = FT.(src_array)
+
+    nx, ny, nz = size(data)
+    Hx, Hy, Hz = halo
+    padded = zeros(FT, nx + 2Hx, ny + 2Hy, nz + 2Hz)
+
+    padded[Hx+1:Hx+nx, Hy+1:Hy+ny, Hz+1:Hz+nz] .= data
+
+    padded[1:Hx,          Hy+1:Hy+ny, Hz+1:Hz+nz] .= data[end-Hx+1:end, :, :]
+    padded[Hx+nx+1:end,   Hy+1:Hy+ny, Hz+1:Hz+nz] .= data[1:Hx, :, :]
+
+    for h in 1:Hy
+        padded[:, h, Hz+1:Hz+nz]      .= padded[:, Hy+1, Hz+1:Hz+nz]
+        padded[:, end-h+1, Hz+1:Hz+nz] .= padded[:, end-Hy, Hz+1:Hz+nz]
+    end
+
+    for h in 1:Hz
+        padded[:, :, h]        .= padded[:, :, Hz+1]
+        padded[:, :, end-h+1]  .= padded[:, :, end-Hz]
+    end
+
+    return padded
+end
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Face-aware InterpolateArray
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# Drop-in replacement for Reactant.InterpolateArray that accepts `face_dims`
+# and `bounded_dims` tuples.
+#
+# face_dims:   dimensions where the field is Face-staggered
+# bounded_dims: dimensions with Bounded topology (y, z on LatLonGrid)
+#
+# For face+bounded dims the source retains all N+1 faces (not trimmed), so the
+# scale factor uses (M_interior - 1) to get the correct cells-ratio mapping:
+#     fi = (I − 1) × (M−1)/N + 1      face+bounded
+#     fi = (I − 1) × M/N + 1           face+periodic
+#     fi = (I − 0.5) × M/N + 0.5       center (any topology)
+#
+# Linear interpolation accumulates in Float64 to avoid precision loss on large
+# grids where total_den can exceed 9e8.
+
+function FaceInterpolateArray(
+    local_cpu_array::AbstractArray{T,N},
+    final_grid_size::NTuple{N,Int},
+    sharding::Reactant.Sharding.AbstractSharding,
+    interpolation::Reactant.InterpolationType.T,
+    halo::NTuple{N,Int} = ntuple(_ -> 0, N);
+    face_dims::NTuple{N,Bool} = ntuple(_ -> false, N),
+    bounded_dims::NTuple{N,Bool} = ntuple(_ -> false, N),
+    client = nothing,
+) where {T,N}
+    @assert Reactant.Sharding.is_sharded(sharding)
+    client = client === nothing ? Reactant.XLA.default_backend() : client
+    (; hlo_sharding) = Reactant.Sharding.HloSharding(sharding, final_grid_size)
+    all_devices = Reactant.XLA.get_device.((client,), sharding.mesh.device_ids)
+
+    addressable_device_indices = [
+        i - 1 for (i, device) in enumerate(all_devices) if Reactant.XLA.is_addressable(device)
+    ]
+
+    addressable_slices, _ = Reactant.XLA.sharding_to_concrete_array_indices(
+        hlo_sharding, final_grid_size, addressable_device_indices
+    )
+    src_size = size(local_cpu_array)
+    ordered_buffers = Vector{Array{T,N}}(undef, length(addressable_slices))
+
+    for (buf_idx, slice) in enumerate(addressable_slices)
+        shard_shape = length.(slice)
+
+        if interpolation == Reactant.InterpolationType.Nearest
+            src_idx_ranges = ntuple(N) do dim
+                I_range = slice[dim]
+                N_dim, M_dim = final_grid_size[dim], src_size[dim]
+                H = halo[dim]
+                is_face = face_dims[dim]
+                is_bounded = bounded_dims[dim]
+                M_dim_shifted = M_dim - 2*H
+                effective_M = (is_face && is_bounded) ? M_dim_shifted - 1 : M_dim_shifted
+
+                [begin
+                    if I <= H
+                        clamp(I, 1, M_dim)
+                    elseif I >= N_dim - H + 1
+                        clamp(M_dim - N_dim + I, 1, M_dim)
+                    else
+                        I_shifted = I - H
+                        N_dim_shifted = N_dim - 2*H
+
+                        if N_dim_shifted <= 0 || effective_M <= 0
+                            clamp(I, 1, M_dim)
+                        else
+                            idx_shifted = if is_face
+                                ((I_shifted - 1) * effective_M + N_dim_shifted - 1) ÷ N_dim_shifted + 1
+                            else
+                                (I_shifted * effective_M + N_dim_shifted - 1) ÷ N_dim_shifted
+                            end
+                            clamp(idx_shifted + H, 1, M_dim)
+                        end
+                    end
+                end for I in I_range]
+            end
+
+            buf = Array{T,N}(undef, shard_shape)
+            for I in CartesianIndices(shard_shape)
+                idx = ntuple(dim -> src_idx_ranges[dim][I.I[dim]], N)
+                buf[I] = local_cpu_array[CartesianIndex(idx)]
+            end
+
+        elseif interpolation == Reactant.InterpolationType.Linear
+            lows = ntuple(N) do dim
+                I_range = slice[dim]
+                N_dim, M_dim = final_grid_size[dim], src_size[dim]
+                H = halo[dim]
+                is_face = face_dims[dim]
+                is_bounded = bounded_dims[dim]
+                M_dim_shifted = M_dim - 2*H
+                effective_M = (is_face && is_bounded) ? M_dim_shifted - 1 : M_dim_shifted
+
+                [begin
+                    if I <= H
+                        clamp(I, 1, M_dim)
+                    elseif I >= N_dim - H + 1
+                        clamp(M_dim - N_dim + I, 1, M_dim)
+                    else
+                        I_shifted = I - H
+                        N_dim_shifted = N_dim - 2*H
+
+                        a = if is_face
+                            2 * (I_shifted - 1) * effective_M + 2 * N_dim_shifted
+                        else
+                            (2 * I_shifted - 1) * effective_M + N_dim_shifted
+                        end
+                        b = 2 * N_dim_shifted
+                        low_shifted = a ÷ b
+                        clamp(low_shifted + H, 1, M_dim)
+                    end
+                end for I in I_range]
+            end
+
+            highs = ntuple(N) do dim
+                I_range = slice[dim]
+                N_dim, M_dim = final_grid_size[dim], src_size[dim]
+                H = halo[dim]
+                is_face = face_dims[dim]
+                is_bounded = bounded_dims[dim]
+                M_dim_shifted = M_dim - 2*H
+                effective_M = (is_face && is_bounded) ? M_dim_shifted - 1 : M_dim_shifted
+
+                [begin
+                    if I <= H
+                        clamp(I, 1, M_dim)
+                    elseif I >= N_dim - H + 1
+                        clamp(M_dim - N_dim + I, 1, M_dim)
+                    else
+                        I_shifted = I - H
+                        N_dim_shifted = N_dim - 2*H
+
+                        a = if is_face
+                            2 * (I_shifted - 1) * effective_M + 2 * N_dim_shifted
+                        else
+                            (2 * I_shifted - 1) * effective_M + N_dim_shifted
+                        end
+                        b = 2 * N_dim_shifted
+                        low_shifted = a ÷ b
+                        clamp(low_shifted + 1 + H, 1, M_dim)
+                    end
+                end for I in I_range]
+            end
+
+            dens = ntuple(N) do dim
+                H = halo[dim]
+                2 * max(1, final_grid_size[dim] - 2 * H)
+            end
+            total_den = prod(dens)
+
+            rems = ntuple(N) do dim
+                I_range = slice[dim]
+                N_dim, M_dim = final_grid_size[dim], src_size[dim]
+                H = halo[dim]
+                is_face = face_dims[dim]
+                is_bounded = bounded_dims[dim]
+                M_dim_shifted = M_dim - 2*H
+                effective_M = (is_face && is_bounded) ? M_dim_shifted - 1 : M_dim_shifted
+
+                [begin
+                    if I <= H || I >= N_dim - H + 1
+                        0
+                    else
+                        I_shifted = I - H
+                        N_dim_shifted = N_dim - 2*H
+
+                        a = if is_face
+                            2 * (I_shifted - 1) * effective_M + 2 * N_dim_shifted
+                        else
+                            (2 * I_shifted - 1) * effective_M + N_dim_shifted
+                        end
+                        b = 2 * N_dim_shifted
+                        a % b
+                    end
+                end for I in I_range]
+            end
+
+            buf = Array{T,N}(undef, shard_shape)
+            corner_space = CartesianIndices(ntuple(_ -> 2, N))
+            for I in CartesianIndices(shard_shape)
+                sum_val = zero(Float64)
+                for c in corner_space
+                    idx = ntuple(
+                        dim -> c[dim] == 1 ? lows[dim][I.I[dim]] : highs[dim][I.I[dim]], N
+                    )
+                    w_int = prod(
+                        ntuple(
+                            dim -> if c[dim] == 1
+                                (dens[dim] - rems[dim][I.I[dim]])
+                            else
+                                rems[dim][I.I[dim]]
+                            end,
+                            N,
+                        ),
+                    )
+                    sum_val += w_int * Float64(local_cpu_array[CartesianIndex(idx)])
+                end
+                buf[I] = T(sum_val / total_den)
+            end
+        else
+            error("Unsupported interpolation type")
+        end
+        ordered_buffers[buf_idx] = buf
+    end
+    return Reactant.ConcreteIFRTArray(ordered_buffers, final_grid_size; client, sharding)
+end
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # Sharded-Reactant interpolate! pirate
 # ═══════════════════════════════════════════════════════════════════════════════
 #

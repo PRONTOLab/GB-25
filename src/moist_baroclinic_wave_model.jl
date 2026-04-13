@@ -545,39 +545,33 @@ function set_moist_baroclinic_wave_from_file!(model, path::String; H = 30e3, int
         longitude = (-180, 180),
         z = (0, H))
 
+    itype = interpolation_type === :nearest ? InterpolationType.Nearest : InterpolationType.Linear
+
+    topo = Oceananigans.topology(grid)
+    bounded_dims = ntuple(d -> topo[d] === Oceananigans.Grids.Bounded, 3)
+
     for (src_array, target_field) in pairs
         target_data = Reactant.ancestor(target_field)
         target_size = size(target_data)
         sharding    = target_data.sharding
 
-        # 1. Create a source field on the CPU grid with matching location,
-        #    set its interior from the JLD2 data, and fill halos properly.
-        loc = Oceananigans.location(target_field)
-        iloc = map(L -> L(), loc)  # instantiate: (Center, Face, Center) → (Center(), Face(), Center())
-        src_field = Field(iloc, src_grid)
-        Oceananigans.interior(src_field) .= FT.(src_array)
-        Oceananigans.BoundaryConditions.fill_halo_regions!(src_field)
-        src_parent = parent(src_field)
+        loc = Oceananigans.Fields.location(target_field)
+        face_dims = ntuple(d -> loc[d] === Oceananigans.Grids.Face, 3)
+        is_face_field = any(face_dims)
 
-        # 2. Trim src_parent to Reactant's parent convention.
-        #    Vanilla: total_length(Face, Bounded, N, H) = N + 1 + 2H
-        #    Reactant: reactant_total_length(Face, Bounded, N, H) = N + 2H
-        #    So we drop the last row in face+bounded dimensions.
-        topo = Oceananigans.topology(src_grid)
-        trim(d) = loc[d] === Face && topo[d] === Bounded
-        rx = trim(1) ? (1:size(src_parent,1)-1) : Colon()
-        ry = trim(2) ? (1:size(src_parent,2)-1) : Colon()
-        rz = trim(3) ? (1:size(src_parent,3)-1) : Colon()
-        src_reactant = view(src_parent, rx, ry, rz)
+        padded = prepare_source_for_interpolation(src_array, halo, face_dims, FT)
 
-        @info "InterpolateArray" field=nameof(typeof(target_field)) loc src_parent=size(src_parent) src_reactant=size(src_reactant) dst=target_size halo
+        if is_face_field
+            @info "FaceInterpolateArray" field=nameof(typeof(target_field)) face_dims bounded_dims src_raw=size(src_array) src_padded=size(padded) dst=target_size halo
+            result = FaceInterpolateArray(padded, target_size, sharding,
+                                          itype, halo; face_dims, bounded_dims)
+        else
+            @info "InterpolateArray" field=nameof(typeof(target_field)) src_raw=size(src_array) src_padded=size(padded) dst=target_size halo
+            result = InterpolateArray(padded, target_size, sharding, itype, halo)
+        end
 
-        itype = interpolation_type === :nearest ? InterpolationType.Nearest : InterpolationType.Linear
-        result = InterpolateArray(src_reactant, target_size, sharding, itype, halo)
         target_data.data     = result.data
         target_data.sharding = result.sharding
-
-        Oceananigans.BoundaryConditions.fill_halo_regions!(target_field)
     end
 
     return nothing
