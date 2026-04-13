@@ -13,13 +13,13 @@
 using Serialization
 using CairoMakie
 
-const RUN_DIR   = joinpath(@__DIR__, "runs/2026-04-13T06-47-58.707_wxBa/output")
+const RUN_DIR   = joinpath(@__DIR__, "runs/2026-04-13T18-03-35.982_oESr/output")
 const JOB_ID    = "1849977"
 const BLOCK     = "after_interpolation"
 NGPU      = "4"
 const NRANKS    = 1
-const Z_LAYER   = 1   # index into the saved z-levels ([1,2,4,8,16] → picks level 2)
-const OUT_DIR   = joinpath(@__DIR__, "runs/2026-04-13T06-47-58.707_wxBa/ngpu=00$(NGPU)/plots_$(BLOCK)")
+const Z_LAYER   = 2   # index into the saved z-levels ([1,2,4,8,16] → picks level 2)
+const OUT_DIR   = joinpath(@__DIR__, "runs/2026-04-13T18-03-35.982_oESr/ngpu=000$(NGPU)/plots_$(BLOCK)")
 
 const XY_FIELDS = [:ρ_xy, :ρu_xy, :ρv_xy, :ρw_xy, :ρθ_xy, :ρqᵛ_xy]
 
