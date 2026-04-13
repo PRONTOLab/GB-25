@@ -22,7 +22,9 @@ using Oceananigans.Coriolis: HydrostaticSphericalCoriolis
 using Oceananigans.BoundaryConditions: FieldBoundaryConditions
 using Oceananigans.Architectures: ReactantState, CPU
 using Oceananigans.Grids: λnode, φnode, znode, Center, Face, LatitudeLongitudeGrid
+using Oceananigans.Operators: Az
 using Oceananigans.Fields: CenterField, XFaceField, YFaceField, ZFaceField, Field
+using Oceananigans.TurbulenceClosures: HorizontalScalarBiharmonicDiffusivity
 using CloudMicrophysics
 using SpecialFunctions
 using CUDA
@@ -82,6 +84,20 @@ const φ_width      = 2π / 9           # [rad]  40° — latitudinal e-folding 
 const p_width      = 34000.0          # [Pa]   340 hPa — vertical pressure width
 const η_tropopause = 0.1              # p/p_ref cutoff
 const q_tropopause = 1e-12            # [kg kg⁻¹]  humidity above the tropopause
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Area-scaled biharmonic viscosity  (initialization damping)
+# ═══════════════════════════════════════════════════════════════════════════
+
+@inline _area_scaled_biharmonic_viscosity(i, j, k, grid, ℓx, ℓy, ℓz, clock, fields, λ) =
+    Az(i, j, k, grid, ℓx, ℓy, ℓz)^2 / λ
+
+function area_scaled_biharmonic_viscosity(FT=Oceananigans.defaults.FloatType; timescale=10 * 60)
+    return HorizontalScalarBiharmonicDiffusivity(FT;
+        ν = _area_scaled_biharmonic_viscosity,
+        discrete_form = true,
+        parameters = timescale)
+end
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Internal helpers  (all angles in radians)
@@ -453,7 +469,9 @@ function moist_baroclinic_wave_model(arch;
         NamedTuple()
     end
 
-    model = AtmosphereModel(grid; dynamics, coriolis, momentum_advection, scalar_advection,
+    closure = area_scaled_biharmonic_viscosity(eltype(grid))
+
+    model = AtmosphereModel(grid; dynamics, closure, coriolis, momentum_advection, scalar_advection,
                             microphysics, boundary_conditions)
 
     FT = eltype(grid)
