@@ -114,7 +114,7 @@ end
 model = GordonBell25.moist_baroclinic_wave_model(arch; Nλ, Nφ, Nz, H=column_height, Δt,
                                                  halo=(H, H, 4),
                                                  with_microphysics=true,
-                                                 cloud_formation_τ_relax=120.0,
+                                                 cloud_formation_τ_relax=2400.0,
                                                  initial_conditions_path=initial_conditions_path,
                                                  sst_anomaly = 2,
                                                  interpolation_type=:linear)
