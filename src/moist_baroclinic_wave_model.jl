@@ -352,7 +352,8 @@ function moist_baroclinic_wave_model(arch;
                                      sst_anomaly = 0,
                                      cloud_formation_τ_relax::Union{Nothing,Real} = nothing,
                                      initial_conditions_path::Union{Nothing,String} = nothing,
-                                     interpolation_type = :nearest)
+                                     interpolation_type = :nearest,
+                                     relaxation::Union{Nothing,NTuple{2,Real}} = nothing)
 
     if isnothing(Δt)
         if time_discretization isa SplitExplicitTimeDiscretization
@@ -453,8 +454,27 @@ function moist_baroclinic_wave_model(arch;
         NamedTuple()
     end
 
+    # Optional IC-relaxation forcing. `relaxation` is either `nothing` (off)
+    # or a 2-tuple `(α0, T_decay)` where `α0` is the initial damping rate
+    # (s⁻¹) and `T_decay` is the linear-decay time (s): the rate is `α0` at
+    # `t=0` and decays linearly to zero at `t=T_decay`. Example:
+    # `relaxation = (0.1, 1800)` → rate 0.1 s⁻¹ at t=0, zero after 30 min.
+    #
+    # Snapshot fields are allocated BEFORE the model is constructed so that
+    # the forcing NamedTuple (which holds references to the snapshots) can
+    # be passed to the AtmosphereModel constructor. The snapshot data is
+    # filled in AFTER the IC is loaded by copying from the prognostic fields
+    # — see `copy_ic_snapshots!` below.
+    ic_relax_forcing, ic_snapshots = if relaxation === nothing
+        NamedTuple(), nothing
+    else
+        α0, T_decay = relaxation
+        build_ic_relaxation_forcing(grid; α0, T_decay)
+    end
+
     model = AtmosphereModel(grid; dynamics, coriolis, momentum_advection, scalar_advection,
-                            microphysics, boundary_conditions)
+                            microphysics, boundary_conditions,
+                            forcing = ic_relax_forcing)
 
     FT = eltype(grid)
     model.clock.last_Δt = FT(Δt_value)
@@ -468,6 +488,15 @@ function moist_baroclinic_wave_model(arch;
         else
             set_moist_baroclinic_wave_from_file_vanilla!(model, initial_conditions_path; H = H, interpolation_type)
         end
+    end
+
+    # Freeze the post-interpolation state into the snapshot fields that the
+    # relaxation forcing damps toward. No online interpolation — just a
+    # field-wise parent copy.
+    if ic_snapshots !== nothing
+        copy_ic_snapshots!(ic_snapshots, model)
+        α0, T_decay = relaxation
+        @info "IC-relaxation forcing active" α0 T_decay
     end
 
     return model

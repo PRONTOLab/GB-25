@@ -99,7 +99,7 @@ function report_state(model, label)
     fields = Oceananigans.fields(model)
     for name in keys(fields)
         f = fields[name]
-        data = Oceananigans.interior(f)
+        data = Array(Oceananigans.interior(f))
         mx = Float64(maximum(data))
         mn = Float64(minimum(data))
         @printf("  [%s] %6s: min=% .6e  max=% .6e\n", label, name, mn, mx)
