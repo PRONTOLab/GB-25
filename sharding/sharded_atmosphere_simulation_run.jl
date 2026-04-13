@@ -311,6 +311,11 @@ for k in 1:Nouter
             label = "output", slices = output_slices)
     end
     @info "[$rank] saved block $k" block_dir
+
+    if k % 8 == 0
+        local_nan_check(rank, "block $k", model)
+    end
+
     flush(stderr); flush(stdout)
 end
 
