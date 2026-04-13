@@ -71,6 +71,22 @@ function generate_and_submit(submit_job_writer, cfg::JobConfig; caller_file::Str
     run_file = joinpath(out_path, basename(input_file))
     cp(input_file, run_file)
 
+    # Capture repository state
+    git_describe = readchomp(`git -C $(project_path) --no-pager describe --tags --always --dirty`)
+    git_branch = readchomp(`git -C $(project_path) rev-parse --abbrev-ref HEAD`)
+    git_diff = read(`git -C $(project_path) --no-pager diff --no-ext-diff HEAD`, String)
+    open(joinpath(out_path, "run-info.toml"), "w") do io
+        print(io, """
+git_describe = "$(git_describe)"
+git_branch = "$(git_branch)"
+""")
+    end
+    if !isempty(git_diff)
+        open(joinpath(out_path, "git.diff"), "w") do io
+            print(io, git_diff)
+        end
+    end
+
     @info "User: $(cfg.username); Project: $(cfg.account)"
     @info "run_file=$(run_file)"
     @info "Writing all output to: $(out_path)"
