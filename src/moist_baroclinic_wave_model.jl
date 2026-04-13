@@ -579,6 +579,17 @@ function set_moist_baroclinic_wave_from_file!(model, path::String; H = 30e3, int
         Oceananigans.BoundaryConditions.fill_halo_regions!(target_field)
     end
 
+    # Clamp ρqᵛ to be non-negative. The 1/8° source IC can contain small
+    # negative moisture values (min ~-1e-4) from bounds-preserving WENO that,
+    # when interpolated onto a finer grid and hit by the first microphysics
+    # step, reliably produce NaN in particular cells on particular tiles.
+    # Clipping here removes that root cause of iter-2 blowups in the fine-
+    # resolution spinup.
+    ρqv_target = model.moisture_density
+    qv_int = Oceananigans.interior(ρqv_target)
+    qv_int .= max.(qv_int, zero(FT))
+    Oceananigans.BoundaryConditions.fill_halo_regions!(ρqv_target)
+
     return nothing
 end
 
@@ -646,6 +657,17 @@ function set_moist_baroclinic_wave_from_file_vanilla!(model, path::String; H = 3
         @info "interpolate!" field=nameof(typeof(target_field)) loc src=size(Oceananigans.interior(src_field)) dst=size(Oceananigans.interior(target_field))
         Oceananigans.Fields.interpolate!(target_field, src_field)
     end
+
+    # Clamp ρqᵛ to be non-negative. The 1/8° source IC can contain small
+    # negative moisture values (min ~-1e-4) from bounds-preserving WENO that,
+    # when interpolated onto a finer grid and hit by the first microphysics
+    # step, reliably produce NaN in particular cells on particular tiles.
+    # Clipping here removes that root cause of iter-2 blowups in the fine-
+    # resolution spinup.
+    ρqv_target = model.moisture_density
+    qv_int = Oceananigans.interior(ρqv_target)
+    qv_int .= max.(qv_int, zero(FT))
+    Oceananigans.BoundaryConditions.fill_halo_regions!(ρqv_target)
 
     return nothing
 end
