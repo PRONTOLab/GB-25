@@ -585,10 +585,10 @@ function set_moist_baroclinic_wave_from_file!(model, path::String; H = 30e3, int
     # step, reliably produce NaN in particular cells on particular tiles.
     # Clipping here removes that root cause of iter-2 blowups in the fine-
     # resolution spinup.
-    ρqv_target = model.moisture_density
-    qv_int = Oceananigans.interior(ρqv_target)
-    qv_int .= max.(qv_int, zero(FT))
-    Oceananigans.BoundaryConditions.fill_halo_regions!(ρqv_target)
+    # ρqv_target = model.moisture_density
+    # qv_int = Oceananigans.interior(ρqv_target)
+    # qv_int .= max.(qv_int, zero(FT))
+    # Oceananigans.BoundaryConditions.fill_halo_regions!(ρqv_target)
 
     return nothing
 end
