@@ -93,15 +93,15 @@ model = GordonBell25.moist_baroclinic_wave_model(arch;
 
 @show model
 
-# ── Field diagnostics (no CPU copy) ───────────────────────────────────
+# ── Field diagnostics ──────────────────────────────────────────────────
 
 function report_state(model, label)
     fields = Oceananigans.fields(model)
     for name in keys(fields)
         f = fields[name]
-        p = parent(f)
-        mx = Float64(maximum(p))
-        mn = Float64(minimum(p))
+        data = Oceananigans.interior(f)
+        mx = Float64(maximum(data))
+        mn = Float64(minimum(data))
         @printf("  [%s] %6s: min=% .6e  max=% .6e\n", label, name, mn, mx)
         if isnan(mx) || isnan(mn)
             @error "NaN detected in $name at $label — aborting"
