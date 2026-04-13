@@ -649,3 +649,8 @@ function set_moist_baroclinic_wave_from_file_vanilla!(model, path::String; H = 3
 
     return nothing
 end
+
+@static if isdefined(Core, :BFloat16)
+    SpecialFunctions.gamma(x::Core.BFloat16) =
+        Core.BFloat16(SpecialFunctions.gamma(Float32(x)))
+end
