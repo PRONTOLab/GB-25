@@ -6,6 +6,7 @@ ENV["JULIA_DEBUG"] = "Reactant_jll,Reactant"
 using BFloat16s
 using GordonBell25
 using GordonBell25: first_time_step!, time_step!, loop!, factors, is_distributed_env_present
+using Reactant_jll
 
 const parsed_args = GordonBell25.parse_baroclinic_instability_args(;
     grid_x_default = 1536,
@@ -37,7 +38,7 @@ using Libdl: dllist
 
 const model_state_dump_path = joinpath(get(ENV, "SCRATCH", pwd()), "model_dumps", jobid_procid)
 
-Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
+Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = false
 Reactant.MLIR.IR.DUMP_MLIR_DIR[] = joinpath(@__DIR__, "mlir_dumps", jobid_procid)
 Reactant.Compiler.DEBUG_DISABLE_RESHARDING[] = true
 # Reactant.Compiler.DEBUG_PRINT_CODEGEN[] = true
@@ -122,46 +123,22 @@ end
 
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 
-profile_dir = joinpath(@__DIR__, "profiling", jobid_procid)
-mkpath(joinpath(profile_dir, "first_time_step"))
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 @info "[$rank] Running first_time_step!..." now(UTC)
-Reactant.with_profiler(joinpath(profile_dir, "first_time_step")) do
-    Reactant.Profiler.annotate("bench"; metadata=Dict("step_num" => 1, "_r" => 1)) do
-        @time "[$rank] first time step" rfirst!(model)
-    end
-end
+@time "[$rank] first time step" rfirst!(model)
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 
-mkpath(joinpath(profile_dir, "loop"))
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 @info "[$rank] running loop" now(UTC)
-Reactant.with_profiler(joinpath(profile_dir, "loop")) do
-    Reactant.Profiler.annotate("bench"; metadata=Dict("step_num" => 1, "_r" => 1)) do
-        @time "[$rank] loop" compiled_loop!(model, Ninner)
-    end
-end
+@show @ccall Reactant_jll.libReactantExtra.cuProfilerStart()::Cint
+@time "[$rank] loop" compiled_loop!(model, Ninner)
+@show @ccall Reactant_jll.libReactantExtra.cuProfilerStop()::Cint
 
-let dump_path = mkpath(joinpath(model_state_dump_path, "loop1"))
-    @info "[$rank] loop1 dumping state to disk" now(UTC) dump_path
-    GordonBell25.save_model_state(dump_path, model, arch)
-    @info "[$rank] loop1 successfully dumped to disk" now(UTC)
-end
-
-mkpath(joinpath(profile_dir, "loop2"))
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 @info "[$rank] running second loop" now(UTC)
-Reactant.with_profiler(joinpath(profile_dir, "loop2")) do
-    Reactant.Profiler.annotate("bench"; metadata=Dict("step_num" => 1, "_r" => 1)) do
-        @time "[$rank] second loop" compiled_loop!(model, Ninner)
-    end
-end
+@show @ccall Reactant_jll.libReactantExtra.cuProfilerStart()::Cint
+@time "[$rank] second loop" compiled_loop!(model, Ninner)
+@show @ccall Reactant_jll.libReactantExtra.cuProfilerStop()::Cint
 @info "[$rank] allocations" GordonBell25.allocatorstats()
-
-let dump_path = mkpath(joinpath(model_state_dump_path, "loop2"))
-    @info "[$rank] loop2 dumping state to disk" now(UTC) dump_path
-    GordonBell25.save_model_state(dump_path, model, arch)
-    @info "[$rank] loop2 successfully dumped to disk" now(UTC)
-end
 
 @info "[$rank] Done!" now(UTC)
