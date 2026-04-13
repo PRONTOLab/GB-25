@@ -44,6 +44,9 @@ function factors(N::Int)
         6136 => (104, 59),
         9152 => (143, 64),
         9180 => (135, 68),
+	256  => (16, 16),
+	1024 => (32, 32),
+	4096 => (64, 64),
     )
     haskey(special_cases, N) && return special_cases[N]
 
