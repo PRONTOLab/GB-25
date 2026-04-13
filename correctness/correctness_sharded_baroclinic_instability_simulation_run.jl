@@ -66,7 +66,7 @@ vi = 1e-3 .* rand(size(vmodel.velocities.v)...)
 set!(vmodel, u=ui, v=vi)
 GordonBell25.sync_states!(rmodel, vmodel)
 
-compile_options = CompileOptions(; sync=true, raise=true, strip_llvm_debuginfo=true, strip=:all, multifloat=GordonBell25.multifloat_from_args(parsed_args))
+compile_options = CompileOptions(; sync=true, raise=true, strip_llvm_debuginfo=true, strip=GordonBell25.parse_strip(parsed_args), multifloat=GordonBell25.multifloat_from_args(parsed_args))
 
 @info "At the beginning:"
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)

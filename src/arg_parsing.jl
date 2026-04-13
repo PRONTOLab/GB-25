@@ -38,8 +38,12 @@ function parse_baroclinic_instability_args(;
             default = 2
             arg_type = Int
         "--dimension"
-	    help = "Multifloat expansion dimension (first, last, tuple)"
+	        help = "Multifloat expansion dimension (first, last, tuple)"
             default = "first"
+            arg_type = String
+        "--strip"
+            help = "Strip MLIR debuginfo before XLA compilation. Accepted values are 'none/false', 'all/true', or a comma-separated list of ops."
+            default = "enzymexla.kernel_call,(::Reactant.Compiler.LLVMFunc,ka_with_reactant,(::KernelAbstractions.Kernel,var\"#_launch!;_launch!"
             arg_type = String
     end
     return parse_args(ARGS, s)
@@ -106,3 +110,12 @@ function multifloat_from_args(parsed_args)
     return Reactant.MultiFloatOptions(source, target, parsed_args["dimension"], parsed_args["limbs"])
 end
 
+function parse_strip(parsed_args)
+    if parsed_args["strip"] == "none" || parsed_args["strip"] == "false"
+        return :none
+    elseif parsed_args["strip"] == "all" || parsed_args["strip"] == "true"
+        return :all
+    else
+        return split(parsed_args["strip"], ",")
+    end
+end
