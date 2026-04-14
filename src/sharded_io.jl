@@ -208,8 +208,8 @@ function save_sharded_fields(dir, fields::NamedTuple, rank::Int;
             for (i, la) in enumerate(local_arrays)
                 mn, mx = extrema(la)
                 nz = count(!iszero, la)
-                @printf("  [rank %d] %s shard %d: size=%s min=%.6e max=%.6e nonzero=%d/%d\n",
-                        rank, key, i, string(size(la)), Float64(mn), Float64(mx), nz, length(la))
+                @printf("  [%s, rank %d] %s shard %d: size=%s min=%.6e max=%.6e nonzero=%d/%d\n",
+                        dir, rank, key, i, string(size(la)), Float64(mn), Float64(mx), nz, length(la))
             end
 
             serializable_slices = [Tuple((first(r), last(r)) for r in s) for s in local_slices]
@@ -260,7 +260,11 @@ function save_sharded_fields(dir, fields::NamedTuple, rank::Int;
     end
 
     tmppath = filepath * ".tmp.jld2"
-    jldsave(tmppath; jld2_data...)
+    jldopen(tmppath, "w") do file
+        for (k, v) in jld2_data
+            file[k] = v
+        end
+    end
     mv(tmppath, filepath; force=true)
     return filepath
 end
