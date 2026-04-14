@@ -32,8 +32,8 @@ const ARTIFACTS = [
     #  url  = "https://www.dropbox.com/scl/fi/xxydkjyquq6ryxhohfsc9/atmosphere_coarsened_1536x768x64.jld2?rlkey=5dd443o583kunnwsl6er75yb5&dl=1"),
     # (name = "atmosphere_no_microphysics_1deg_14day.jld2",
     #  url  = "https://www.dropbox.com/scl/fi/0w9hvr8dol7ferfrrn7mj/atmosphere_no_microphysics_1deg_14day.jld2?rlkey=htnm5b8wy89jrt0eu67cbilcc&dl=1"),
-    (name = "cascade_checkpoint.jld2",
-     url  = "https://www.dropbox.com/scl/fi/rq206amnk6ylw0mz5gk1v/cascade_checkpoint.jld2?rlkey=v4rdkm7emjkib8s1k8e8352qk&st=gncdbwnv&dl=1")
+    (name = "checkpoint_step_008193.jld2",
+     url  = "https://www.dropbox.com/scl/fi/opxpmprauvceg1gr6ew84/checkpoint_step_008193.jld2?rlkey=ahabdl1h74b4vs0m1n400jxcc&st=v7r7wxcg&dl=0"),
 ]
 
 function download_artifact_if_missing(name::AbstractString, url::AbstractString, dest_dir::AbstractString)

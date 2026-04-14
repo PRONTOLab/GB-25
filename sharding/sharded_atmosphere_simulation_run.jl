@@ -94,7 +94,7 @@ column_height = 30e3   # m; default column height in moist_baroclinic_wave_model
 # Falls back to analytic IC if the file is missing.
 
 _ic_path = joinpath(pkgdir(GordonBell25), "simulations", "initial_conditions",
-                    "cascade_checkpoint.jld2")
+                    "checkpoint_step_008193.jld2")
 # _ic_path = joinpath(pkgdir(GordonBell25), "simulations", "initial_conditions",
 #                     "quarter_deg_day1_cloud_tau30.jld2")
 # _ic_path = joinpath(pkgdir(GordonBell25), "simulations", "initial_conditions",
