@@ -443,7 +443,7 @@ Nλ = 8640
 Nφ = 3840
 Nz = 64
 column_height = 30e3
-Δt = 0.5
+Δt = 0.8
 sst_anomaly = 2.0
 
 # IC-relaxation and cloud-condensate damping both OFF for this run.
@@ -554,17 +554,39 @@ output_dir = joinpath(@__DIR__, "..", "simulations", "output", "nccl_8gpu_24th_d
 rank == 0 && mkpath(output_dir)
 MPI.Barrier(MPI.COMM_WORLD)
 
-output_fields = Oceananigans.fields(model)
-output_prefix = joinpath(output_dir, "fields")
+output_prefix = joinpath(output_dir, "fields_rank$rank")
 
-stop_iter = 21600  # 3h sim at Δt=0.5 with cloud-field IC + qv clamp, τ=120
+stop_iter = 22500  # 5h sim at Δt=0.8
 
 simulation = Simulation(model; Δt, stop_iteration=stop_iter)
 
-simulation.output_writers[:fields] = JLD2Writer(model, output_fields;
-    filename = output_prefix,
-    schedule = IterationInterval(100_000),  # disabled for this 3h-sim stability test
-    overwrite_existing = true)
+# Custom per-rank JLD2 output (bypasses Oceananigans JLD2Writer which
+# doesn't add rank suffixes for NCCLDistributed + AtmosphereModel).
+output_interval = 7500  # 3 writes over 22500 iters
+function save_fields(sim)
+    iter = sim.model.clock.iteration
+    if iter % output_interval == 0
+        m = sim.model
+        filepath = output_prefix * "_iter$(lpad(iter, 6, '0')).jld2"
+        JLD2.jldopen(filepath, "w") do file
+            file["iteration"] = iter
+            file["time"] = m.clock.time
+            file["Δt"] = Δt
+            file["ρ"]  = Array(Oceananigans.interior(dynamics_density(m.dynamics)))
+            file["ρu"] = Array(Oceananigans.interior(m.momentum.ρu))
+            file["ρv"] = Array(Oceananigans.interior(m.momentum.ρv))
+            file["ρw"] = Array(Oceananigans.interior(m.momentum.ρw))
+            file["ρθ"] = Array(Oceananigans.interior(m.formulation.potential_temperature_density))
+            file["ρqᵛ"] = Array(Oceananigans.interior(m.moisture_density))
+            for name in keys(m.microphysical_fields)
+                file[string(name)] = Array(Oceananigans.interior(m.microphysical_fields[name]))
+            end
+        end
+        @info "Saved rank $rank output to $filepath"
+    end
+end
+
+simulation.callbacks[:save_fields] = Callback(save_fields, IterationInterval(output_interval))
 
 # Per-iteration diagnostic: report extrema for the prognostic fields and bail
 # the moment any NaN appears anywhere. Cheap-ish (one reduce per field per rank).
