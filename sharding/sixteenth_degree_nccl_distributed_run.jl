@@ -1,11 +1,9 @@
-# Vanilla-Oceananigans 1/24° atmosphere run — 8 GPUs with NCCLDistributed.
-# Initialized from 1/8° cascade checkpoint (interpolated 3× in horizontal)
-# with IC-relaxation spinup forcing on {ρu, ρv, ρw, ρθ, ρqᵛ}.
-# Latitude range (-80, 80), Δt=0.5s, SST anomaly = +2 K, α₀=0.2 s⁻¹.
-# Note: ρ is NOT in the snapshot set — Breeze's _compute_density_tendency!
-# kernel does not consume forcing.ρ, so a ρ snapshot would be wasted memory.
+# Vanilla-Oceananigans 1/16° atmosphere run — 8 GPUs with NCCLDistributed.
+# Initialized from 1/8° checkpoint_step_008193 (interpolated 2× in horizontal)
+# with cloud-field IC. No IC-relaxation needed (2× upsample is mild).
+# Latitude range (-80, 80), Δt=0.8s, SST anomaly = +2 K, τ_cloud=120s.
 #
-# Launch: ~/.julia/bin/mpiexecjl -n 8 --project julia -O0 sharding/twentyfourth_degree_nccl_distributed_run.jl
+# Launch: ~/.julia/bin/mpiexecjl -n 8 --project julia -O0 sharding/sixteenth_degree_nccl_distributed_run.jl
 #
 # IMPORTANT: Does NOT load GordonBell25 or Reactant on this box.
 # `RelaxToICForcing` is inlined below instead of imported from GordonBell25,
@@ -25,7 +23,7 @@ using NCCL
 
 CUDA.device!(rank % length(CUDA.devices()))
 
-rank == 0 && @info "Starting NCCL-distributed 1/24° atmosphere simulation" nprocs now(UTC)
+rank == 0 && @info "Starting NCCL-distributed 1/16° atmosphere simulation" nprocs now(UTC)
 rank == 0 && @info "GPU assignment" rank gpu=CUDA.device()
 
 using Oceananigans
@@ -236,138 +234,6 @@ end
 # 1/32° portion.
 # ═══════════════════════════════════════════════════════════════════════════
 
-# Load IC from per-rank JLD2 output files (e.g. from a coarser distributed run).
-# Assembles the per-rank tiles into global arrays, then interpolates.
-function load_ic_from_ranks!(model, output_dir::String, iter_str::String,
-                             src_Rx::Int, src_Ry::Int;
-                             H = 30e3,
-                             src_latitude  = (-80, 80),
-                             src_longitude = (0, 360))
-    # Reference tile sizes from rank 0
-    ref_path = joinpath(output_dir, "fields_rank0_iter$(iter_str).jld2")
-    ref_sizes = JLD2.jldopen(ref_path, "r") do f
-        Dict(name => size(f[name]) for name in keys(f) if f[name] isa AbstractArray)
-    end
-    ref_nx, ref_ny, ref_nz = ref_sizes["ρ"]
-
-    function assemble(name)
-        tiles = Vector{Array{Float32, 3}}(undef, src_Rx * src_Ry)
-        for r in 0:(src_Rx * src_Ry - 1)
-            path = joinpath(output_dir, "fields_rank$(r)_iter$(iter_str).jld2")
-            tiles[r + 1] = JLD2.jldopen(path, "r") do f; f[name]; end
-        end
-
-        # Determine tile size: use center-field size for x and z,
-        # but keep actual y-size per rank to preserve face points.
-        nx = ref_nx
-        nz = ref_nz
-
-        # Global y-size: sum unique y-points across iy ranks.
-        # For center fields: all ranks have ref_ny → global = Ry * ref_ny
-        # For YFace fields: iy=0 has ref_ny, last iy has ref_ny+1 → global = Ry * ref_ny + 1
-        tile0_ny = size(tiles[1], 2)
-        has_extra_y = any(size(tiles[r+1], 2) > tile0_ny for r in 0:(src_Rx*src_Ry-1))
-        global_ny = has_extra_y ? src_Ry * ref_ny + 1 : src_Ry * ref_ny
-
-        # ZFace: keep extra z if present
-        tile0_nz = size(tiles[1], 3)
-        global_nz = tile0_nz  # all ranks have the same z-size
-
-        g = zeros(Float32, src_Rx * nx, global_ny, global_nz)
-        for r in 0:(src_Rx * src_Ry - 1)
-            ix = r ÷ src_Ry
-            iy = r % src_Ry
-            t = tiles[r + 1]
-            tnx, tny, tnz = size(t)
-            y_start = iy * ref_ny + 1
-            g[ix*nx+1:(ix+1)*nx, y_start:y_start+tny-1, 1:tnz] = t[1:nx, :, :]
-        end
-        return g
-    end
-
-    rank == 0 && @info "Assembling global fields from $output_dir (iter $iter_str)..."
-    ρ_data  = assemble("ρ")
-    ρu_data = assemble("ρu")
-    ρv_data = assemble("ρv")
-    ρw_data = assemble("ρw")
-    ρθ_data = assemble("ρθ")
-    ρqv_data = assemble("ρqᵛ")
-
-    Nλ_src, Nφ_src, Nz_src = size(ρ_data)
-    rank == 0 && @info "Source grid" Nλ_src Nφ_src Nz_src
-
-    # Try loading cloud/precip fields
-    function try_assemble(name)
-        path0 = joinpath(output_dir, "fields_rank0_iter$(iter_str).jld2")
-        has = JLD2.jldopen(path0, "r") do f; haskey(f, name); end
-        has ? assemble(name) : nothing
-    end
-    ρqcl_data = try_assemble("ρqᶜˡ")
-    ρqci_data = try_assemble("ρqᶜⁱ")
-    ρqr_data  = try_assemble("ρqʳ")
-    ρqs_data  = try_assemble("ρqˢ")
-
-    grid = model.grid
-    arch = Oceananigans.architecture(grid)
-    FT   = eltype(grid)
-
-    pairs = Any[
-        (ρ_data,   dynamics_density(model.dynamics)),
-        (ρu_data,  model.momentum.ρu),
-        (ρv_data,  model.momentum.ρv),
-        (ρw_data,  model.momentum.ρw),
-        (ρθ_data,  model.formulation.potential_temperature_density),
-        (ρqv_data, model.moisture_density),
-    ]
-    if ρqcl_data !== nothing
-        push!(pairs, (ρqcl_data, model.microphysical_fields[:ρqᶜˡ]))
-    end
-    if ρqci_data !== nothing
-        push!(pairs, (ρqci_data, model.microphysical_fields[:ρqᶜⁱ]))
-    end
-    if ρqr_data !== nothing
-        push!(pairs, (ρqr_data, model.microphysical_fields[:ρqʳ]))
-    end
-    if ρqs_data !== nothing
-        push!(pairs, (ρqs_data, model.microphysical_fields[:ρqˢ]))
-    end
-
-    halo = Oceananigans.halo_size(grid)
-    src_grid = LatitudeLongitudeGrid(GPU();
-        size = (Nλ_src, Nφ_src, Nz_src),
-        halo = halo,
-        latitude  = src_latitude,
-        longitude = src_longitude,
-        z = (0, H))
-
-    for (src_array, target_field) in pairs
-        loc = Oceananigans.location(target_field)
-        iloc = map(L -> L(), loc)
-        src_field = Field(iloc, src_grid)
-        gpu_data = Oceananigans.on_architecture(GPU(), Array{FT}(src_array))
-        copyto!(Oceananigans.interior(src_field), gpu_data)
-        Oceananigans.BoundaryConditions.fill_halo_regions!(src_field)
-        rank == 0 && @info "interpolate!" field=nameof(typeof(target_field)) src=size(Oceananigans.interior(src_field)) dst=size(Oceananigans.interior(target_field))
-        Oceananigans.Fields.interpolate!(target_field, src_field)
-    end
-
-    # Clamp all moisture/condensate fields to ≥ 0
-    function clamp_nonneg!(f, name)
-        int = Oceananigans.interior(f)
-        int .= max.(int, zero(FT))
-        Oceananigans.BoundaryConditions.fill_halo_regions!(f)
-        rank == 0 && @info "clamped $name to ≥ 0"
-    end
-    clamp_nonneg!(model.moisture_density, "ρqᵛ")
-    for name in (:ρqᶜˡ, :ρqᶜⁱ, :ρqʳ, :ρqˢ)
-        if haskey(model.microphysical_fields, name)
-            clamp_nonneg!(model.microphysical_fields[name], string(name))
-        end
-    end
-
-    return nothing
-end
-
 function load_ic_distributed!(model, path::String;
                               H = 30e3,
                               src_latitude  = (-80, 80),
@@ -571,25 +437,21 @@ Ry = 2
 rank == 0 && @info "Setting up NCCLDistributed" Rx Ry
 arch = NCCLDistributed(GPU(); partition = Partition(Rx, Ry, 1))
 
-Nλ = 8640
-Nφ = 3840
+Nλ = 5760
+Nφ = 2560
 Nz = 64
 column_height = 30e3
-Δt_spinup = 0.1    # very small Δt for staircase smoothing
-Δt_production = 0.8  # CFL-limited Δt for the main run
-spinup_time = 10.0   # 10s diagnostic run (100 iters at Δt=0.1)
-Δt = Δt_spinup       # start with spinup Δt
+Δt = 1.2
 sst_anomaly = 2.0
 
 # IC-relaxation and cloud-condensate damping both OFF for this run.
 relaxation = nothing
 cloud_damping = nothing
 
-# IC from 1/16° final state (1.5× upsample, much milder than 3× from 1/8°)
-ic_dir = joinpath(@__DIR__, "..", "simulations", "output", "nccl_8gpu_16th_deg")
-ic_iter = "036000"
-ic_src_Rx, ic_src_Ry = 4, 2
-rank == 0 && @info "IC from 1/16° distributed output (iter $ic_iter → 1/24°)" ic_dir
+ic_path = joinpath(@__DIR__, "..", "simulations", "initial_conditions",
+                   "checkpoint_step_008193.jld2")
+isfile(ic_path) || error("IC file not found at $ic_path")
+rank == 0 && @info "IC file (1/8° checkpoint_step_008193 with cloud fields → 1/16°)" ic_path
 
 rank == 0 && @info "Building model (Nλ=$Nλ, Nφ=$Nφ, Nz=$Nz, lat=(-80,80), Δt=$(Δt)s, sst_anomaly=$(sst_anomaly)K, relaxation=$relaxation, cloud_damping=$cloud_damping)..." now(UTC)
 @time "build model" model, ic_snapshots = build_atmosphere_model(arch;
@@ -602,11 +464,11 @@ rank == 0 && @info "Building model (Nλ=$Nλ, Nφ=$Nφ, Nz=$Nz, lat=(-80,80), Δ
                                                                   cloud_damping)
 rank == 0 && @show model
 
-rank == 0 && @info "Loading ICs (interpolating 1/16° → 1/24°)..." now(UTC)
-@time "load ICs" load_ic_from_ranks!(model, ic_dir, ic_iter, ic_src_Rx, ic_src_Ry;
-                                      H=column_height,
-                                      src_latitude=(-80, 80),
-                                      src_longitude=(0, 360))
+rank == 0 && @info "Loading ICs (interpolating 1/8° → 1/16°)..." now(UTC)
+@time "load ICs" load_ic_distributed!(model, ic_path;
+                                       H=column_height,
+                                       src_latitude=(-80, 80),
+                                       src_longitude=(0, 360))
 
 if any_nan(model)
     error("NaN after IC load on rank $rank")
@@ -686,23 +548,52 @@ MPI.Barrier(MPI.COMM_WORLD)
 
 # ── Simulation setup ────────────────────────────────────────────────────
 
-output_dir = joinpath(@__DIR__, "..", "simulations", "output", "nccl_8gpu_24th_deg")
+output_dir = joinpath(@__DIR__, "..", "simulations", "output", "nccl_8gpu_16th_deg")
 rank == 0 && mkpath(output_dir)
 MPI.Barrier(MPI.COMM_WORLD)
 
 output_prefix = joinpath(output_dir, "fields_rank$rank")
 
-total_sim_time = 6 * 3600.0  # 6h
+stop_iter = 36000  # 12h sim at Δt=1.2
 
-# ── Shared helpers ─────────────────────────────────────────────────────
+simulation = Simulation(model; Δt, stop_iteration=stop_iter)
 
+# Custom per-rank JLD2 output (bypasses Oceananigans JLD2Writer which
+# doesn't add rank suffixes for NCCLDistributed + AtmosphereModel).
+output_interval = 9000  # write every 3h sim (4 writes over 12h)
+function save_fields(sim)
+    iter = sim.model.clock.iteration
+    if iter % output_interval == 0
+        m = sim.model
+        filepath = output_prefix * "_iter$(lpad(iter, 6, '0')).jld2"
+        JLD2.jldopen(filepath, "w") do file
+            file["iteration"] = iter
+            file["time"] = m.clock.time
+            file["Δt"] = Δt
+            file["ρ"]  = Array(Oceananigans.interior(dynamics_density(m.dynamics)))
+            file["ρu"] = Array(Oceananigans.interior(m.momentum.ρu))
+            file["ρv"] = Array(Oceananigans.interior(m.momentum.ρv))
+            file["ρw"] = Array(Oceananigans.interior(m.momentum.ρw))
+            file["ρθ"] = Array(Oceananigans.interior(m.formulation.potential_temperature_density))
+            file["ρqᵛ"] = Array(Oceananigans.interior(m.moisture_density))
+            for name in keys(m.microphysical_fields)
+                file[string(name)] = Array(Oceananigans.interior(m.microphysical_fields[name]))
+            end
+        end
+        @info "Saved rank $rank output to $filepath"
+    end
+end
+
+simulation.callbacks[:save_fields] = Callback(save_fields, IterationInterval(output_interval))
+
+# Per-iteration diagnostic: report extrema for the prognostic fields and bail
+# the moment any NaN appears anywhere. Cheap-ish (one reduce per field per rank).
 function field_extrema(f)
     p = Oceananigans.interior(f)
     return Float64(minimum(p)), Float64(maximum(p))
 end
 
 wall_start = Ref(time_ns())
-
 function diagnostics(sim)
     m = sim.model
     ρ_min, ρ_max     = field_extrema(dynamics_density(m.dynamics))
@@ -719,70 +610,25 @@ function diagnostics(sim)
                !isfinite(ρθ_min) || !isfinite(ρθ_max) ||
                !isfinite(ρqv_min) || !isfinite(ρqv_max)
 
+    # Print this rank's extrema EVERY iter (so we can diagnose which rank/tile
+    # blows up first; rank 0 alone tells us nothing about other tiles).
     wall = (time_ns() - wall_start[]) / 1e9
-    @info @sprintf("[r%d] iter %5d  t=%6.2fs  Δt=%.2f  wall=%6.1fs  ρ=[%+.3e,%+.3e] ρu=[%+.2e,%+.2e] ρv=[%+.2e,%+.2e] ρw=[%+.2e,%+.2e] ρθ=[%+.3e,%+.3e] ρqv=[%+.3e,%+.3e]",
-                   rank, m.clock.iteration, m.clock.time, sim.Δt, wall,
+    @info @sprintf("[r%d] iter %5d  t=%6.2fs  wall=%6.1fs  ρ=[%+.3e,%+.3e] ρu=[%+.2e,%+.2e] ρv=[%+.2e,%+.2e] ρw=[%+.2e,%+.2e] ρθ=[%+.3e,%+.3e] ρqv=[%+.3e,%+.3e]",
+                   rank, m.clock.iteration, m.clock.time, wall,
                    ρ_min, ρ_max, ρu_min, ρu_max, ρv_min, ρv_max,
                    ρw_min, ρw_max, ρθ_min, ρθ_max, ρqv_min, ρqv_max)
     if nan_here
-        @error "NaN/Inf detected at iter $(m.clock.iteration) on rank $rank"
+        @error "NaN/Inf detected at iter $(m.clock.iteration) on rank $rank — see preceding [r$rank] line for the bad extrema"
         error("NaN/Inf detected at iter $(m.clock.iteration) on rank $rank")
     end
     flush(stderr); flush(stdout)
 end
 
-output_interval_time = 7200.0  # write every 2h sim
-function save_fields(sim)
-    m = sim.model
-    t = m.clock.time
-    # Write at approximate 2h intervals
-    if t > 0 && mod(t, output_interval_time) < max(Δt_spinup, Δt_production)
-        iter = m.clock.iteration
-        filepath = output_prefix * "_iter$(lpad(iter, 6, '0')).jld2"
-        JLD2.jldopen(filepath, "w") do file
-            file["iteration"] = iter
-            file["time"] = t
-            file["Δt"] = sim.Δt
-            file["ρ"]  = Array(Oceananigans.interior(dynamics_density(m.dynamics)))
-            file["ρu"] = Array(Oceananigans.interior(m.momentum.ρu))
-            file["ρv"] = Array(Oceananigans.interior(m.momentum.ρv))
-            file["ρw"] = Array(Oceananigans.interior(m.momentum.ρw))
-            file["ρθ"] = Array(Oceananigans.interior(m.formulation.potential_temperature_density))
-            file["ρqᵛ"] = Array(Oceananigans.interior(m.moisture_density))
-            for name in keys(m.microphysical_fields)
-                file[string(name)] = Array(Oceananigans.interior(m.microphysical_fields[name]))
-            end
-        end
-        @info "Saved rank $rank output to $filepath"
-    end
-end
+simulation.callbacks[:diagnostics] = Callback(diagnostics, IterationInterval(100))
 
-# ── Phase 1: Spinup with small Δt ─────────────────────────────────────
-
-spinup_iters = round(Int, spinup_time / Δt_spinup)
-rank == 0 && @info "Phase 1: spinup Δt=$(Δt_spinup)s for $(spinup_time)s sim ($(spinup_iters) iters)" now(UTC)
-
-sim1 = Simulation(model; Δt=Δt_spinup, stop_iteration=model.clock.iteration + spinup_iters)
-sim1.callbacks[:diagnostics] = Callback(diagnostics, IterationInterval(1))
-
+rank == 0 && @info "Starting simulation (stop_iter=$stop_iter, Δt=$Δt)" now(UTC)
 wall_start[] = time_ns()
-Oceananigans.run!(sim1)
-
-rank == 0 && @info "Phase 1 complete" model.clock
-
-# ── Phase 2: Production with large Δt ─────────────────────────────────
-
-remaining_time = total_sim_time - model.clock.time
-production_iters = round(Int, remaining_time / Δt_production)
-final_iter = model.clock.iteration + production_iters
-
-rank == 0 && @info "Phase 2: production Δt=$(Δt_production)s for $(remaining_time)s sim ($(production_iters) iters)" now(UTC)
-
-sim2 = Simulation(model; Δt=Δt_production, stop_iteration=final_iter)
-sim2.callbacks[:diagnostics] = Callback(diagnostics, IterationInterval(100))
-sim2.callbacks[:save_fields] = Callback(save_fields, IterationInterval(100))
-
-Oceananigans.run!(sim2)
+Oceananigans.run!(simulation)
 
 rank == 0 && @info "Done!" now(UTC) model.clock
 MPI.Finalize()

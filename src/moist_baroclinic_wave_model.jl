@@ -344,6 +344,7 @@ function moist_baroclinic_wave_model(arch;
                                      H            = 30e3,
                                      Δt           = nothing,
                                      halo         = (8, 8, 8),
+                                     latitude     = (-80, 80),
                                      time_discretization = ExplicitTimeStepping(),
                                      with_microphysics = true,
                                      with_surface_fluxes = true,
@@ -369,7 +370,7 @@ function moist_baroclinic_wave_model(arch;
                                  size = (Nλ, Nφ, Nz),
                                  halo,
                                  longitude = (0, 360),
-                                 latitude  = (-80, 80),
+                                 latitude,
                                  z = (0, H))
 
     coriolis = with_coriolis ? SphericalCoriolis() : nothing
