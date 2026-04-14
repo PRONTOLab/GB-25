@@ -2,61 +2,84 @@
 ##### Relaxation-to-initial-condition forcing with linearly-decaying strength
 #####
 
+using Adapt: Adapt
+
 """
-    RelaxToICForcing{Name, F, T}
+    RelaxToICSpec{F, T}
 
-A discrete-form Oceananigans/Breeze forcing that damps the prognostic field
-named `Name` toward a persistent snapshot `ic`:
-
-```
-    F(i,j,k) = -α(t) * (ρϕ[i,j,k] - ρϕ_IC[i,j,k])
-```
-
-where the damping rate decays linearly from `α0 = 1/τ₀` at `t=0` to zero at
-`t = T_decay`, and is clamped to zero thereafter:
-
-```
-    α(t) = max(0, α0 * (1 - t / T_decay))
-```
-
-The `Name` parameter is a `Symbol` that identifies which prognostic field we
-are damping. It is used to index into the `fields` NamedTuple supplied by the
-tendency kernel so that this single forcing type works for any prognostic
-variable. `Name` is encoded as a type parameter (not a field) so the
-compiler can specialize each tendency and unroll the `fields[Name]` lookup.
+User-facing specification for an IC-relaxation forcing. Carries the IC
+snapshot and the damping schedule; the live prognostic field is bound
+in at model-construction time via `materialize_atmosphere_model_forcing`.
 """
-struct RelaxToICForcing{Name, F, T}
+struct RelaxToICSpec{F, T}
     ic       :: F
     α0       :: T
     T_decay  :: T
 end
 
-RelaxToICForcing(name::Symbol, ic, α0::Real, T_decay::Real) =
-    let Tpromoted = promote_type(typeof(α0), typeof(T_decay))
-        RelaxToICForcing{name, typeof(ic), Tpromoted}(ic, Tpromoted(α0), Tpromoted(T_decay))
-    end
+"""
+    RelaxToICForcing{C, I, T}
 
-@inline function (f::RelaxToICForcing{Name})(i, j, k, grid, clock, fields) where {Name}
-    t = clock.time
-    # Linearly-decaying damping rate, clamped to zero after T_decay
-    α = max(zero(t), f.α0 * (1 - t / f.T_decay))
+Discrete-form Oceananigans/Breeze forcing that damps a prognostic field
+toward a persistent IC snapshot:
+
+```
+    F(i,j,k) = -α(t) * (current[i,j,k] - ic[i,j,k])
+```
+
+`α(t) = max(0, α0 * (1 - t/T_decay))`. Direct references to both the
+live prognostic field (`current`) and the IC snapshot (`ic`) are stored
+here — no NamedTuple lookup happens in the tendency kernel, so the GPU
+codegen stays clean.
+"""
+struct RelaxToICForcing{C, I, T}
+    current  :: C
+    ic       :: I
+    α0       :: T
+    T_decay  :: T
+end
+
+Adapt.adapt_structure(to, f::RelaxToICForcing) =
+    RelaxToICForcing(Adapt.adapt(to, f.current),
+                     Adapt.adapt(to, f.ic),
+                     f.α0, f.T_decay)
+
+Adapt.adapt_structure(to, s::RelaxToICSpec) =
+    RelaxToICSpec(Adapt.adapt(to, s.ic), s.α0, s.T_decay)
+
+@inline function (f::RelaxToICForcing)(i, j, k, grid, clock, fields)
+    # NOTE: time-dependent damping (using clock.time) generated MLIR API
+    # calls inside the GPU kernel — clock.time is a TracedRNumber that
+    # cannot be operated on at GPU codegen. For now we apply a constant
+    # α0 and rely on launching a fresh model+compile to schedule the
+    # damping (e.g. α0=0.1 for the first 30 min, then α0=0 thereafter).
     @inbounds ic_val  = f.ic[i, j, k]
-    @inbounds cur_val = fields[Name][i, j, k]
-    return -α * (cur_val - ic_val)
+    @inbounds cur_val = f.current[i, j, k]
+    return -f.α0 * (cur_val - ic_val)
+end
+
+# Hook into Breeze's forcing materialization so we can capture a
+# reference to the prognostic `field` at construction time.
+# Promote α0 and T_decay to the grid's float type so the GPU kernel does
+# not hit mixed Float32/Float64 dispatches (which pull in unreachable
+# error-handling code and break GPU codegen).
+function Breeze.AtmosphereModels.materialize_atmosphere_model_forcing(
+    spec::RelaxToICSpec, field, name, model_field_names, context)
+    FT = eltype(field.grid)
+    return RelaxToICForcing(field, spec.ic, FT(spec.α0), FT(spec.T_decay))
 end
 
 """
     build_ic_relaxation_forcing(grid; α0, T_decay, include_cloud=false)
 
-Allocate IC-snapshot fields and build a NamedTuple of `RelaxToICForcing`s
-that damp each of the six dynamics/vapor prognostic fields (and optionally
-the two cloud-condensate fields) toward those snapshots.
+Allocate IC-snapshot fields and build a NamedTuple of `RelaxToICSpec`s
+(one per prognostic name we relax). `α0` is the initial damping rate
+(s⁻¹); the rate decays linearly to zero at `t = T_decay` and is clamped
+to zero thereafter.
 
-`α0` is the initial damping rate (s⁻¹); the rate decays linearly to zero at
-`t = T_decay` and is clamped to zero thereafter.
-
-The snapshot fields are returned alongside the forcing NamedTuple so the
-caller can fill them with post-interpolation state after the IC is loaded.
+Returns `(forcing_specs, snapshots)`. `snapshots` is the NamedTuple of
+newly-allocated IC-snapshot fields; callers fill them with
+post-interpolation state after the IC is loaded.
 """
 function build_ic_relaxation_forcing(grid; α0::Real, T_decay::Real, include_cloud::Bool=false)
     snapshots = (
@@ -69,12 +92,12 @@ function build_ic_relaxation_forcing(grid; α0::Real, T_decay::Real, include_clo
     )
 
     forcing = (
-        ρ   = RelaxToICForcing(:ρ,   snapshots.ρ,   α0, T_decay),
-        ρu  = RelaxToICForcing(:ρu,  snapshots.ρu,  α0, T_decay),
-        ρv  = RelaxToICForcing(:ρv,  snapshots.ρv,  α0, T_decay),
-        ρw  = RelaxToICForcing(:ρw,  snapshots.ρw,  α0, T_decay),
-        ρθ  = RelaxToICForcing(:ρθ,  snapshots.ρθ,  α0, T_decay),
-        ρqᵛ = RelaxToICForcing(:ρqᵛ, snapshots.ρqᵛ, α0, T_decay),
+        ρ   = RelaxToICSpec(snapshots.ρ,   α0, T_decay),
+        ρu  = RelaxToICSpec(snapshots.ρu,  α0, T_decay),
+        ρv  = RelaxToICSpec(snapshots.ρv,  α0, T_decay),
+        ρw  = RelaxToICSpec(snapshots.ρw,  α0, T_decay),
+        ρθ  = RelaxToICSpec(snapshots.ρθ,  α0, T_decay),
+        ρqᵛ = RelaxToICSpec(snapshots.ρqᵛ, α0, T_decay),
     )
 
     if include_cloud
@@ -83,8 +106,8 @@ function build_ic_relaxation_forcing(grid; α0::Real, T_decay::Real, include_clo
             ρqᶜⁱ = CenterField(grid),
         ))
         forcing = merge(forcing, (
-            ρqᶜˡ = RelaxToICForcing(:ρqᶜˡ, snapshots.ρqᶜˡ, α0, T_decay),
-            ρqᶜⁱ = RelaxToICForcing(:ρqᶜⁱ, snapshots.ρqᶜⁱ, α0, T_decay),
+            ρqᶜˡ = RelaxToICSpec(snapshots.ρqᶜˡ, α0, T_decay),
+            ρqᶜⁱ = RelaxToICSpec(snapshots.ρqᶜⁱ, α0, T_decay),
         ))
     end
 
@@ -96,10 +119,9 @@ end
 
 Copy the current prognostic field values from `model` into the matching
 `snapshots` fields. Must be called AFTER the IC has been loaded (and
-interpolated) into the model's prognostic fields. Uses Oceananigans' `set!`
-which under Reactant dispatches to a `@jit` elementwise copy kernel,
-producing an independent buffer (so the snapshot does not alias the
-prognostic state).
+interpolated) into the model's prognostic fields. Uses Oceananigans'
+`set!`, which under Reactant dispatches to a `@jit` elementwise copy
+kernel — the snapshot owns an independent buffer.
 """
 function copy_ic_snapshots!(snapshots::NamedTuple, model)
     Oceananigans.set!(snapshots.ρ,   dynamics_density(model.dynamics))
