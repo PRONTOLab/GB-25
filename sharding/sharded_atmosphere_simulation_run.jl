@@ -148,15 +148,17 @@ Nouter = 10
 wall_start = time_ns()
 for k in 1:Nouter
     t0 = time_ns()
+
     compiled_loop!(model, Ninner_r)
+    
     wall_block = (time_ns() - t0) / 1e9
     total_steps = Ninner * k + 1
     sim_time = total_steps * Δt
     total_wall = (time_ns() - wall_start) / 1e9
-    sypd = (Ninner * Δt) / (365.25 * 86400 * wall_block) * 365.25
+    sdpd = (Ninner * Δt) / wall_block
 
     @info @sprintf("block %d/%d: %d steps, wall=%.1fs, sim_time=%.0fs, SYPD=%.4f, total_wall=%.0fs",
-                    k, Nouter, total_steps, wall_block, sim_time, sypd, total_wall)
+                    k, Nouter, total_steps, wall_block, sim_time, sdpd, total_wall)
 
     report_state(model, @sprintf("step %d", total_steps))
 

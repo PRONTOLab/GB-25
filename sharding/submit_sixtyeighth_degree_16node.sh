@@ -49,7 +49,7 @@ export TZ=UTC
 unset no_proxy http_proxy https_proxy NO_PROXY HTTP_PROXY HTTPS_PROXY
 
 # ── Launch ───────────────────────────────────────────────────────────────
-PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+PROJECT_DIR="${SLURM_SUBMIT_DIR}"
 RUN_SCRIPT="${PROJECT_DIR}/sharding/sixtyeighth_degree_nccl_distributed_run.jl"
 
 srun --uenv="${SCRATCH}/uenv_julia/julia_26_3_v1_gh200.squashfs" \

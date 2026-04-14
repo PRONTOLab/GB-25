@@ -1,6 +1,8 @@
 using Reactant
 using Oceananigans
 using Serialization
+using JLD2
+using Printf
 
 """
     local_shards_to_host(arr)
@@ -169,17 +171,17 @@ function save_sharded_fields(dir, fields::NamedTuple, rank::Int;
                              z_indices=nothing, halo_z::Int=0,
                              slices=nothing, halo_sizes::NTuple{3,Int}=(0,0,0))
     mkpath(dir)
-    filepath = joinpath(dir, "fields_rank$(rank).dat")
-
-    state = Dict{Symbol,Any}(
-        :iteration => iteration,
-        :time => time,
-        :halo_sizes => halo_sizes,
-    )
+    filepath = joinpath(dir, "fields_rank$(rank).jld2")
 
     if slices !== nothing
         saved_keys = Symbol[]
         slice_meta = []
+
+        jld2_data = Dict{String,Any}(
+            "iteration" => iteration,
+            "time" => time,
+            "halo_sizes" => halo_sizes,
+        )
 
         for (field_name, plane, level_spec) in slices
             haskey(fields, field_name) || begin
@@ -201,21 +203,34 @@ function save_sharded_fields(dir, fields::NamedTuple, rank::Int;
             end
 
             key = Symbol("$(field_name)_$(plane)")
+
+            # Print field statistics
+            for (i, la) in enumerate(local_arrays)
+                mn, mx = extrema(la)
+                nz = count(!iszero, la)
+                @printf("  [rank %d] %s shard %d: size=%s min=%.6e max=%.6e nonzero=%d/%d\n",
+                        rank, key, i, string(size(la)), Float64(mn), Float64(mx), nz, length(la))
+            end
+
             serializable_slices = [Tuple((first(r), last(r)) for r in s) for s in local_slices]
-            state[key] = (;
-                local_arrays,
-                local_slices = serializable_slices,
-                global_shape,
-            )
+            jld2_data["$(key)/local_arrays"] = local_arrays
+            jld2_data["$(key)/local_slices"] = serializable_slices
+            jld2_data["$(key)/global_shape"] = global_shape
+
             push!(saved_keys, key)
             push!(slice_meta, (field=field_name, plane=plane, dim=dim, indices=resolved_idx))
         end
 
-        state[:field_names] = saved_keys
-        state[:slices] = [(; m.field, m.plane, m.dim) for m in slice_meta]
+        jld2_data["field_names"] = saved_keys
+        jld2_data["slices"] = [(; m.field, m.plane, m.dim) for m in slice_meta]
 
     else
-        state[:field_names] = collect(keys(fields))
+        jld2_data = Dict{String,Any}(
+            "iteration" => iteration,
+            "time" => time,
+            "halo_sizes" => halo_sizes,
+            "field_names" => collect(keys(fields)),
+        )
 
         for (name, field_data) in pairs(fields)
             arr = Reactant.ancestor(field_data)
@@ -226,22 +241,26 @@ function save_sharded_fields(dir, fields::NamedTuple, rank::Int;
                 zidx = resolve_dim_indices(nz, z_indices; halo=halo_z)
                 local_arrays, local_slices, global_shape = _apply_slice(
                     local_arrays, local_slices, global_shape, 3, zidx)
-                state[:z_indices] = zidx
+                jld2_data["z_indices"] = zidx
+            end
+
+            # Print field statistics
+            for (i, la) in enumerate(local_arrays)
+                mn, mx = extrema(la)
+                nz = count(!iszero, la)
+                @printf("  [rank %d] %s shard %d: size=%s min=%.6e max=%.6e nonzero=%d/%d\n",
+                        rank, name, i, string(size(la)), Float64(mn), Float64(mx), nz, length(la))
             end
 
             serializable_slices = [Tuple((first(r), last(r)) for r in s) for s in local_slices]
-            state[name] = (;
-                local_arrays,
-                local_slices = serializable_slices,
-                global_shape,
-            )
+            jld2_data["$(name)/local_arrays"] = local_arrays
+            jld2_data["$(name)/local_slices"] = serializable_slices
+            jld2_data["$(name)/global_shape"] = global_shape
         end
     end
 
-    tmppath = filepath * ".tmp"
-    open(tmppath, "w") do io
-        Serialization.serialize(io, state)
-    end
+    tmppath = filepath * ".tmp.jld2"
+    jldsave(tmppath; jld2_data...)
     mv(tmppath, filepath; force=true)
     return filepath
 end
