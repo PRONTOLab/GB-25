@@ -72,7 +72,8 @@ subsampled grid.
 
 For rendering on another machine or in a notebook without 80 GB of RAM:
 
-Script: `extract_viz_slices.py`. Produces `viz_slices_iter{N}.h5` with 6 fields + coords:
+Script: `extract_viz_slices.jl` (native JLD2; `.py` variant exists but JLD2 is preferred).
+Produces `viz_slices_iter{N}.jld2` with 6 fields + coords:
 
 | Dataset | Units | Shape |
 |---|---|---|
@@ -83,28 +84,26 @@ Script: `extract_viz_slices.py`. Produces `viz_slices_iter{N}.h5` with 6 fields 
 | `qcl_mid` (k=15, ~7 km) | g/kg | (8640, 3840) |
 | `w_mid` (k=15) | m/s | (8640, 3840) |
 
-File attributes: `iteration`, `sim_time_h`, `k_mid`, `z_mid_km`, `dz_m`, `source`.
-Float32 + gzip level 4 → ~700 MB.
+Top-level keys: `iteration`, `sim_time_h`, `k_mid`, `z_mid_km`, `dz_m`, `source`.
+Float32 arrays → ~760 MB.
+
+### Loading in Julia (preferred)
+```julia
+using JLD2
+f = JLD2.jldopen("viz_slices_iter9000.jld2", "r")
+qv   = f["qv_sfc"]             # (8640, 3840), Float32
+lon  = f["lon_deg"]
+lat  = f["lat_deg"]
+hours = f["sim_time_h"]
+close(f)
+```
 
 ### Loading in Python
 ```python
-import h5py
-with h5py.File("viz_slices_iter9000.h5", "r") as f:
-    qv = f["qv_sfc"][:]         # (8640, 3840), Nx × Ny
-    lon = f["lon_deg"][:]
-    lat = f["lat_deg"][:]
-    t_hours = f.attrs["sim_time_h"]
+import h5py  # JLD2 writes HDF5 under the hood; works for simple array payloads
+with h5py.File("viz_slices_iter9000.jld2", "r") as f:
+    qv = f["qv_sfc"][:]         # (3840, 8640) in NumPy row-major; transpose if needed
 ```
-
-### Loading in Julia
-```julia
-using JLD2
-# HDF5 files are compatible with JLD2.jldopen for flat arrays:
-h5 = JLD2.jldopen("viz_slices_iter9000.h5", "r")
-qv = h5["qv_sfc"]
-close(h5)
-```
-(Or use `HDF5.jl` directly — `h5open(..., "r") do f; read(f["qv_sfc"]); end`.)
 
 ## Diagnostics from the simulation log
 
