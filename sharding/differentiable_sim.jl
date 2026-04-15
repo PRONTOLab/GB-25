@@ -122,7 +122,7 @@ Nλ = Tλ - 2H_halo
 Nφ = Tφ - 2H_halo
 
 H = 30e3
-Δt = 0.03
+Δt = 0.05
 halo = (H_halo, H_halo, 4)
 
 ic_path = joinpath(pkgdir(GordonBell25), "simulations", "initial_conditions",
@@ -133,7 +133,7 @@ isfile(ic_path) || error("IC file not found: $ic_path — run simulations/downlo
 @info "[$rank] Building model with real IC" now(UTC)
 model = @time "[$rank] model build" GordonBell25.moist_baroclinic_wave_model(arch;
     Nλ, Nφ, Nz, H, Δt, halo,
-    with_microphysics = false,
+    with_microphysics = true,
     with_surface_fluxes = false,
     initial_conditions_path = ic_path,
     interpolation_type = :linear)
@@ -159,10 +159,10 @@ out_dir = joinpath(@__DIR__, "output", "differentiable_sim", ngpu_tag)
 # Ninner_val is a Julia literal baked into the IR so that the @trace
 # while-loop has fully static shapes (required by Shardy propagation).
 
-const Ninner_val = 100
+const Ninner_val = 5
 
 function loss(model, Δt)
-    @trace mincut=true checkpointing=CheckpointPeriodic(Ninner_val) track_numbers=false for _ in 1:Ninner_val
+    @trace mincut=true checkpointing=false track_numbers=false for _ in 1:Ninner_val
         time_step!(model, Δt)
     end
     w     = interior(model.velocities.w)
@@ -210,7 +210,7 @@ loss_val = @time "[$rank] grad_loss execution" compiled_grad(
 # ─── Save outputs via save_model_state ────────────────────────────────
 
 z_levels = [:bottom, :middle, :top]
-save_fields = [:ρ, :ρu, :ρv, :ρw, :ρθ, :ρqᵛ]
+save_fields = [:ρ, :ρu, :ρv, :ρw, :ρθ, :ρqᵛ, :ρqᶜˡ, :ρqᶜⁱ, :ρqʳ, :ρqˢ]
 save_slices = [(f, :xy, z_levels) for f in save_fields]
 
 @info "[$rank] Saving gradient fields..." now(UTC)
