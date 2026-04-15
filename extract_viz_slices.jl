@@ -16,7 +16,7 @@ k_mid = 15           # ~7 km (Δz = 30000/64 = 468.75 m → z(k=15) ≈ 7.27 km)
 
 @info "Reading" src k_mid
 
-ρ_sfc, ρu_sfc, ρv_sfc_full, ρqv_sfc, ρ_mid, ρqcl_mid, ρw_mid, ρqr_volume =
+ρ_sfc, ρu_sfc, ρv_sfc_full, ρqv_sfc, ρ_mid, ρqcl_mid, ρqci_mid, ρw_mid, ρqr_volume =
     JLD2.jldopen(src, "r") do f
         Nx, Ny, Nz = size(f["ρ"])
         @info "Grid" Nx Ny Nz
@@ -26,6 +26,7 @@ k_mid = 15           # ~7 km (Δz = 30000/64 = 468.75 m → z(k=15) ≈ 7.27 km)
          f["ρqᵛ"][:, :, 1],                 # (Nx, Ny)
          f["ρ"][:, :, k_mid + 1],           # mid-level ρ (Julia 1-based, so index k_mid+1)
          f["micro_ρqᶜˡ"][:, :, k_mid + 1],  # mid-level cloud liquid
+         f["micro_ρqᶜⁱ"][:, :, k_mid + 1],  # mid-level cloud ice
          f["ρw"][:, :, k_mid + 1],          # Face-z, mid-level
          f["ρqʳ"])                          # full 3D for column integration
     end
@@ -40,11 +41,25 @@ u_sfc   = Float32.(ρu_sfc  ./ safe_sfc)
 v_sfc   = Float32.(ρv_sfc  ./ safe_sfc)
 qv_sfc  = Float32.(ρqv_sfc ./ safe_sfc .* 1000f0)     # g/kg
 qcl_mid = Float32.(ρqcl_mid ./ safe_mid .* 1000f0)    # g/kg
+qci_mid = Float32.(ρqci_mid ./ safe_mid .* 1000f0)    # g/kg
 w_mid   = Float32.(ρw_mid  ./ safe_mid)               # m/s
 
-# Column-integrated rain: Σ_k ρqʳ[:,:,k] * Δz → kg/m²
-@info "Integrating ρqʳ vertically…"
+# Column integrals: Σ_k ρq[:,:,k] * Δz  →  kg/m²
+@info "Integrating ρqʳ, ρqᶜˡ, ρqᶜⁱ, ρqˢ vertically…"
 qr_vertint = Float32.(dropdims(sum(ρqr_volume; dims=3); dims=3) .* Δz)  # (Nx, Ny)
+
+# Re-open for the other condensate volumes to build TWP and LWP.
+ρqcl_vol, ρqci_vol, ρqs_vol = JLD2.jldopen(src, "r") do f
+    (f["micro_ρqᶜˡ"], f["micro_ρqᶜⁱ"], f["ρqˢ"])
+end
+qcl_vertint = Float32.(dropdims(sum(ρqcl_vol; dims=3); dims=3) .* Δz)
+qci_vertint = Float32.(dropdims(sum(ρqci_vol; dims=3); dims=3) .* Δz)
+qs_vertint  = Float32.(dropdims(sum(ρqs_vol;  dims=3); dims=3) .* Δz)
+
+# Total water path: liquid + ice + rain + snow
+twp = qcl_vertint .+ qci_vertint .+ qr_vertint .+ qs_vertint
+# Liquid water path: cloud liquid + rain (no ice/snow)
+lwp = qcl_vertint .+ qr_vertint
 
 lat = Float32.(range(-80, 80; length=Ny + 1)[1:Ny] .+ (160.0f0 / Ny / 2))  # cell centers
 lon = Float32.(range(0, 360; length=Nx + 1)[1:Nx] .+ (360.0f0 / Nx / 2))
@@ -64,7 +79,10 @@ JLD2.jldopen(dst, "w") do f
     f["qv_sfc"]      = qv_sfc
     f["qr_vertint"]  = qr_vertint
     f["qcl_mid"]     = qcl_mid
+    f["qci_mid"]     = qci_mid
     f["w_mid"]       = w_mid
+    f["twp"]         = twp          # total water path = ∫(ρqᶜˡ+ρqᶜⁱ+ρqʳ+ρqˢ) dz  [kg/m²]
+    f["lwp"]         = lwp          # liquid water path = ∫(ρqᶜˡ+ρqʳ) dz  [kg/m²]
 end
 
 println("  u_sfc   range: [", extrema(u_sfc), "]")
@@ -72,7 +90,10 @@ println("  v_sfc   range: [", extrema(v_sfc), "]")
 println("  qv_sfc  range: [", extrema(qv_sfc), "]  (g/kg)")
 println("  qr_vertint range: [", extrema(qr_vertint), "]  (kg/m²)")
 println("  qcl_mid range: [", extrema(qcl_mid), "]  (g/kg)")
+println("  qci_mid range: [", extrema(qci_mid), "]  (g/kg)")
 println("  w_mid   range: [", extrema(w_mid), "]  (m/s)")
+println("  TWP     range: [", extrema(twp),  "]  (kg/m²)")
+println("  LWP     range: [", extrema(lwp),  "]  (kg/m²)")
 
 sz = filesize(dst) / 1e6
 @info "Saved" dst round(sz; digits=1)
