@@ -449,7 +449,7 @@ relaxation = nothing
 cloud_damping = nothing
 
 ic_path = joinpath(@__DIR__, "..", "simulations", "initial_conditions",
-                   "checkpoint_step_008193.jld2")
+                   "sixteenth_deg_12h_assembled.jld2")
 isfile(ic_path) || error("IC file not found at $ic_path")
 rank == 0 && @info "IC file (1/8° checkpoint_step_008193 with cloud fields → 1/16°)" ic_path
 
@@ -464,11 +464,49 @@ rank == 0 && @info "Building model (Nλ=$Nλ, Nφ=$Nφ, Nz=$Nz, lat=(-80,80), Δ
                                                                   cloud_damping)
 rank == 0 && @show model
 
-rank == 0 && @info "Loading ICs (interpolating 1/8° → 1/16°)..." now(UTC)
-@time "load ICs" load_ic_distributed!(model, ic_path;
-                                       H=column_height,
-                                       src_latitude=(-80, 80),
-                                       src_longitude=(0, 360))
+# Direct copy: bypass interpolate! for 1:1 restart.
+# Each rank reads the global file and copies its tile slice directly.
+rank == 0 && @info "Loading ICs (direct copy, 1:1)..." now(UTC)
+@time "load ICs" begin
+    Nλ_src, Nφ_src = JLD2.jldopen(ic_path, "r") do f; (f["Nλ"], f["Nφ"]); end
+    nx_local = Nλ ÷ Rx
+    ny_local = Nφ ÷ Ry
+    # Rank → tile mapping: ix = rank ÷ Ry, iy = rank % Ry
+    ix = rank ÷ Ry
+    iy = rank % Ry
+    x_range = ix*nx_local+1:(ix+1)*nx_local
+    y_range = iy*ny_local+1:(iy+1)*ny_local
+
+    FT = eltype(model.grid)
+    field_map = [
+        ("ρ",           dynamics_density(model.dynamics)),
+        ("ρu",          model.momentum.ρu),
+        ("ρv",          model.momentum.ρv),
+        ("ρw",          model.momentum.ρw),
+        ("ρθ",          model.formulation.potential_temperature_density),
+        ("ρqᵛ",         model.moisture_density),
+        ("micro_ρqᶜˡ",  model.microphysical_fields[:ρqᶜˡ]),
+        ("micro_ρqᶜⁱ",  model.microphysical_fields[:ρqᶜⁱ]),
+        ("ρqʳ",         model.microphysical_fields[:ρqʳ]),
+        ("ρqˢ",         model.microphysical_fields[:ρqˢ]),
+    ]
+
+    JLD2.jldopen(ic_path, "r") do file
+        for (key, target_field) in field_map
+            haskey(file, key) || continue
+            global_data = file[key]
+            # Extract this rank's tile (center-field sized slice)
+            local_data = Array{FT}(global_data[x_range, y_range, 1:Nz])
+            gpu_data = Oceananigans.on_architecture(GPU(), local_data)
+            copyto!(Oceananigans.interior(target_field), gpu_data)
+            Oceananigans.BoundaryConditions.fill_halo_regions!(target_field)
+            rank == 0 && @info "Loaded $key → $(size(local_data))"
+        end
+    end
+
+    # NO moisture clamping — preserve the balanced state exactly
+    rank == 0 && @info "No moisture clamping (preserving balanced state)"
+end
 
 if any_nan(model)
     error("NaN after IC load on rank $rank")
@@ -515,8 +553,7 @@ if ic_snapshots !== nothing
     end
 end
 
-# ── First time step ────────────────────────────────────────────────────
-
+# ── Manual first step (no clamp, testing if clamp was the problem) ──
 rank == 0 && @info "First time step..." now(UTC)
 @time "first step" begin
     Oceananigans.TimeSteppers.update_state!(model)
@@ -554,7 +591,7 @@ MPI.Barrier(MPI.COMM_WORLD)
 
 output_prefix = joinpath(output_dir, "fields_rank$rank")
 
-stop_iter = 36000  # 12h sim at Δt=1.2
+stop_iter = 100  # short test: can we restart from assembled file?
 
 simulation = Simulation(model; Δt, stop_iteration=stop_iter)
 

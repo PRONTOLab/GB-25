@@ -1,7 +1,8 @@
-# Vanilla-Oceananigans 1/24° atmosphere run — 8 GPUs with NCCLDistributed.
-# Two-phase: small Δt spinup to smooth interpolation staircase, then production Δt.
+# 1/24° continuation run — restarts from the iter27000 (t=6h) checkpoint
+# of the prior 1/24° run and integrates another 6h with 1h save cadence.
+# Iteration-based save check (no float drift) so the final state is guaranteed.
 #
-# Launch: ~/.julia/bin/mpiexecjl -n 8 --project julia -O0 sharding/twentyfourth_degree_nccl_distributed_run.jl
+# Launch: ~/.julia/bin/mpiexecjl -n 8 --project julia -O0 sharding/twentyfourth_degree_continuation.jl
 
 using Dates, MPI, JLD2, Printf, CUDA, NCCL
 MPI.Init()
@@ -74,6 +75,43 @@ surface_temperature(λ, φ) = virtual_temperature(deg2rad(φ), 0.0)
 # ═══════════════════════════════════════════════════════════════════════════
 # IC loader
 # ═══════════════════════════════════════════════════════════════════════════
+
+function load_ic_same_resolution!(model, path::String; Rx::Int, Ry::Int)
+    # Direct tile copy from assembled file — no interpolation. Source grid
+    # resolution must match the distributed target grid exactly. Reads only
+    # this rank's slice from the file (no full-global GPU allocation).
+    ix = rank ÷ Ry; iy = rank % Ry
+    Nλ, Nφ, Nz = JLD2.jldopen(path, "r") do f; Int(f["Nλ"]), Int(f["Nφ"]), Int(f["Nz"]); end
+    Nx_per = Nλ ÷ Rx; Ny_per = Nφ ÷ Ry
+    x_range = (ix * Nx_per + 1):((ix + 1) * Nx_per)
+    y_range_c = (iy * Ny_per + 1):((iy + 1) * Ny_per)
+    # ρv: top-y rank includes the wall face (Ny_per + 1 rows)
+    y_range_v = (iy == Ry - 1) ? ((iy * Ny_per + 1):((iy + 1) * Ny_per + 1)) : y_range_c
+
+    function load_one!(target, key, yr; z_range=Colon())
+        tile = JLD2.jldopen(path, "r") do f
+            Array{Float32}(f[key][x_range, yr, z_range])
+        end
+        gpu_tile = Oceananigans.on_architecture(GPU(), tile)
+        copyto!(Oceananigans.interior(target), gpu_tile)
+        Oceananigans.BoundaryConditions.fill_halo_regions!(target)
+        rank == 0 && @info "loaded" key=key tile=size(tile)
+    end
+
+    load_one!(dynamics_density(model.dynamics), "ρ", y_range_c)
+    load_one!(model.momentum.ρu, "ρu", y_range_c)
+    load_one!(model.momentum.ρv, "ρv", y_range_v)
+    load_one!(model.momentum.ρw, "ρw", y_range_c)  # ρw has Nz+1 in z, all levels
+    load_one!(model.formulation.potential_temperature_density, "ρθ", y_range_c)
+    load_one!(model.moisture_density, "ρqᵛ", y_range_c)
+    for (file_key, field_name) in [("micro_ρqᶜˡ", :ρqᶜˡ), ("micro_ρqᶜⁱ", :ρqᶜⁱ),
+                                    ("ρqʳ", :ρqʳ), ("ρqˢ", :ρqˢ)]
+        haskey(model.microphysical_fields, field_name) || continue
+        load_one!(model.microphysical_fields[field_name], file_key, y_range_c)
+    end
+    rank == 0 && @info "IC loaded (direct-copy, no interp)"
+    return nothing
+end
 
 function load_ic!(model, path::String; H=30e3, src_latitude=(-80,80), src_longitude=(0,360))
     Nλ_src, Nφ_src, Nz_src, ρ_d, ρu_d, ρv_d, ρw_d, ρθ_d, ρqv_d =
@@ -183,10 +221,11 @@ function diagnostics(sim)
     flush(stderr); flush(stdout)
 end
 
-function save_output(sim, output_prefix, output_interval_time, Δt_max)
-    m = sim.model; t = m.clock.time
-    t > 0 && mod(t, output_interval_time) < Δt_max || return
+function save_output(sim, output_prefix, save_iter_interval)
+    m = sim.model
     iter = m.clock.iteration
+    iter > 0 && mod(iter, save_iter_interval) == 0 || return
+    t = m.clock.time
     filepath = output_prefix * "_iter$(lpad(iter, 6, '0')).jld2"
     JLD2.jldopen(filepath, "w") do file
         file["iteration"] = iter; file["time"] = t; file["Δt"] = sim.Δt
@@ -216,22 +255,21 @@ H = 30e3
 sst_anomaly = 2.0
 τ_cloud = 120
 
-Δt_spinup    = 0.8
 Δt_production = 0.8
-spinup_time   = 600.0   # 10 min
-total_sim_time = 6*3600.0  # 6h
+total_sim_time = 6*3600.0  # 6h continuation
+save_iter_interval = round(Int, 3600.0 / Δt_production)  # 1h cadence = 4500 iters
 
 ic_path = joinpath(@__DIR__, "..", "simulations", "initial_conditions",
-                   "sixteenth_deg_12h_assembled.jld2")
+                   "twentyfourth_deg_iter9000_assembled.jld2")
 isfile(ic_path) || error("IC not found: $ic_path")
 
-rank == 0 && @info "Config" Nλ Nφ Nz Δt_spinup Δt_production spinup_time ic_path
+rank == 0 && @info "Config" Nλ Nφ Nz Δt_production total_sim_time save_iter_interval ic_path
 
-@time "build" model = build_model(arch; Nλ, Nφ, Nz, H, Δt=Δt_spinup, halo=(4,4,4),
+@time "build" model = build_model(arch; Nλ, Nφ, Nz, H, Δt=Δt_production, halo=(4,4,4),
                                    latitude=(-80,80), sst_anomaly, τ_cloud)
 
 rank == 0 && @info "Loading IC..." now(UTC)
-@time "load IC" load_ic!(model, ic_path; H, src_latitude=(-80,80), src_longitude=(0,360))
+@time "load IC" load_ic_same_resolution!(model, ic_path; Rx, Ry)
 any_nan(model) && error("NaN after IC load on rank $rank")
 # Find where ρ=0 in the interior
 let ρ_int = Array(Oceananigans.interior(dynamics_density(model.dynamics)))
@@ -281,8 +319,8 @@ MPI.Barrier(MPI.COMM_WORLD)
 
 any_nan(model) && @warn "NaN in prognostic fields after update_state! on rank $rank"
 
-rank == 0 && @info "Calling time_step!(Δt=$Δt_spinup)..." now(UTC)
-Oceananigans.TimeSteppers.time_step!(model, Δt_spinup)
+rank == 0 && @info "Calling time_step!(Δt=$Δt_production)..." now(UTC)
+Oceananigans.TimeSteppers.time_step!(model, Δt_production)
 
 # Check after time_step!
 for (name, f) in [("ρ", dynamics_density(model.dynamics)),
@@ -300,32 +338,22 @@ any_nan(model) && error("NaN after first step on rank $rank")
 rank == 0 && @info "First step OK" model.clock
 
 # Output setup
-output_dir = joinpath(@__DIR__, "..", "simulations", "output", "nccl_8gpu_24th_deg")
+output_dir = joinpath(@__DIR__, "..", "simulations", "output", "nccl_8gpu_24th_deg_continued")
 rank == 0 && mkpath(output_dir)
 MPI.Barrier(MPI.COMM_WORLD)
 output_prefix = joinpath(output_dir, "fields_rank$rank")
-output_interval_time = 7200.0  # every 2h sim
 
-# ── Phase 1: Spinup ───────────────────────────────────────────────────
-spinup_iters = round(Int, spinup_time / Δt_spinup)
-rank == 0 && @info "Phase 1: Δt=$Δt_spinup for $(spinup_time)s ($spinup_iters iters)" now(UTC)
-sim1 = Simulation(model; Δt=Δt_spinup, stop_iteration=model.clock.iteration + spinup_iters)
-sim1.callbacks[:diag] = Callback(diagnostics, IterationInterval(100))
-wall_start[] = time_ns()
-Oceananigans.run!(sim1)
-rank == 0 && @info "Phase 1 done" model.clock
-
-# ── Phase 2: Production ──────────────────────────────────────────────
-remaining = total_sim_time - model.clock.time
-prod_iters = round(Int, remaining / Δt_production)
+# ── Production: 6h continuation, save every save_iter_interval iters ─
+prod_iters = round(Int, total_sim_time / Δt_production)
 final_iter = model.clock.iteration + prod_iters
-rank == 0 && @info "Phase 2: Δt=$Δt_production for $(remaining)s ($prod_iters iters)" now(UTC)
-sim2 = Simulation(model; Δt=Δt_production, stop_iteration=final_iter)
-sim2.callbacks[:diag] = Callback(diagnostics, IterationInterval(100))
-sim2.callbacks[:save] = Callback(
-    sim -> save_output(sim, output_prefix, output_interval_time, Δt_production),
-    IterationInterval(100))
-Oceananigans.run!(sim2)
+rank == 0 && @info "Production: Δt=$Δt_production for $(total_sim_time)s ($prod_iters iters), save every $save_iter_interval iters" now(UTC)
+sim = Simulation(model; Δt=Δt_production, stop_iteration=final_iter)
+sim.callbacks[:diag] = Callback(diagnostics, IterationInterval(100))
+sim.callbacks[:save] = Callback(
+    sim -> save_output(sim, output_prefix, save_iter_interval),
+    IterationInterval(save_iter_interval))
+wall_start[] = time_ns()
+Oceananigans.run!(sim)
 
 rank == 0 && @info "Done!" now(UTC) model.clock
 MPI.Finalize()

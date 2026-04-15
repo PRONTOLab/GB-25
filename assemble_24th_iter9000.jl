@@ -1,23 +1,23 @@
-# Assemble per-rank 1/16° output into a single global JLD2 checkpoint.
-# Fixed: properly handles face fields (ρv has Nφ+1, ρw has Nz+1).
+# Assemble the iter009000 1/24° checkpoint (8 per-rank files) into one global JLD2,
+# preserving boundary face rows for ρv (Nφ+1) and ρw (Nz+1).
 
 using JLD2
 
-output_dir = joinpath(@__DIR__, "simulations", "output", "nccl_8gpu_16th_deg")
-iter_str = "036000"
+output_dir = joinpath(@__DIR__, "simulations", "output", "nccl_8gpu_24th_deg")
+iter_str = "009000"
 Rx, Ry = 4, 2
 
 ref_path = joinpath(output_dir, "fields_rank0_iter$(iter_str).jld2")
 ref_nx, ref_ny, ref_nz = JLD2.jldopen(ref_path, "r") do f; size(f["ρ"]); end
+@info "Per-rank center shape" ref_nx ref_ny ref_nz
 
 Nλ = Rx * ref_nx
 Nφ = Ry * ref_ny
 Nz = ref_nz
-
-@info "Assembling" Nλ Nφ Nz
+@info "Global" Nλ Nφ Nz
 
 function assemble(name)
-    @info "  $name..."
+    @info "  $name…"
     tiles = Vector{Array{Float32, 3}}(undef, Rx * Ry)
     for r in 0:(Rx * Ry - 1)
         path = joinpath(output_dir, "fields_rank$(r)_iter$(iter_str).jld2")
@@ -42,10 +42,15 @@ function assemble(name)
     return g
 end
 
-outpath = joinpath(@__DIR__, "simulations", "initial_conditions", "sixteenth_deg_12h_assembled.jld2")
+outpath = joinpath(@__DIR__, "simulations", "initial_conditions",
+                   "twentyfourth_deg_iter9000_assembled.jld2")
+@info "Writing" outpath
 
 JLD2.jldopen(outpath, "w") do f
     f["Nλ"] = Nλ; f["Nφ"] = Nφ; f["Nz"] = Nz
+    f["iteration"] = JLD2.jldopen(ref_path, "r") do g; g["iteration"]; end
+    f["time"]      = JLD2.jldopen(ref_path, "r") do g; g["time"]; end
+    f["Δt"]        = JLD2.jldopen(ref_path, "r") do g; g["Δt"]; end
     f["ρ"]  = assemble("ρ")
     f["ρu"] = assemble("ρu")
     f["ρv"] = assemble("ρv")
