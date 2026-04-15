@@ -1,0 +1,5 @@
+[deps]
+GBAnalyzer = "bc4d49b3-fbc7-4081-9e3d-3495df270036"
+
+[sources]
+GBAnalyzer = {path = "./GBAnalyzer"}
