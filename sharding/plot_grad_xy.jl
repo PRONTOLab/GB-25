@@ -6,10 +6,11 @@
 # files, placing each shard into the global array, and stripping halos.
 #
 # Usage (inside uenv):
-#   julia --project=.. --startup-file=no plot_grad_xy.jl [PATH] [Z_LAYERS...]
+#   julia --project=.. --startup-file=no plot_grad_xy.jl [--quantile=0.02] [PATH] [Z_LAYERS...]
 #
-# PATH      — directory containing fields_rank*.dat files, or auto-detected.
-# Z_LAYERS  — 1-based z-levels to plot. Default: all saved levels.
+# PATH         — directory containing fields_rank*.dat files, or auto-detected.
+# Z_LAYERS     — 1-based z-levels to plot. Default: all saved levels.
+# --quantile=Q — clip colorbar at Qth / (1-Q)th percentile (default: 0.02 = 2nd–98th pct)
 
 using Serialization
 using CairoMakie
@@ -72,9 +73,12 @@ end
 
 global input_path = nothing
 global z_args = Int[]
+global QCLIP = 0.02
 
 for a in ARGS
-    if input_path === nothing && (isdir(a) || isfile(a))
+    if startswith(a, "--quantile=")
+        global QCLIP = parse(Float64, split(a, '=')[2])
+    elseif input_path === nothing && (isdir(a) || isfile(a))
         global input_path = a
     else
         try; push!(z_args, parse(Int, a)); catch; end
@@ -216,6 +220,31 @@ function field_colormap(fname)
     return :viridis
 end
 
+# ─── Percentile-clipped color range ──────────────────────────────────
+
+function compute_colorrange(fin, cmap; quantile_clip=QCLIP)
+    isempty(fin) && return (0.0, 1.0)
+
+    sorted = sort(fin)
+    n = length(sorted)
+    lo = sorted[max(1, round(Int, quantile_clip * n))]
+    hi = sorted[min(n, round(Int, (1 - quantile_clip) * n))]
+
+    if lo ≈ hi
+        lo, hi = extrema(fin)
+    end
+    if lo ≈ hi
+        hi = lo + max(1.0, abs(lo) * 0.01)
+    end
+
+    if cmap === :balance
+        sym = max(abs(lo), abs(hi))
+        sym = sym > 0 ? sym : 1.0
+        lo, hi = -sym, sym
+    end
+    return (lo, hi)
+end
+
 # ─── Plot ─────────────────────────────────────────────────────────────
 
 for (name, arr) in sort(collect(fields); by=first)
@@ -228,17 +257,7 @@ for (name, arr) in sort(collect(fields); by=first)
 
         @info "  $name  z=$zi  size=$(size(slab)) extrema=$(isempty(fin) ? (NaN,NaN) : extrema(fin))"
 
-        lo, hi = isempty(fin) ? (0.0, 1.0) : extrema(fin)
-        if lo ≈ hi
-            hi = lo + max(1.0, abs(lo) * 0.01)
-        end
-
-        use_diverging = cmap === :balance
-        if use_diverging
-            sym = max(abs(lo), abs(hi))
-            sym = sym > 0 ? sym : 1.0
-            lo, hi = -sym, sym
-        end
+        lo, hi = compute_colorrange(fin, cmap)
 
         zlbl = z_label !== nothing && zi <= length(z_label) ? "$(z_label[zi])" : "$zi"
         loss_str = isnan(loss_val) ? "N/A" : @sprintf("%.4e", loss_val)

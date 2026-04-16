@@ -123,11 +123,13 @@ Nλ = Tλ - 2H_halo
 Nφ = Tφ - 2H_halo
 
 H = 30e3
-Δt = 0.01
+Δt = 0.001
 halo = (H_halo, H_halo, 4)
 
 ic_path = joinpath(pkgdir(GordonBell25), "simulations", "initial_conditions",
-                   "atmosphere_no_microphysics_1deg_14day.jld2")
+                   "checkpoint_step_008193.jld2")
+# ic_path = joinpath(pkgdir(GordonBell25), "simulations", "initial_conditions",
+#                    "atmosphere_no_microphysics_1deg_14day.jld2")
 isfile(ic_path) || error("IC file not found: $ic_path — run simulations/download_atmosphere_ic_artifact.jl first")
 
 @info "[$rank] Grid: per-GPU=$(parsed_args["grid-x"])×$(parsed_args["grid-y"])  partition=$(Rx)×$(Ry)  total interior=$(Nλ)×$(Nφ)×$(Nz)"
@@ -154,8 +156,8 @@ out_dir = joinpath(@__DIR__, "output", "differentiable_sim", ngpu_tag)
 # then advance the model state before computing gradients.  This lets us
 # differentiate the loss on an *evolved* flow rather than the raw IC.
 
-const Nfwd_per_call = 64          # inner steps per compiled loop! call
-const Nfwd_calls    = 4          # number of calls → total = 64 × 16 = 1024 fwd steps
+const Nfwd_per_call = 0          # inner steps per compiled loop! call
+const Nfwd_calls    = 1          # number of calls → total = 64 × 16 = 1024 fwd steps
 
 Nfwd = Nfwd_per_call
 if Ndev > 1
@@ -189,18 +191,24 @@ end
 @info "[$rank] Forward stepping done" now(UTC)
 @info "[$rank] allocations (after forward stepping)" alloc()
 
-# ─── Loss: Var(max(w, 0)) after nsteps ───────────────────────────────
-#
-# Variance of the positive vertical velocity.
-# model.velocities.w is the diagnosed w = ρw / ρ, already consistent.
-# Var(x) = E[x²] − E[x]².
+# ─── Save evolved fields before backward passes ──────────────────────
+
+z_levels = [:bottom, :middle, :top]
+save_fields = [:ρ, :ρu, :ρv, :ρw, :ρθ, :ρqᵛ, :ρqᶜˡ, :ρqᶜⁱ, :ρqʳ, :ρqˢ]
+save_slices = [(f, :xy, z_levels) for f in save_fields]
+
+@info "[$rank] Saving evolved fields (after $(Nfwd_calls * Nfwd_per_call) fwd steps)..." now(UTC)
+GordonBell25.save_model_state(joinpath(out_dir, "evolved_fields"), model, arch;
+    label="output", slices=save_slices)
+
+# ─── Loss 1: Var(max(w, 0)) ──────────────────────────────────────────
 #
 # Ninner_val is a Julia literal baked into the IR so that the @trace
 # while-loop has fully static shapes (required by Shardy propagation).
 
-const Ninner_val = 4
+const Ninner_val = 2
 
-function loss(model, Δt)
+function loss1(model, Δt)
     @trace mincut=true checkpointing=false track_numbers=false for _ in 1:Ninner_val
         time_step!(model, Δt)
     end
@@ -210,54 +218,86 @@ function loss(model, Δt)
     return mean(w_pos .* w_pos) - μ * μ
 end
 
-# ─── Enzyme backward pass wrapper ────────────────────────────────────
-#
-# dmodel is the "shadow" — same structure as model, zero-initialized.
-# After autodiff, every mutable array in dmodel holds the gradient of
-# the loss w.r.t. that array's values at the start of loss().
+# ─── Loss 2: mean potential temperature ───────────────────────────────
 
-function grad_loss(model, dmodel, Δt)
+function loss2(model, Δt)
+    @trace mincut=true checkpointing=false track_numbers=false for _ in 1:Ninner_val
+        time_step!(model, Δt)
+    end
+    θ = interior(model.formulation.potential_temperature)
+    return mean(θ .* θ)
+end
+
+# ─── Enzyme backward pass wrappers ───────────────────────────────────
+
+function grad_loss1(model, dmodel, Δt)
     _, loss_value = Enzyme.autodiff(
         Enzyme.set_strong_zero(Enzyme.ReverseWithPrimal),
-        loss, Enzyme.Active,
+        loss1, Enzyme.Active,
         Enzyme.Duplicated(model, dmodel),
         Enzyme.Const(Δt))
     return loss_value
 end
 
-# ─── Compile ──────────────────────────────────────────────────────────
+function grad_loss2(model, dmodel, Δt)
+    _, loss_value = Enzyme.autodiff(
+        Enzyme.set_strong_zero(Enzyme.ReverseWithPrimal),
+        loss2, Enzyme.Active,
+        Enzyme.Duplicated(model, dmodel),
+        Enzyme.Const(Δt))
+    return loss_value
+end
 
-@info "[$rank] Creating shadow model (Enzyme.make_zero)..." now(UTC)
-dmodel = @time "[$rank] make_zero" Enzyme.make_zero(model)
-@info "[$rank] allocations (after make_zero)" alloc()
-@show dmodel
+# ─── Compile & run loss 1: Var(w⁺) ───────────────────────────────────
 
-@info "[$rank] Compiling backward pass (Ninner_val=$Ninner_val, literal constant)..." now(UTC)
-compiled_grad = @time "[$rank] compile grad_loss" Reactant.@compile(
+@info "[$rank] Creating shadow model 1 (Enzyme.make_zero)..." now(UTC)
+dmodel1 = @time "[$rank] make_zero (1)" Enzyme.make_zero(model)
+@info "[$rank] allocations (after make_zero 1)" alloc()
+
+@info "[$rank] Compiling backward pass 1 — Var(w⁺) (Ninner=$Ninner_val)..." now(UTC)
+compiled_grad1 = @time "[$rank] compile grad_loss1" Reactant.@compile(
     raise=true, raise_first=true, sync=true,
-    grad_loss(model, dmodel, FT(Δt))
+    grad_loss1(model, dmodel1, FT(Δt))
 )
-@info "[$rank] allocations (after compile)" alloc()
+@info "[$rank] allocations (after compile 1)" alloc()
 
-@info "[$rank] Running backward pass..." now(UTC)
-loss_val = @time "[$rank] grad_loss execution" compiled_grad(
-    model, dmodel, FT(Δt))
+@info "[$rank] Running backward pass 1..." now(UTC)
+loss_val1 = @time "[$rank] grad_loss1 execution" compiled_grad1(
+    model, dmodel1, FT(Δt))
+@info "[$rank] Loss 1 (Var w⁺) = $loss_val1"
+@info "[$rank] allocations (after execution 1)" alloc()
 
-@info "[$rank] Loss value = $loss_val"
-@info "[$rank] allocations (after execution)" alloc()
-
-# ─── Save outputs via save_model_state ────────────────────────────────
-
-z_levels = [:bottom, :middle, :top]
-save_fields = [:ρ, :ρu, :ρv, :ρw, :ρθ, :ρqᵛ, :ρqᶜˡ, :ρqᶜⁱ, :ρqʳ, :ρqˢ]
-save_slices = [(f, :xy, z_levels) for f in save_fields]
-
-@info "[$rank] Saving gradient fields..." now(UTC)
-GordonBell25.save_model_state(joinpath(out_dir, "gradients"), dmodel, arch;
+@info "[$rank] Saving gradient fields (loss 1 — Var w⁺)..." now(UTC)
+GordonBell25.save_model_state(joinpath(out_dir, "gradients_varw"), dmodel1, arch;
     label="output", slices=save_slices)
 
-@info "[$rank] Saving evolved fields (after $(Nfwd_calls * Nfwd_per_call) fwd steps)..." now(UTC)
-GordonBell25.save_model_state(joinpath(out_dir, "evolved_fields"), model, arch;
+@info "[$rank] Freeing loss 1 artifacts..." now(UTC)
+compiled_grad1 = nothing
+dmodel1 = nothing
+GC.gc()
+@info "[$rank] allocations (after GC)" alloc()
+
+# ─── Compile & run loss 2: mean(θ²) ──────────────────────────────────
+
+@info "[$rank] Creating shadow model 2 (Enzyme.make_zero)..." now(UTC)
+dmodel2 = @time "[$rank] make_zero (2)" Enzyme.make_zero(model)
+@info "[$rank] allocations (after make_zero 2)" alloc()
+
+@info "[$rank] Compiling backward pass 2 — mean(θ) (Ninner=$Ninner_val)..." now(UTC)
+compiled_grad2 = @time "[$rank] compile grad_loss2" Reactant.@compile(
+    raise=true, raise_first=true, sync=true,
+    grad_loss2(model, dmodel2, FT(Δt))
+)
+@info "[$rank] allocations (after compile 2)" alloc()
+
+@info "[$rank] Running backward pass 2..." now(UTC)
+loss_val2 = @time "[$rank] grad_loss2 execution" compiled_grad2(
+    model, dmodel2, FT(Δt))
+@info "[$rank] Loss 2 (mean θ²) = $loss_val2"
+@info "[$rank] allocations (after execution 2)" alloc()
+
+@info "[$rank] Saving gradient fields (loss 2 — mean θ²)..." now(UTC)
+GordonBell25.save_model_state(joinpath(out_dir, "gradients_mean_theta2"), dmodel2, arch;
     label="output", slices=save_slices)
 
 @info "[$rank] allocations (final)" alloc()

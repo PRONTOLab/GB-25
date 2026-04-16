@@ -120,6 +120,8 @@ H = 30e3
 Δt = 0.01
 halo = (H_halo, H_halo, 4)
 
+# ic_path = joinpath(pkgdir(GordonBell25), "simulations", "initial_conditions",
+#                    "atmosphere_coarsened_1536x768x64.jld2")
 ic_path = joinpath(pkgdir(GordonBell25), "simulations", "initial_conditions",
                    "atmosphere_no_microphysics_1deg_14day.jld2")
 isfile(ic_path) || error("IC file not found: $ic_path — run simulations/download_atmosphere_ic_artifact.jl first")
@@ -151,7 +153,7 @@ out_dir = joinpath(@__DIR__, "output", "backward", ngpu_tag)
 # Ninner_val is a Julia literal baked into the IR so that the @trace
 # while-loop has fully static shapes (required by Shardy propagation).
 
-const Ninner_val = 4
+const Ninner_val = 1
 
 function loss(model, Δt)
     @trace mincut=true checkpointing=false track_numbers=false for _ in 1:Ninner_val
