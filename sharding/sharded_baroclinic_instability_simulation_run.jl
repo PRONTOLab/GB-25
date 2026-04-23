@@ -106,10 +106,10 @@ end
 @info "[$rank] Compiling first_time_step!..." now(UTC)
 
 compile_options = CompileOptions(; sync=true, raise=true, strip_llvm_debuginfo=true, strip=:all, multifloat=GordonBell25.multifloat_from_args(parsed_args))
-# uncomment to turn communication optimizations off
-# Note: may need to also increase xla timeout to get this to run, eg:
-# # export XLA_FLAGS="--xla_gpu_first_collective_call_warn_stuck_timeout_seconds=100 --xla_gpu_first_collective_call_terminate_timeout_seconds=300 \${XLA_FLAGS}"
-compile_options = CompileOptions(; sync=true, raise=true, strip_llvm_debuginfo=true, strip=:all, multifloat=GordonBell25.multifloat_from_args(parsed_args), xla_debug_options=(xla_enable_enzyme_comms_opt=false,), optimize_communications=false)
+# # uncomment to turn communication optimizations off
+# # Note: may need to also increase xla timeout to get this to run, eg:
+# # # export XLA_FLAGS="--xla_gpu_first_collective_call_warn_stuck_timeout_seconds=100 --xla_gpu_first_collective_call_terminate_timeout_seconds=300 \${XLA_FLAGS}"
+# compile_options = CompileOptions(; sync=true, raise=true, strip_llvm_debuginfo=true, strip=:all, multifloat=GordonBell25.multifloat_from_args(parsed_args), xla_debug_options=(xla_enable_enzyme_comms_opt=false,), optimize_communications=false)
 
 rfirst! = if devarch isa Oceananigans.ReactantState
      @compile compile_options=compile_options first_time_step!(model)
