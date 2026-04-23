@@ -16,9 +16,10 @@ time     = "01:00:00"
 # so we pick Ngpus from the set of numbers 8*n^2 where n is any integer.
 # We also try to pick the those numbers which are as close as possible to powers of 2,
 # and such that the sum of all the numbers is less than 2*8192 (so they can be run simultaneously).
-Ngpus     = [4, 8, 32, 72, 128, 288, 512, 968, 2048, 3872, 5832, 6136]
-Ngpus     = [4, 8, 32, 72, 128, 288, 512]
-Ngpus     = [4, 8]  # only resubmitting the small ones that hit the -O0 cache bug; the others are still queued
+# Ngpus     = [4, 8, 32, 72, 128, 288, 512, 968, 2048, 3872, 6136]
+Ngpus     = [4, 8, 32, 72, 128, 288, 512, 968, 2048, 6136]
+Ngpus     = [6136]
+Ngpus     = [4]
 
 type     = "weak"
 
@@ -32,9 +33,9 @@ function perlmutter_submit_job_writer(cfg::JobConfig, job_name, Nnodes, job_dir,
                                       resolution_fraction, project_path, run_file)
 
     # # grid sizes for sharded_baroclinic_instability_simulation_run.jl
-    # x, y, z = (256,256, 128) # the largest grid that I know fits
-    # # x, y, z = (320, 320, 128) # think might also fit, but the test crashed for other reasons
-    # # x, y, z = (384, 384, 128) # pretty sure this doesn't quite fit
+    # x, y = (256,256) # fits easily
+    # # x, y = (320, 320) # should fit fine, peak in use 21GB on 512 GPU
+    # # x, y = (384, 384) # seems to run fine in most cases, but might be close, has immediate returned before, peak in use nearly 30GB on 288GPU
 
     # # grid sizes for sharded_atmosphere_simulation_run.jl
     # x, y, z = (576, 576, 64) # might be better off doing something like this, should be about 23GB
