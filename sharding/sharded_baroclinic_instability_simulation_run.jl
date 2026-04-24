@@ -35,7 +35,7 @@ GordonBell25.preamble()
 using Libdl: dllist
 @show filter(contains("nccl"), dllist())
 
-const model_state_dump_path = joinpath(get(ENV, "SCRATCH", pwd()), "model_dumps", jobid_procid)
+const model_state_dump_path = joinpath(@__DIR__, "model_dumps", jobid_procid)
 
 Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
 Reactant.MLIR.IR.DUMP_MLIR_DIR[] = joinpath(@__DIR__, "mlir_dumps", jobid_procid)
