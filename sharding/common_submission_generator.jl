@@ -18,10 +18,6 @@ run_postfix = get(ENV, "GB25_RUN_POSTFIX", randstring(4))
     submit::Bool
 end
 
-# Helper function for checking whether an integer is a power of 4, useful for
-# some configurations.
-ispow4(n::Integer) = n > 0 && ispow2(n) && !iszero(n & 0x5555555555555555)
-
 function generate_and_submit(submit_job_writer, cfg::JobConfig; caller_file::String)
 
     if !isone(length(Base.ARGS))
@@ -134,7 +130,7 @@ export JULIA_DEBUG="Reactant,Reactant_jll"
 export JULIA_DEPOT_PATH=$(join(Base.DEPOT_PATH, ':'))
 # export TF_CPP_MAX_VLOG_LEVEL=3
 #
-export XLA_FLAGS="--xla_gpu_first_collective_call_warn_stuck_timeout_seconds=40 --xla_gpu_first_collective_call_terminate_timeout_seconds=80 \${XLA_FLAGS}"
+export XLA_FLAGS="--xla_gpu_first_collective_call_warn_stuck_timeout_seconds=150 --xla_gpu_first_collective_call_terminate_timeout_seconds=300 \${XLA_FLAGS}"
 export XLA_FLAGS="--xla_disable_hlo_passes=host-offload-legalize,hlo_constant_splitter,multi_output_fusion \${XLA_FLAGS}"
 # export XLA_FLAGS="--xla_dump_to=$(job_dir)/xla_dump \${XLA_FLAGS}"
 # export XLA_FLAGS="--xla_dump_hlo_pass_re=.* \${XLA_FLAGS}"

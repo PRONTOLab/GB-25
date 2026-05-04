@@ -26,7 +26,7 @@ preamble()
 GordonBell25.initialize(; single_gpu_per_process=false)
 @show Ndev = length(Reactant.devices())
 
-Ry, Rx = GordonBell25.factors(Ndev)
+Rx, Ry = GordonBell25.factors(Ndev)
 if Ndev == 1
     rank = 0
     arch = Oceananigans.ReactantState()
@@ -61,7 +61,7 @@ for optimize in (:before_raise, false, :before_jit, true), code_type in (:hlo, :
     optimize == true && code_type !== :xla && continue
     kernel_type = optimize isa Bool ? (optimize === false ? "unoptimised" : "optimised") : string(optimize)
 
-    compile_options = CompileOptions(; sync=true, raise=true, strip_llvm_debuginfo=true, strip=["enzymexla.kernel_call", "(::Reactant.Compiler.LLVMFunc", "ka_with_reactant", "(::KernelAbstractions.Kernel", "var\"#_launch!;_launch!"], multifloat=GordonBell25.multifloat_from_args(parsed_args), optimization_passes=optimize)
+    compile_options = CompileOptions(; sync=true, raise=true, strip_llvm_debuginfo=true, strip=:all, multifloat=GordonBell25.multifloat_from_args(parsed_args), optimization_passes=optimize)
     @info "Compiling $(kernel_type) $(code_type) kernels..."
     if code_type === :hlo
         first_code = try_compile_code() do

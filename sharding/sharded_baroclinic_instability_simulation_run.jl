@@ -1,8 +1,6 @@
 using Dates
 @info "This is when the fun begins" now(UTC)
 
-ENV["JULIA_DEBUG"] = "Reactant_jll,Reactant"
-
 using BFloat16s
 using GordonBell25
 using GordonBell25: first_time_step!, time_step!, loop!, factors, is_distributed_env_present
@@ -12,6 +10,8 @@ const parsed_args = GordonBell25.parse_baroclinic_instability_args(;
     grid_y_default = 768,
     grid_z_default = 4,
 )
+
+ENV["JULIA_DEBUG"] = "Reactant_jll,Reactant"
 
 using Oceananigans
 
@@ -63,7 +63,7 @@ end
 
 @show Ndev
 
-Ry, Rx = factors(Ndev)
+Rx, Ry = factors(Ndev)
 if Ndev == 1
     rank = 0
 else
@@ -104,7 +104,7 @@ end
 
 @info "[$rank] Compiling first_time_step!..." now(UTC)
 compile_options = CompileOptions(; sync=true, raise=true, strip_llvm_debuginfo=true, strip=["enzymexla.kernel_call", "(::Reactant.Compiler.LLVMFunc", "ka_with_reactant", "(::KernelAbstractions.Kernel", "var\"#_launch!;_launch!"], multifloat=GordonBell25.multifloat_from_args(parsed_args))
-rfirst! = if devarch isa Oceananigans.ReactantState
+rfirst! = if local_arch isa Oceananigans.ReactantState
      @compile compile_options=compile_options first_time_step!(model)
 else
      first_time_step!     

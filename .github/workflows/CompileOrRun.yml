@@ -101,6 +101,11 @@ jobs:
             Project.toml
           retention-days: 90
           overwrite: false
+      - name: Download atmosphere IC artifact
+        if: ${{ contains(inputs.sim_type, 'atmosphere') }}
+        timeout-minutes: 10
+        run: |
+          julia --color=yes --project -O0 simulations/download_atmosphere_ic_artifact.jl
       - name: Ocean climate simulation
         timeout-minutes: 190
         env:
@@ -188,5 +193,14 @@ jobs:
         with:
           name: 'simulation-xla-profile-${{ inputs.sim_type }}-${{ inputs.grid_type }}-${{ inputs.julia_version }}-${{ inputs.os }}-${{ inputs.xla_runtime }}'
           path: '**/plugins'
+          retention-days: 90
+          overwrite: false
+      - name: Upload checkpoints and plots
+        uses: actions/upload-artifact@v7
+        timeout-minutes: 10
+        if: ${{ always() && inputs.compile_or_run == 'run' }}
+        with:
+          name: 'simulation-checkpoints-${{ inputs.sim_type }}-${{ inputs.grid_type }}-${{ inputs.julia_version }}-${{ inputs.os }}-${{ inputs.xla_runtime }}'
+          path: '**/checkpoints'
           retention-days: 90
           overwrite: false
