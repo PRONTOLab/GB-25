@@ -192,12 +192,15 @@ jobs:
           path: '**/plugins'
           retention-days: 90
           overwrite: false
-      - name: Upload checkpoints and plots
+      - name: Upload checkpoint data
         uses: actions/upload-artifact@v7
         timeout-minutes: 10
         if: ${{ always() && inputs.compile_or_run == 'run' }}
         with:
           name: 'simulation-checkpoints-${{ inputs.sim_type }}-${{ inputs.grid_type }}-${{ inputs.julia_version }}-${{ inputs.os }}-${{ inputs.xla_runtime }}'
-          path: '**/checkpoints'
+          path: |
+            **/checkpoints
+            **/model_dumps
           retention-days: 90
           overwrite: false
+          if-no-files-found: warn

@@ -144,7 +144,8 @@ end
 
 let dump_path = mkpath(joinpath(model_state_dump_path, "loop1"))
     @info "[$rank] loop1 dumping state to disk" now(UTC) dump_path
-    GordonBell25.save_model_state(dump_path, model, arch)
+    GordonBell25.save_model_state(dump_path, model, arch;
+        field_names=[:T, :u, :v, :w], z_indices=[:bottom, :top])
     @info "[$rank] loop1 successfully dumped to disk" now(UTC)
 end
 
@@ -160,7 +161,8 @@ end
 
 let dump_path = mkpath(joinpath(model_state_dump_path, "loop2"))
     @info "[$rank] loop2 dumping state to disk" now(UTC) dump_path
-    GordonBell25.save_model_state(dump_path, model, arch)
+    GordonBell25.save_model_state(dump_path, model, arch;
+        field_names=[:T, :u, :v, :w], z_indices=[:bottom, :top])
     @info "[$rank] loop2 successfully dumped to disk" now(UTC)
 end
 

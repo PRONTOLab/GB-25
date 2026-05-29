@@ -3,10 +3,14 @@ using Oceananigans
 using Serialization
 
 """
-    local_shards_to_host(arr::Reactant.ConcreteIFRTArray{T,N})
+    local_shards_to_host(arr)
 
-Extract only the addressable (local) shards of a distributed `ConcreteIFRTArray`
-to host memory, **without** any cross-process all-gather.
+Extract the addressable (local) shards to host memory.
+
+For `Reactant.ConcreteIFRTArray`: extracts only the local device shards
+**without** any cross-process all-gather.
+
+For plain `AbstractArray` (serial/CPU): wraps the array as a single shard.
 
 Returns `(local_arrays, local_slices, global_shape)` where:
 - `local_arrays::Vector{Array{T,N}}` — one host array per local device shard
@@ -56,19 +60,70 @@ function local_shards_to_host(arr::Reactant.ConcreteIFRTArray{T,N}) where {T,N}
     return local_arrays, local_slices, global_shape
 end
 
+function local_shards_to_host(arr::AbstractArray{T,N}) where {T,N}
+    host = Array{T,N}(arr)
+    all_slices = Tuple(1:s for s in size(arr))
+    return [host], [all_slices], size(arr)
+end
+
+"""
+    resolve_z_indices(nz, spec; halo=0)
+
+Convert a z-level specification into concrete indices into the full data array
+(which may include `halo` cells on each side).
+
+Symbolic names refer to **interior** positions:
+- `:bottom`      → `halo + 1`
+- `:middle`/`:mid` → `halo + interior_nz ÷ 2`
+- `:top`         → `halo + interior_nz`  (i.e. `nz - halo`)
+
+Integer specs are treated as interior-relative and shifted by `halo`.
+"""
+function resolve_z_indices(nz::Int, spec; halo::Int=0)
+    nz_interior = nz - 2 * halo
+    spec === nothing && return collect(1:nz)
+    if eltype(spec) <: Integer
+        all(1 .<= spec .<= nz_interior) || error("z_indices out of range [1, $nz_interior]: $spec")
+        return sort(unique([i + halo for i in spec]))
+    elseif eltype(spec) <: Symbol
+        indices = Int[]
+        for s in spec
+            if s === :bottom
+                push!(indices, halo + 1)
+            elseif s === :middle || s === :mid
+                push!(indices, halo + max(1, nz_interior ÷ 2))
+            elseif s === :top
+                push!(indices, halo + nz_interior)
+            else
+                error("Unknown z level: $s. Use :bottom, :middle, or :top")
+            end
+        end
+        return sort(unique(indices))
+    end
+    error("z_indices must be nothing, a vector of Ints, or a vector of Symbols")
+end
+
 """
     save_sharded_fields(dir, fields::NamedTuple, rank::Int;
-                        iteration=nothing, time=nothing)
+                        iteration=nothing, time=nothing, z_indices=nothing)
 
 Save the local shards of each field to a per-rank file using Julia Serialization.
 Each rank writes only its own addressable data — no cross-process communication.
 
+`z_indices` selects which vertical levels to keep. Accepts `nothing` (all),
+a vector of integer indices, or symbolic levels `[:bottom, :middle, :top]`.
+
+Writes atomically via a temp file to avoid truncated checkpoints if the
+process is killed mid-write.
+
 Files are written as `fields_rank{R}.dat` containing a Dict with:
 - `:iteration`, `:time` — simulation metadata
+- `:z_indices` — which vertical levels were saved (or `nothing` for all)
 - For each field name: `(local_arrays, local_slices, global_shape)`
 """
 function save_sharded_fields(dir, fields::NamedTuple, rank::Int;
-                             iteration=nothing, time=nothing)
+                             iteration=nothing, time=nothing,
+                             z_indices=nothing, halo_z::Int=0)
     mkpath(dir)
     filepath = joinpath(dir, "fields_rank$(rank).dat")
 
@@ -81,6 +136,19 @@ function save_sharded_fields(dir, fields::NamedTuple, rank::Int;
     for (name, field_data) in pairs(fields)
         arr = Reactant.ancestor(field_data)
         local_arrays, local_slices, global_shape = local_shards_to_host(arr)
+
+        if z_indices !== nothing && length(global_shape) >= 3
+            nz = global_shape[3]
+            zidx = resolve_z_indices(nz, z_indices; halo=halo_z)
+            local_arrays = [a[:, :, zidx] for a in local_arrays]
+            nz_new = length(zidx)
+            local_slices = map(local_slices) do s
+                (s[1:2]..., 1:nz_new)
+            end
+            global_shape = (global_shape[1], global_shape[2], nz_new)
+            state[:z_indices] = zidx
+        end
+
         serializable_slices = [Tuple((first(r), last(r)) for r in s) for s in local_slices]
         state[name] = (;
             local_arrays,
@@ -89,52 +157,95 @@ function save_sharded_fields(dir, fields::NamedTuple, rank::Int;
         )
     end
 
-    open(filepath, "w") do io
+    tmppath = filepath * ".tmp"
+    open(tmppath, "w") do io
         Serialization.serialize(io, state)
     end
+    mv(tmppath, filepath; force=true)
     return filepath
 end
 
 """
-    extract_model_fields(model)
+    extract_model_fields(model; field_names=nothing)
 
-Extract all field data arrays from a Breeze/Oceananigans model
+Extract field data arrays from a Breeze/Oceananigans model
 as a NamedTuple suitable for `save_sharded_fields`.
+
+`field_names` selects a subset of fields. Pass `nothing` (default) for all
+fields, or a collection of `Symbol`s (e.g. `[:ρ, :ρu, :ρv, :ρw, :ρθ]`).
 
 Uses `Oceananigans.fields(model)` which, for a Breeze `AtmosphereModel`,
 includes prognostic fields, formulation fields (θ, ρθ, …), velocities,
 temperature, and microphysical fields.
 """
-function extract_model_fields(model)
+function extract_model_fields(model; field_names=nothing)
     all_fields = Oceananigans.fields(model)
+    names_to_use = field_names === nothing ? keys(all_fields) : field_names
     field_pairs = Pair{Symbol,Any}[]
-    for (name, field) in pairs(all_fields)
-        push!(field_pairs, name => field.data)
+    for name in names_to_use
+        if hasproperty(all_fields, name)
+            push!(field_pairs, name => getproperty(all_fields, name).data)
+        else
+            @warn "Field :$name not found in model, skipping. Available: $(keys(all_fields))"
+        end
     end
     return NamedTuple(field_pairs)
 end
 
 """
-    save_model_state(dir, model, arch; label="checkpoint")
+    _model_grid(model)
 
-Save all prognostic fields of the model to per-rank files.
+Extract the Oceananigans grid from a model, handling `OceanSeaIceModel` wrappers.
 """
-function save_model_state(dir, model, arch; label="checkpoint")
+function _model_grid(model)
+    hasproperty(model, :grid) && return model.grid
+    if hasproperty(model, :ocean)
+        om = model.ocean
+        hasproperty(om, :model) && hasproperty(om.model, :grid) && return om.model.grid
+    end
+    return nothing
+end
+
+"""
+    save_model_state(dir, model, arch; label="checkpoint",
+                     field_names=nothing, z_indices=nothing)
+
+Save model fields to per-rank files. Returns the filepath on success,
+or `nothing` if an error occurred (logged as a warning so the simulation
+is not interrupted).
+
+- `field_names`: `nothing` for all fields, or a collection of `Symbol`s.
+- `z_indices`:   `nothing` for all levels, integer indices, or symbolic
+                 levels `[:bottom, :middle, :top]`.
+"""
+function save_model_state(dir, model, arch;
+                          label="checkpoint",
+                          field_names=nothing,
+                          z_indices=nothing)
     rank = if arch isa Oceananigans.Distributed
         arch.local_rank
     else
         0
     end
 
-    fields = extract_model_fields(model)
+    try
+        fields = extract_model_fields(model; field_names)
 
-    iter_val = try; Int(Array(model.clock.iteration)[1]); catch; nothing; end
-    time_val = try; Float64(Array(model.clock.time)[1]); catch; nothing; end
+        grid = _model_grid(model)
+        halo_z = grid !== nothing ? Oceananigans.halo_size(grid)[3] : 0
 
-    outdir = joinpath(dir, label)
-    filepath = save_sharded_fields(outdir, fields, rank;
-                                   iteration=iter_val, time=time_val)
-    return filepath
+        iter_val = try; Int(Array(model.clock.iteration)[1]); catch; nothing; end
+        time_val = try; Float64(Array(model.clock.time)[1]); catch; nothing; end
+
+        outdir = joinpath(dir, label)
+        filepath = save_sharded_fields(outdir, fields, rank;
+                                       iteration=iter_val, time=time_val,
+                                       z_indices, halo_z)
+        return filepath
+    catch e
+        @error "Checkpoint save failed (rank $rank), continuing simulation" exception=(e, catch_backtrace())
+        return nothing
+    end
 end
 
 """
@@ -176,7 +287,7 @@ end
 """
     load_checkpoint_metadata(dir)
 
-Read iteration, time, and field names from the first rank file found.
+Read iteration, time, field names, and z_indices from the first rank file found.
 """
 function load_checkpoint_metadata(dir)
     rank_files = filter(f -> startswith(f, "fields_rank") && endswith(f, ".dat"), readdir(dir))
@@ -184,30 +295,51 @@ function load_checkpoint_metadata(dir)
     state = open(joinpath(dir, first(sort(rank_files)))) do io
         Serialization.deserialize(io)
     end
-    return (iteration=state[:iteration], time=state[:time], field_names=state[:field_names])
+    return (
+        iteration   = state[:iteration],
+        time        = state[:time],
+        field_names = state[:field_names],
+        z_indices   = get(state, :z_indices, nothing),
+    )
 end
 
 """
     load_all_fields(dir; halo=0)
 
 Load every field from a checkpoint directory, optionally stripping `halo` cells
-from each side of each dimension. Returns `(metadata, field_data)` where
-`metadata` is a NamedTuple with `:iteration`, `:time`, `:field_names` and
-`field_data` is a `Dict{Symbol, Array}`.
+from each side of each horizontal dimension. When the checkpoint was saved with
+`z_indices`, halo stripping is only applied to x and y (dims 1-2) since the
+z levels are already explicitly selected.
+
+Skips individual fields that fail to load rather than aborting entirely.
+
+Returns `(metadata, field_data)` where
+`metadata` is a NamedTuple with `:iteration`, `:time`, `:field_names`, `:z_indices`
+and `field_data` is a `Dict{Symbol, Array}`.
 """
 function load_all_fields(dir; halo::Int=0)
     meta = load_checkpoint_metadata(dir)
+    z_was_subsetted = meta.z_indices !== nothing
     data = Dict{Symbol, Array}()
     for name in meta.field_names
-        raw = load_global_field(dir, name)
-        if halo > 0
-            interior_ranges = ntuple(ndims(raw)) do d
-                (halo + 1):(size(raw, d) - halo)
+        try
+            raw = load_global_field(dir, name)
+            if halo > 0
+                interior_ranges = ntuple(ndims(raw)) do d
+                    if z_was_subsetted && d >= 3
+                        1:size(raw, d)
+                    else
+                        (halo + 1):(size(raw, d) - halo)
+                    end
+                end
+                data[name] = raw[interior_ranges...]
+            else
+                data[name] = raw
             end
-            data[name] = raw[interior_ranges...]
-        else
-            data[name] = raw
+        catch e
+            @warn "Failed to load field :$name, skipping" exception=(e, catch_backtrace())
         end
     end
     return meta, data
 end
+
