@@ -19,8 +19,7 @@ steps:
           tar czvf profile-traces.tar.gz plugins
           tar czvf xla_dump.tar.gz xla_dump
         agents:
-          queue: "juliagpu"
-          cuda: "*"
+          queue: "cuda"
         if: build.message !~ /\[skip tests\]/
         timeout_in_minutes: 120
         artifact_paths:
