@@ -12,10 +12,15 @@ account  = "g209"
 submit   = true #false
 run_name = "reactant_"
 time     = "00:30:00"
-Ngpus    = [4, 8, 16]
-type     = "weak"
 
-all(ispow2, Ngpus) || error("Not all elements of Ngpus are powers of 2")
+# We want to preserve a 2:1 aspect ratio for the x:y dimensions in all runs
+# so we pick Ngpu from the set of numbers 8*n^2 where n is any integer.
+# We also try to pick the those numbers which are as close as possible to powers of 2,
+# and such that the sum of all the numbers is less than 2*8192 (so they can be run simultaneously).
+# Also 9180 is chosen specifically because it is the alps system size
+Ngpus     = [4, 8, 16, 32, 72, 128, 288, 512, 968, 2048, 3872, 8192, 9152]
+
+type     = "weak"
 
 gpus_per_node = 4
 cpus_per_task = 288
@@ -26,12 +31,7 @@ alps_config = JobConfig(; username, account, out_dir, time, cpus_per_task, Ngpus
 function alps_submit_job_writer(cfg::JobConfig, job_name, Nnodes, job_dir, Ngpu,
                                 resolution_fraction, project_path, run_file)
 
-    # We want to preserve a 2:1 aspect ratio for the x:y dimensions in all runs,
-    # so we change the base x and y sizes for the grid depending on whether the
-    # number of GPUs is a power of 4 or not (we enforce above that Ngpu is
-    # always a power of 2).  The factors 1088 and 544 have been chose so that
-    # their product is close enough to 768x768
-    x, y = ispow4(Ngpu) ? (1088, 544) : (768, 768)
+    x, y = (768, 768)
 
     """
 #!/bin/bash -l
@@ -65,6 +65,9 @@ export FI_CXI_RX_MATCH_MODE=software
 # export FI_MR_CACHE_MONITOR=userfaultfd
 export NCCL_NCHANNELS_PER_NET_PEER=4
 
+# Tell NCLL to use fast network, this may solve some rendezvous failures
+export NCCL_SOCKET_IFNAME="hsn"
+    
 # Equivalent to loading the `aws-ofi-nccl` module, without having to load it:
 # https://docs.cscs.ch/software/communication/nccl/#uenv
 export LD_LIBRARY_PATH="/user-environment/linux-neoverse_v2/aws-ofi-nccl-1.17.1-rpvjytyqpdw2taig4xibhrtgudie4a3q/lib:/user-environment/linux-neoverse_v2/libfabric-2.3.1-npwd54pnpalgjcizhpejkh7gwg4c7idu/lib:/user-environment/linux-neoverse_v2/aws-ofi-nccl-1.17.1-rpvjytyqpdw2taig4xibhrtgudie4a3q/lib"
