@@ -48,6 +48,8 @@ jobs:
   simulation:
     name: Julia ${{ inputs.julia_version }} - ${{ inputs.sim_type }} - ${{ inputs.os }} - ${{ inputs.xla_runtime }} - ${{ inputs.compile_or_run }}
     runs-on: ${{ inputs.os }}
+    env:
+      JULIA_PKG_SERVER_REGISTRY_PREFERENCE: eager
     strategy:
       fail-fast: false
     steps:
@@ -99,6 +101,11 @@ jobs:
             Project.toml
           retention-days: 90
           overwrite: false
+      - name: Download atmosphere IC artifact
+        if: ${{ contains(inputs.sim_type, 'atmosphere') }}
+        timeout-minutes: 10
+        run: |
+          julia --color=yes --project -O0 simulations/download_atmosphere_ic_artifact.jl
       - name: Ocean climate simulation
         timeout-minutes: 190
         env:
@@ -131,7 +138,7 @@ jobs:
         run: |
           OK="true"
           for OP in all-to-all all-gather all-reduce; do
-              COLLECTIVES=$(find . -name 'optimised_${{ inputs.sim_type }}*.xla' -exec grep --with-filename --line-number --extended-regexp "${OP}" '{}' \;)
+              COLLECTIVES=$(find . -name 'optimised_${{ inputs.sim_type }}*.xla' -exec grep --with-filename --line-number --extended-regexp "${OP}\(" '{}' \;)
               NUM_COLLECTIVES=$(echo "${COLLECTIVES}" | wc -l | xargs)
               if [[ -n "${COLLECTIVES}" ]]; then
                   MSG="There are ${NUM_COLLECTIVES} remaining ${OP} operations"
@@ -186,5 +193,14 @@ jobs:
         with:
           name: 'simulation-xla-profile-${{ inputs.sim_type }}-${{ inputs.grid_type }}-${{ inputs.julia_version }}-${{ inputs.os }}-${{ inputs.xla_runtime }}'
           path: '**/plugins'
+          retention-days: 90
+          overwrite: false
+      - name: Upload checkpoints and plots
+        uses: actions/upload-artifact@v7
+        timeout-minutes: 10
+        if: ${{ always() && inputs.compile_or_run == 'run' }}
+        with:
+          name: 'simulation-checkpoints-${{ inputs.sim_type }}-${{ inputs.grid_type }}-${{ inputs.julia_version }}-${{ inputs.os }}-${{ inputs.xla_runtime }}'
+          path: '**/checkpoints'
           retention-days: 90
           overwrite: false

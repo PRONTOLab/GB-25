@@ -27,7 +27,7 @@ function parse_baroclinic_instability_args(;
             arg_type = Int
         "--float-type"
             help = "The default Oceananigans float type (Float64/f64, Float32/f32, Float16/f16, BFloat16/bf16)"
-            default = "Float64"
+            default = "Float32"
             arg_type = String
         "--target-float-type"
             help = "the float type for execution (Float64/f64, Float32/f32, Float16/f16, BFloat16/bf16, Float8E5M2/f8E5M2/f8, Float8E4M3/f8E4M3) or the empty string for no lowering"

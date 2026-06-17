@@ -5,6 +5,7 @@ using Reactant
 using Oceananigans
 using Oceananigans.Architectures: ReactantState
 Reactant.Compiler.WHILE_CONCAT[] = true
+# Reactant.Compiler.AGGRESSIVE_PROPAGATION[] = true
 
 const parsed_args = GordonBell25.parse_baroclinic_instability_args(;
     grid_x_default = 1536,
@@ -52,7 +53,7 @@ model = GordonBell25.baroclinic_instability_model(arch, Nx, Ny, Nz; halo=(H, H, 
 GC.gc(true); GC.gc(false); GC.gc(true)
 
 TRY_COMPILE_FAILED[] = false
-Ninner = ConcreteRNumber(2)
+Ninner = ConcreteRNumber(1)
 
 for optimize in (:before_raise, false, :before_jit, true), code_type in (:hlo, :xla)
     # We only want the optimised XLA code

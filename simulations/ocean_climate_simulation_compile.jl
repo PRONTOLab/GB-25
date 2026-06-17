@@ -1,5 +1,6 @@
 using GordonBell25: first_time_step!, loop!, try_compile_code, preamble, TRY_COMPILE_FAILED
 using GordonBell25: data_free_ocean_climate_model_init, PROFILE
+using CUDA
 using Reactant
 using Oceananigans
 using Oceananigans.Architectures: ReactantState
