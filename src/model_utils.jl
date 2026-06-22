@@ -123,6 +123,16 @@ function set_baroclinic_instability!(model)
     end
 end
 
+function simple_tripolar_grid(arch::Architectures.AbstractArchitecture, resolution, Nz)
+    Nx, Ny = resolution_to_points(resolution)
+    return simple_tripolar_grid(arch, Nx, Ny, Nz)
+end
+
+function simple_tripolar_grid(arch::Architectures.AbstractArchitecture, Nx, Ny, Nz; halo=(8, 8, 8))
+    z = exponential_z_faces(; Nz, depth=4000, h=30)
+    return TripolarGrid(arch; size=(Nx, Ny, Nz), halo, z)
+end
+
 function gaussian_islands_tripolar_grid(arch::Architectures.AbstractArchitecture, resolution, Nz)
     Nx, Ny = resolution_to_points(resolution)
     return gaussian_islands_tripolar_grid(arch, Nx, Ny, Nz)
