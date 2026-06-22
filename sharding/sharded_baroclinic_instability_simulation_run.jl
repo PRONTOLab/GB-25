@@ -37,7 +37,7 @@ using Libdl: dllist
 
 const model_state_dump_path = joinpath(@__DIR__, "model_dumps", jobid_procid)
 
-Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
+Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = false
 Reactant.MLIR.IR.DUMP_MLIR_DIR[] = joinpath(@__DIR__, "mlir_dumps", jobid_procid)
 Reactant.Compiler.DEBUG_DISABLE_RESHARDING[] = true
 # Reactant.Compiler.DEBUG_PRINT_CODEGEN[] = true
@@ -102,6 +102,9 @@ if devarch isa Oceananigans.ReactantState
    	ConcreteRNumber(Ninner; sharding=Sharding.NamedSharding(arch.connectivity, ()))
    end
 end
+
+# reenable MLIR dumping after model generation, to avoid dumping the IR for all the helper functions called during model setup
+Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
 
 @info "[$rank] Compiling first_time_step!..." now(UTC)
 
