@@ -10,6 +10,7 @@ const parsed_args = GordonBell25.parse_baroclinic_instability_args(;
 default_float_type = GordonBell25.float_type_from_args(parsed_args)
 Oceananigans.defaults.FloatType = default_float_type
 using Reactant
+using KernelAbstractions: @kernel, @index
 
 throw_error = true
 include_halos = true
@@ -32,8 +33,31 @@ Ny = Ty - 2H
 
 rarch = Oceananigans.Architectures.ReactantState()
 varch = CPU()
+
 rmodel = GordonBell25.baroclinic_instability_model(rarch, Nx, Ny, Nz; model_kw...)
 vmodel = GordonBell25.baroclinic_instability_model(varch, Nx, Ny, Nz; model_kw...)
+
+@kernel function _fill_bounded_halo!(c, Nz)
+    i, j = @index(Global, NTuple)
+    c[i, j, 0] = c[i, j, 1]
+    c[i, j, Nz+1] = c[i, j, Nz]
+end
+
+rc = Oceananigans.Architectures.on_architecture(rarch, OffsetArray(Nx, Ny, Nz, -1, -1, -1))
+vc = Oceananigans.Architectures.on_architecture(varch, OffsetArray(Nx, Ny, Nz, -1, -1, -1))
+
+rdev = Oceananigans.Architectures.device(rarch)
+vdev = Oceananigans.Architectures.device(varch)
+
+fill_bounded_halo! = _fill_bounded_halo!(vdev, (16, 16), (Nx, Ny))
+fill_bounded_halo!(vc, Nz)
+
+@jit begin
+    fill_bounded_halo! = _fill_bounded_halo!(rdev, (16, 16), (Nx, Ny))
+    fill_bounded_halo!(rc, Nz)
+end
+
+#=
 @show vmodel
 @show rmodel
 
@@ -100,3 +124,4 @@ rloop! = @compile compile_options=compile_options GordonBell25.loop!(rmodel, rNt
 
 @info "After a loop of $(Nt) steps:"
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
+=#
