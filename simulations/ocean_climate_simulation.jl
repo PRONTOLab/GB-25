@@ -56,7 +56,7 @@ Nz = 20 # eventually we want to increase this to between 100-600
 stop_time = 10days
 
 # Grid setup
-z_faces = exponential_z_faces(; Nz, depth=6000, h=30) # may need changing for very large Nz
+z_faces = ExponentialCoordinate(Nz, -6000, 0) # may need changing for very large Nz
 underlying_grid = TripolarGrid(arch; size=(Nx, Ny, Nz), halo=(7, 7, 7), z=z_faces)
 bottom_height = regrid_bathymetry(underlying_grid) # adds Earth bathymetry from ETOPO1
 grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height))
@@ -84,8 +84,8 @@ atmosphere = JRA55PrescribedAtmosphere(arch; backend=JRA55NetCDFBackend(41))
 
 # Coupled model and simulation
 solver_stop_criteria = FixedIterations(5) # note: more iterations = more accurate
-atmosphere_ocean_flux_formulation = SimilarityTheoryFluxes(; solver_stop_criteria)
-interfaces = ComponentInterfaces(atmosphere, ocean; radiation, atmosphere_ocean_flux_formulation)
+atmosphere_ocean_fluxes = SimilarityTheoryFluxes(; solver_stop_criteria)
+interfaces = ComponentInterfaces(atmosphere, ocean; radiation, atmosphere_ocean_fluxes)
 coupled_model = OceanSeaIceModel(ocean; atmosphere, radiation, interfaces)
 simulation = Simulation(coupled_model; Δt, stop_time)
 
