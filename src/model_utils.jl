@@ -142,3 +142,15 @@ function gaussian_islands_tripolar_grid(arch::Architectures.AbstractArchitecture
                                                                   active_cells_map = false)
 end
 
+function earth_tripolar_grid(arch::Architectures.AbstractArchitecture, Nx, Ny, Nz; halo=(8, 8, 8))
+    # Grid setup
+    z = exponential_z_faces(; Nz, depth=6000, h=30) # may need changing for very large Nz
+    underlying_grid = TripolarGrid(arch; size=(Nx, Ny, Nz), halo, z)
+
+    # Bathymetry based on ETOPO1: https://www.ncei.noaa.gov/products/etopo-global-relief-model
+    bathymetry = ClimaOcean.regrid_bathymetry(underlying_grid, interpolation_passes=10, major_basins=1)
+
+    return @gbprofile "ImmersedBoundaryGrid" ImmersedBoundaryGrid(underlying_grid,
+                                                                  GridFittedBottom(bathymetry);
+                                                                  active_cells_map = false)
+end
