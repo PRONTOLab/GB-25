@@ -1,5 +1,6 @@
 using GordonBell25
 using Oceananigans
+using CUDA
 using Reactant
 
 const parsed_args = GordonBell25.parse_baroclinic_instability_args(;

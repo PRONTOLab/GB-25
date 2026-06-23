@@ -1,6 +1,7 @@
 using BFloat16s
 using GordonBell25: first_time_step!, loop!, try_compile_code, preamble, TRY_COMPILE_FAILED
 using GordonBell25: baroclinic_instability_model, PROFILE, GordonBell25, is_distributed_env_present
+using CUDA
 using Reactant
 using Oceananigans
 using Oceananigans.Architectures: ReactantState
