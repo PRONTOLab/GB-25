@@ -28,14 +28,14 @@ Serialization = "9e88b42a-f829-5b0c-bbe9-9e923198166b"
 [compat]
 ArgParse = "1.2.0"
 BFloat16s = "0.6.1"
-CUDA = "5.7.1"
-ClimaSeaIce = "=0.4.5"
+CUDA = "=5.8.5, 5.9.1, 6"
+ClimaSeaIce = "0.5.6"
 Dates = "1"
 HDF5_jll = "=1.14.3"
-KernelAbstractions = "0.9.34"
+KernelAbstractions = "0.9.39"
 MPI = "0.20.22"
-NumericalEarth = "0.2.2"
-Oceananigans = "0.106.1"
+NumericalEarth = "0.5.7"
+Oceananigans = "0.110.1, 0.111"
 PrecompileTools = "1.2.1"
 Printf = "1"
 Profile = "1"
@@ -43,14 +43,6 @@ ReactantCore = "0.1.18"
 Reactant = "0.2.247"
 SeawaterPolynomials = "0.3.9"
 Serialization = "1"
-
-[sources.Oceananigans]
-url = "https://github.com/CliMA/Oceananigans.jl.git"
-rev = "pb/step-fix"
-
-[sources.NumericalEarth]
-url = "https://github.com/NumericalEarth/NumericalEarth.jl.git"
-rev = "glw/manual-iterate"
 
 [preferences.Reactant]
 xla_runtime = "IFRT"
