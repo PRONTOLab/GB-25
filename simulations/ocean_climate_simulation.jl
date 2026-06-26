@@ -6,7 +6,7 @@ using Reactant
 
 using NumericalEarth
 using NumericalEarth: EN4Monthly
-using NumericalEarth.EarthSystemModels.InterfaceComputations: TenUnrolledIterations, ComponentInterfaces
+using NumericalEarth.EarthSystemModels.InterfaceComputations: FixedIterations, ComponentInterfaces
 # using OrthogonalSphericalShellGrids: TripolarGrid
 
 using Dates
@@ -85,7 +85,7 @@ radiation  = JRA55PrescribedRadiation(arch; backend=JRA55NetCDFBackend(41))
 atmosphere = JRA55PrescribedAtmosphere(arch; backend=JRA55NetCDFBackend(41))
 
 # Coupled model and simulation
-solver_stop_criteria = TenUnrolledIterations() # note: more iterations = more accurate
+solver_stop_criteria = FixedIterations(10) # note: more iterations = more accurate
 atmosphere_ocean_fluxes = SimilarityTheoryFluxes(; solver_stop_criteria)
 interfaces = ComponentInterfaces(atmosphere, ocean; radiation, atmosphere_ocean_fluxes)
 coupled_model = OceanOnlyModel(ocean; atmosphere, radiation, interfaces)

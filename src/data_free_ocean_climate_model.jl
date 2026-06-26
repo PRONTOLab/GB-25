@@ -63,7 +63,7 @@ function data_free_ocean_climate_model_init(
     parent(atmosphere.tracers.q) .= 0
 
     # Coupled model
-    solver_stop_criteria = TenUnrolledIterations() # note: more iterations = more accurate
+    solver_stop_criteria = FixedIterations(10) # note: more iterations = more accurate
     atmosphere_ocean_fluxes = SimilarityTheoryFluxes(; solver_stop_criteria)
     interfaces = ComponentInterfaces(atmosphere, ocean; radiation, atmosphere_ocean_fluxes)
     coupled_model = @gbprofile "OceanOnlyModel" OceanOnlyModel(ocean; atmosphere, radiation, interfaces)
