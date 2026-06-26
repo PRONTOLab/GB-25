@@ -81,7 +81,7 @@ set!(ocean.model, T=Metadatum(:temperature; dates=first(dates)),
                   S=Metadatum(:salinity; dates=first(dates)))
 
 # Atmospheric model
-radiation  = Radiation(arch)
+radiation  = JRA55PrescribedRadiation(arch; backend=JRA55NetCDFBackend(41))
 atmosphere = JRA55PrescribedAtmosphere(arch; backend=JRA55NetCDFBackend(41))
 
 # Coupled model and simulation

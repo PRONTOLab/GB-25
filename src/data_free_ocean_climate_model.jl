@@ -38,6 +38,10 @@ function data_free_ocean_climate_model_init(
 
     atmosphere = PrescribedAtmosphere(atmos_grid, atmos_times)
 
+    # Downwelling radiation is no longer carried by the atmosphere; it lives in
+    # the top-level radiation component (PrescribedRadiation).
+    radiation = PrescribedRadiation(atmos_grid, atmos_times)
+
     Ta = Field{Center, Center, Nothing}(atmos_grid)
     ua = Field{Center, Center, Nothing}(atmos_grid)
     Qs = Field{Center, Center, Nothing}(atmos_grid)
@@ -48,18 +52,15 @@ function data_free_ocean_climate_model_init(
 
     if arch isa Architectures.ReactantState
         if Reactant.precompiling()
-            @code_hlo set_tracers(parent(atmosphere.tracers.T), parent(Ta), parent(atmosphere.velocities.u), parent(ua), parent(atmosphere.downwelling_radiation.shortwave), parent(Qs))
+            @code_hlo set_tracers(parent(atmosphere.tracers.T), parent(Ta), parent(atmosphere.velocities.u), parent(ua), parent(radiation.downwelling_shortwave), parent(Qs))
         else
-            @jit set_tracers(parent(atmosphere.tracers.T), parent(Ta), parent(atmosphere.velocities.u), parent(ua), parent(atmosphere.downwelling_radiation.shortwave), parent(Qs))
+            @jit set_tracers(parent(atmosphere.tracers.T), parent(Ta), parent(atmosphere.velocities.u), parent(ua), parent(radiation.downwelling_shortwave), parent(Qs))
         end
     else
-        set_tracers(parent(atmosphere.tracers.T), parent(Ta), parent(atmosphere.velocities.u), parent(ua), parent(atmosphere.downwelling_radiation.shortwave), parent(Qs))
+        set_tracers(parent(atmosphere.tracers.T), parent(Ta), parent(atmosphere.velocities.u), parent(ua), parent(radiation.downwelling_shortwave), parent(Qs))
     end
 
     parent(atmosphere.tracers.q) .= 0
-
-    # Atmospheric model
-    radiation = Radiation(arch)
 
     # Coupled model
     solver_stop_criteria = TenUnrolledIterations() # note: more iterations = more accurate
