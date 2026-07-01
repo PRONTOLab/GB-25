@@ -27,6 +27,7 @@ Serialization = "9e88b42a-f829-5b0c-bbe9-9e923198166b"
 
 [sources]
 NumericalEarth = {url = "https://github.com/NumericalEarth/NumericalEarth.jl", rev = "dkytezab-patch-1"}
+Reactant = {url = "https://github.com/EnzymeAD/Reactant.jl", rev = "v0.2.270"}
 
 [compat]
 ArgParse = "1.2.0"
@@ -43,7 +44,7 @@ PrecompileTools = "1.2.1"
 Printf = "1"
 Profile = "1"
 ReactantCore = "0.1.18"
-Reactant = "0.2.247"
+Reactant = "=0.2.270"
 SeawaterPolynomials = "0.3.9"
 Serialization = "1"
 
