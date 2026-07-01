@@ -28,6 +28,7 @@ Serialization = "9e88b42a-f829-5b0c-bbe9-9e923198166b"
 [sources]
 NumericalEarth = {url = "https://github.com/NumericalEarth/NumericalEarth.jl", rev = "dkytezab-patch-1"}
 Reactant = {url = "https://github.com/EnzymeAD/Reactant.jl", rev = "v0.2.270"}
+Oceananigans = {url = "https://github.com/CliMA/Oceananigans.jl", rev = "v0.110.6"}
 
 [compat]
 ArgParse = "1.2.0"
