@@ -52,15 +52,15 @@ function data_free_ocean_climate_model_init(
 
     if arch isa Architectures.ReactantState
         if Reactant.precompiling()
-            @code_hlo set_tracers(parent(atmosphere.tracers.T), parent(Ta), parent(atmosphere.velocities.u), parent(ua), parent(radiation.downwelling_shortwave), parent(Qs))
+            @code_hlo set_tracers(parent(atmosphere.temperature), parent(Ta), parent(atmosphere.velocities.u), parent(ua), parent(radiation.downwelling_shortwave), parent(Qs))
         else
-            @jit set_tracers(parent(atmosphere.tracers.T), parent(Ta), parent(atmosphere.velocities.u), parent(ua), parent(radiation.downwelling_shortwave), parent(Qs))
+            @jit set_tracers(parent(atmosphere.temperature), parent(Ta), parent(atmosphere.velocities.u), parent(ua), parent(radiation.downwelling_shortwave), parent(Qs))
         end
     else
-        set_tracers(parent(atmosphere.tracers.T), parent(Ta), parent(atmosphere.velocities.u), parent(ua), parent(radiation.downwelling_shortwave), parent(Qs))
+        set_tracers(parent(atmosphere.temperature), parent(Ta), parent(atmosphere.velocities.u), parent(ua), parent(radiation.downwelling_shortwave), parent(Qs))
     end
 
-    parent(atmosphere.tracers.q) .= 0
+    parent(atmosphere.specific_humidity) .= 0
 
     # Coupled model
     solver_stop_criteria = FixedIterations(10) # note: more iterations = more accurate
