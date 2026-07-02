@@ -64,8 +64,8 @@ function baroclinic_instability_model(arch, Nx, Ny, Nz; Δt,
         error("grid_type=$grid_type must be :gaussian_islands or :simple_lat_lon.")
     end
 
-    model = HydrostaticFreeSurfaceModel(;
-        grid, free_surface, closure, buoyancy, tracers,
+    model = HydrostaticFreeSurfaceModel(grid;
+        free_surface, closure, buoyancy, tracers,
         coriolis, momentum_advection, tracer_advection,
     )
 
