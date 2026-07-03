@@ -148,8 +148,8 @@ end
 
 """Adapt `Clock` for GPU."""
 Adapt.adapt_structure(to::ReactantCUDAExt.ReactantKernelAdaptor, clock::Oceananigans.TimeSteppers.Clock) =
-    (time          = Adapt.adapt(clock.time),
-     last_Δt       = Adapt.adapt(clock.last_Δt),
-     last_stage_Δt = Adapt.adapt(clock.last_stage_Δt),
-     iteration     = Adapt.adapt(clock.iteration),
-     stage         = Adapt.adapt(clock.stage))
+    (time          = Adapt.adapt(to, clock.time),
+     last_Δt       = Adapt.adapt(to, clock.last_Δt),
+     last_stage_Δt = Adapt.adapt(to, clock.last_stage_Δt),
+     iteration     = Adapt.adapt(to, clock.iteration),
+     stage         = Adapt.adapt(to, clock.stage))
