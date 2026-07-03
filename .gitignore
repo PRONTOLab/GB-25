@@ -11,3 +11,5 @@
 *.log
 *.mlir
 *.xla
+
+sharding/runs
