@@ -4,6 +4,7 @@ using Oceananigans
 using Oceananigans.Units
 using Oceananigans.Architectures: Architectures
 using SeawaterPolynomials
+using CUDA
 
 using NumericalEarth
 using NumericalEarth.EarthSystemModels.InterfaceComputations: FixedIterations, ComponentInterfaces
