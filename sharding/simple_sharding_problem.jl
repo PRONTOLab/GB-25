@@ -39,7 +39,7 @@ arch = Oceananigans.Distributed(
 )
 
 H = 8 # halo size
-T = Tx, Ty = 512 .* GordonBell25.factors(ndevices)
+T = Tx, Ty = 448 .* GordonBell25.factors(ndevices)
 Nx, Ny = @. T - 2 * H
 Nz = 128
 
