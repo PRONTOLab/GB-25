@@ -18,6 +18,7 @@ function data_free_ocean_climate_model_init(
     )
 
     grid = gaussian_islands_tripolar_grid(arch, resolution, Nz)
+    # grid = simple_latitude_longitude_grid(arch, resolution, Nz)
 
     # See visualize_ocean_climate_simulation.jl for information about how to
     # visualize the results of this run.
@@ -29,13 +30,17 @@ function data_free_ocean_climate_model_init(
     # Set up an atmosphere
     atmos_times = range(0, 1days, length=24)
 
-    atmos_grid = LatitudeLongitudeGrid(arch,
+    topology = (Oceananigans.Grids.Periodic, Oceananigans.Grids.Bounded, Oceananigans.Grids.Flat)
+    atmos_grid = LatitudeLongitudeGrid(arch; topology,
                                        size = (360, 180),
                                        longitude = (0, 360),
-                                       latitude = (-90, 90),
-                                       topology = (Periodic, Bounded, Flat))
+                                       latitude = (-90, 90))
 
     atmosphere = PrescribedAtmosphere(atmos_grid, atmos_times)
+
+    # Downwelling radiation is no longer carried by the atmosphere; it lives in
+    # the top-level radiation component (PrescribedRadiation).
+    radiation = PrescribedRadiation(atmos_grid, atmos_times)
 
     Ta = Field{Center, Center, Nothing}(atmos_grid)
     ua = Field{Center, Center, Nothing}(atmos_grid)
@@ -47,24 +52,21 @@ function data_free_ocean_climate_model_init(
 
     if arch isa Architectures.ReactantState
         if Reactant.precompiling()
-            @code_hlo set_tracers(parent(atmosphere.tracers.T), parent(Ta), parent(atmosphere.velocities.u), parent(ua), parent(atmosphere.downwelling_radiation.shortwave), parent(Qs))
+            @code_hlo set_tracers(parent(atmosphere.temperature), parent(Ta), parent(atmosphere.velocities.u), parent(ua), parent(radiation.downwelling_shortwave), parent(Qs))
         else
-            @jit set_tracers(parent(atmosphere.tracers.T), parent(Ta), parent(atmosphere.velocities.u), parent(ua), parent(atmosphere.downwelling_radiation.shortwave), parent(Qs))
+            @jit set_tracers(parent(atmosphere.temperature), parent(Ta), parent(atmosphere.velocities.u), parent(ua), parent(radiation.downwelling_shortwave), parent(Qs))
         end
     else
-        set_tracers(parent(atmosphere.tracers.T), parent(Ta), parent(atmosphere.velocities.u), parent(ua), parent(atmosphere.downwelling_radiation.shortwave), parent(Qs))
+        set_tracers(parent(atmosphere.temperature), parent(Ta), parent(atmosphere.velocities.u), parent(ua), parent(radiation.downwelling_shortwave), parent(Qs))
     end
 
-    parent(atmosphere.tracers.q) .= 0
-
-    # Atmospheric model
-    radiation = Radiation(arch)
+    parent(atmosphere.specific_humidity) .= 0
 
     # Coupled model
-    solver_stop_criteria = FixedIterations(5) # note: more iterations = more accurate
-    atmosphere_ocean_flux_formulation = SimilarityTheoryFluxes(; solver_stop_criteria)
-    interfaces = ComponentInterfaces(atmosphere, ocean; radiation, atmosphere_ocean_flux_formulation)
-    coupled_model = @gbprofile "OceanSeaIceModel" OceanSeaIceModel(ocean; atmosphere, radiation, interfaces)
+    solver_stop_criteria = FixedIterations(10) # note: more iterations = more accurate
+    atmosphere_ocean_fluxes = SimilarityTheoryFluxes(; solver_stop_criteria)
+    interfaces = ComponentInterfaces(atmosphere, ocean; radiation, atmosphere_ocean_fluxes)
+    coupled_model = @gbprofile "OceanOnlyModel" OceanOnlyModel(ocean; atmosphere, radiation, interfaces)
 
     return coupled_model
 end # data_free_ocean_climate_model_init

@@ -8,8 +8,8 @@ using GordonBell25
 using GordonBell25: first_time_step!, time_step!, loop!, factors, is_distributed_env_present
 
 const parsed_args = GordonBell25.parse_baroclinic_instability_args(;
-    grid_x_default = 1536,
-    grid_y_default = 768,
+    grid_x_default = 768, #1536,
+    grid_y_default = 384, #768,
     grid_z_default = 4,
 )
 
@@ -20,6 +20,7 @@ using Oceananigans.Units
 using Oceananigans.Architectures: ReactantState
 using Random
 using Printf
+using CUDA
 using Reactant
 
 if !is_distributed_env_present()
@@ -42,16 +43,16 @@ Reactant.MLIR.IR.DUMP_MLIR_DIR[] = joinpath(@__DIR__, "mlir_dumps", jobid_procid
 Reactant.Compiler.DEBUG_DISABLE_RESHARDING[] = true
 # Reactant.Compiler.DEBUG_PRINT_CODEGEN[] = true
 Reactant.Compiler.WHILE_CONCAT[] = true
+# Reactant.Compiler.AGGRESSIVE_PROPAGATION[] = true
 # Reactant.Compiler.DUS_TO_CONCAT[] = false
 # Reactant.Compiler.SUM_TO_REDUCEWINDOW[] = true
 # Reactant.Compiler.AGGRESSIVE_SUM_TO_CONV[] = true
 
 GordonBell25.initialize(; single_gpu_per_process=false)
 
-# devarch = Oceananigans.GPU()
-devarch = Oceananigans.ReactantState()
-
-arch = devarch
+# local_arch = Oceananigans.GPU()
+local_arch = Oceananigans.ReactantState()
+arch = local_arch
 
 Ndev = if arch isa Oceananigans.ReactantState
    length(Reactant.devices())
@@ -66,12 +67,9 @@ Rx, Ry = factors(Ndev)
 if Ndev == 1
     rank = 0
 else
-    arch = Oceananigans.Distributed(
-	arch;
-        partition = Partition(Rx, Ry, 1)
-    )
-    rank = if devarch isa Oceananigans.ReactantState
-	Reactant.Distributed.local_rank()
+    arch = Oceananigans.Distributed(arch; partition = Partition(Rx, Ry, 1))
+    rank = if local_arch isa Oceananigans.ReactantState
+	    Reactant.Distributed.local_rank()
     else
        comm = MPI.COMM_WORLD
        MPI.Comm_rank(comm)
@@ -95,12 +93,13 @@ model = GordonBell25.baroclinic_instability_model(arch, Nx, Ny, Nz; halo=(H, H, 
 
 Ninner = 256
 
-if devarch isa Oceananigans.ReactantState
-   Ninner = if Ndev == 1
-	 ConcreteRNumber(Ninner)
-   else
-   	ConcreteRNumber(Ninner; sharding=Sharding.NamedSharding(arch.connectivity, ()))
-   end
+if local_arch isa Oceananigans.ReactantState
+    Ninner = if Ndev == 1
+        ConcreteRNumber(Ninner)
+    else
+        sharding = Sharding.NamedSharding(arch.connectivity, ())
+   	    ConcreteRNumber(Ninner; sharding)
+    end
 end
 
 @info "[$rank] Compiling first_time_step!..." now(UTC)
@@ -111,7 +110,7 @@ compile_options = CompileOptions(; sync=true, raise=true, strip_llvm_debuginfo=t
 # # # export XLA_FLAGS="--xla_gpu_first_collective_call_warn_stuck_timeout_seconds=100 --xla_gpu_first_collective_call_terminate_timeout_seconds=300 \${XLA_FLAGS}"
 # compile_options = CompileOptions(; sync=true, raise=true, strip_llvm_debuginfo=true, strip=:all, multifloat=GordonBell25.multifloat_from_args(parsed_args), xla_debug_options=(xla_enable_enzyme_comms_opt=false,), optimize_communications=false)
 
-rfirst! = if devarch isa Oceananigans.ReactantState
+rfirst! = if local_arch isa Oceananigans.ReactantState
      @compile compile_options=compile_options first_time_step!(model)
 else
      first_time_step!     
@@ -120,7 +119,7 @@ end
 @info "[$rank] allocations" GordonBell25.allocatorstats()
 @info "[$rank] Compiling loop..." now(UTC)
 
-compiled_loop! = if devarch isa Oceananigans.ReactantState
+compiled_loop! = if local_arch isa Oceananigans.ReactantState
      @compile compile_options=compile_options loop!(model, Ninner)
 else
      loop!
