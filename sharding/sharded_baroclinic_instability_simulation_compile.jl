@@ -9,8 +9,8 @@ Reactant.Compiler.WHILE_CONCAT[] = true
 # Reactant.Compiler.AGGRESSIVE_PROPAGATION[] = true
 
 const parsed_args = GordonBell25.parse_baroclinic_instability_args(;
-    grid_x_default = 1536,
-    grid_y_default = 768,
+    grid_x_default = 768, #1536,
+    grid_y_default = 384, #768,
     grid_z_default = 4,
 )
 

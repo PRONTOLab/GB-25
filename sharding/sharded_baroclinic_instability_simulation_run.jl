@@ -8,8 +8,8 @@ using GordonBell25
 using GordonBell25: first_time_step!, time_step!, loop!, factors, is_distributed_env_present
 
 const parsed_args = GordonBell25.parse_baroclinic_instability_args(;
-    grid_x_default = 1536,
-    grid_y_default = 768,
+    grid_x_default = 768, #1536,
+    grid_y_default = 384, #768,
     grid_z_default = 4,
 )
 
