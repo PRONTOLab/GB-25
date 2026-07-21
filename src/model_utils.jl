@@ -145,12 +145,3 @@ function gaussian_islands_tripolar_grid(arch::Architectures.AbstractArchitecture
                                                                   GridFittedBottom(gaussian_islands);
                                                                   active_cells_map = false)
 end
-
-
-"""Adapt `Clock` for GPU."""
-Adapt.adapt_structure(to::ReactantCUDAExt.ReactantKernelAdaptor, clock::Oceananigans.TimeSteppers.Clock) =
-    (time          = Adapt.adapt(to, clock.time),
-     last_Δt       = Adapt.adapt(to, clock.last_Δt),
-     last_stage_Δt = Adapt.adapt(to, clock.last_stage_Δt),
-     iteration     = Adapt.adapt(to, clock.iteration),
-     stage         = Adapt.adapt(to, clock.stage))
