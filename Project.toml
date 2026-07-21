@@ -4,6 +4,7 @@ authors = ["William Moses and contributors"]
 version = "0.1.0"
 
 [deps]
+Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
 ArgParse = "c7e460c6-2fb9-53a9-8c5b-16f535851c63"
 BFloat16s = "ab4f0b2a-ad5b-11e8-123f-65d77653426b"
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
@@ -30,6 +31,7 @@ NumericalEarth = {url = "https://github.com/Pangoraw/NumericalEarth.jl", rev = "
 Oceananigans = {url = "https://github.com/CliMA/Oceananigans.jl", rev = "main"}
 
 [compat]
+Adapt = "4.7.0"
 ArgParse = "1.2.0"
 BFloat16s = "0.6.1"
 CUDA = "=5.8.5, 5.9.1, 6"
