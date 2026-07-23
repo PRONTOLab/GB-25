@@ -64,6 +64,7 @@ jobs:
         if: ${{ startsWith(inputs.os, 'ubuntu') }}
         with:
           cache-name: julia-cache;workflow=${{ inputs.julia_version }}-${{ inputs.sim_type }}-${{ inputs.os }}-${{ inputs.xla_runtime }}-${{ inputs.compile_or_run }};job=${{ github.job }}
+          gcp-bucket: ${{ contains(matrix.os, 'linux') && 'enzyme-ci-transient' || '' }}
       - name: Collect Workflow Telemetry
         uses: catchpoint/workflow-telemetry-action@v2
         with:
