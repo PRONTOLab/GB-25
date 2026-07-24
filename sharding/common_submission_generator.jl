@@ -136,6 +136,9 @@ export XLA_FLAGS="--xla_disable_hlo_passes=host-offload-legalize,hlo_constant_sp
 # export XLA_FLAGS="--xla_dump_hlo_pass_re=.* \${XLA_FLAGS}"
 export XLA_REACTANT_GPU_MEM_FRACTION=0.9
 
+# Ensure Julia's bundled OpenSSL is found before system OpenSSL (nsys can pollute LD_LIBRARY_PATH)
+export LD_LIBRARY_PATH="/capstor/scratch/cscs/lraess/julia_local/artifacts/bae3e8f87928cd4450404cb879640f42e960d065/lib\${LD_LIBRARY_PATH:+:\${LD_LIBRARY_PATH}}"
+
 # Important else XLA might hang indefinitely
 unset no_proxy http_proxy https_proxy NO_PROXY HTTP_PROXY HTTPS_PROXY
 
