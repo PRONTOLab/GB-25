@@ -24,7 +24,19 @@ function data_free_ocean_climate_model_init(
     # visualize the results of this run.
     Δt = 30seconds
     free_surface = SplitExplicitFreeSurface(substeps=30)
-    ocean = @gbprofile "ocean_simulation" ocean_simulation(grid; free_surface, Δt)
+
+    # NumericalEarth's `ocean_simulation` defaults both advection schemes to
+    # `AdaptiveVerticallyImplicitDiscretization`, which stores its timestep in a host
+    # `Base.RefValue{FT}`. `update_advection_timestep!` writes `clock.last_Δt` into that
+    # Ref from inside `update_state!`, i.e. inside the traced region, so under Reactant it
+    # hits `convert(Float64, ::TracedRNumber{Float64})` and fails to compile. Until the
+    # scheme's Δt lives in a traced container, request the same schemes with the default
+    # `ExplicitTimeDiscretization()`, which carries no host-mutable state.
+    momentum_advection = WENOVectorInvariant()
+    tracer_advection = WENO(order=7)
+
+    ocean = @gbprofile "ocean_simulation" ocean_simulation(grid; free_surface, Δt,
+                                                          momentum_advection, tracer_advection)
     @gbprofile "set_ocean_model" set!(ocean.model, T=Tᵢ, S=Sᵢ)
 
     # Set up an atmosphere
