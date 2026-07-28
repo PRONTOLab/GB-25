@@ -79,3 +79,7 @@ jobs:
       compile_or_run: 'run'
       earlyoom_threshold: 2
       julia_optlevel: 0
+      # The 4 fake XLA devices multiply the per-device grid by Rx*Ry = 4 without
+      # increasing the runner's 16 GB of RAM, so CI needs a smaller grid than the
+      # script defaults (which the HPC scaling tests override explicitly anyway).
+      grid_args: '--grid-x 512 --grid-y 256 --grid-z 8'
