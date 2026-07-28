@@ -81,3 +81,6 @@ jobs:
       compile_or_run: 'compile'
       earlyoom_threshold: 4
       julia_optlevel: 0
+      # Must match `run_sharded` in Run.yml, otherwise the residual-collective and
+      # jit_call checks validate a program the run job never executes.
+      grid_args: '--grid-x 512 --grid-y 256 --grid-z 8'
