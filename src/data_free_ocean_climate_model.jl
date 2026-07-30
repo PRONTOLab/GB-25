@@ -23,7 +23,7 @@ function data_free_ocean_climate_model_init(
     # visualize the results of this run.
     Δt = 30seconds
     free_surface = SplitExplicitFreeSurface(substeps=30)
-    ocean = @gbprofile "ocean_simulation" ocean_simulation(grid; free_surface, Δt)
+    @allowscalar ocean = @gbprofile "ocean_simulation" ocean_simulation(grid; free_surface, Δt)
     @gbprofile "set_ocean_model" set!(ocean.model, T=Tᵢ, S=Sᵢ)
 
     # Set up an atmosphere
@@ -62,8 +62,8 @@ function data_free_ocean_climate_model_init(
 
     # Coupled model
     solver_stop_criteria = FixedIterations(5) # note: more iterations = more accurate
-    atmosphere_ocean_flux_formulation = SimilarityTheoryFluxes(; solver_stop_criteria)
-    interfaces = ComponentInterfaces(atmosphere, ocean; radiation, atmosphere_ocean_flux_formulation)
+    atmosphere_ocean_fluxes = SimilarityTheoryFluxes(; solver_stop_criteria)
+    interfaces = ComponentInterfaces(atmosphere, ocean; radiation, atmosphere_ocean_fluxes)
     coupled_model = @gbprofile "OceanSeaIceModel" OceanSeaIceModel(ocean; atmosphere, radiation, interfaces)
 
     return coupled_model

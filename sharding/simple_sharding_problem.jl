@@ -81,8 +81,8 @@ grid = LatitudeLongitudeGrid(arch, size=(Nx, Ny, Nz), halo=(H, H, H), z=(-4000, 
 @info "[$(process_id)] allocations" GordonBell25.allocatorstats()
 
 free_surface = ExplicitFreeSurface()
-model = HydrostaticFreeSurfaceModel(; grid, tracers=:c, free_surface)
-# model = HydrostaticFreeSurfaceModel(; grid)
+model = HydrostaticFreeSurfaceModel(grid; tracers=:c, free_surface)
+# model = HydrostaticFreeSurfaceModel(grid)
 
 @show size(parent(model.velocities.u))
 @assert size(parent(model.velocities.u)) == size(parent(model.tracers.c))
