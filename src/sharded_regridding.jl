@@ -122,8 +122,14 @@ function regrid_centers(source_centers, bounds, Nz, halo, regrid_arch,
     source_i = x_topo === Periodic ? [mod1(i, source_nx) for i in source_i0:source_i1] : collect(source_i0:source_i1)
     source_patch = source_centers[source_i, collect(source_j0:source_j1), :]
 
+    # Use the model halo for parity, but never larger than the smallest sub-grid extent in
+    # each dimension (conservative regrid only needs 1; the extra width is just realism).
+    sub_halo = (min(halo[1], length(source_i), n_target_i),
+                min(halo[2], size(source_patch, 2), n_target_j),
+                min(halo[3], Nz))
+
     make_grid(nx, ny, longitude, latitude) =
-        LatitudeLongitudeGrid(regrid_arch; size = (nx, ny, Nz), halo, longitude, latitude, z = zbounds)
+        LatitudeLongitudeGrid(regrid_arch; size = (nx, ny, Nz), halo = sub_halo, longitude, latitude, z = zbounds)
 
     coarse    = CenterField(make_grid(size(source_patch, 1), size(source_patch, 2), source_longitude, source_latitude))
     x_refined = CenterField(make_grid(n_target_i,            size(source_patch, 2), target_longitude, source_latitude))
@@ -155,7 +161,7 @@ function regrid_shard(source_field, target_slice, target_size; regrid_arch = CPU
     topo = topology(source_grid)
     bounds = latlon_bounds(source_grid)
     Nz = size(source_field, 3)
-    halo = (source_grid.Hx, source_grid.Hy, source_grid.Hz)
+    halo = (source_grid.Hx, source_grid.Hy, source_grid.Hz)   # model halo; capped to sub-grid size in regrid_centers
 
     @assert Nz == target_size[3] "z is pass-through; source and target must share the vertical grid (got source Nz=$Nz, target $(target_size[3]))"
 
