@@ -1,3 +1,5 @@
+ENV["JULIA_DEBUG"] = "Reactant_jll,Reactant"
+
 using BFloat16s
 using GordonBell25: first_time_step!, loop!, try_compile_code, preamble, TRY_COMPILE_FAILED
 using GordonBell25: baroclinic_instability_model, PROFILE, GordonBell25, is_distributed_env_present
@@ -5,6 +7,7 @@ using Reactant
 using Oceananigans
 using Oceananigans.Architectures: ReactantState
 Reactant.Compiler.WHILE_CONCAT[] = true
+Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
 
 const parsed_args = GordonBell25.parse_baroclinic_instability_args(;
     grid_x_default = 1536,
