@@ -3,7 +3,7 @@ using Reactant
 using Adapt
 using Oceananigans
 using Oceananigans.Units
-using Oceananigans.Architectures: Architectures
+using Oceananigans.Architectures: Architectures, ReactantState
 using SeawaterPolynomials
 
 using ClimaOcean
