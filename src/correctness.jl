@@ -40,27 +40,27 @@ function compare_states(m1, m2; rtol=sqrt(eps(eltype(m1.grid))), atol=0,
         if !(name ∈ (:w, :η))
             Gⁿ1 = m1.timestepper.Gⁿ
             Gⁿ2 = m2.timestepper.Gⁿ
-            approx_equal *= compare_fields("Gⁿ.$name", Gⁿ1[name], Gⁿ2[name]; rtol, atol)
+            approx_equal *= compare_interior("Gⁿ.$name", Gⁿ1[name], Gⁿ2[name]; rtol, atol)
 
             G⁻1 = m1.timestepper.G⁻
             G⁻2 = m2.timestepper.G⁻
-            approx_equal *= compare_fields("G⁻.$name", G⁻1[name], G⁻2[name]; rtol, atol)
+            approx_equal *= compare_interior("G⁻.$name", G⁻1[name], G⁻2[name]; rtol, atol)
         end
     end
 
     if m1.free_surface isa Oceananigans.SplitExplicitFreeSurface
-        names = (:U, :V, :η)
-        Φ1 = NamedTuple(name => getproperty(m1.free_surface.filtered_state, name) for name in names)
-        Φ2 = NamedTuple(name => getproperty(m2.free_surface.filtered_state, name) for name in names)
-        for name in keys(Φ1)
+        names = keys(m1.free_surface.filtered_state)
+        Φ1 = m1.free_surface.filtered_state
+        Φ2 = m2.free_surface.filtered_state
+        for name in names
             approx_equal *= compare_fields(name, Φ1[name], Φ2[name]; rtol, atol)
         end
     end
 
     if m1.closure isa Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity
         names = (:κu, :κc, :κe, :Le, :Jᵇ)
-        Φ1 = NamedTuple(name => getproperty(m1.diffusivity_fields, name) for name in names)
-        Φ2 = NamedTuple(name => getproperty(m2.diffusivity_fields, name) for name in names)
+        Φ1 = NamedTuple(name => getproperty(m1.closure_fields, name) for name in names)
+        Φ2 = NamedTuple(name => getproperty(m2.closure_fields, name) for name in names)
         for name in keys(Φ1)
             approx_equal *= compare_fields(name, Φ1[name], Φ2[name]; rtol, atol)
         end
@@ -68,8 +68,8 @@ function compare_states(m1, m2; rtol=sqrt(eps(eltype(m1.grid))), atol=0,
 
     if m1.closure isa Oceananigans.TurbulenceClosures.TKEDissipationVerticalDiffusivity
         names = (:κu, :κc, :κe, :κϵ, :Le, :Lϵ)
-        Φ1 = NamedTuple(name => getproperty(m1.diffusivity_fields, name) for name in names)
-        Φ2 = NamedTuple(name => getproperty(m2.diffusivity_fields, name) for name in names)
+        Φ1 = NamedTuple(name => getproperty(m1.closure_fields, name) for name in names)
+        Φ2 = NamedTuple(name => getproperty(m2.closure_fields, name) for name in names)
         for name in keys(Φ1)
             approx_equal *= compare_fields(name, Φ1[name], Φ2[name]; rtol, atol)
         end
@@ -89,7 +89,70 @@ function compare_states(m1, m2; rtol=sqrt(eps(eltype(m1.grid))), atol=0,
     return nothing
 end
 
+function zero_tendencies!(model)
+    for name in keys(model.timestepper.Gⁿ)
+        parent(model.timestepper.Gⁿ[name]) .= 0
+        parent(model.timestepper.G⁻[name]) .= 0
+    end
+    return nothing
+end
+
 function sync_states!(m1, m2)
+    Ψ1 = Oceananigans.fields(m1)
+    Ψ2 = Oceananigans.fields(m2)
+    for name in keys(Ψ1)
+        ψ1 = parent(Ψ1[name])
+        x, y, z = size(ψ1)
+        ψ2 = parent(Ψ2[name])
+        ψ2 = view(ψ2, 1:x, 1:y, 1:z)
+        copyto!(ψ1, Array(ψ2))
+    end
+    return nothing
+end
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Atmosphere-model variants
+#
+# SSPRungeKutta3 has Gⁿ but no G⁻, and AtmosphereModel lacks free_surface /
+# closure properties, so we keep a separate set that avoids those assumptions.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+function atmos_compare_states(m1, m2; rtol=sqrt(eps(eltype(m1.grid))), atol=0,
+                              include_halos=false, throw_error=false)
+    ok = true
+    cmp = include_halos ? compare_parent : compare_interior
+
+    Ψ1 = Oceananigans.fields(m1)
+    Ψ2 = Oceananigans.fields(m2)
+
+    for name in keys(Ψ1)
+        ok &= cmp(name, Ψ1[name], Ψ2[name]; rtol, atol)
+    end
+
+    Gⁿ1 = m1.timestepper.Gⁿ
+    Gⁿ2 = m2.timestepper.Gⁿ
+    for name in keys(Gⁿ1)
+        ok &= compare_interior("Gⁿ.$name", Gⁿ1[name], Gⁿ2[name]; rtol, atol)
+    end
+
+    if ok
+        @info "The two atmosphere models are consistent within rtol=$(rtol) and atol=$(atol) !"
+    else
+        msg = "There is a discrepancy between the atmosphere models!  See the details above"
+        throw_error ? error(msg) : @error(msg)
+    end
+
+    return nothing
+end
+
+function atmos_zero_tendencies!(model)
+    for name in keys(model.timestepper.Gⁿ)
+        parent(model.timestepper.Gⁿ[name]) .= 0
+    end
+    return nothing
+end
+
+function atmos_sync_states!(m1, m2)
     Ψ1 = Oceananigans.fields(m1)
     Ψ2 = Oceananigans.fields(m2)
     for name in keys(Ψ1)

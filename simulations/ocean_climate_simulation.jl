@@ -1,12 +1,13 @@
 using Oceananigans
 using Oceananigans.Units
 using Oceananigans.Architectures
+using CUDA
 using Reactant
 
-using ClimaOcean
-using ClimaOcean.DataWrangling: ECCO4Monthly
-using ClimaOcean.OceanSeaIceModels.InterfaceComputations: FixedIterations, ComponentInterfaces
-using OrthogonalSphericalShellGrids: TripolarGrid
+using NumericalEarth
+using NumericalEarth: EN4Monthly
+using NumericalEarth.EarthSystemModels.InterfaceComputations: TenUnrolledIterations, ComponentInterfaces
+# using OrthogonalSphericalShellGrids: TripolarGrid
 
 using Dates
 using Printf
@@ -56,37 +57,38 @@ Nz = 20 # eventually we want to increase this to between 100-600
 stop_time = 10days
 
 # Grid setup
-z_faces = exponential_z_faces(; Nz, depth=6000, h=30) # may need changing for very large Nz
-underlying_grid = TripolarGrid(arch; size=(Nx, Ny, Nz), halo=(7, 7, 7), z=z_faces)
+z_faces = ExponentialDiscretization(Nz, -6000, 0; scale=30) # may need changing for very large Nz
+underlying_grid = LatitudeLongitudeGrid(arch; size=(Nx, Ny, Nz), halo=(7, 7, 7), z=z_faces,
+                                        latitude=(-80, 80), longitude=(0, 360))
 bottom_height = regrid_bathymetry(underlying_grid) # adds Earth bathymetry from ETOPO1
 grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height))
 
 # Polar restoring setup
 dates = DateTimeProlepticGregorian(1993, 1, 1) : Month(1) : DateTimeProlepticGregorian(1993, 12, 1)
-temperature = ECCOMetadata(:temperature, dates, ECCO4Monthly())
-salinity = ECCOMetadata(:salinity, dates, ECCO4Monthly())
+temperature = Metadatum(:temperature, dates=dates, dataset=EN4Monthly())
+salinity = Metadatum(:salinity, dates=dates, dataset=EN4Monthly())
 
 restoring_rate  = 1/7days
 mask = LinearlyTaperedPolarMask(southern=(-80, -70), northern=(70, 90))
-FT = ECCORestoring(temperature, grid; mask, rate=restoring_rate)
-FS = ECCORestoring(salinity, grid; mask, rate=restoring_rate)
+FT = DatasetRestoring(temperature, grid; mask, rate=restoring_rate)
+FS = DatasetRestoring(salinity, grid; mask, rate=restoring_rate)
 
-# Ocean simulation with defaults from ClimaOcean
-ocean = ocean_simulation(grid; forcing=(T=FT, S=FT))
+# Ocean simulation with defaults from NumericalEarth
+ocean = ocean_simulation(grid; forcing=(T=FT, S=FS))
 
-# Initial ocean state from ECCO state estimate
-set!(ocean.model, T=ECCOMetadata(:temperature; dates=first(dates)),
-                  S=ECCOMetadata(:salinity; dates=first(dates)))
+# Initial ocean state from EN4
+set!(ocean.model, T=Metadatum(:temperature; dates=first(dates)),
+                  S=Metadatum(:salinity; dates=first(dates)))
 
 # Atmospheric model
 radiation  = Radiation(arch)
 atmosphere = JRA55PrescribedAtmosphere(arch; backend=JRA55NetCDFBackend(41))
 
 # Coupled model and simulation
-solver_stop_criteria = FixedIterations(5) # note: more iterations = more accurate
-atmosphere_ocean_flux_formulation = SimilarityTheoryFluxes(; solver_stop_criteria)
-interfaces = ComponentInterfaces(atmosphere, ocean; radiation, atmosphere_ocean_flux_formulation)
-coupled_model = OceanSeaIceModel(ocean; atmosphere, radiation, interfaces)
+solver_stop_criteria = TenUnrolledIterations() # note: more iterations = more accurate
+atmosphere_ocean_fluxes = SimilarityTheoryFluxes(; solver_stop_criteria)
+interfaces = ComponentInterfaces(atmosphere, ocean; radiation, atmosphere_ocean_fluxes)
+coupled_model = OceanOnlyModel(ocean; atmosphere, radiation, interfaces)
 simulation = Simulation(coupled_model; Δt, stop_time)
 
 # Utility for printing progress to the terminal
@@ -106,7 +108,7 @@ function progress(sim)
                    prettytime(sim), iteration(sim), prettytime(sim.Δt),
                    umax..., Tmax, Tmin, prettytime(step_time))
 
-    ClimaOcean.@root @info(msg)
+    Oceananigans.DistributedComputations.@root @info(msg)
 
     wall_time[] = time_ns()
 
