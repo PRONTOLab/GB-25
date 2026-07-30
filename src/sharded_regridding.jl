@@ -3,7 +3,7 @@ using Reactant: Sharding
 using Oceananigans
 using Oceananigans: prognostic_fields
 using Oceananigans.Fields: location, interior, regrid!
-using Oceananigans.Grids: Center, Face, Periodic, x_domain, y_domain, z_domain, topology
+using Oceananigans.Grids: Center, Face, Periodic, Bounded, x_domain, y_domain, z_domain, topology
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Architectures: CPU, architecture
 
@@ -43,9 +43,14 @@ cell_count(loc, topo, n_points) = (loc === Face && topo !== Periodic) ? n_points
 # Center points ARE cells. A Face point sits between two cells, so we also need the
 # ½-stencil neighbour one cell below (Periodic: cell `first_point - 1` may be 0, i.e. the
 # wrapped last cell; Bounded: clamp to the grid and rely on `boundary_faces` at the ends).
+# For a Periodic dimension the range is capped at one full period (`1:n_cells`) — a wider
+# box would exceed 360° — and the wrap neighbour is handled in `reconstruct_faces`.
 function covering_cells(loc, topo, first_point, last_point, n_cells)
     loc === Center && return first_point:last_point
-    topo === Periodic && return (first_point - 1):last_point
+    if topo === Periodic
+        (last_point - first_point + 1) >= n_cells && return 1:n_cells
+        return (first_point - 1):last_point
+    end
     return max(1, first_point - 1):min(n_cells, last_point)
 end
 
@@ -82,7 +87,11 @@ function reconstruct_faces(centers, dim, topo, first_point, last_point, first_ce
         elseif topo !== Periodic && point == n_cells + 1
             face .= boundary_faces === :zero ? zero(eltype(centers)) : selectdim(centers, dim, n_cells - first_cell + 1)
         else
-            below = selectdim(centers, dim, point - 1 - first_cell + 1)
+            below_cell = point - 1
+            # Periodic wrap: if the below neighbour isn't in the buffer (full-period case),
+            # it is the last cell (cell 0 ≡ cell N). Sub-range buffers include cell 0 directly.
+            (topo === Periodic && below_cell < first_cell) && (below_cell += n_cells)
+            below = selectdim(centers, dim, below_cell - first_cell + 1)
             above = selectdim(centers, dim, point - first_cell + 1)
             face .= 0.5 .* (below .+ above)
         end
@@ -128,8 +137,13 @@ function regrid_centers(source_centers, bounds, Nz, halo, regrid_arch,
                 min(halo[2], size(source_patch, 2), n_target_j),
                 min(halo[3], Nz))
 
+    # Force Bounded topology: the sub-grids are plain conservative-remap grids with no
+    # periodic seam handling (a 360° box would otherwise auto-infer Periodic and zero-fill
+    # the seam). Periodicity is handled explicitly via the wrapped source gather above and
+    # the wrap in `reconstruct_faces`, so whole-field and per-shard results agree.
     make_grid(nx, ny, longitude, latitude) =
-        LatitudeLongitudeGrid(regrid_arch; size = (nx, ny, Nz), halo = sub_halo, longitude, latitude, z = zbounds)
+        LatitudeLongitudeGrid(regrid_arch; size = (nx, ny, Nz), halo = sub_halo,
+                              longitude, latitude, z = zbounds, topology = (Bounded, Bounded, Bounded))
 
     coarse    = CenterField(make_grid(size(source_patch, 1), size(source_patch, 2), source_longitude, source_latitude))
     x_refined = CenterField(make_grid(n_target_i,            size(source_patch, 2), target_longitude, source_latitude))
