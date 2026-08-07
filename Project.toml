@@ -27,8 +27,6 @@ SeawaterPolynomials = "d496a93d-167e-4197-9f49-d3af4ff8fe40"
 Serialization = "9e88b42a-f829-5b0c-bbe9-9e923198166b"
 
 [sources]
-NumericalEarth = {url = "https://github.com/Pangoraw/NumericalEarth.jl", rev = "pb/ifrt-number"}
-Oceananigans = {url = "https://github.com/CliMA/Oceananigans.jl", rev = "main"}
 
 [compat]
 Adapt = "4.7.0"
