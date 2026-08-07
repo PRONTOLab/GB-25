@@ -43,11 +43,18 @@ on:
         description: 'ocean_climate or baroclinic_instability'
         required: true
         type: string
+      grid_args:
+        description: 'Extra CLI arguments selecting the grid size, e.g. "--grid-x 512 --grid-y 256 --grid-z 8"'
+        required: false
+        default: ''
+        type: string
 
 jobs:
   simulation:
     name: Julia ${{ inputs.julia_version }} - ${{ inputs.sim_type }} - ${{ inputs.os }} - ${{ inputs.xla_runtime }} - ${{ inputs.compile_or_run }}
     runs-on: ${{ inputs.os }}
+    env:
+      JULIA_PKG_SERVER_REGISTRY_PREFERENCE: eager
     strategy:
       fail-fast: false
     steps:
@@ -110,7 +117,7 @@ jobs:
           earlyoom -m ${{ inputs.earlyoom_threshold }} -s 100 -r 120 --prefer 'julia' &
           # `timeout` sends a SIGTERM, which gives a chance to read a more informative
           # stacktrace than when the step is forcibly terminated by GitHub Actions.
-          timeout --signal=TERM --verbose 180m julia --color=yes --project -O${{ inputs.julia_optlevel }} ${{ inputs.run_dir }}/${{ inputs.sim_type }}_simulation_${{ inputs.compile_or_run }}.jl
+          timeout --signal=TERM --verbose 180m julia --color=yes --project -O${{ inputs.julia_optlevel }} ${{ inputs.run_dir }}/${{ inputs.sim_type }}_simulation_${{ inputs.compile_or_run }}.jl ${{ inputs.grid_args }}
       - name: Show remaining jit calls
         if: ${{ inputs.compile_or_run == 'compile' }}
         timeout-minutes: 10
@@ -132,7 +139,7 @@ jobs:
         run: |
           OK="true"
           for OP in all-to-all all-gather all-reduce; do
-              COLLECTIVES=$(find . -name 'optimised_${{ inputs.sim_type }}*.xla' -exec grep --with-filename --line-number --extended-regexp "${OP}" '{}' \;)
+              COLLECTIVES=$(find . -name 'optimised_${{ inputs.sim_type }}*.xla' -exec grep --with-filename --line-number --extended-regexp "${OP}\(" '{}' \;)
               NUM_COLLECTIVES=$(echo "${COLLECTIVES}" | wc -l | xargs)
               if [[ -n "${COLLECTIVES}" ]]; then
                   MSG="There are ${NUM_COLLECTIVES} remaining ${OP} operations"

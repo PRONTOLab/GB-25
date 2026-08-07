@@ -8,7 +8,6 @@
     return N² * z + Δb * μ + 1e-2 * Δb * randn()
 end
 
-
 function baroclinic_instability_model(arch; resolution, Nz, kw...)
     Nx, Ny = resolution_to_points(resolution)
     return baroclinic_instability_model(arch, Nx, Ny, Nz; kw...)
@@ -33,6 +32,9 @@ function baroclinic_instability_model(arch, Nx, Ny, Nz; Δt,
     # Coriolis forces for a rotating Earth
     coriolis = HydrostaticSphericalCoriolis(),
 
+    # Use the simplest timestepper
+    timestepper = :QuasiAdamsBashforth2,
+
     # Simple momentum advection schemes. May need to be reconsidered
     # due to Float32.
     momentum_advection = WENOVectorInvariant(order=5),
@@ -40,21 +42,12 @@ function baroclinic_instability_model(arch, Nx, Ny, Nz; Δt,
     )
 
     tracers = if buoyancy isa BuoyancyTracer
-        [:b]
+        (:b,)
     elseif buoyancy isa SeawaterBuoyancy
-        [:T, :S]
+        (:T, :S)
     else
-        Symbol[]
+        ()
     end
-
-    if closure isa Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity
-        push!(tracers, :e)
-    elseif closure isa Oceananigans.TurbulenceClosures.TKEDissipationVerticalDiffusivity
-        push!(tracers, :e)
-        push!(tracers, :ϵ)
-    end
-
-    tracers = tuple(tracers...)
 
     grid = if grid_type === :gaussian_islands
         gaussian_islands_tripolar_grid(arch, Nx, Ny, Nz; halo)
@@ -64,8 +57,8 @@ function baroclinic_instability_model(arch, Nx, Ny, Nz; Δt,
         error("grid_type=$grid_type must be :gaussian_islands or :simple_lat_lon.")
     end
 
-    model = HydrostaticFreeSurfaceModel(;
-        grid, free_surface, closure, buoyancy, tracers,
+    model = HydrostaticFreeSurfaceModel(grid;
+        free_surface, closure, buoyancy, tracers, timestepper,
         coriolis, momentum_advection, tracer_advection,
     )
 

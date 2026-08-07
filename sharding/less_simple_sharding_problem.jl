@@ -84,11 +84,11 @@ grid = LatitudeLongitudeGrid(arch, size=(Nx, Ny, Nz), halo=(H, H, H), z=(-4000, 
 free_surface = SplitExplicitFreeSurface(substeps=32)
 momentum_advection = WENOVectorInvariant(order=5)
 tracer_advection = WENO(order=5)
-tracers = (:T, :S, :e)
+tracers = (:T, :S)
 equation_of_state = TEOS10EquationOfState()
 buoyancy = SeawaterBuoyancy(; equation_of_state)
 closure = Oceananigans.TurbulenceClosures.CATKEVerticalDiffusivity()
-model = HydrostaticFreeSurfaceModel(; grid, tracers, free_surface,
+model = HydrostaticFreeSurfaceModel(grid; tracers, free_surface,
                                     momentum_advection, tracer_advection,
                                     buoyancy, closure)
 

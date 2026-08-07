@@ -18,24 +18,41 @@ function data_free_ocean_climate_model_init(
     )
 
     grid = gaussian_islands_tripolar_grid(arch, resolution, Nz)
+    # grid = simple_latitude_longitude_grid(arch, resolution, Nz)
 
     # See visualize_ocean_climate_simulation.jl for information about how to
     # visualize the results of this run.
     Δt = 30seconds
     free_surface = SplitExplicitFreeSurface(substeps=30)
-    ocean = @gbprofile "ocean_simulation" ocean_simulation(grid; free_surface, Δt)
+
+    # NumericalEarth's `ocean_simulation` defaults both advection schemes to
+    # `AdaptiveVerticallyImplicitDiscretization`, which stores its timestep in a host
+    # `Base.RefValue{FT}`. `update_advection_timestep!` writes `clock.last_Δt` into that
+    # Ref from inside `update_state!`, i.e. inside the traced region, so under Reactant it
+    # hits `convert(Float64, ::TracedRNumber{Float64})` and fails to compile. Until the
+    # scheme's Δt lives in a traced container, request the same schemes with the default
+    # `ExplicitTimeDiscretization()`, which carries no host-mutable state.
+    momentum_advection = WENOVectorInvariant()
+    tracer_advection = WENO(order=7)
+
+    ocean = @gbprofile "ocean_simulation" ocean_simulation(grid; free_surface, Δt,
+                                                          momentum_advection, tracer_advection)
     @gbprofile "set_ocean_model" set!(ocean.model, T=Tᵢ, S=Sᵢ)
 
     # Set up an atmosphere
     atmos_times = range(0, 1days, length=24)
 
-    atmos_grid = LatitudeLongitudeGrid(arch,
+    topology = (Oceananigans.Grids.Periodic, Oceananigans.Grids.Bounded, Oceananigans.Grids.Flat)
+    atmos_grid = LatitudeLongitudeGrid(arch; topology,
                                        size = (360, 180),
                                        longitude = (0, 360),
-                                       latitude = (-90, 90),
-                                       topology = (Periodic, Bounded, Flat))
+                                       latitude = (-90, 90))
 
     atmosphere = PrescribedAtmosphere(atmos_grid, atmos_times)
+
+    # Downwelling radiation is no longer carried by the atmosphere; it lives in
+    # the top-level radiation component (PrescribedRadiation).
+    radiation = PrescribedRadiation(atmos_grid, atmos_times)
 
     Ta = Field{Center, Center, Nothing}(atmos_grid)
     ua = Field{Center, Center, Nothing}(atmos_grid)
@@ -47,24 +64,21 @@ function data_free_ocean_climate_model_init(
 
     if arch isa Architectures.ReactantState
         if Reactant.precompiling()
-            @code_hlo set_tracers(parent(atmosphere.tracers.T), parent(Ta), parent(atmosphere.velocities.u), parent(ua), parent(atmosphere.downwelling_radiation.shortwave), parent(Qs))
+            @code_hlo set_tracers(parent(atmosphere.temperature), parent(Ta), parent(atmosphere.velocities.u), parent(ua), parent(radiation.downwelling_shortwave), parent(Qs))
         else
-            @jit set_tracers(parent(atmosphere.tracers.T), parent(Ta), parent(atmosphere.velocities.u), parent(ua), parent(atmosphere.downwelling_radiation.shortwave), parent(Qs))
+            @jit set_tracers(parent(atmosphere.temperature), parent(Ta), parent(atmosphere.velocities.u), parent(ua), parent(radiation.downwelling_shortwave), parent(Qs))
         end
     else
-        set_tracers(parent(atmosphere.tracers.T), parent(Ta), parent(atmosphere.velocities.u), parent(ua), parent(atmosphere.downwelling_radiation.shortwave), parent(Qs))
+        set_tracers(parent(atmosphere.temperature), parent(Ta), parent(atmosphere.velocities.u), parent(ua), parent(radiation.downwelling_shortwave), parent(Qs))
     end
 
-    parent(atmosphere.tracers.q) .= 0
-
-    # Atmospheric model
-    radiation = Radiation(arch)
+    parent(atmosphere.specific_humidity) .= 0
 
     # Coupled model
-    solver_stop_criteria = FixedIterations(5) # note: more iterations = more accurate
-    atmosphere_ocean_flux_formulation = SimilarityTheoryFluxes(; solver_stop_criteria)
-    interfaces = ComponentInterfaces(atmosphere, ocean; radiation, atmosphere_ocean_flux_formulation)
-    coupled_model = @gbprofile "OceanSeaIceModel" OceanSeaIceModel(ocean; atmosphere, radiation, interfaces)
+    solver_stop_criteria = FixedIterations(10) # note: more iterations = more accurate
+    atmosphere_ocean_fluxes = SimilarityTheoryFluxes(; solver_stop_criteria)
+    interfaces = ComponentInterfaces(atmosphere, ocean; radiation, atmosphere_ocean_fluxes)
+    coupled_model = @gbprofile "OceanOnlyModel" OceanOnlyModel(ocean; atmosphere, radiation, interfaces)
 
     return coupled_model
 end # data_free_ocean_climate_model_init

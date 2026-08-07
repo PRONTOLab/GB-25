@@ -5,9 +5,10 @@ using Oceananigans
 using Oceananigans.Units
 using Oceananigans.Architectures: Architectures
 using SeawaterPolynomials
+using CUDA
 
-using ClimaOcean
-using ClimaOcean.OceanSeaIceModels.InterfaceComputations: FixedIterations, ComponentInterfaces
+using NumericalEarth
+using NumericalEarth.EarthSystemModels.InterfaceComputations: FixedIterations, ComponentInterfaces
 
 using Dates
 using Printf
@@ -54,7 +55,7 @@ function simple_latitude_longitude_grid(arch, resolution, Nz)
 end
 
 function simple_latitude_longitude_grid(arch, Nx, Ny, Nz; halo=(8, 8, 8))
-    z = exponential_z_faces(; Nz, depth=4000, h=30) # may need changing for very large Nz
+    z = ExponentialDiscretization(Nz, -4000, 0; scale=1000)
 
     grid = LatitudeLongitudeGrid(arch; size=(Nx, Ny, Nz), halo, z,
         latitude = (-80, 80),
@@ -133,7 +134,7 @@ end
 
 function gaussian_islands_tripolar_grid(arch::Architectures.AbstractArchitecture, Nx, Ny, Nz; halo=(8, 8, 8))
     # Grid setup
-    z = exponential_z_faces(; Nz, depth=4000, h=30) # may need changing for very large Nz
+    z = ExponentialDiscretization(Nz, -4000, 0; scale=1000)
     underlying_grid = TripolarGrid(arch; size=(Nx, Ny, Nz), halo, z)
 
     zb = z[1]
@@ -144,12 +145,3 @@ function gaussian_islands_tripolar_grid(arch::Architectures.AbstractArchitecture
                                                                   GridFittedBottom(gaussian_islands);
                                                                   active_cells_map = false)
 end
-
-
-"""Adapt `Clock` for GPU."""
-Adapt.adapt_structure(to::ReactantCUDAExt.ReactantKernelAdaptor, clock::Oceananigans.TimeSteppers.Clock) =
-    (time          = Adapt.adapt(to, clock.time),
-     last_Δt       = Adapt.adapt(to, clock.last_Δt),
-     last_stage_Δt = Adapt.adapt(to, clock.last_stage_Δt),
-     iteration     = Adapt.adapt(to, clock.iteration),
-     stage         = Adapt.adapt(to, clock.stage))

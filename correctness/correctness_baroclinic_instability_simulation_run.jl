@@ -9,6 +9,7 @@ const parsed_args = GordonBell25.parse_baroclinic_instability_args(;
 
 default_float_type = GordonBell25.float_type_from_args(parsed_args)
 Oceananigans.defaults.FloatType = default_float_type
+using CUDA
 using Reactant
 
 throw_error = true
@@ -40,6 +41,8 @@ vmodel = GordonBell25.baroclinic_instability_model(varch, Nx, Ny, Nz; model_kw..
 ui = 1e-3 .* rand(size(vmodel.velocities.u)...)
 vi = 1e-3 .* rand(size(vmodel.velocities.v)...)
 set!(vmodel, u=ui, v=vi)
+GordonBell25.zero_tendencies!(rmodel)
+GordonBell25.zero_tendencies!(vmodel)
 GordonBell25.sync_states!(rmodel, vmodel)
 
 @info "At the beginning:"
@@ -57,6 +60,9 @@ Oceananigans.TimeSteppers.update_state!(vmodel)
 GordonBell25.compare_states(rmodel, vmodel; include_halos, throw_error, rtol, atol)
 
 GordonBell25.sync_states!(rmodel, vmodel)
+GordonBell25.zero_tendencies!(rmodel)
+GordonBell25.zero_tendencies!(vmodel)
+# compile_options = CompileOptions(; sync=true, raise=true, strip_llvm_debuginfo=true, strip=:all)
 rfirst! = @compile compile_options=compile_options GordonBell25.first_time_step!(rmodel)
 @showtime rfirst!(rmodel)
 @showtime GordonBell25.first_time_step!(vmodel)
