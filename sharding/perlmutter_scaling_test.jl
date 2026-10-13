@@ -63,10 +63,11 @@ function perlmutter_submit_job_writer(cfg::JobConfig, job_name, Nnodes, job_dir,
 #SBATCH --mail-user=email@solidcompany.com
 #SBATCH --mail-type=ALL
 
+module reset
 source /global/common/software/nersc9/julia/scripts/activate_beta.sh
 ml load julia/1.11.7
-
 module load nccl/2.29.2-cu13
+module list
 
 export SBATCH_ACCOUNT=$(cfg.account)
 export SALLOC_ACCOUNT=$(cfg.account)
